@@ -9,11 +9,13 @@
   "app": {
     "windows": [
       {
-        "label": "launcher",
-        "title": "RagnarokMac",
-        "width": 720,
-        "height": 560,
-        "resizable": true
+        "label": "game",
+        "title": "Ragnarok Offline",
+        "url": "index.html",
+        "width": 1280,
+        "height": 800,
+        "resizable": true,
+        "center": true
       }
     ],
     "security": {

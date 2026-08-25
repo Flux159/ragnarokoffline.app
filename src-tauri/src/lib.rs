@@ -3,11 +3,11 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
-/// Where the game window points. Everything — client bundle, GRF assets and the
-/// game socket — is served from this single origin by RemoteClient-JS.
-const GAME_URL: &str = "http://127.0.0.1:3338/play.html";
+// The game window boots into src/index.html, which polls the asset server and
+// then navigates to /play.html itself — so the game URL lives there, not here.
 const HEALTH_URL: &str = "http://127.0.0.1:3338/api/health";
 
 /// Rates the Settings pane exposes. Values are multipliers in percent, matching
@@ -195,20 +195,92 @@ fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<String, St
     run_stack(&app, "up")
 }
 
+/// Bring the game window back, reloading it from the boot page so it retries the
+/// startup sequence if the server was restarted underneath it.
 #[tauri::command]
 fn open_game(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("game") {
+        let _ = win.navigate("tauri://localhost/index.html".parse().unwrap());
+        let _ = win.show();
         let _ = win.set_focus();
         return Ok(());
     }
-    let url = GAME_URL.parse().map_err(|_| "bad game url".to_string())?;
-    WebviewWindowBuilder::new(&app, "game", WebviewUrl::External(url))
+    WebviewWindowBuilder::new(&app, "game", WebviewUrl::App("index.html".into()))
         .title("Ragnarok Offline")
         .inner_size(1280.0, 800.0)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Settings is a secondary window: ⌘, or the app menu, never the launch surface.
+#[tauri::command]
+fn open_settings(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("settings") {
+        let _ = win.show();
+        let _ = win.set_focus();
+        return Ok(());
+    }
+    WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("settings.html".into()))
+        .title("Settings")
+        .inner_size(560.0, 720.0)
         .resizable(true)
         .build()
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// One call for "make the game playable": bring the containers up, then the
+/// asset server, in that order — the WebSocket proxy only reads its allowlist
+/// at startup.
+#[tauri::command]
+fn start_stack(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let out = run_stack(&app, "up")?;
+    assets_start(app, state)?;
+    Ok(out)
+}
+
+fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
+    // On macOS the first submenu becomes the application menu, which is where
+    // Settings belongs. Elsewhere this reads as the File menu.
+    let app_menu = Submenu::with_items(
+        app,
+        "RagnarokMac",
+        true,
+        &[
+            &settings,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, None)?,
+        ],
+    )?;
+    let edit = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+    let window = Submenu::with_items(
+        app,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::fullscreen(app, None)?,
+            &PredefinedMenuItem::close_window(app, None)?,
+        ],
+    )?;
+    Menu::with_items(app, &[&app_menu, &edit, &window])
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -216,16 +288,28 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
         .plugin(tauri_plugin_shell::init())
+        .setup(|app| {
+            let handle = app.handle();
+            handle.set_menu(build_menu(handle)?)?;
+            Ok(())
+        })
+        .on_menu_event(|app, event| {
+            if event.id() == "settings" {
+                let _ = open_settings(app.clone());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             stack_status,
             stack_up,
             stack_down,
+            start_stack,
             assets_ready,
             assets_start,
             assets_stop,
             get_settings,
             save_settings,
-            open_game
+            open_game,
+            open_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running RagnarokMac");

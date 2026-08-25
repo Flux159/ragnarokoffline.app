@@ -1,0 +1,21 @@
+/* Palette sampled from the app icon: periwinkle accents on near-black. */
+:root {
+  --bg:        #0d0f15;
+  --panel:     #151824;
+  --panel-hi:  #1c2030;
+  --line:      #272c3d;
+  --text:      #e6e8f0;
+  --dim:       #8b91a6;
+  --accent:    #7889c0;
+  --accent-hi: #98a4ce;
+  --accent-dim:#4a5478;
+  --ok:        #6fb98f;
+  --bad:       #c97a7a;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 13px/1.55 -apple-system, system-ui, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
