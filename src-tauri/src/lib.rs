@@ -112,21 +112,74 @@ struct AppState {
     assets: Mutex<Option<Child>>,
 }
 
-/// Repository root. In dev this is two levels up from `src-tauri`; in a bundled
-/// .app the resources are copied alongside the binary.
-fn project_root(app: &tauri::AppHandle) -> PathBuf {
+/// Everything the app needs at runtime, in a writable location.
+///
+/// The bundled payload lives in Contents/Resources, which must be treated as
+/// read-only — a signed bundle cannot be written to without breaking its
+/// signature, and the asset server needs to write symlinks, DATA.INI and a
+/// generated client config. So the payload is materialised once into
+/// Application Support and used from there. APFS clones make the copy nearly
+/// free; it falls back to a plain recursive copy elsewhere.
+fn runtime_root(app: &tauri::AppHandle) -> PathBuf {
     if let Ok(dir) = std::env::var("RAGNAROKMAC_ROOT") {
         return PathBuf::from(dir);
     }
-    if let Ok(res) = app.path().resource_dir() {
-        if res.join("scripts/stack.sh").exists() {
-            return res;
+
+    let bundled = app.path().resource_dir().ok().map(|r| r.join("payload"));
+    let installed = app
+        .path()
+        .app_data_dir()
+        .map(|d| d.join("runtime"))
+        .unwrap_or_default();
+
+    if let Some(payload) = bundled.filter(|p| p.join("scripts/stack.sh").exists()) {
+        let want = std::fs::read_to_string(payload.join("VERSION")).unwrap_or_default();
+        let have = std::fs::read_to_string(installed.join("VERSION")).unwrap_or_default();
+        if want != have || !installed.join("scripts/stack.sh").exists() {
+            let _ = std::fs::remove_dir_all(&installed);
+            if let Some(parent) = installed.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            // -c asks for APFS clones: no data is duplicated on disk.
+            let ok = Command::new("cp")
+                .args(["-Rc", &payload.to_string_lossy(), &installed.to_string_lossy()])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+                || Command::new("cp")
+                    .args(["-R", &payload.to_string_lossy(), &installed.to_string_lossy()])
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false);
+            if !ok {
+                return payload;
+            }
         }
+        return installed;
     }
+
+    // Running from a checkout (cargo tauri dev / a dev build).
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_default()
+}
+
+fn project_root(app: &tauri::AppHandle) -> PathBuf {
+    runtime_root(app)
+}
+
+/// Generated conf, the imported schema and the merged System directory. Kept
+/// out of runtime/ so an app update, which replaces runtime/ wholesale, does
+/// not discard it.
+fn state_dir(app: &tauri::AppHandle) -> PathBuf {
+    if let Ok(dir) = std::env::var("RAGNAROKMAC_STATE") {
+        return PathBuf::from(dir);
+    }
+    match app.path().app_data_dir() {
+        Ok(d) => d.join("state"),
+        Err(_) => project_root(app).join(".ragnarokmac"),
+    }
 }
 
 /// ~/Library/Application Support/com.ragnarokmac.app/client.json
@@ -179,6 +232,8 @@ fn set_client_paths(app: tauri::AppHandle, paths: ClientPaths) -> Result<String,
     }
     let out = cmd
         .current_dir(&root)
+        .env("PATH", tool_path())
+        .env("RAGNAROKMAC_STATE", state_dir(&app))
         .output()
         .map_err(|e| format!("failed to link assets: {e}"))?;
     if !out.status.success() {
@@ -212,12 +267,40 @@ fn close_setup(app: tauri::AppHandle) {
     }
 }
 
+/// Finder-launched apps inherit launchd's minimal PATH, so nothing installed by
+/// Homebrew, Rancher Desktop or Docker Desktop is visible. Every tool we shell
+/// out to lives in one of these.
+fn tool_path() -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let existing = std::env::var("PATH").unwrap_or_default();
+    format!("{home}/.rd/bin:/opt/homebrew/bin:/usr/local/bin:/opt/podman/bin:{existing}")
+}
+
+/// Absolute path of a tool: the copy we ship first, then the usual locations.
+fn find_tool(app: &tauri::AppHandle, name: &str) -> Option<PathBuf> {
+    let bundled = project_root(app).join("bin").join(name);
+    if bundled.is_file() {
+        return Some(bundled);
+    }
+    for dir in tool_path().split(':').filter(|d| !d.is_empty()) {
+        let candidate = Path::new(dir).join(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 fn run_stack(app: &tauri::AppHandle, arg: &str) -> Result<String, String> {
     let root = project_root(app);
     let out = Command::new("bash")
         .arg(root.join("scripts/stack.sh"))
         .arg(arg)
         .current_dir(&root)
+        .env("PATH", tool_path())
+        .env("NEBULA_BIN", root.join("bin/nebula"))
+        .env("RAGNAROKMAC_DOCKER", root.join("bin/docker-slim"))
+        .env("RAGNAROKMAC_STATE", state_dir(app))
         .output()
         .map_err(|e| format!("failed to run stack.sh: {e}"))?;
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
@@ -262,9 +345,12 @@ fn assets_start(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Res
         return Ok(());
     }
     let dir = project_root(&app).join("vendor/roBrowserLegacy-RemoteClient-JS");
-    let child = Command::new("node")
+    let node = find_tool(&app, "node")
+        .ok_or_else(|| "node was not found (no bundled copy and none installed)".to_string())?;
+    let child = Command::new(node)
         .arg("index.js")
         .current_dir(&dir)
+        .env("PATH", tool_path())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -373,6 +459,14 @@ fn open_settings(app: tauri::AppHandle) -> Result<(), String> {
 /// at startup.
 #[tauri::command]
 fn start_stack(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<String, String> {
+    // Re-link the client every start. It is idempotent, and a freshly
+    // materialised runtime (first launch, or after an app update) has no GRF
+    // symlinks or DATA.INI in it yet — only the setup window writes those, and
+    // it is skipped once a client is remembered.
+    let saved = get_client_paths(app.clone());
+    if saved.complete() {
+        set_client_paths(app.clone(), saved)?;
+    }
     let out = run_stack(&app, "up")?;
     assets_start(app, state)?;
     Ok(out)

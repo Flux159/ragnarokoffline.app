@@ -45,3 +45,8 @@ data.ini
 /dll_exe/
 /data/
 /client/
+
+# Packaging output and vendored binaries (rebuilt by scripts/package.sh)
+/payload/
+/bin/
+/vendor/node/

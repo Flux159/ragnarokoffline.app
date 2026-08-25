@@ -11,7 +11,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RC="$ROOT/vendor/roBrowserLegacy-RemoteClient-JS"
 EN="$ROOT/vendor/ROenglishRE/Translation/Renewal"
-STATE="$ROOT/.ragnarokmac"
+STATE="${RAGNAROKMAC_STATE:-$ROOT/.ragnarokmac}"
 
 DATA_GRF="${1:?data.grf path required}"
 RDATA_GRF="${2:?rdata.grf path required}"
@@ -21,7 +21,7 @@ for f in "$DATA_GRF" "$RDATA_GRF"; do
     [ -f "$f" ] || { echo "not a file: $f" >&2; exit 1; }
 done
 
-mkdir -p "$RC/resources" "$RC/data"
+mkdir -p "$RC/resources" "$RC/data" "$STATE"
 rm -f "$RC/resources"/*.grf "$RC/resources/DATA.INI"
 
 # Lower index wins, so overlays sit above the base client.
@@ -65,6 +65,14 @@ done
 # file it fetches, so point at the table itself.
 ln -sfn "$EN/SystemEN/LuaFiles514/itemInfo.lua" "$MERGED/itemInfo.lua"
 ln -sfn "$MERGED" "$RC/System"
+
+# The asset server refuses to start without CLIENT_PUBLIC_URL, and a packaged
+# app has no .env until we write one. Generated here so the override path is
+# absolute and correct wherever the runtime was materialised.
+{
+    sed '/^DATA_OVERRIDE_PATH=/d' "$ROOT/config/remoteclient.env"
+    echo "DATA_OVERRIDE_PATH=$EN/data"
+} > "$RC/.env"
 
 # roBrowser reads this over its baked-in defaults.
 WEB="$ROOT/vendor/roBrowserLegacy/dist/Web"
