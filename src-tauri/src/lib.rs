@@ -388,6 +388,16 @@ fn assets_start(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Res
     let assets_root = state_dir(&app).join("assets");
     let server = find_tool(&app, "robrowser-remoteclient")
         .ok_or_else(|| "the asset server binary is missing from this build".to_string())?;
+
+    let log_path = state_dir(&app).join("assets.log");
+    let log = std::fs::File::create(&log_path)
+        .map(Stdio::from)
+        .unwrap_or_else(|_| Stdio::null());
+    let log_err = std::fs::File::options()
+        .append(true)
+        .open(&log_path)
+        .map(Stdio::from)
+        .unwrap_or_else(|_| Stdio::null());
     // Everything the server needs is passed explicitly: it is a single static
     // binary with no working directory of its own to inherit config from.
     let child = Command::new(server)
@@ -410,8 +420,11 @@ fn assets_start(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Res
             "DATA_OVERRIDE_PATH",
             root.join("vendor/ROenglishRE/Translation/Renewal/data"),
         )
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        // Kept rather than discarded: this log is where a failed asset request
+        // or a rejected proxy target shows up, and diagnosing either without it
+        // means restarting the server by hand to see what it was already saying.
+        .stdout(log)
+        .stderr(log_err)
         .spawn()
         .map_err(|e| format!("failed to start asset server: {e}"))?;
     *state.assets.lock().unwrap() = Some(child);
