@@ -166,6 +166,18 @@ fn assets_start(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Res
 fn assets_stop(state: tauri::State<'_, AppState>) {
     if let Some(mut child) = state.assets.lock().unwrap().take() {
         let _ = child.kill();
+        return;
+    }
+    // We adopt an already-running server rather than starting a second one, so
+    // on the way out there may be nothing to kill by handle. Fall back to
+    // whatever holds our port — the app owns 3338 either way.
+    if let Ok(out) = Command::new("lsof")
+        .args(["-ti", "tcp:3338", "-sTCP:LISTEN"])
+        .output()
+    {
+        for pid in String::from_utf8_lossy(&out.stdout).split_whitespace() {
+            let _ = Command::new("kill").arg(pid).status();
+        }
     }
 }
 
@@ -327,6 +339,17 @@ pub fn run() {
             open_settings,
             launch_game
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running RagnarokMac");
+        .build(tauri::generate_context!())
+        .expect("error while building RagnarokMac")
+        .run(|app, event| {
+            // Quitting the game should not leave a database and three game
+            // servers running for the rest of the session. The DB lives in a
+            // named volume, so nothing is lost by stopping them.
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                if let Some(state) = app.try_state::<AppState>() {
+                    assets_stop(state);
+                }
+                let _ = run_stack(app, "down");
+            }
+        });
 }
