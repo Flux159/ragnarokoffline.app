@@ -290,9 +290,72 @@ rAthena's `--enable-packetver` and roBrowser's `packetver:` to a value in that e
 Upstream's AIO compose defaults to `20250618`, which is far newer than these assets —
 do not inherit it blindly.
 
+## Running it
+
+```bash
+scripts/bootstrap.sh ~/Downloads     # clone + build upstreams, link GRFs, build rAthena
+scripts/stack.sh up                  # MariaDB + login/char/map in the microVM
+cd src-tauri && cargo tauri build     # produces RagnarokMac.app + a DMG
+```
+
+Then open `RagnarokMac.app`, press **Start server**, then **Play**.
+
+`scripts/stack.sh status|down|logs <service>` covers the rest. The app drives
+the same script, so anything you can do in the launcher you can do in a terminal.
+
 ## Status
 
-Pre-implementation. This README is the plan; nothing is built yet.
+Working end to end on Apple Silicon (macOS 26.5, M-series):
+
+| Piece | State |
+|---|---|
+| rAthena arm64 image | built, 224 MB runtime image, packetver 20200401 |
+| MariaDB + schema | 63 tables imported on first boot |
+| login / char / map | all three up, map connected to char, char to login |
+| GRF asset serving | **1,012,440 files** indexed across 3 GRFs in 2.2 s |
+| WebSocket proxy | browser-shaped `CA_LOGIN` returns `AC_ACCEPT_LOGIN` |
+| login → char handshake | verified over the advertised address |
+| Tauri shell | `RagnarokMac.app` + DMG bundle |
+
+### Known issue: Nebula's published-port forwarder
+
+Host→guest port publishing **cannot carry the game socket**. Nebula's forwarder
+reconciles on a 2-second poll, and `list_containers(...).unwrap_or_default()` in
+`crates/nebulad/src/net.rs` treats a *failed* Docker query the same as "no
+containers running" — so every forward is torn down and rebuilt whenever the
+query hiccups. Short HTTP requests survive; a long-lived game connection dies:
+
+```
+01:06:37  port forward removed (gone or IP moved) port=5121
+01:06:37  port forward removed (gone or IP moved) port=3201   <- unrelated container
+01:06:37  port forward removed (gone or IP moved) port=6900
+01:06:37  port forward removed (gone or IP moved) port=6121
+01:06:39  port forward added (127.0.0.1:5121 -> 192.168.64.2:5121)
+```
+
+All four went at once, including a container that had been stable for months —
+the signature of an empty list, not four independent stops. Reproducible with a
+bare `nc` echo container: the connection resets at ~1.0 s every time.
+
+**Workaround in use:** skip the forwarder. On macOS the VZ NAT subnet is
+host-routable, so containers publish on `0.0.0.0` inside the guest and
+`scripts/stack.sh` discovers the guest address, writes it into
+`conf/import/char_conf.txt` / `map_conf.txt` so the servers advertise a
+reachable address, and regenerates both `endpoint.json` (read by the game page)
+and the proxy's `WS_ALLOWED_TARGETS`. Nothing is hardcoded — the guest takes a
+fresh DHCP lease on every boot.
+
+Note also that the daemon's `/v1alpha1/status` reported a stale `agent.ip`
+(`192.168.64.8`) while the live address was `192.168.64.2`, so discovery probes
+before trusting it.
+
+### Still to do
+
+- English translation via `DATA_OVERRIDE_PATH` (see above) — the client is
+  Korean until then.
+- Containerise the asset server so the `.app` no longer needs Node on the host.
+- Code signing and notarization.
+- Auto-create the local account instead of seeding it by hand.
 
 ## License
 

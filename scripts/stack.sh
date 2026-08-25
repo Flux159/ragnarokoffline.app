@@ -84,6 +84,21 @@ cmd_up() {
     printf 'login_ip: ragnarok-login\nchar_ip: %s\n' "$ip" > "$STATE/conf/char_conf.txt"
     printf 'char_ip: ragnarok-char\nmap_ip: %s\n' "$ip" > "$STATE/conf/map_conf.txt"
     printf '{"guest_ip":"%s","login":6900,"char":6121,"map":5121}\n' "$ip" > "$STATE/endpoint.json"
+    # The game page fetches this from the asset server's static root.
+    local web="$ROOT/vendor/roBrowserLegacy/dist/Web"
+    [ -d "$web" ] && cp "$STATE/endpoint.json" "$web/endpoint.json"
+
+    # The WebSocket proxy only dials hosts on its allowlist, so it has to learn
+    # the guest address too. Rewritten here rather than hand-maintained.
+    local env_file="$ROOT/vendor/roBrowserLegacy-RemoteClient-JS/.env"
+    if [ -f "$env_file" ]; then
+        local targets="$ip:6900,$ip:6121,$ip:5121"
+        if grep -q '^WS_ALLOWED_TARGETS=' "$env_file"; then
+            sed -i '' "s|^WS_ALLOWED_TARGETS=.*|WS_ALLOWED_TARGETS=$targets|" "$env_file"
+        else
+            echo "WS_ALLOWED_TARGETS=$targets" >> "$env_file"
+        fi
+    fi
 
     run_server ragnarok-char  6121 /rathena/char-server
     run_server ragnarok-map   5121 /rathena/map-server

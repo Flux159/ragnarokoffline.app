@@ -91,10 +91,12 @@ async function refresh() {
 $('start').onclick = async () => {
   $('start').disabled = true;
   try {
-    log('starting asset server…');
-    await invoke('assets_start');
+    // Order matters: stack_up discovers the guest IP and rewrites the proxy
+    // allowlist, which the asset server only reads at startup.
     log('starting rAthena (this takes ~30s on first boot)…');
     log(await invoke('stack_up'));
+    log('starting asset server…');
+    await invoke('assets_start');
   } catch (e) { log('error: ' + e); }
   $('start').disabled = false;
   refresh();

@@ -14,6 +14,12 @@
 		<script>
 			// Single-origin setup: the client bundle, the GRF assets and the game
 			// socket all come from the RemoteClient-JS unified server on :3338.
+			//
+			// The server address is read at load time from endpoint.json, which
+			// scripts/stack.sh regenerates on every `up`. The guest gets a fresh
+			// DHCP lease on each VM boot, so baking the address in would break
+			// after a restart.
+			function boot(endpoint) {
 			var ROConfig = {
 				type: ROBrowser.TYPE.FRAME,
 				application: ROBrowser.APP.ONLINE,
@@ -24,8 +30,8 @@
 					{
 						display: 'Ragnarok Offline',
 						desc: 'local rAthena',
-						address: '192.168.64.2',
-						port: 6900,
+						address: endpoint.guest_ip,
+						port: endpoint.login,
 						version: 55,
 						langtype: 12,
 						packetver: 20200401,
@@ -44,6 +50,16 @@
 			};
 			var RO = new ROBrowser(ROConfig);
 			RO.start();
+			}
+
+			fetch('/endpoint.json')
+				.then(function (r) { return r.json(); })
+				.then(boot)
+				.catch(function () {
+					document.body.innerHTML =
+						'<p style="color:#e06a6a;font:14px sans-serif;padding:24px">' +
+						'Server is not running. Start it from the RagnarokMac launcher.</p>';
+				});
 		</script>
 	</body>
 </html>
