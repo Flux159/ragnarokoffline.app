@@ -1,0 +1,128 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>Set up your client</title>
+<link rel="stylesheet" href="theme.css" />
+<style>
+  html, body { height: 100%; }
+  body {
+    padding: 26px 28px;
+    background: radial-gradient(ellipse at 50% 0%, var(--panel) 0%, var(--bg) 65%);
+    display: flex; flex-direction: column;
+  }
+  h1 { font-size: 15px; letter-spacing: 3px; text-transform: uppercase;
+       color: var(--accent-hi); margin: 0 0 6px; }
+  .lede { color: var(--dim); font-size: 12px; line-height: 1.7; margin: 0 0 20px; }
+  .lede code { color: var(--text); }
+  .field { margin-bottom: 14px; }
+  .label { display: flex; align-items: baseline; gap: 8px; margin-bottom: 5px; }
+  .label .name { font-weight: 600; }
+  .label .tag { font-size: 11px; color: var(--dim); }
+  .picker { display: flex; gap: 8px; }
+  .path {
+    flex: 1; background: var(--panel-hi); border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px 10px; font-size: 12px;
+    color: var(--dim); overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; direction: rtl; text-align: left;
+  }
+  .path.set { color: var(--text); border-color: var(--accent-dim); }
+  button {
+    background: var(--accent); color: #0d0f15; border: 0; border-radius: 6px;
+    padding: 8px 16px; font-weight: 600; font-size: 13px; cursor: pointer;
+    white-space: nowrap;
+  }
+  button:hover:not(:disabled) { background: var(--accent-hi); }
+  button.ghost { background: transparent; color: var(--dim); border: 1px solid var(--line); }
+  button.ghost:hover { border-color: var(--accent-dim); color: var(--text); }
+  button:disabled { opacity: .4; cursor: default; }
+  .foot { margin-top: auto; display: flex; align-items: center; gap: 12px; }
+  .msg { flex: 1; font-size: 12px; color: var(--dim); }
+  .msg.bad { color: var(--bad); }
+</style>
+</head>
+<body>
+  <h1>Set up your client</h1>
+  <p class="lede">
+    RagnarokMac does not ship game assets — they are Gravity's copyright. Point it
+    at a Ragnarok client you already have. The files are read where they are, not
+    copied, so a multi-gigabyte client is not duplicated.
+  </p>
+
+  <div class="field">
+    <div class="label"><span class="name">data.grf</span><span class="tag">required — maps, models, palettes</span></div>
+    <div class="picker">
+      <div class="path" id="p-data_grf">Not selected</div>
+      <button data-pick="data_grf" class="ghost">Choose…</button>
+    </div>
+  </div>
+
+  <div class="field">
+    <div class="label"><span class="name">rdata.grf</span><span class="tag">required — renewal overrides</span></div>
+    <div class="picker">
+      <div class="path" id="p-rdata_grf">Not selected</div>
+      <button data-pick="rdata_grf" class="ghost">Choose…</button>
+    </div>
+  </div>
+
+  <div class="field">
+    <div class="label"><span class="name">official_data.grf</span><span class="tag">optional — costume &amp; effect art</span></div>
+    <div class="picker">
+      <div class="path" id="p-official_grf">Not selected</div>
+      <button data-pick="official_grf" class="ghost">Choose…</button>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div class="msg" id="msg">English text is built in; it does not come from these files.</div>
+    <button id="save" disabled>Continue</button>
+  </div>
+
+<script>
+const { invoke } = window.__TAURI__.core;
+const { open } = window.__TAURI__.dialog;
+const $ = id => document.getElementById(id);
+const KEYS = ['data_grf', 'rdata_grf', 'official_grf'];
+const paths = { data_grf: '', rdata_grf: '', official_grf: '' };
+
+function render() {
+  for (const k of KEYS) {
+    const el = $('p-' + k);
+    el.textContent = paths[k] || 'Not selected';
+    el.classList.toggle('set', !!paths[k]);
+  }
+  $('save').disabled = !(paths.data_grf && paths.rdata_grf);
+}
+
+for (const btn of document.querySelectorAll('[data-pick]')) {
+  btn.onclick = async () => {
+    const key = btn.dataset.pick;
+    const picked = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: 'GRF archive', extensions: ['grf'] }]
+    });
+    if (typeof picked === 'string') { paths[key] = picked; render(); }
+  };
+}
+
+$('save').onclick = async () => {
+  $('save').disabled = true;
+  $('msg').className = 'msg';
+  $('msg').textContent = 'Linking your client…';
+  try {
+    await invoke('set_client_paths', { paths });
+    await invoke('open_game');
+    await invoke('close_setup');
+  } catch (e) {
+    $('msg').className = 'msg bad';
+    $('msg').textContent = String(e);
+    $('save').disabled = false;
+  }
+};
+
+invoke('get_client_paths').then(p => { Object.assign(paths, p); render(); });
+render();
+</script>
+</body>
+</html>

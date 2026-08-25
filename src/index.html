@@ -59,6 +59,14 @@ const ready = () => invoke('assets_ready');
 
 async function boot() {
   fail.hidden = true; retry.hidden = true; mark.hidden = false;
+
+  // No client configured yet: hand off to the setup window and stop here.
+  if (!(await invoke('client_ready'))) {
+    status.textContent = 'Waiting for your client…';
+    await invoke('open_setup');
+    return;
+  }
+
   status.textContent = 'Starting the server…';
   try {
     await invoke('start_stack');

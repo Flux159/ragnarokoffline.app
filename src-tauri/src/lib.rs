@@ -79,6 +79,28 @@ impl Settings {
     }
 }
 
+/// Where the user's Ragnarok client lives. Persisted in the standard macOS
+/// application-support directory so it survives reinstalls of the app, and so
+/// nothing about the user's filesystem is baked into the build.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ClientPaths {
+    pub data_grf: String,
+    pub rdata_grf: String,
+    /// The ROenglishRE overlay. Optional — without it the game runs, it just
+    /// loses the costume and effect art that overlay provides.
+    #[serde(default)]
+    pub official_grf: String,
+}
+
+impl ClientPaths {
+    fn complete(&self) -> bool {
+        !self.data_grf.is_empty()
+            && !self.rdata_grf.is_empty()
+            && Path::new(&self.data_grf).is_file()
+            && Path::new(&self.rdata_grf).is_file()
+    }
+}
+
 #[derive(Default)]
 struct AppState {
     assets: Mutex<Option<Child>>,
@@ -99,6 +121,89 @@ fn project_root(app: &tauri::AppHandle) -> PathBuf {
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_default()
+}
+
+/// ~/Library/Application Support/com.ragnarokmac.app/client.json
+fn client_config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("no application data directory: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.join("client.json"))
+}
+
+#[tauri::command]
+fn get_client_paths(app: tauri::AppHandle) -> ClientPaths {
+    client_config_path(&app)
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+fn client_ready(app: tauri::AppHandle) -> bool {
+    get_client_paths(app).complete()
+}
+
+/// Save the chosen client and symlink it into the asset server. The GRFs are
+/// never copied — a full client is gigabytes and stays where the user put it.
+#[tauri::command]
+fn set_client_paths(app: tauri::AppHandle, paths: ClientPaths) -> Result<String, String> {
+    if !Path::new(&paths.data_grf).is_file() {
+        return Err("data.grf is not a file".into());
+    }
+    if !Path::new(&paths.rdata_grf).is_file() {
+        return Err("rdata.grf is not a file".into());
+    }
+    std::fs::write(
+        client_config_path(&app)?,
+        serde_json::to_string_pretty(&paths).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+
+    let root = project_root(&app);
+    let mut cmd = Command::new("bash");
+    cmd.arg(root.join("scripts/link-assets.sh"))
+        .arg(&paths.data_grf)
+        .arg(&paths.rdata_grf);
+    if !paths.official_grf.is_empty() {
+        cmd.arg(&paths.official_grf);
+    }
+    let out = cmd
+        .current_dir(&root)
+        .output()
+        .map_err(|e| format!("failed to link assets: {e}"))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// First-run window: asks for the client, then hands off to the game.
+#[tauri::command]
+fn open_setup(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("setup") {
+        let _ = win.show();
+        let _ = win.set_focus();
+        return Ok(());
+    }
+    WebviewWindowBuilder::new(&app, "setup", WebviewUrl::App("setup.html".into()))
+        .title("Set up your client")
+        .inner_size(620.0, 560.0)
+        .resizable(false)
+        .center()
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn close_setup(app: tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("setup") {
+        let _ = win.close();
+    }
 }
 
 fn run_stack(app: &tauri::AppHandle, arg: &str) -> Result<String, String> {
@@ -315,9 +420,29 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let handle = app.handle();
             handle.set_menu(build_menu(handle)?)?;
+
+            // A signal terminates the process without an ExitRequested event,
+            // so `kill`, a logout, or Ctrl-C would otherwise leave the whole
+            // stack running. Same teardown as a clean quit.
+            let signal_handle = handle.clone();
+            std::thread::spawn(move || {
+                use signal_hook::consts::{SIGINT, SIGTERM};
+                use signal_hook::iterator::Signals;
+                let Ok(mut signals) = Signals::new([SIGTERM, SIGINT]) else {
+                    return;
+                };
+                if signals.forever().next().is_some() {
+                    if let Some(state) = signal_handle.try_state::<AppState>() {
+                        assets_stop(state);
+                    }
+                    let _ = run_stack(&signal_handle, "down");
+                    std::process::exit(0);
+                }
+            });
             Ok(())
         })
         .on_menu_event(|app, event| {
@@ -337,7 +462,12 @@ pub fn run() {
             save_settings,
             open_game,
             open_settings,
-            launch_game
+            launch_game,
+            get_client_paths,
+            set_client_paths,
+            client_ready,
+            open_setup,
+            close_setup
         ])
         .build(tauri::generate_context!())
         .expect("error while building RagnarokMac")
