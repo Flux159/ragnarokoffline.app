@@ -41,6 +41,8 @@ wait_healthy() {
 }
 
 cmd_up() {
+    # A fresh install has no images until the shipped bundle is unpacked.
+    "$ROOT/scripts/precache.sh" ensure >/dev/null 2>&1 || true
     docker_ network create "$NET" >/dev/null 2>&1 || true
 
     if [ "$(docker_ inspect -f '{{.State.Running}}' ragnarok-db 2>/dev/null)" != true ]; then
