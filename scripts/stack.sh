@@ -14,7 +14,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE="${RAGNAROKMAC_STATE:-$ROOT/.ragnarokmac}"
 NET=ragnarokmac
 IMAGE="${RAGNAROKMAC_IMAGE:-ragnarokmac/rathena:20200401}"
-BUGS_URL="${RAGNAROKMAC_BUGS_URL:-https://github.com/Flux159/ragnarokmac/issues}"
 NEBULA="${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}"
 
 # A GUI app launched from Finder inherits launchd's minimal PATH
@@ -186,10 +185,8 @@ EOF
         MINGW*|MSYS*|CYGWIN*) PRODUCT=RagnarokWindows ;;
         *)                   PRODUCT=Ragnarok ;;
     esac
-    cat > "$STATE/conf/motd.txt" <<EOF
-Welcome to $PRODUCT Offline! Please report any bugs on Github
-$BUGS_URL
-EOF
+    printf 'Welcome to %s Offline! Please report any bugs on Github\n' "$PRODUCT" \
+        > "$STATE/conf/motd.txt"
     printf 'char_ip: ragnarok-char\nmap_ip: 127.0.0.1\nmotd_txt: conf/import/motd.txt\n' \
         > "$STATE/conf/map_conf.txt"
     printf '{"host":"127.0.0.1","login":6900,"char":6121,"map":5121}\n' > "$STATE/endpoint.json"
