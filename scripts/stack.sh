@@ -104,10 +104,14 @@ prepare_kafra_scripts() {
         cp "$dir/functions_kafras.txt" "$dir/functions_kafras.orig"
     fi
 
-    # Every warp price is a number on a `setarray @wrpP[0], ...` line, one per
-    # town, so zeroing those lines makes every destination free everywhere.
+    # Two edits make every Kafra service free:
+    #  - warps: each town's prices are numbers on a `setarray @wrpP[0], ...`
+    #    line, so zeroing those lines covers every destination.
+    #  - storage: the fee is `.@fee = getarg(1)`, passed in per NPC, so pinning
+    #    that single assignment to 0 covers every Kafra at once.
     if [ -f "$STATE/free_kafra_warp" ]; then
-        sed 's/^\(\s*setarray @wrpP\[0\].*\)$/\1/; /setarray @wrpP\[0\]/ s/[0-9][0-9]*/0/g' \
+        sed -e '/setarray @wrpP\[0\]/ s/[0-9][0-9]*/0/g' \
+            -e 's/^\([[:space:]]*\)\.@fee = getarg(1);/\1.@fee = 0;/' \
             "$dir/functions_kafras.orig" > "$dir/functions_kafras.txt"
     else
         cp "$dir/functions_kafras.orig" "$dir/functions_kafras.txt"

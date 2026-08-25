@@ -214,7 +214,11 @@ fn client_ready(app: tauri::AppHandle) -> bool {
 /// Save the chosen client and symlink it into the asset server. The GRFs are
 /// never copied — a full client is gigabytes and stays where the user put it.
 #[tauri::command]
-fn set_client_paths(app: tauri::AppHandle, paths: ClientPaths) -> Result<String, String> {
+async fn set_client_paths(app: tauri::AppHandle, paths: ClientPaths) -> Result<String, String> {
+    off_main(move || link_client(&app, &paths)).await
+}
+
+fn link_client(app: &tauri::AppHandle, paths: &ClientPaths) -> Result<String, String> {
     if !Path::new(&paths.data_grf).is_file() {
         return Err("data.grf is not a file".into());
     }
@@ -222,12 +226,12 @@ fn set_client_paths(app: tauri::AppHandle, paths: ClientPaths) -> Result<String,
         return Err("rdata.grf is not a file".into());
     }
     std::fs::write(
-        client_config_path(&app)?,
-        serde_json::to_string_pretty(&paths).map_err(|e| e.to_string())?,
+        client_config_path(app)?,
+        serde_json::to_string_pretty(paths).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
 
-    let root = project_root(&app);
+    let root = project_root(app);
     let mut cmd = Command::new("bash");
     cmd.arg(root.join("scripts/link-assets.sh"))
         .arg(&paths.data_grf)
@@ -238,7 +242,7 @@ fn set_client_paths(app: tauri::AppHandle, paths: ClientPaths) -> Result<String,
     let out = cmd
         .current_dir(&root)
         .env("PATH", tool_path())
-        .env("RAGNAROKMAC_STATE", state_dir(&app))
+        .env("RAGNAROKMAC_STATE", state_dir(app))
         .output()
         .map_err(|e| format!("failed to link assets: {e}"))?;
     if !out.status.success() {
@@ -319,24 +323,44 @@ fn run_stack(app: &tauri::AppHandle, arg: &str) -> Result<String, String> {
     }
 }
 
-#[tauri::command]
-fn stack_status(app: tauri::AppHandle) -> Result<String, String> {
-    run_stack(&app, "status")
+/// Every command that shells out is async and does its work on a blocking
+/// thread. A synchronous Tauri command runs on the main thread, so anything
+/// slow there freezes the window — `stack.sh up` takes half a minute waiting
+/// for the database, and materialising the runtime copies the whole payload.
+async fn off_main<F, T>(f: F) -> Result<T, String>
+where
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+    T: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| format!("task failed: {e}"))?
 }
 
 #[tauri::command]
-fn stack_up(app: tauri::AppHandle) -> Result<String, String> {
-    run_stack(&app, "up")
+async fn stack_status(app: tauri::AppHandle) -> Result<String, String> {
+    off_main(move || run_stack(&app, "status")).await
 }
 
 #[tauri::command]
-fn stack_down(app: tauri::AppHandle) -> Result<String, String> {
-    run_stack(&app, "down")
+async fn stack_up(app: tauri::AppHandle) -> Result<String, String> {
+    off_main(move || run_stack(&app, "up")).await
+}
+
+#[tauri::command]
+async fn stack_down(app: tauri::AppHandle) -> Result<String, String> {
+    off_main(move || run_stack(&app, "down")).await
 }
 
 /// True once the RemoteClient-JS unified server answers its health endpoint.
 #[tauri::command]
-fn assets_ready() -> bool {
+async fn assets_ready() -> bool {
+    tauri::async_runtime::spawn_blocking(assets_ready_blocking)
+        .await
+        .unwrap_or(false)
+}
+
+fn assets_ready_blocking() -> bool {
     Command::new("curl")
         .args(["-sf", "-m", "2", "-o", "/dev/null", HEALTH_URL])
         .status()
@@ -346,7 +370,7 @@ fn assets_ready() -> bool {
 
 #[tauri::command]
 fn assets_start(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    if assets_ready() {
+    if assets_ready_blocking() {
         return Ok(());
     }
     let dir = project_root(&app).join("vendor/roBrowserLegacy-RemoteClient-JS");
@@ -395,10 +419,14 @@ fn get_settings(app: tauri::AppHandle) -> Settings {
 /// Persist the rates and re-render the rAthena override file. The map server is
 /// restarted because several of these are only read at map-server startup.
 #[tauri::command]
-fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<String, String> {
+async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<String, String> {
+    off_main(move || save_settings_blocking(&app, settings)).await
+}
+
+fn save_settings_blocking(app: &tauri::AppHandle, settings: Settings) -> Result<String, String> {
     // state_dir(), not project_root(): in a packaged app the runtime tree is
     // replaced on update, and settings written there would be silently lost.
-    let state = state_dir(&app);
+    let state = state_dir(app);
     std::fs::create_dir_all(state.join("conf")).map_err(|e| e.to_string())?;
     std::fs::write(
         state.join("settings.json"),
@@ -416,7 +444,7 @@ fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<String, St
     } else {
         let _ = std::fs::remove_file(&marker);
     }
-    run_stack(&app, "up")
+    run_stack(app, "up")
 }
 
 /// Bring the game window back, reloading it from the boot page so it retries the
@@ -470,18 +498,26 @@ fn open_settings(app: tauri::AppHandle) -> Result<(), String> {
 /// asset server, in that order — the WebSocket proxy only reads its allowlist
 /// at startup.
 #[tauri::command]
-fn start_stack(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<String, String> {
+async fn start_stack(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let handle = app.clone();
+    let out = off_main(move || start_stack_blocking(&handle)).await?;
+    assets_start(app, state)?;
+    Ok(out)
+}
+
+fn start_stack_blocking(app: &tauri::AppHandle) -> Result<String, String> {
     // Re-link the client every start. It is idempotent, and a freshly
     // materialised runtime (first launch, or after an app update) has no GRF
     // symlinks or DATA.INI in it yet — only the setup window writes those, and
     // it is skipped once a client is remembered.
     let saved = get_client_paths(app.clone());
     if saved.complete() {
-        set_client_paths(app.clone(), saved)?;
+        link_client(app, &saved)?;
     }
-    let out = run_stack(&app, "up")?;
-    assets_start(app, state)?;
-    Ok(out)
+    run_stack(app, "up")
 }
 
 fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
