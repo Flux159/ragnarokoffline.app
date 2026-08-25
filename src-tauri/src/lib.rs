@@ -30,8 +30,10 @@ pub struct Settings {
     pub item_rate_common: u32,
     pub item_rate_equip: u32,
     pub item_rate_card: u32,
-    pub zeny_rate: u32,
-    pub atcommand_enabled: bool,
+    /// rAthena has no zeny multiplier — whether monsters drop zeny at all is a
+    /// boolean, and the amount is derived from the mob's level.
+    #[serde(default)]
+    pub zeny_from_mobs: bool,
     /// Kafra warp prices are hardcoded per town in the NPC scripts, so this is
     /// applied by rewriting a copy of those scripts rather than through conf.
     #[serde(default)]
@@ -47,8 +49,7 @@ impl Default for Settings {
             item_rate_common: 100,
             item_rate_equip: 100,
             item_rate_card: 100,
-            zeny_rate: 100,
-            atcommand_enabled: true,
+            zeny_from_mobs: false,
             free_kafra_warp: false,
         }
     }
@@ -71,8 +72,9 @@ impl Settings {
              item_rate_card_boss: {}\n\
              item_rate_heal: {}\n\
              item_rate_use: {}\n\
-             zeny_rate: {}\n\
-             atcommand_max_level: {}\n",
+             item_rate_mvp: {}\n\
+             item_rate_treasure: {}\n\
+             zeny_from_mobs: {}\n",
             self.base_exp_rate,
             self.job_exp_rate,
             self.quest_exp_rate,
@@ -84,8 +86,9 @@ impl Settings {
             self.item_rate_card,
             self.item_rate_common,
             self.item_rate_common,
-            self.zeny_rate,
-            if self.atcommand_enabled { 99 } else { 100 },
+            self.item_rate_common,
+            self.item_rate_common,
+            if self.zeny_from_mobs { "yes" } else { "no" },
         )
     }
 }

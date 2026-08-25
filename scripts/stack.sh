@@ -168,8 +168,10 @@ cmd_up() {
             [ -f "$f" ] && [ ! -f "$STATE/sql/$(basename "$f")" ] && cp "$f" "$STATE/sql/"
         done
     fi
-    : > "$STATE/conf/battle_conf.txt" 2>/dev/null || true
-    [ -f "$STATE/conf/battle_conf.txt" ] || touch "$STATE/conf/battle_conf.txt"
+    # Create it if absent, never truncate: save_settings writes the rates here
+    # and then restarts the stack, so clobbering it would silently discard every
+    # setting the moment it was applied.
+    [ -f "$STATE/conf/battle_conf.txt" ] || : > "$STATE/conf/battle_conf.txt"
     [ -x "$NEBULA" ] || { echo "nebula engine not found at $NEBULA" >&2; exit 1; }
     # A fresh install has no images until the shipped bundle is unpacked.
     "$ROOT/scripts/precache.sh" ensure >/dev/null 2>&1 || true

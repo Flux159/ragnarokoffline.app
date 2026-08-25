@@ -62,7 +62,11 @@
     <label><span>Item drops</span><input type="range" id="item_rate_common" min="100" max="5000" step="100"><span class="val" id="v-item_rate_common"></span></label>
     <label><span>Equipment drops</span><input type="range" id="item_rate_equip" min="100" max="5000" step="100"><span class="val" id="v-item_rate_equip"></span></label>
     <label><span>Card drops</span><input type="range" id="item_rate_card" min="100" max="5000" step="100"><span class="val" id="v-item_rate_card"></span></label>
-    <label><span>Zeny</span><input type="range" id="zeny_rate" min="100" max="5000" step="100"><span class="val" id="v-zeny_rate"></span></label>
+    <label>
+      <span>Monsters drop Zeny</span>
+      <input type="checkbox" id="zeny_from_mobs" style="accent-color: var(--accent); flex: none" />
+      <span class="val" style="width:auto; color: var(--dim)">amount scales with level</span>
+    </label>
     <label style="margin-top:6px">
       <span>Free Kafra services</span>
       <input type="checkbox" id="free_kafra_warp" style="accent-color: var(--accent); flex: none" />
@@ -82,7 +86,7 @@
 const { invoke } = window.__TAURI__.core;
 const $ = id => document.getElementById(id);
 const RATES = ['base_exp_rate','job_exp_rate','quest_exp_rate','item_rate_common',
-               'item_rate_equip','item_rate_card','zeny_rate'];
+               'item_rate_equip','item_rate_card'];
 const log = m => { $('log').textContent = m; };
 
 function paint(el, ok, text) {
@@ -121,6 +125,7 @@ $('save').onclick = async () => {
   const settings = await invoke('get_settings');
   for (const k of RATES) settings[k] = Number($(k).value);
   settings.free_kafra_warp = $('free_kafra_warp').checked;
+  settings.zeny_from_mobs = $('zeny_from_mobs').checked;
   $('save').disabled = true;
   try { log(await invoke('save_settings', { settings })); }
   catch (e) { log('error: ' + e); }
@@ -134,6 +139,7 @@ for (const k of RATES) {
 invoke('get_settings').then(s => {
   for (const k of RATES) { $(k).value = s[k]; $('v-' + k).textContent = (s[k] / 100) + 'x'; }
   $('free_kafra_warp').checked = !!s.free_kafra_warp;
+  $('zeny_from_mobs').checked = !!s.zeny_from_mobs;
 });
 refresh();
 setInterval(refresh, 4000);
