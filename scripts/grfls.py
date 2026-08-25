@@ -19,12 +19,12 @@ ESSENTIAL = [
     ("sprites", (".spr", ".act")),
     ("palettes", ("data/palette",)),
     ("lua tables", ("luafiles", "iteminfo")),
-    ("strings", ("msgstringtable",)),
+    ("msgstringtable", ("msgstringtable",)),
 ]
 
 
 def read_table(path):
-    """Return the list of raw (cp949) entry names in a GRF's file table."""
+    """Return {lowercased path: uncompressed size} for a GRF's file table."""
     with open(path, "rb") as f:
         header = f.read(46)
         if header[:15] != b"Master of Magic":
@@ -39,20 +39,25 @@ def read_table(path):
     if len(table) != unpacked:
         raise ValueError(f"{path}: file table truncated")
 
-    names, i = [], 0
+    entries, i = {}, 0
     while i < len(table):
         end = table.index(b"\0", i)
-        names.append(table[i:end])
-        i = end + 1 + 17  # 17-byte entry struct follows each name
-    return names, version
+        name = table[i:end]
+        i = end + 1
+        # 17-byte entry: packed size, aligned size, real size, flags, offset
+        _, _, real_size, _, _ = struct.unpack("<IIIBI", table[i:i + 17])
+        i += 17
+        key = name.decode("cp949", "replace").replace("\\", "/").lower()
+        entries[key] = real_size
+    return entries, version
 
 
 def report(path):
-    names, version = read_table(path)
-    paths = [n.decode("cp949", "replace").replace("\\", "/").lower() for n in names]
+    entries, version = read_table(path)
+    paths = entries
 
     print(f"\n{path}")
-    print(f"  version {version:#x}, {len(names):,} entries")
+    print(f"  version {version:#x}, {len(entries):,} entries")
 
     dirs = collections.Counter("/".join(p.split("/")[:2]) for p in paths)
     print("  top directories:")
@@ -67,6 +72,15 @@ def report(path):
         if not n:
             missing.append(label)
 
+    # kRO ships only the Korean msgstring_kr.lub; roBrowser wants msgstringtable.txt.
+    if not any("msgstringtable" in p for p in paths) and \
+            any("msgstring" in p for p in paths):
+        print("    note: has msgstring_kr.lub (Korean) but no msgstringtable.txt")
+
+    maps = sum(1 for p in paths if p.endswith(".rsw"))
+    if maps:
+        print(f"    {maps:,} playable maps")
+
     if "maps" in missing:
         print("  -> OVERLAY GRF: no map files. Cannot be used as a base client.")
     elif missing:
@@ -74,7 +88,7 @@ def report(path):
               "Needs a base GRF beneath it in DATA.INI.")
     else:
         print("  -> looks like a complete base client")
-    return set(paths)
+    return entries
 
 
 def main(argv):
@@ -88,16 +102,25 @@ def main(argv):
         except (OSError, ValueError) as exc:
             print(f"\n{path}\n  error: {exc}")
 
-    # Overlapping archives waste cache and index space for nothing.
+    # Sharing a path is not the same as being redundant: a renewal or translation
+    # GRF deliberately reuses paths to *override* them. Split the two apart so the
+    # DATA.INI load order can be chosen on real numbers.
     files = list(seen.items())
-    for i, (a, pa) in enumerate(files):
-        for b, pb in files[i + 1:]:
-            shared = len(pa & pb)
-            if shared and shared >= 0.9 * min(len(pa), len(pb)):
-                smaller = a if len(pa) < len(pb) else b
-                print(f"\nnote: {a} and {b} share {shared:,} paths "
-                      f"({shared / min(len(pa), len(pb)):.0%} of the smaller); "
-                      f"{smaller} is nearly redundant")
+    if len(files) > 1:
+        print("\npairwise overlap (a shadows b when a is listed first in DATA.INI):")
+    for i, (a, ea) in enumerate(files):
+        for b, eb in files[i + 1:]:
+            shared = set(ea) & set(eb)
+            if not shared:
+                continue
+            overrides = sum(1 for k in shared if ea[k] != eb[k])
+            identical = len(shared) - overrides
+            print(f"  {a}\n  {b}")
+            print(f"    {identical:,} identical, {overrides:,} differing, "
+                  f"{len(set(ea) - set(eb)):,} only in the first, "
+                  f"{len(set(eb) - set(ea)):,} only in the second")
+            if not overrides and len(set(eb) - set(ea)) == 0:
+                print("    -> the second adds nothing; it can be dropped")
     return 0
 
 

@@ -173,56 +173,85 @@ tracking a pin is easier to reason about than a subtree merge.
 
 ## Game assets (the part that is on you)
 
-RO client assets are copyrighted by Gravity Co., Ltd. and are **never** committed,
-bundled, or redistributed with this app. `.gitignore` blocks `*.grf` deliberately. The
-app points at a client folder you supply, with a first-run screen that explains what
-is needed.
+RO client assets are copyrighted by Gravity Co., Ltd. They are **never** committed,
+bundled, or redistributed with this app — `.gitignore` blocks GRFs, `BGM/`, `System/`,
+and the client folder deliberately. The app points at a client directory you supply,
+with a first-run screen that explains what is needed.
 
-The layout RemoteClient-JS expects:
+A working set is a full kRO client. The kRO full-client and patch mirrors linked from
+[**ratemyserver.net's kRO download page**](https://ratemyserver.net/index.php?page=download_kROLinks)
+are the usual source; the reference set this project is developed against is the
+**2020-06-03 kRO renewal client** from there.
 
-```
-resources/
-├── DATA.INI        # required — lists the GRFs, in load order
-├── data.grf
-├── rdata.grf
-└── *.grf
-```
+### What a complete set looks like
 
-`DATA.INI` is the standard RO ini; entry `0` wins over `1`:
+Verified with `scripts/grfls.py` against the reference client:
+
+| File | Size | Entries | Role |
+|---|---|---|---|
+| `data.grf` | 2.4 GB | 103,498 | **Base.** 854 maps, 7,269 models, 1,752 palettes, `luafiles514`, item/map name tables |
+| `rdata.grf` | 931 MB | 55,012 | **Renewal overrides.** 605 files absent from `data.grf` + 135 that differ — the rest is duplicated |
+| `official_data.grf` | 747 MB | 163,421 | *Optional overlay.* Costume/garment/effect sprites; 163,407 files not in `data.grf`, and it collides on only 14 — almost purely additive |
+| `BGM/` | 312 MB | 180 mp3 | Music, referenced by `data/mp3nametable.txt` |
+| `System/` | — | — | `itemInfo*.lub`, `mapInfo*.lub`, quest lists, fonts |
+| `AI/` | — | — | Homunculus/mercenary scripts |
+
+### DATA.INI
+
+**kRO does not ship one** — `Ragnarok.ini` and `RagnarokKR.ini` are encrypted launcher
+config, not this. You write `resources/DATA.INI` yourself. **Lower index wins**, so
+overlays go above the base:
 
 ```ini
 [Data]
-0=rdata.grf
-1=data.grf
+0=official_data.grf     ; optional overlay: costumes, effects
+1=rdata.grf             ; renewal overrides
+2=data.grf              ; base: maps, models, palettes, lua
 ```
 
-Load order matters: **lower index wins**. Overlay GRFs (costume/effect packs) go
-above the base client GRFs:
+Run `scripts/grfls.py` on your files before wiring anything up:
 
-```ini
-[Data]
-0=kro_data.grf          ; overlay: costumes, effects, modern UI
-1=official_data.grf     ; overlay
-2=rdata.grf             ; kRO base
-3=data.grf              ; kRO base — maps, models, palettes, lua
+```
+$ scripts/grfls.py ~/Downloads/data.grf ~/Downloads/rdata.grf
 ```
 
-`scripts/grfls.py` inspects a GRF and reports what it does and does not contain. Run
-it on your files before wiring anything up — a GRF with no `.rsw`/`.gnd`/`.gat`
-entries is a sprite overlay, not a playable client, and it will fail at map load
-rather than at startup. The same check runs on first launch so the app can say
-"this GRF has no maps" instead of hanging on a black screen.
+It reads only the compressed file table (fast even on multi-GB archives) and reports
+whether each archive is a playable base or a sprite overlay, plus a pairwise breakdown
+of identical / overriding / unique paths so the load order can be chosen on real
+numbers. A GRF with no `.rsw` entries fails at *map load*, not at startup, so this
+check also runs on first launch — the app should say "this GRF has no maps" rather
+than show a black screen.
 
-Requirements worth knowing before you start:
+### Known gaps in a stock kRO set
 
-- GRF version **0x200** or **0x300**, **without DES encryption**. Encrypted GRFs must
-  be repacked with [GRF Editor](https://github.com/Tokeiburu/GRFEditor) using
-  *Options → Repack type → Decrypt*, then *Tools → Repack*.
-- Loose files that live outside the GRF (`System/itemInfo.lua`, `msgstringtable.txt`,
-  BGM, `AI/`) go in a folder pointed at by `DATA_OVERRIDE_PATH`, or in
-  `data/` / `System/` / `BGM/` next to `resources/`.
+Two things the reference client does **not** provide, both of which need a community
+overlay GRF placed above `data.grf`:
 
----
+- **English text.** kRO is Korean. `data/idnum2itemdisplaynametable.txt` and friends
+  are CP949 Korean, and there is **no `data/msgstringtable.txt`** at all — kRO ships
+  `data/luafiles514/lua files/msgstring_kr.lub` instead, which is not the file
+  roBrowser reads. Without a translation GRF the game is playable but entirely in
+  Korean, with blank UI strings where `msgstringtable.txt` was expected.
+- **`System/itemInfo.lub`.** The live table is `System/itemInfo_true.lub`
+  (2020-06-03); the `itemInfo.lub` at the client root is a 2012 leftover. Copy or
+  symlink the right one into place. Note it is compiled Lua 5.1 bytecode (`LuaQ`
+  header), not source — confirm roBrowser's reader handles the compiled form before
+  assuming item descriptions work.
+
+### Loose files
+
+Anything not inside a GRF — `System/`, `BGM/`, `AI/` — is served from disk. Point
+`DATA_OVERRIDE_PATH` at it, or place the folders next to `resources/`. The override
+path is checked *after* local `data/` and *before* GRF lookup, which makes it the
+right place for per-server tweaks that should not require repacking a 2.4 GB archive.
+
+### Packet version
+
+The reference client is `Ragexe.exe` 2020-06-03 / `RagexeRE.exe` 2020-04-10. Pin
+rAthena's `--enable-packetver` and roBrowser's `packetver:` to a value in that era
+(**20200401** is the value roBrowser's own docs use and is well-trodden in rAthena).
+Upstream's AIO compose defaults to `20250618`, which is far newer than these assets —
+do not inherit it blindly.
 
 ## Status
 

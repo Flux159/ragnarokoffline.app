@@ -35,3 +35,12 @@ data.ini
 .ragnarokmac/
 *.sqlite
 *.log
+
+# Client folders — copyrighted game assets, same rule as *.grf.
+# Root-anchored so they cannot shadow a legitimate src/data/ later.
+/BGM/
+/System/
+/AI/
+/dll_exe/
+/data/
+/client/
