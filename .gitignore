@@ -1,0 +1,37 @@
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+npm-debug.log*
+.env
+.env.local
+
+# Rust / Tauri
+target/
+src-tauri/target/
+src-tauri/gen/
+
+# Build output
+dist/
+build/
+*.app
+*.dmg
+
+# Vendored upstreams (fetched by scripts/bootstrap.sh, never committed)
+vendor/rathena/
+vendor/roBrowserLegacy/
+vendor/roBrowserLegacy-RemoteClient-JS/
+
+# Game assets — copyrighted by Gravity Co., Ltd. NEVER commit these.
+*.grf
+*.gpf
+resources/
+assets/client/
+DATA.INI
+data.ini
+
+# Runtime state
+.ragnarokmac/
+*.sqlite
+*.log
