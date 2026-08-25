@@ -380,5 +380,21 @@ lines). Nothing binds outside the host's loopback.
 
 ## License
 
-The RagnarokMac source is MIT. rAthena, roBrowserLegacy, RemoteClient-JS, and Nebula
-each carry their own licenses. Game assets are not covered by any of them.
+**GPL-3.0.** Not a choice so much as a consequence: rAthena, roBrowserLegacy and
+RemoteClient-JS are all GPL-3.0, and RagnarokMac combines and distributes them, so
+the combined work is GPL-3.0 as well. In practice that means anyone you hand a
+build to is entitled to the corresponding source, and a closed-source fork is not
+an option while it bundles these projects.
+
+| Component | License |
+|---|---|
+| RagnarokMac | GPL-3.0 |
+| [rAthena](https://github.com/rathena/rathena) | GPL-3.0 |
+| [roBrowserLegacy](https://github.com/MrAntares/roBrowserLegacy) | GPL-3.0 |
+| [RemoteClient-JS](https://github.com/FranciscoWallison/roBrowserLegacy-RemoteClient-JS) | GPL-3.0 |
+| [ROenglishRE](https://github.com/llchrisll/ROenglishRE) | free to distribute, use and modify (see its headers) |
+| [Nebula](https://github.com/Flux159/nebula) | MIT |
+
+Game assets are a separate matter entirely and are covered by none of the above:
+the GRFs are copyright Gravity Co., Ltd., there is no licence to redistribute them,
+and RagnarokMac never bundles or ships them. You point the app at your own client.

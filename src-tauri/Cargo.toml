@@ -3,6 +3,8 @@ name = "ragnarokmac"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.77"
+license = "GPL-3.0-or-later"
+description = "Ragnarok Online, offline, in a single macOS app"
 
 [lib]
 name = "ragnarokmac_lib"
