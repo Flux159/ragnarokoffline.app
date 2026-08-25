@@ -56,7 +56,17 @@ for candidate in "$CLIENT_DIR/System" "$CLIENT_DIR/dll_exe/System"; do
     [ -d "$candidate" ] || continue
     for f in "$candidate"/*; do
         b=$(basename "$f")
-        case "$b" in itemInfo*.lub|itemInfo*.lua) continue ;; esac
+        # Excluded from the backfill because roBrowser reaches for these names
+        # first and would get kRO's Korean copy:
+        #  - itemInfo*: it resolves .lub before .lua, so the 2012 Korean table
+        #    would shadow the English one.
+        #  - OngoingQuestInfoList*: the English translation calls the same data
+        #    OngoingQuests.lub, so the Korean file wins the first lookup and the
+        #    quest tracker stays Korean.
+        case "$b" in
+            itemInfo*.lub|itemInfo*.lua) continue ;;
+            OngoingQuestInfoList*) continue ;;
+        esac
         [ -e "$MERGED/$b" ] || ln -sfn "$f" "$MERGED/$b"
     done
     break
@@ -64,7 +74,13 @@ done
 # The stub in SystemEN require()s the real table; roBrowser mounts only the
 # file it fetches, so point at the table itself.
 ln -sfn "$EN/SystemEN/LuaFiles514/itemInfo.lua" "$MERGED/itemInfo.lua"
+# roBrowser asks for System/OngoingQuestInfoList.lub; the translation ships the
+# same table under a different name. Answer the name it asks for.
+ln -sfn "$EN/SystemEN/OngoingQuests.lub" "$MERGED/OngoingQuestInfoList.lub"
 ln -sfn "$MERGED" "$RC/System"
+# Several loaders fall back to a SystemEN/ path when the System/ one is absent.
+# Serve that prefix too so the fallback can actually resolve.
+ln -sfn "$EN/SystemEN" "$RC/SystemEN"
 
 # The asset server refuses to start without CLIENT_PUBLIC_URL, and a packaged
 # app has no .env until we write one. Generated here so the override path is
