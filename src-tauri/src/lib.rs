@@ -384,13 +384,32 @@ fn assets_start(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Res
     if assets_ready_blocking() {
         return Ok(());
     }
-    let dir = project_root(&app).join("vendor/roBrowserLegacy-RemoteClient-JS");
-    let node = find_tool(&app, "node")
-        .ok_or_else(|| "node was not found (no bundled copy and none installed)".to_string())?;
-    let child = Command::new(node)
-        .arg("index.js")
-        .current_dir(&dir)
+    let root = project_root(&app);
+    let assets_root = state_dir(&app).join("assets");
+    let server = find_tool(&app, "robrowser-remoteclient")
+        .ok_or_else(|| "the asset server binary is missing from this build".to_string())?;
+    // Everything the server needs is passed explicitly: it is a single static
+    // binary with no working directory of its own to inherit config from.
+    let child = Command::new(server)
+        .current_dir(&root)
         .env("PATH", tool_path())
+        .env("PORT", "3338")
+        .env("CLIENT_PUBLIC_URL", "http://127.0.0.1:3338")
+        .env("NODE_ENV", "production")
+        .env("SERVER_ROOT", &assets_root)
+        .env("CLIENT_RESPATH", "resources/")
+        .env("CLIENT_DATAINI", "DATA.INI")
+        .env("ENABLE_STATIC_SERVE", "true")
+        .env("ROBROWSER_PATH", root.join("vendor/roBrowserLegacy/dist/Web"))
+        .env("ENABLE_WSPROXY", "true")
+        .env(
+            "WS_ALLOWED_TARGETS",
+            "127.0.0.1:6900,127.0.0.1:6121,127.0.0.1:5121",
+        )
+        .env(
+            "DATA_OVERRIDE_PATH",
+            root.join("vendor/ROenglishRE/Translation/Renewal/data"),
+        )
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()

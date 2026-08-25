@@ -15,12 +15,15 @@ mkdir -p "$PAYLOAD"/{bin,scripts,config,patches,dist}
 
 echo "==> binaries"
 # nebula/nebulad host the microVM; docker-slim is nebula-slim's docker client,
-# so the app never depends on a docker CLI being installed; node runs the asset
-# server. The official Node build links only system libraries, unlike Homebrew's.
+# so the app never depends on a docker CLI being installed. The asset server is
+# a single static Rust binary, so there is no language runtime to ship either.
 cp "$NEBULA_SRC/target/release/nebula"                  "$PAYLOAD/bin/"
 cp "$NEBULA_SRC/target/release/nebulad"                 "$PAYLOAD/bin/"
 cp "$NEBULA_SRC/slim/target/release/docker-slim"        "$PAYLOAD/bin/"
-cp "$ROOT/vendor/node/bin/node"                         "$PAYLOAD/bin/"
+# The asset server: one 1.7 MB static binary in place of a 106 MB Node runtime
+# plus its dependency tree.
+cp "${REMOTECLIENT_SRC:-$HOME/Projects/roBrowserLegacy-RemoteClient-Rust}/target/release/robrowser-remoteclient" \
+   "$PAYLOAD/bin/"
 
 echo "==> scripts and config"
 cp "$ROOT"/scripts/*.sh "$ROOT"/scripts/*.py "$PAYLOAD/scripts/"
@@ -52,16 +55,6 @@ cp "$ROOT/dist/images.tar.gz" "$PAYLOAD/dist/"
 echo "==> client runtime"
 mkdir -p "$PAYLOAD/vendor/roBrowserLegacy/dist"
 cp -R "$ROOT/vendor/roBrowserLegacy/dist/Web" "$PAYLOAD/vendor/roBrowserLegacy/dist/Web"
-
-RC="$PAYLOAD/vendor/roBrowserLegacy-RemoteClient-JS"
-mkdir -p "$RC"
-for item in index.js start-prod.js prepare.js package.json src node_modules; do
-    cp -R "$ROOT/vendor/roBrowserLegacy-RemoteClient-JS/$item" "$RC/"
-done
-
-# npm leaves dangling links for optional deps that were never installed; Tauri
-# refuses to bundle a resource path that does not resolve.
-find "$PAYLOAD" -type l ! -exec test -e {} \; -print -delete 2>/dev/null || true
 
 echo "==> english translation"
 EN="$PAYLOAD/vendor/ROenglishRE/Translation/Renewal"

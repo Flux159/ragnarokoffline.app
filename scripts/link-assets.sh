@@ -3,15 +3,15 @@
 #
 #   scripts/link-assets.sh <data.grf> <rdata.grf> [official_data.grf] [bgm-dir]
 #
-# Nothing is copied: the GRFs stay wherever the user keeps them and are
-# symlinked in, so a 3 GB client is not duplicated. Called by the app after the
-# first-run setup window, and re-run whenever those paths change.
+# Builds a server root under state: resources/ with the GRFs and a generated
+# DATA.INI, plus the loose directories the client reads. Nothing is copied — the
+# GRFs stay wherever the user keeps them, so a 3.5 GB client is not duplicated.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RC="$ROOT/vendor/roBrowserLegacy-RemoteClient-JS"
-EN="$ROOT/vendor/ROenglishRE/Translation/Renewal"
 STATE="${RAGNAROKMAC_STATE:-$ROOT/.ragnarokmac}"
+EN="$ROOT/vendor/ROenglishRE/Translation/Renewal"
+SERVER_ROOT="$STATE/assets"
 
 DATA_GRF="${1:?data.grf path required}"
 RDATA_GRF="${2:?rdata.grf path required}"
@@ -22,86 +22,63 @@ for f in "$DATA_GRF" "$RDATA_GRF"; do
     [ -f "$f" ] || { echo "not a file: $f" >&2; exit 1; }
 done
 
-mkdir -p "$RC/resources" "$RC/data" "$STATE"
-rm -f "$RC/resources"/*.grf "$RC/resources/DATA.INI"
+rm -rf "$SERVER_ROOT"
+mkdir -p "$SERVER_ROOT/resources" "$SERVER_ROOT/data"
 
 # Lower index wins, so overlays sit above the base client.
 {
     echo "[Data]"
     i=0
     if [ -n "$OFFICIAL_GRF" ] && [ -f "$OFFICIAL_GRF" ]; then
-        ln -sfn "$OFFICIAL_GRF" "$RC/resources/official_data.grf"
+        ln -sfn "$OFFICIAL_GRF" "$SERVER_ROOT/resources/official_data.grf"
         echo "$i=official_data.grf"; i=$((i + 1))
     fi
-    ln -sfn "$RDATA_GRF" "$RC/resources/rdata.grf"
+    ln -sfn "$RDATA_GRF" "$SERVER_ROOT/resources/rdata.grf"
     echo "$i=rdata.grf"; i=$((i + 1))
-    ln -sfn "$DATA_GRF" "$RC/resources/data.grf"
+    ln -sfn "$DATA_GRF" "$SERVER_ROOT/resources/data.grf"
     echo "$i=data.grf"
-} > "$RC/resources/DATA.INI"
+} > "$SERVER_ROOT/resources/DATA.INI"
 
-# Loose client files usually sit beside the GRFs; pick them up when they do.
-# BGM can be pointed at explicitly, because it is the one the user notices when
-# it is missing -- the game is simply silent -- and it is often kept apart from
-# the GRFs since it is a third of the client by size.
+# Loose client files usually sit beside the GRFs. BGM can be given explicitly,
+# because it is the one whose absence is noticed — the game is simply silent.
 CLIENT_DIR="$(cd "$(dirname "$DATA_GRF")" && pwd)"
-rm -f "$RC/BGM"
 if [ -n "$BGM_DIR" ] && [ -d "$BGM_DIR" ]; then
-    ln -sfn "$BGM_DIR" "$RC/BGM"
+    ln -sfn "$BGM_DIR" "$SERVER_ROOT/BGM"
 else
-    for candidate in "$CLIENT_DIR/BGM" "$CLIENT_DIR/dll_exe/BGM"; do
-        [ -d "$candidate" ] && ln -sfn "$candidate" "$RC/BGM" && break
+    for c in "$CLIENT_DIR/BGM" "$CLIENT_DIR/dll_exe/BGM"; do
+        [ -d "$c" ] && ln -sfn "$c" "$SERVER_ROOT/BGM" && break
     done
 fi
-for candidate in "$CLIENT_DIR/AI" "$CLIENT_DIR/dll_exe/AI"; do
-    [ -d "$candidate" ] && ln -sfn "$candidate" "$RC/AI" && break
+for c in "$CLIENT_DIR/AI" "$CLIENT_DIR/dll_exe/AI"; do
+    [ -d "$c" ] && ln -sfn "$c" "$SERVER_ROOT/AI" && break
 done
 
-# System/ is a merge: the English tables win, kRO backfills fonts and quest
-# data. kRO's itemInfo*.lub is excluded because roBrowser resolves .lub before
-# .lua and the 2012 Korean table would otherwise shadow the English one.
+# System/ is a merge: the English tables win, the client backfills fonts and
+# quest data. Two names are excluded from the backfill because roBrowser reaches
+# for them first and would otherwise get the Korean copy:
+#   itemInfo*             — .lub resolves before .lua
+#   OngoingQuestInfoList* — the translation calls the same table OngoingQuests
 MERGED="$STATE/System"
 rm -rf "$MERGED"; mkdir -p "$MERGED"
 for f in "$EN/SystemEN"/*; do ln -sfn "$f" "$MERGED/$(basename "$f")"; done
-for candidate in "$CLIENT_DIR/System" "$CLIENT_DIR/dll_exe/System"; do
-    [ -d "$candidate" ] || continue
-    for f in "$candidate"/*; do
+for c in "$CLIENT_DIR/System" "$CLIENT_DIR/dll_exe/System"; do
+    [ -d "$c" ] || continue
+    for f in "$c"/*; do
         b=$(basename "$f")
-        # Excluded from the backfill because roBrowser reaches for these names
-        # first and would get kRO's Korean copy:
-        #  - itemInfo*: it resolves .lub before .lua, so the 2012 Korean table
-        #    would shadow the English one.
-        #  - OngoingQuestInfoList*: the English translation calls the same data
-        #    OngoingQuests.lub, so the Korean file wins the first lookup and the
-        #    quest tracker stays Korean.
-        case "$b" in
-            itemInfo*.lub|itemInfo*.lua) continue ;;
-            OngoingQuestInfoList*) continue ;;
-        esac
+        case "$b" in itemInfo*|OngoingQuestInfoList*) continue ;; esac
         [ -e "$MERGED/$b" ] || ln -sfn "$f" "$MERGED/$b"
     done
     break
 done
-# The stub in SystemEN require()s the real table; roBrowser mounts only the
-# file it fetches, so point at the table itself.
+# The translation's itemInfo.lua is a require()/dofile() stub; point at the table.
 ln -sfn "$EN/SystemEN/LuaFiles514/itemInfo.lua" "$MERGED/itemInfo.lua"
-# roBrowser asks for System/OngoingQuestInfoList.lub; the translation ships the
-# same table under a different name. Answer the name it asks for.
 ln -sfn "$EN/SystemEN/OngoingQuests.lub" "$MERGED/OngoingQuestInfoList.lub"
-ln -sfn "$MERGED" "$RC/System"
+ln -sfn "$MERGED" "$SERVER_ROOT/System"
 # Several loaders fall back to a SystemEN/ path when the System/ one is absent.
-# Serve that prefix too so the fallback can actually resolve.
-ln -sfn "$EN/SystemEN" "$RC/SystemEN"
-
-# The asset server refuses to start without CLIENT_PUBLIC_URL, and a packaged
-# app has no .env until we write one. Generated here so the override path is
-# absolute and correct wherever the runtime was materialised.
-{
-    sed '/^DATA_OVERRIDE_PATH=/d' "$ROOT/config/remoteclient.env"
-    echo "DATA_OVERRIDE_PATH=$EN/data"
-} > "$RC/.env"
+ln -sfn "$EN/SystemEN" "$SERVER_ROOT/SystemEN"
 
 # roBrowser reads this over its baked-in defaults.
 WEB="$ROOT/vendor/roBrowserLegacy/dist/Web"
 [ -d "$WEB" ] && cp "$ROOT/config/Config.local.js" "$WEB/Config.local.js"
 
-echo "linked: $(grep -c '^[0-9]=' "$RC/resources/DATA.INI") GRFs, BGM $([ -e "$RC/BGM" ] && echo yes || echo missing)"
+echo "linked: $(grep -c '^[0-9]=' "$SERVER_ROOT/resources/DATA.INI") GRFs, BGM $([ -e "$SERVER_ROOT/BGM" ] && echo yes || echo missing)"
