@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Wire a user-supplied Ragnarok client into the asset server.
 #
-#   scripts/link-assets.sh <data.grf> <rdata.grf> [official_data.grf]
+#   scripts/link-assets.sh <data.grf> <rdata.grf> [official_data.grf] [bgm-dir]
 #
 # Nothing is copied: the GRFs stay wherever the user keeps them and are
 # symlinked in, so a 3 GB client is not duplicated. Called by the app after the
@@ -16,6 +16,7 @@ STATE="${RAGNAROKMAC_STATE:-$ROOT/.ragnarokmac}"
 DATA_GRF="${1:?data.grf path required}"
 RDATA_GRF="${2:?rdata.grf path required}"
 OFFICIAL_GRF="${3:-}"
+BGM_DIR="${4:-}"
 
 for f in "$DATA_GRF" "$RDATA_GRF"; do
     [ -f "$f" ] || { echo "not a file: $f" >&2; exit 1; }
@@ -39,11 +40,20 @@ rm -f "$RC/resources"/*.grf "$RC/resources/DATA.INI"
 } > "$RC/resources/DATA.INI"
 
 # Loose client files usually sit beside the GRFs; pick them up when they do.
+# BGM can be pointed at explicitly, because it is the one the user notices when
+# it is missing -- the game is simply silent -- and it is often kept apart from
+# the GRFs since it is a third of the client by size.
 CLIENT_DIR="$(cd "$(dirname "$DATA_GRF")" && pwd)"
-for d in BGM AI; do
-    for candidate in "$CLIENT_DIR/$d" "$CLIENT_DIR/dll_exe/$d"; do
-        [ -d "$candidate" ] && ln -sfn "$candidate" "$RC/$d" && break
+rm -f "$RC/BGM"
+if [ -n "$BGM_DIR" ] && [ -d "$BGM_DIR" ]; then
+    ln -sfn "$BGM_DIR" "$RC/BGM"
+else
+    for candidate in "$CLIENT_DIR/BGM" "$CLIENT_DIR/dll_exe/BGM"; do
+        [ -d "$candidate" ] && ln -sfn "$candidate" "$RC/BGM" && break
     done
+fi
+for candidate in "$CLIENT_DIR/AI" "$CLIENT_DIR/dll_exe/AI"; do
+    [ -d "$candidate" ] && ln -sfn "$candidate" "$RC/AI" && break
 done
 
 # System/ is a merge: the English tables win, kRO backfills fonts and quest
@@ -94,4 +104,4 @@ ln -sfn "$EN/SystemEN" "$RC/SystemEN"
 WEB="$ROOT/vendor/roBrowserLegacy/dist/Web"
 [ -d "$WEB" ] && cp "$ROOT/config/Config.local.js" "$WEB/Config.local.js"
 
-echo "linked: $(grep -c '^[0-9]=' "$RC/resources/DATA.INI") GRFs"
+echo "linked: $(grep -c '^[0-9]=' "$RC/resources/DATA.INI") GRFs, BGM $([ -e "$RC/BGM" ] && echo yes || echo missing)"

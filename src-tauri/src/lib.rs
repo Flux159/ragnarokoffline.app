@@ -104,6 +104,10 @@ pub struct ClientPaths {
     /// loses the costume and effect art that overlay provides.
     #[serde(default)]
     pub official_grf: String,
+    /// Music. Optional, and auto-detected beside the GRFs when left empty --
+    /// but often kept elsewhere, since it is a third of a client by size.
+    #[serde(default)]
+    pub bgm_dir: String,
 }
 
 impl ClientPaths {
@@ -239,8 +243,12 @@ fn link_client(app: &tauri::AppHandle, paths: &ClientPaths) -> Result<String, St
     cmd.arg(root.join("scripts/link-assets.sh"))
         .arg(&paths.data_grf)
         .arg(&paths.rdata_grf);
-    if !paths.official_grf.is_empty() {
+    if !paths.official_grf.is_empty() || !paths.bgm_dir.is_empty() {
+        // Positional: BGM is the fourth argument, so the third must be present.
         cmd.arg(&paths.official_grf);
+    }
+    if !paths.bgm_dir.is_empty() {
+        cmd.arg(&paths.bgm_dir);
     }
     let out = cmd
         .current_dir(&root)

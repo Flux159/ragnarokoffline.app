@@ -54,6 +54,16 @@
     </div>
   </div>
 
+  <h2>Client</h2>
+  <div class="panel">
+    <div class="row"><span class="name">Game assets</span><span class="state" id="s-client">—</span></div>
+    <div class="row actions" style="padding-top:10px">
+      <button id="change-client" class="ghost">Change asset locations…</button>
+    </div>
+    <p class="note">The GRFs and music stay where they are — RagnarokMac only
+       references them, so nothing is copied or duplicated.</p>
+  </div>
+
   <h2>Rates</h2>
   <div class="panel">
     <label><span>Base EXP</span><input type="range" id="base_exp_rate" min="100" max="5000" step="100"><span class="val" id="v-base_exp_rate"></span></label>
@@ -95,6 +105,14 @@ function paint(el, ok, text) {
 }
 
 async function refresh() {
+  const client = await invoke('get_client_paths');
+  const named = n => (n ? n.split('/').pop() : null);
+  const parts = [named(client.data_grf), named(client.rdata_grf)].filter(Boolean);
+  paint($('s-client'), parts.length === 2,
+        parts.length === 2
+          ? parts.join(' + ') + (client.bgm_dir || '' ? ' + BGM' : ' (no BGM)')
+          : 'not configured');
+
   const assets = await invoke('assets_ready');
   paint($('s-assets'), assets, assets ? 'ready' : 'stopped');
 
@@ -120,6 +138,8 @@ $('stop').onclick = async () => {
 };
 
 $('play').onclick = () => invoke('open_game').catch(e => log('error: ' + e));
+
+$('change-client').onclick = () => invoke('open_setup').catch(e => log('error: ' + e));
 
 $('save').onclick = async () => {
   const settings = await invoke('get_settings');

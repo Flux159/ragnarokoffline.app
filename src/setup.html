@@ -73,6 +73,14 @@
     </div>
   </div>
 
+  <div class="field">
+    <div class="label"><span class="name">BGM folder</span><span class="tag">optional — music; found automatically if it sits beside the GRFs</span></div>
+    <div class="picker">
+      <div class="path" id="p-bgm_dir">Not selected</div>
+      <button data-pick="bgm_dir" data-dir="1" class="ghost">Choose…</button>
+    </div>
+  </div>
+
   <div class="foot">
     <div class="msg" id="msg">English text is built in; it does not come from these files.</div>
     <button id="save" disabled>Continue</button>
@@ -82,8 +90,8 @@
 const { invoke } = window.__TAURI__.core;
 const { open } = window.__TAURI__.dialog;
 const $ = id => document.getElementById(id);
-const KEYS = ['data_grf', 'rdata_grf', 'official_grf'];
-const paths = { data_grf: '', rdata_grf: '', official_grf: '' };
+const KEYS = ['data_grf', 'rdata_grf', 'official_grf', 'bgm_dir'];
+const paths = { data_grf: '', rdata_grf: '', official_grf: '', bgm_dir: '' };
 
 function render() {
   for (const k of KEYS) {
@@ -97,11 +105,12 @@ function render() {
 for (const btn of document.querySelectorAll('[data-pick]')) {
   btn.onclick = async () => {
     const key = btn.dataset.pick;
-    const picked = await open({
-      multiple: false,
-      directory: false,
-      filters: [{ name: 'GRF archive', extensions: ['grf'] }]
-    });
+    const isDir = btn.dataset.dir === '1';
+    const picked = await open(
+      isDir
+        ? { multiple: false, directory: true }
+        : { multiple: false, directory: false, filters: [{ name: 'GRF archive', extensions: ['grf'] }] }
+    );
     if (typeof picked === 'string') { paths[key] = picked; render(); }
   };
 }
