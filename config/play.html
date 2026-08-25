@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="UTF-8" />
+		<title>Ragnarok Offline</title>
+		<style>
+			html, body { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background: #060810; }
+			#robrowser { height: 100%; width: 100%; }
+		</style>
+		<script src="./api.js"></script>
+	</head>
+	<body>
+		<div id="robrowser"></div>
+		<script>
+			// Single-origin setup: the client bundle, the GRF assets and the game
+			// socket all come from the RemoteClient-JS unified server on :3338.
+			var ROConfig = {
+				type: ROBrowser.TYPE.FRAME,
+				application: ROBrowser.APP.ONLINE,
+				target: document.getElementById('robrowser'),
+				development: true,
+				remoteClient: '/',
+				servers: [
+					{
+						display: 'Ragnarok Offline',
+						desc: 'local rAthena',
+						address: '192.168.64.2',
+						port: 6900,
+						version: 55,
+						langtype: 12,
+						packetver: 20200401,
+						renewal: true,
+						worldMapSettings: { episode: 20 },
+						packetKeys: false,
+						socketProxy: 'ws://127.0.0.1:3338/ws/',
+						remoteClient: '/',
+						adminList: [2000000]
+					}
+				],
+				skipServerList: true,
+				skipIntro: true,
+				BGMFileExtension: ['mp3'],
+				plugins: {}
+			};
+			var RO = new ROBrowser(ROConfig);
+			RO.start();
+		</script>
+	</body>
+</html>

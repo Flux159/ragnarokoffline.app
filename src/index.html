@@ -1,0 +1,130 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>RagnarokMac</title>
+<style>
+  :root {
+    --bg: #12141c; --panel: #1a1d28; --line: #2a2f3f;
+    --text: #e7e9f0; --dim: #949aad; --gold: #e8b84b; --ok: #4ec97e; --bad: #e06a6a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.5 -apple-system, system-ui, sans-serif;
+         background: var(--bg); color: var(--text); padding: 20px; }
+  h1 { font-size: 15px; letter-spacing: 2px; text-transform: uppercase;
+       color: var(--gold); margin: 0 0 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--line);
+           border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+  .row { display: flex; justify-content: space-between; align-items: center;
+         padding: 5px 0; border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: 0; }
+  .name { color: var(--dim); }
+  .state { font-variant-numeric: tabular-nums; }
+  .up { color: var(--ok); } .down { color: var(--bad); }
+  button { background: var(--gold); color: #1a1200; border: 0; border-radius: 6px;
+           padding: 9px 16px; font-weight: 600; font-size: 13px; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--dim); border: 1px solid var(--line); }
+  button:disabled { opacity: .45; cursor: default; }
+  .actions { display: flex; gap: 8px; }
+  label { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+  label span:first-child { color: var(--dim); width: 130px; }
+  input[type=range] { flex: 1; accent-color: var(--gold); }
+  .val { width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
+  pre { margin: 0; color: var(--dim); font-size: 11px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <h1>Ragnarok Offline</h1>
+
+  <div class="panel">
+    <div class="row"><span class="name">Asset server (:3338)</span><span class="state" id="s-assets">—</span></div>
+    <div class="row"><span class="name">Database</span><span class="state" id="s-db">—</span></div>
+    <div class="row"><span class="name">Login / Char / Map</span><span class="state" id="s-servers">—</span></div>
+  </div>
+
+  <div class="panel actions">
+    <button id="start">Start server</button>
+    <button id="play" disabled>Play</button>
+    <button id="stop" class="ghost">Stop</button>
+  </div>
+
+  <div class="panel">
+    <label><span>Base EXP</span><input type="range" id="base_exp_rate" min="100" max="5000" step="100"><span class="val" id="v-base_exp_rate"></span></label>
+    <label><span>Job EXP</span><input type="range" id="job_exp_rate" min="100" max="5000" step="100"><span class="val" id="v-job_exp_rate"></span></label>
+    <label><span>Quest EXP</span><input type="range" id="quest_exp_rate" min="100" max="5000" step="100"><span class="val" id="v-quest_exp_rate"></span></label>
+    <label><span>Item drops</span><input type="range" id="item_rate_common" min="100" max="5000" step="100"><span class="val" id="v-item_rate_common"></span></label>
+    <label><span>Equipment drops</span><input type="range" id="item_rate_equip" min="100" max="5000" step="100"><span class="val" id="v-item_rate_equip"></span></label>
+    <label><span>Card drops</span><input type="range" id="item_rate_card" min="100" max="5000" step="100"><span class="val" id="v-item_rate_card"></span></label>
+    <label><span>Zeny</span><input type="range" id="zeny_rate" min="100" max="5000" step="100"><span class="val" id="v-zeny_rate"></span></label>
+    <div class="actions" style="margin-top:10px">
+      <button id="save" class="ghost">Apply &amp; restart map server</button>
+    </div>
+  </div>
+
+  <div class="panel"><pre id="log">idle</pre></div>
+
+<script type="module">
+const { invoke } = window.__TAURI__.core;
+const $ = id => document.getElementById(id);
+const RATES = ['base_exp_rate','job_exp_rate','quest_exp_rate','item_rate_common',
+               'item_rate_equip','item_rate_card','zeny_rate'];
+const log = m => { $('log').textContent = m; };
+
+function paint(el, ok, text) {
+  el.textContent = text;
+  el.className = 'state ' + (ok ? 'up' : 'down');
+}
+
+async function refresh() {
+  const assets = await invoke('assets_ready');
+  paint($('s-assets'), assets, assets ? 'ready' : 'stopped');
+
+  const status = await invoke('stack_status').catch(e => String(e));
+  const up = n => new RegExp('ragnarok-' + n + '\\s+Up').test(status);
+  paint($('s-db'), up('db'), up('db') ? 'running' : 'stopped');
+  const servers = ['login','char','map'].filter(up);
+  paint($('s-servers'), servers.length === 3, servers.length + '/3 running');
+
+  $('play').disabled = !(assets && servers.length === 3);
+}
+
+$('start').onclick = async () => {
+  $('start').disabled = true;
+  try {
+    log('starting asset server…');
+    await invoke('assets_start');
+    log('starting rAthena (this takes ~30s on first boot)…');
+    log(await invoke('stack_up'));
+  } catch (e) { log('error: ' + e); }
+  $('start').disabled = false;
+  refresh();
+};
+
+$('stop').onclick = async () => {
+  log(await invoke('stack_down').catch(e => String(e)));
+  await invoke('assets_stop');
+  refresh();
+};
+
+$('play').onclick = () => invoke('open_game').catch(e => log('error: ' + e));
+
+$('save').onclick = async () => {
+  const settings = await invoke('get_settings');
+  for (const k of RATES) settings[k] = Number($(k).value);
+  try { log(await invoke('save_settings', { settings })); }
+  catch (e) { log('error: ' + e); }
+  refresh();
+};
+
+for (const k of RATES) {
+  $(k).addEventListener('input', () => { $('v-' + k).textContent = ($(k).value / 100) + 'x'; });
+}
+
+invoke('get_settings').then(s => {
+  for (const k of RATES) { $(k).value = s[k]; $('v-' + k).textContent = (s[k] / 100) + 'x'; }
+});
+refresh();
+setInterval(refresh, 4000);
+</script>
+</body>
+</html>

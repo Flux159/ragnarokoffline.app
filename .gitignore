@@ -19,9 +19,10 @@ build/
 *.dmg
 
 # Vendored upstreams (fetched by scripts/bootstrap.sh, never committed)
-vendor/rathena/
-vendor/roBrowserLegacy/
-vendor/roBrowserLegacy-RemoteClient-JS/
+/vendor/
+
+# Runtime state: generated conf, schema copies, endpoint discovery, settings
+/.ragnarokmac/
 
 # Game assets — copyrighted by Gravity Co., Ltd. NEVER commit these.
 *.grf
