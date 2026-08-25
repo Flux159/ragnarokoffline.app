@@ -12,7 +12,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NEBULA="${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}"
 BUNDLE="${RAGNAROKMAC_BUNDLE:-$ROOT/dist/images.tar.gz}"
-IMAGES=("${RAGNAROKMAC_IMAGE:-ragnarokmac/rathena:20200401}" "mariadb:noble")
+IMAGES=("${RAGNAROKMAC_IMAGE:-ragnarokmac/rathena:20200401}" "${RAGNAROKMAC_DB_IMAGE:-ragnarokmac/mariadb:11.4}")
 
 docker_() { "$NEBULA" docker "$@"; }
 

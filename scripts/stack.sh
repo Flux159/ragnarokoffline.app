@@ -14,6 +14,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE="${RAGNAROKMAC_STATE:-$ROOT/.ragnarokmac}"
 NET=ragnarokmac
 IMAGE="${RAGNAROKMAC_IMAGE:-ragnarokmac/rathena:20200401}"
+# Pinned deliberately. MariaDB cannot open a data directory written by a newer
+# major version, so floating on a tag like `noble` means a rebuild can silently
+# upgrade the server and leave existing characters unreadable on any rollback.
+DB_IMAGE="${RAGNAROKMAC_DB_IMAGE:-ragnarokmac/mariadb:11.4}"
 NEBULA="${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}"
 
 # A GUI app launched from Finder inherits launchd's minimal PATH
@@ -209,7 +213,7 @@ cmd_up() {
             -e MARIADB_USER=ragnarok -e MARIADB_PASSWORD=ragnarok \
             -v "$STATE/sql:/docker-entrypoint-initdb.d:ro" \
             -v ragnarokmac-db:/var/lib/mysql \
-            mariadb:noble >/dev/null
+            "$DB_IMAGE" >/dev/null
     fi
     wait_for_db
 
