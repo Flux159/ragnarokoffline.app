@@ -565,6 +565,13 @@ fn start_stack_blocking(app: &tauri::AppHandle) -> Result<String, String> {
 
 fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
+    let devtools = MenuItem::with_id(
+        app,
+        "devtools",
+        "Developer Tools",
+        true,
+        Some("CmdOrCtrl+Alt+I"),
+    )?;
     // On macOS the first submenu becomes the application menu, which is where
     // Settings belongs. Elsewhere this reads as the File menu.
     let app_menu = Submenu::with_items(
@@ -573,6 +580,7 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         true,
         &[
             &settings,
+            &devtools,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::hide(app, None)?,
             &PredefinedMenuItem::separator(app)?,
@@ -639,6 +647,11 @@ pub fn run() {
         .on_menu_event(|app, event| {
             if event.id() == "settings" {
                 let _ = open_settings(app.clone());
+            }
+            if event.id() == "devtools" {
+                if let Some(win) = app.get_webview_window("game") {
+                    win.open_devtools();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
