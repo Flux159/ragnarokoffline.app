@@ -226,7 +226,7 @@ numbers. A GRF with no `.rsw` entries fails at *map load*, not at startup, so th
 check also runs on first launch — the app should say "this GRF has no maps" rather
 than show a black screen.
 
-### English translation
+### English translation (wired up)
 
 kRO is Korean: `data/idnum2itemdisplaynametable.txt` and friends are CP949 Korean, and
 there is **no `data/msgstringtable.txt`** at all — kRO ships
@@ -244,8 +244,25 @@ ROenglishRE's data folder overrides every Korean table without repacking a 2.4 G
 archive — and it can be re-pulled and diffed like the text it is:
 
 ```ini
-DATA_OVERRIDE_PATH=../assets/roenglish/data
+DATA_OVERRIDE_PATH=../ROenglishRE/Translation/Renewal/data
 ```
+
+`scripts/bootstrap.sh` sets this up. Two details cost real time and are worth
+knowing if you touch it:
+
+- **`System/` has to be merged, not swapped.** `ROenglishRE/SystemEN` covers the
+  translated tables but not kRO's fonts and quest data. Bootstrap symlinks English
+  first and backfills from kRO — while deliberately excluding kRO's
+  `itemInfo*.lub`, because roBrowser's `getSystemAliases()` resolves `.lub` before
+  `.lua` and the 2012 Korean table would otherwise shadow the English one.
+- **`SystemEN/itemInfo.lua` is a stub, not the table.** It is a 3.8 KB loader that
+  `require()`s and `dofile()`s the real 22.7 MB file. roBrowser runs a genuine Lua
+  VM but mounts only the file it fetched, so those calls fail. Point
+  `System/itemInfo.lua` at `SystemEN/LuaFiles514/itemInfo.lua` directly — it
+  defines the global `tbl` that roBrowser's loader iterates.
+
+The client config also needs `loadLua: true`, or roBrowser never reads the item,
+robe, accessory and NPC name tables at all.
 
 ### Lookup precedence (verified in `clientController.js`)
 
@@ -315,49 +332,48 @@ Working end to end on Apple Silicon (macOS 26.5, M-series):
 | GRF asset serving | **1,012,440 files** indexed across 3 GRFs in 2.2 s |
 | WebSocket proxy | browser-shaped `CA_LOGIN` returns `AC_ACCEPT_LOGIN` |
 | login → char handshake | verified over the advertised address |
+| English client | `msgstringtable.txt` + 22.7 MB English item table served over the Korean originals |
 | Tauri shell | `RagnarokMac.app` (14 MB) + DMG, launcher UI live and driving the Rust commands |
 
-### Known issue: Nebula's published-port forwarder
+### Two Nebula bugs, found and fixed
 
-Host→guest port publishing **cannot carry the game socket**. Nebula's forwarder
-reconciles on a 2-second poll, and `list_containers(...).unwrap_or_default()` in
-`crates/nebulad/src/net.rs` treats a *failed* Docker query the same as "no
-containers running" — so every forward is torn down and rebuilt whenever the
-query hiccups. Short HTTP requests survive; a long-lived game connection dies:
+Getting the game socket through a published port surfaced two real defects in
+Nebula's `crates/nebulad/src/net.rs`. Both are fixed on the `fix/port-forward-churn`
+branch of that repo:
 
-```
-01:06:37  port forward removed (gone or IP moved) port=5121
-01:06:37  port forward removed (gone or IP moved) port=3201   <- unrelated container
-01:06:37  port forward removed (gone or IP moved) port=6900
-01:06:37  port forward removed (gone or IP moved) port=6121
-01:06:39  port forward added (127.0.0.1:5121 -> 192.168.64.2:5121)
-```
+1. **A failed container listing looked like an empty one.**
+   `list_containers(...).unwrap_or_default()` meant one hiccup in the Docker query
+   dropped *every* port forward and DNS name, rebuilding them on the next 2-second
+   tick. HTTP requests never noticed; persistent connections died. The tell was
+   every port vanishing on one timestamp, including containers nobody had touched:
 
-All four went at once, including a container that had been stable for months —
-the signature of an empty list, not four independent stops. Reproducible with a
-bare `nc` echo container: the connection resets at ~1.0 s every time.
+   ```
+   01:06:37  port forward removed port=5121
+   01:06:37  port forward removed port=3201   <- unrelated, up for months
+   01:06:37  port forward removed port=6900
+   01:06:39  port forward added   port=5121
+   ```
 
-**Workaround in use:** skip the forwarder. On macOS the VZ NAT subnet is
-host-routable, so containers publish on `0.0.0.0` inside the guest and
-`scripts/stack.sh` discovers the guest address, writes it into
-`conf/import/char_conf.txt` / `map_conf.txt` so the servers advertise a
-reachable address, and regenerates both `endpoint.json` (read by the game page)
-and the proxy's `WS_ALLOWED_TARGETS`. Nothing is hardcoded — the guest takes a
-fresh DHCP lease on every boot.
+2. **`-p 127.0.0.1:6900:6900` produced a forward that could never work.**
+   That spec makes dockerd bind the *guest's* loopback, but the macOS path always
+   dialled the guest's NAT address, where nothing listens. The host connection was
+   accepted and dropped ~1.0 s later with no diagnostic — reproducible with a bare
+   `nc` echo container. `list_containers` now records each mapping's `HostIp`, and
+   loopback-scoped ports route through the agent's vsock TCP proxy, which already
+   falls back to the guest's `127.0.0.1`. Wildcard publishes keep the direct-dial
+   fast path.
 
-Note also that the daemon's `/v1alpha1/status` reported a stale `agent.ip`
-(`192.168.64.8`) while the live address was `192.168.64.2`, so discovery probes
-before trusting it.
+Verified after the fix: a connection through `-p 127.0.0.1:9999:9999` survives 45 s
+of continuous traffic where it previously reset at 1.0 s every time, and the
+wildcard path is unchanged.
 
-One Tauri v2 detail worth recording: the launcher frontend is plain HTML with no
-bundler, so it reaches Rust through `window.__TAURI__`. That global is only
-injected when `app.withGlobalTauri` is `true` — without it the window still
-renders but every `invoke` throws, which looks exactly like a dead UI.
+**What that bought us.** Publishing works normally again, so the stack is plain
+loopback end to end: `char_ip`/`map_ip` are simply `127.0.0.1`, the proxy allowlist
+is static, and `scripts/stack.sh` lost its guest-IP discovery entirely (104 → 92
+lines). Nothing binds outside the host's loopback.
 
 ### Still to do
 
-- English translation via `DATA_OVERRIDE_PATH` (see above) — the client is
-  Korean until then.
 - Containerise the asset server so the `.app` no longer needs Node on the host.
 - Code signing and notarization.
 - Auto-create the local account instead of seeding it by hand.

@@ -30,7 +30,7 @@
 					{
 						display: 'Ragnarok Offline',
 						desc: 'local rAthena',
-						address: endpoint.guest_ip,
+						address: endpoint.host,
 						port: endpoint.login,
 						version: 55,
 						langtype: 12,
@@ -43,6 +43,7 @@
 						adminList: [2000000]
 					}
 				],
+				loadLua: true,
 				skipServerList: true,
 				skipIntro: true,
 				BGMFileExtension: ['mp3'],

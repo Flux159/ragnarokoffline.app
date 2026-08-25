@@ -22,6 +22,7 @@ mkdir -p "$VENDOR"
 clone https://github.com/MrAntares/roBrowserLegacy.git                        roBrowserLegacy
 clone https://github.com/FranciscoWallison/roBrowserLegacy-RemoteClient-JS.git roBrowserLegacy-RemoteClient-JS
 clone https://github.com/rathena/rathena.git                                  rathena
+clone https://github.com/llchrisll/ROenglishRE.git                            ROenglishRE
 
 echo "==> building the web client"
 (cd "$VENDOR/roBrowserLegacy" && npm install --no-audit --no-fund && npm run build:all)
@@ -44,11 +45,41 @@ done
         [ -e "$RC/resources/$grf" ] && { echo "$i=$grf"; i=$((i + 1)); }
     done
 } > "$RC/resources/DATA.INI"
-for d in System BGM AI; do
+for d in BGM AI; do
     [ -d "$CLIENT/dll_exe/$d" ] && ln -sfn "$CLIENT/dll_exe/$d" "$RC/$d"
     [ -d "$CLIENT/$d" ] && ln -sfn "$CLIENT/$d" "$RC/$d"
 done
 "$ROOT/scripts/grfls.py" "$RC"/resources/*.grf || true
+
+echo "==> assembling the English client"
+# Text overrides load through DATA_OVERRIDE_PATH, which the asset server checks
+# ahead of every GRF -- no repacking a 2.4 GB archive to change a string.
+EN="$VENDOR/ROenglishRE/Translation/Renewal"
+if grep -q '^DATA_OVERRIDE_PATH=' "$RC/.env" 2>/dev/null; then
+    sed -i '' 's|^DATA_OVERRIDE_PATH=.*|DATA_OVERRIDE_PATH=../ROenglishRE/Translation/Renewal/data|' "$RC/.env"
+else
+    echo 'DATA_OVERRIDE_PATH=../ROenglishRE/Translation/Renewal/data' >> "$RC/.env"
+fi
+
+# System/ is a merge: English wins, kRO fills the gaps (fonts, quest data).
+MERGED="$ROOT/.ragnarokmac/System"
+KRO_SYSTEM="$CLIENT/dll_exe/System"
+rm -rf "$MERGED"; mkdir -p "$MERGED"
+for f in "$EN/SystemEN"/*; do ln -sfn "$f" "$MERGED/$(basename "$f")"; done
+if [ -d "$KRO_SYSTEM" ]; then
+    for f in "$KRO_SYSTEM"/*; do
+        b=$(basename "$f")
+        # roBrowser resolves .lub before .lua, so kRO's 2012 itemInfo.lub would
+        # otherwise shadow the English table. Keep it out entirely.
+        case "$b" in itemInfo*.lub|itemInfo*.lua) continue ;; esac
+        [ -e "$MERGED/$b" ] || ln -sfn "$f" "$MERGED/$b"
+    done
+fi
+# SystemEN/itemInfo.lua is a require()/dofile() stub aimed at the real client.
+# roBrowser mounts only the file it fetches, so point at the table itself --
+# it defines the global `tbl` that roBrowser's loader iterates.
+ln -sfn "$EN/SystemEN/LuaFiles514/itemInfo.lua" "$MERGED/itemInfo.lua"
+ln -sfn "$MERGED" "$RC/System"
 
 echo "==> building rAthena (arm64, packetver $PACKETVER)"
 cp "$ROOT/containers/rathena/Dockerfile" "$VENDOR/rathena/Dockerfile.ragnarokmac"

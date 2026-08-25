@@ -15,27 +15,6 @@ NEBULA="${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}"
 
 docker_() { "$NEBULA" docker "$@"; }
 
-# Nebula's host->guest port forwarder tears every forward down whenever its
-# 2-second Docker poll fails (net.rs conflates "query failed" with "no
-# containers"), which kills long-lived sockets like the game connection. On
-# macOS the VZ NAT subnet is host-routable, so we skip the forwarder entirely
-# and talk to the guest address directly. Containers therefore publish on
-# 0.0.0.0 inside the guest, not on guest-loopback.
-guest_ip() {
-    local candidate
-    # The daemon's reported agent IP is authoritative when it answers.
-    candidate=$(curl -s -m 2 http://127.0.0.1:7440/v1alpha1/status 2>/dev/null \
-        | sed -n 's/.*"ip":"\([0-9.]*\)".*/\1/p')
-    if [ -n "$candidate" ] && nc -z -G 1 "$candidate" 6900 2>/dev/null; then
-        echo "$candidate"; return 0
-    fi
-    # Otherwise trust the address the forwarder last dialled.
-    candidate=$(grep -o 'port forward added ([0-9.]*:[0-9]* -> [0-9.]*' \
-        "$HOME/.nebula/logs/nebulad.log" 2>/dev/null | tail -1 | awk '{print $NF}')
-    if [ -n "$candidate" ]; then echo "$candidate"; return 0; fi
-    return 1
-}
-
 # rAthena writes with printf(3), which block-buffers when stdout is not a tty.
 # Without -t, errors sit in a 4 KiB buffer and never reach `docker logs`.
 run_server() {
@@ -48,7 +27,7 @@ run_server() {
     )
     docker_ rm -f "$name" >/dev/null 2>&1 || true
     docker_ run -d -t --name "$name" --network "$NET" \
-        -p "$port:$port" "${mounts[@]}" "$IMAGE" "$binary" >/dev/null
+        -p "127.0.0.1:$port:$port" "${mounts[@]}" "$IMAGE" "$binary" >/dev/null
 }
 
 wait_healthy() {
@@ -76,33 +55,21 @@ cmd_up() {
     fi
     wait_healthy ragnarok-db
 
-    # The char and map servers hand the client an address to reconnect to, so
-    # they must advertise the guest IP the browser can actually reach.
-    run_server ragnarok-login 6900 /rathena/login-server
-    local ip
-    ip=$(guest_ip) || { echo "could not determine guest IP" >&2; exit 1; }
-    printf 'login_ip: ragnarok-login\nchar_ip: %s\n' "$ip" > "$STATE/conf/char_conf.txt"
-    printf 'char_ip: ragnarok-char\nmap_ip: %s\n' "$ip" > "$STATE/conf/map_conf.txt"
-    printf '{"guest_ip":"%s","login":6900,"char":6121,"map":5121}\n' "$ip" > "$STATE/endpoint.json"
-    # The game page fetches this from the asset server's static root.
+    # char and map hand the client an address to reconnect to. Everything is
+    # published on the host's loopback, so that address is simply 127.0.0.1.
+    printf 'login_ip: ragnarok-login\nchar_ip: 127.0.0.1\n' > "$STATE/conf/char_conf.txt"
+    printf 'char_ip: ragnarok-char\nmap_ip: 127.0.0.1\n'   > "$STATE/conf/map_conf.txt"
+    printf '{"host":"127.0.0.1","login":6900,"char":6121,"map":5121}\n' > "$STATE/endpoint.json"
+
+    # The game page reads this from the asset server's static root. It exists so
+    # LAN mode can later advertise a different address without touching the page.
     local web="$ROOT/vendor/roBrowserLegacy/dist/Web"
     [ -d "$web" ] && cp "$STATE/endpoint.json" "$web/endpoint.json"
 
-    # The WebSocket proxy only dials hosts on its allowlist, so it has to learn
-    # the guest address too. Rewritten here rather than hand-maintained.
-    local env_file="$ROOT/vendor/roBrowserLegacy-RemoteClient-JS/.env"
-    if [ -f "$env_file" ]; then
-        local targets="$ip:6900,$ip:6121,$ip:5121"
-        if grep -q '^WS_ALLOWED_TARGETS=' "$env_file"; then
-            sed -i '' "s|^WS_ALLOWED_TARGETS=.*|WS_ALLOWED_TARGETS=$targets|" "$env_file"
-        else
-            echo "WS_ALLOWED_TARGETS=$targets" >> "$env_file"
-        fi
-    fi
-
+    run_server ragnarok-login 6900 /rathena/login-server
     run_server ragnarok-char  6121 /rathena/char-server
     run_server ragnarok-map   5121 /rathena/map-server
-    echo "stack up (guest $ip)"
+    echo "stack up"
 }
 
 cmd_down() {
