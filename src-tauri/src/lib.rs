@@ -6,8 +6,11 @@ use serde::{Deserialize, Serialize};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
-// The game window boots into src/index.html, which polls the asset server and
-// then navigates to /play.html itself — so the game URL lives there, not here.
+/// The game window boots into src/index.html and is then navigated here. The
+/// jump has to happen from Rust: the boot page is served from `tauri://localhost`,
+/// a secure origin, so it can neither fetch nor be trusted to navigate to a
+/// plain-http origin from script.
+const GAME_URL: &str = "http://127.0.0.1:3338/play.html";
 const HEALTH_URL: &str = "http://127.0.0.1:3338/api/health";
 
 /// Rates the Settings pane exposes. Values are multipliers in percent, matching
@@ -213,6 +216,18 @@ fn open_game(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Point the game window at the running client. Called by the boot page once
+/// `assets_ready` reports the server is answering.
+#[tauri::command]
+fn launch_game(app: tauri::AppHandle) -> Result<(), String> {
+    let win = app
+        .get_webview_window("game")
+        .ok_or_else(|| "game window is gone".to_string())?;
+    let url = GAME_URL.parse().map_err(|_| "bad game url".to_string())?;
+    win.navigate(url).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Settings is a secondary window: ⌘, or the app menu, never the launch surface.
 #[tauri::command]
 fn open_settings(app: tauri::AppHandle) -> Result<(), String> {
@@ -309,7 +324,8 @@ pub fn run() {
             get_settings,
             save_settings,
             open_game,
-            open_settings
+            open_settings,
+            launch_game
         ])
         .run(tauri::generate_context!())
         .expect("error while running RagnarokMac");

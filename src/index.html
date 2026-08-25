@@ -42,8 +42,6 @@
   </div>
 <script>
 const { invoke } = window.__TAURI__.core;
-const GAME = 'http://127.0.0.1:3338/play.html';
-const READY = 'http://127.0.0.1:3338/endpoint.json';
 
 const status = document.getElementById('status');
 const fail = document.getElementById('fail');
@@ -54,12 +52,10 @@ const mark = document.getElementById('mark');
 // three rAthena servers will connect to each other.
 const DEADLINE_MS = 180000;
 
-async function ready() {
-  try {
-    const r = await fetch(READY, { cache: 'no-store' });
-    return r.ok;
-  } catch { return false; }
-}
+// Asked through Rust rather than fetch(): this page is served from
+// tauri://localhost, a secure origin, so a plain-http request from here is
+// blocked as mixed content and fails silently forever.
+const ready = () => invoke('assets_ready');
 
 async function boot() {
   fail.hidden = true; retry.hidden = true; mark.hidden = false;
@@ -73,7 +69,7 @@ async function boot() {
   while (Date.now() - started < DEADLINE_MS) {
     if (await ready()) {
       status.textContent = 'Loading the client…';
-      window.location.href = GAME;
+      await invoke('launch_game');
       return;
     }
     const secs = Math.round((Date.now() - started) / 1000);
