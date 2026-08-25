@@ -50,6 +50,40 @@ export DOCKER_HOST="${DOCKER_HOST:-unix://$HOME/.nebula/run/docker.sock}"
 
 docker_() { "$DOCKER_BIN" "$@"; }
 
+# Only one up/down at a time. The app can start the stack from the boot page
+# and from Settings, and tears it down on quit, so two invocations can overlap;
+# when they do, both remove the containers and then both try to create them,
+# and the loser fails with "container name is already in use". mkdir is atomic
+# on every filesystem we care about, which flock(1) is not on macOS.
+LOCK="${STATE:-/tmp}/.stack.lock"
+acquire_lock() {
+    local tries=120
+    mkdir -p "$(dirname "$LOCK")" 2>/dev/null || true
+    while ! mkdir "$LOCK" 2>/dev/null; do
+        # A lock older than two minutes is a crashed run, not a live one.
+        if [ -d "$LOCK" ] && [ -z "$(find "$LOCK" -maxdepth 0 -mmin -2 2>/dev/null)" ]; then
+            rm -rf "$LOCK"
+            continue
+        fi
+        tries=$((tries - 1))
+        [ $tries -le 0 ] && { echo "timed out waiting for another start/stop to finish" >&2; exit 1; }
+        sleep 1
+    done
+    trap 'rm -rf "$LOCK"' EXIT INT TERM
+}
+
+# Remove and wait: docker returns before the name is released, so creating the
+# replacement immediately can still collide.
+remove_container() {
+    local name="$1" tries=30
+    docker_ rm -f "$name" >/dev/null 2>&1 || true
+    while [ $tries -gt 0 ]; do
+        docker_ inspect -f '{{.Id}}' "$name" >/dev/null 2>&1 || return 0
+        sleep 0.5; tries=$((tries - 1))
+    done
+    return 0
+}
+
 # rAthena writes with printf(3), which block-buffers when stdout is not a tty.
 # Without -t, errors sit in a 4 KiB buffer and never reach `docker logs`.
 # The Kafra teleport prices are hardcoded in npc/kafras/functions_kafras.txt,
@@ -118,6 +152,7 @@ wait_for_db() {
 
 cmd_up() {
     mkdir -p "$STATE/conf" "$STATE/sql"
+    acquire_lock
     # A failed single-file bind leaves a *directory* behind at the source path.
     # Clear anything in conf/ that is not a regular file so a stale one cannot
     # shadow the config we are about to write.
@@ -204,9 +239,15 @@ EOF
 }
 
 cmd_down() {
-    for c in ragnarok-map ragnarok-char ragnarok-login ragnarok-db; do
-        docker_ rm -f "$c" >/dev/null 2>&1 || true
+    acquire_lock
+    # Game servers hold no state, so killing them is fine. The database does:
+    # stop it gracefully first so InnoDB closes cleanly rather than recovering
+    # on next boot.
+    for c in ragnarok-map ragnarok-char ragnarok-login; do
+        remove_container "$c"
     done
+    docker_ stop -t 10 ragnarok-db >/dev/null 2>&1 || true
+    remove_container ragnarok-db
     echo "stack down"
 }
 
