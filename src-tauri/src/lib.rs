@@ -508,6 +508,8 @@ fn open_game(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+
+
 /// Point the game window at the running client. Called by the boot page once
 /// `assets_ready` reports the server is answering.
 #[tauri::command]
@@ -623,6 +625,15 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle();
             handle.set_menu(build_menu(handle)?)?;
+
+            // Created here rather than declared in tauri.conf.json: a
+            // config-declared window cannot carry an initialization script, and
+            // the console capture has to be installed before the page loads.
+            WebviewWindowBuilder::new(handle, "game", WebviewUrl::App("index.html".into()))
+                .title("Ragnarok Offline")
+                .inner_size(1280.0, 800.0)
+                .center()
+                .build()?;
 
             // A signal terminates the process without an ExitRequested event,
             // so `kill`, a logout, or Ctrl-C would otherwise leave the whole

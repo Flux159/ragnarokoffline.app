@@ -7,17 +7,7 @@
     "frontendDist": "../src"
   },
   "app": {
-    "windows": [
-      {
-        "label": "game",
-        "title": "Ragnarok Offline",
-        "url": "index.html",
-        "width": 1280,
-        "height": 800,
-        "resizable": true,
-        "center": true
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     },
