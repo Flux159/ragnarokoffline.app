@@ -24,6 +24,7 @@ run_server() {
         -v "$STATE/conf/char_conf.txt:/rathena/conf/import/char_conf.txt:ro"
         -v "$STATE/conf/map_conf.txt:/rathena/conf/import/map_conf.txt:ro"
         -v "$STATE/conf/battle_conf.txt:/rathena/conf/import/battle_conf.txt:ro"
+        -v "$STATE/conf/login_conf.txt:/rathena/conf/import/login_conf.txt:ro"
     )
     docker_ rm -f "$name" >/dev/null 2>&1 || true
     docker_ run -d -t --name "$name" --network "$NET" \
@@ -57,7 +58,23 @@ cmd_up() {
 
     # char and map hand the client an address to reconnect to. Everything is
     # published on the host's loopback, so that address is simply 127.0.0.1.
-    printf 'login_ip: ragnarok-login\nchar_ip: 127.0.0.1\n' > "$STATE/conf/char_conf.txt"
+    # rAthena ships new_account: no, so roBrowser's "simplified registration"
+    # (a Name_M / Name_F username on the login screen) has nothing to talk to.
+    # This is a single-player server on loopback, so allow it. The name and
+    # password minimums default to 6 in code and reject shorter attempts
+    # silently, which reads as "registration is broken".
+    cat > "$STATE/conf/login_conf.txt" <<'EOF'
+new_account: yes
+acc_name_min_length: 4
+password_min_length: 4
+EOF
+    # PIN codes are a live-service anti-theft feature. On a single-player
+    # offline server they are just a second password screen after login.
+    cat > "$STATE/conf/char_conf.txt" <<'EOF'
+login_ip: ragnarok-login
+char_ip: 127.0.0.1
+pincode_enabled: no
+EOF
     printf 'char_ip: ragnarok-char\nmap_ip: 127.0.0.1\n'   > "$STATE/conf/map_conf.txt"
     printf '{"host":"127.0.0.1","login":6900,"char":6121,"map":5121}\n' > "$STATE/endpoint.json"
 
