@@ -191,7 +191,8 @@ Verified with `scripts/grfls.py` against the reference client:
 |---|---|---|---|
 | `data.grf` | 2.4 GB | 103,498 | **Base.** 854 maps, 7,269 models, 1,752 palettes, `luafiles514`, item/map name tables |
 | `rdata.grf` | 931 MB | 55,012 | **Renewal overrides.** 605 files absent from `data.grf` + 135 that differ — the rest is duplicated |
-| `official_data.grf` | 747 MB | 163,421 | *Optional overlay.* Costume/garment/effect sprites; 163,407 files not in `data.grf`, and it collides on only 14 — almost purely additive |
+| `official_data.grf` | 747 MB | 163,421 | *Overlay* from [llchrisll's ROenglishRE](https://github.com/llchrisll/ROenglishRE) docs. Costume/garment/effect sprites and other-region art (jRO/iRO/twRO event effects); 163,407 files absent from `data.grf`, colliding on only 14 — almost purely additive |
+| `kro_data.grf` | 104 MB | 22,220 | Same source. **Skip it** — 22,147 of its 22,220 paths are already in `official_data.grf`, leaving 73 unique files |
 | `BGM/` | 312 MB | 180 mp3 | Music, referenced by `data/mp3nametable.txt` |
 | `System/` | — | — | `itemInfo*.lub`, `mapInfo*.lub`, quest lists, fonts |
 | `AI/` | — | — | Homunculus/mercenary scripts |
@@ -204,10 +205,13 @@ overlays go above the base:
 
 ```ini
 [Data]
-0=official_data.grf     ; optional overlay: costumes, effects
+0=official_data.grf     ; overlay: costume/effect art (ROenglishRE docs)
 1=rdata.grf             ; renewal overrides
 2=data.grf              ; base: maps, models, palettes, lua
 ```
+
+English text is *not* layered here — it comes in through `DATA_OVERRIDE_PATH`, which
+outranks every GRF. See [English translation](#english-translation).
 
 Run `scripts/grfls.py` on your files before wiring anything up:
 
@@ -222,21 +226,54 @@ numbers. A GRF with no `.rsw` entries fails at *map load*, not at startup, so th
 check also runs on first launch — the app should say "this GRF has no maps" rather
 than show a black screen.
 
-### Known gaps in a stock kRO set
+### English translation
 
-Two things the reference client does **not** provide, both of which need a community
-overlay GRF placed above `data.grf`:
+kRO is Korean: `data/idnum2itemdisplaynametable.txt` and friends are CP949 Korean, and
+there is **no `data/msgstringtable.txt`** at all — kRO ships
+`data/luafiles514/lua files/msgstring_kr.lub`, which is not the file roBrowser reads.
 
-- **English text.** kRO is Korean. `data/idnum2itemdisplaynametable.txt` and friends
-  are CP949 Korean, and there is **no `data/msgstringtable.txt`** at all — kRO ships
-  `data/luafiles514/lua files/msgstring_kr.lub` instead, which is not the file
-  roBrowser reads. Without a translation GRF the game is playable but entirely in
-  Korean, with blank UI strings where `msgstringtable.txt` was expected.
+The translation comes from [**ROenglishRE**](https://github.com/llchrisll/ROenglishRE).
+Note that `official_data.grf` and `kro_data.grf` come from that project's docs site but
+are **not** the translation — they contain zero text files, only `data/sprite` and
+`data/texture`. They are the supplementary *art* packs. The translated text lives in
+the repository's `Translation/` tree.
+
+**We load the translation as loose files, not as a GRF.** `DATA_OVERRIDE_PATH` is
+checked before any GRF (see the precedence chain below), so pointing it at
+ROenglishRE's data folder overrides every Korean table without repacking a 2.4 GB
+archive — and it can be re-pulled and diffed like the text it is:
+
+```ini
+DATA_OVERRIDE_PATH=../assets/roenglish/data
+```
+
+### Lookup precedence (verified in `clientController.js`)
+
+For any asset request, RemoteClient-JS resolves in this order:
+
+1. LRU memory cache
+2. Loose files on disk next to the server root
+3. `DATA_OVERRIDE_PATH` — **where the translation goes**
+4. The GRF index — and within it, **the first GRF listed in `DATA.INI` wins**
+   (`buildFileIndex()`: *"Only store first occurrence (first GRF has priority)"*)
+
+So index `0` is the highest priority, not the lowest. An overlay placed *last* would be
+shadowed by kRO's originals and do nothing. If you ever do ship the translation as a
+GRF instead of loose files, it goes at index `0`.
+
+### Other gaps
+
 - **`System/itemInfo.lub`.** The live table is `System/itemInfo_true.lub`
   (2020-06-03); the `itemInfo.lub` at the client root is a 2012 leftover. Copy or
-  symlink the right one into place. Note it is compiled Lua 5.1 bytecode (`LuaQ`
-  header), not source — confirm roBrowser's reader handles the compiled form before
-  assuming item descriptions work.
+  symlink the right one into place — ROenglishRE ships a translated replacement, which
+  is the one we actually want. Note it is compiled Lua 5.1 bytecode (`LuaQ` header),
+  not source; confirm roBrowser's reader handles the compiled form before assuming
+  item descriptions work.
+- **Korean filenames.** Every asset path inside these GRFs is CP949-encoded
+  (`data\texture\유저인터페이스\...`), and roBrowser requests them as Latin-1
+  mojibake. RemoteClient-JS indexes both spellings and has an explicit mojibake
+  fallback, which is a large part of why it was chosen over rolling our own asset
+  server.
 
 ### Loose files
 
