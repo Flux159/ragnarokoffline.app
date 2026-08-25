@@ -38,6 +38,31 @@ elif "indexOf(fn) === -1" in s:
 else:
     sys.exit("Renderer.js: render() no longer matches; re-check the patch")
 
+# 0003 - Equipment: reset the canvas context list on init.
+# Component.init() pushed both canvas contexts onto a module-level array without
+# clearing it, so every re-init added two more. The render loop then ran
+# clear+draw once per entry, and because sprite draws complete asynchronously,
+# the later draws land after every clear - the character renders twice, slightly
+# offset, which is the two-headed ghosting.
+p = rb / "src/UI/Components/Equipment/EquipmentCommon.js"
+s = p.read_text()
+old = """		const root = Component.getRoot();
+		const canvases = root.querySelectorAll('canvas');
+		if (canvases[0]) _ctx.push(canvases[0].getContext('2d'));"""
+new = """		const root = Component.getRoot();
+		const canvases = root.querySelectorAll('canvas');
+		// init() can run more than once; without this the contexts accumulate
+		// and the character is drawn once per stale entry.
+		_ctx.length = 0;
+		if (canvases[0]) _ctx.push(canvases[0].getContext('2d'));"""
+if old in s:
+    p.write_text(s.replace(old, new))
+    print("patched EquipmentCommon.js (context list reset)")
+elif "_ctx.length = 0;" in s:
+    print("EquipmentCommon.js already patched")
+else:
+    sys.exit("EquipmentCommon.js: init() no longer matches; re-check the patch")
+
 # 0002 - WASD / arrow-key movement.
 shutil.copyfile(root / "patches/KeyboardMove.js", rb / "src/Controls/KeyboardMove.js")
 p = rb / "src/Engine/MapEngine.js"

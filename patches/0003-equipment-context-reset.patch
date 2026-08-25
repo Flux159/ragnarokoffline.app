@@ -1,0 +1,11 @@
+From: RagnarokMac <noreply@ragnarokmac>
+Subject: [PATCH] Equipment: reset the canvas context list on init
+
+Component.init() pushed both canvas contexts onto a module-level array without
+clearing it first. init() runs again whenever the component is re-initialised,
+so the array grows by two each time.
+
+renderEntity() loops over that array doing clearRect() then a sprite draw. The
+draws complete asynchronously, so with stale duplicates the later draws land
+after every clear and the character is composited more than once, slightly
+offset - a figure with two heads, and item sprites left on the wrong canvas.

@@ -10,7 +10,13 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 /// jump has to happen from Rust: the boot page is served from `tauri://localhost`,
 /// a secure origin, so it can neither fetch nor be trusted to navigate to a
 /// plain-http origin from script.
-const GAME_URL: &str = "http://127.0.0.1:3338/play.html";
+///
+/// roBrowser's own app page, loaded directly rather than embedded with
+/// ROBrowser.TYPE.FRAME. The frame variant nests the game in an iframe, which
+/// takes keyboard focus away from it — no chat input, no movement keys — and
+/// buys nothing when the game already fills the window. Settings come from
+/// Config.local.js, which this page merges over Config.js.
+const GAME_URL: &str = "http://127.0.0.1:3338/api.html?app=ONLINE";
 const HEALTH_URL: &str = "http://127.0.0.1:3338/api/health";
 
 /// Rates the Settings pane exposes. Values are multipliers in percent, matching

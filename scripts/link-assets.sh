@@ -66,4 +66,8 @@ done
 ln -sfn "$EN/SystemEN/LuaFiles514/itemInfo.lua" "$MERGED/itemInfo.lua"
 ln -sfn "$MERGED" "$RC/System"
 
+# roBrowser reads this over its baked-in defaults.
+WEB="$ROOT/vendor/roBrowserLegacy/dist/Web"
+[ -d "$WEB" ] && cp "$ROOT/config/Config.local.js" "$WEB/Config.local.js"
+
 echo "linked: $(grep -c '^[0-9]=' "$RC/resources/DATA.INI") GRFs"
