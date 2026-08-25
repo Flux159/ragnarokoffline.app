@@ -24,6 +24,9 @@ clone https://github.com/FranciscoWallison/roBrowserLegacy-RemoteClient-JS.git r
 clone https://github.com/rathena/rathena.git                                  rathena
 clone https://github.com/llchrisll/ROenglishRE.git                            ROenglishRE
 
+echo "==> applying client patches"
+"$ROOT/scripts/patch-client.sh"
+
 echo "==> building the web client"
 # build:all emits seven 12 MB bundles when the game needs one, so prune after.
 # It has to be the full build: api.html and api.js are only written on --all,

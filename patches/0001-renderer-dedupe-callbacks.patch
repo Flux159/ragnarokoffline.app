@@ -1,0 +1,28 @@
+From: RagnarokMac <noreply@ragnarokmac>
+Subject: [PATCH] Renderer: do not register the same callback twice
+
+Renderer.render(fn) pushed onto renderCallbacks unconditionally. Components
+call it every time they are shown or switch tabs -- Equipment does so from
+three separate sites -- so a window opened N times runs its render callback
+N times per frame.
+
+Each of those runs does clearRect() and then an async sprite draw against the
+globally bound 2D context, so concurrent copies interleave: one clears the
+canvas while another is mid-draw. The visible result is flickering, ghosted
+sprites (a character rendered with two heads) and item sprites landing on the
+wrong canvas.
+
+Registration is now idempotent, which is what every call site already assumes.
+Renderer.stop(fn) still removes it.
+
+--- a/src/Renderer/Renderer.js
++++ b/src/Renderer/Renderer.js
+@@
+ 	static render(fn) {
+-		if (fn) {
++		// Idempotent: callers register on every show/tab-change and never
++		// expect to be run more than once per frame.
++		if (fn && this.renderCallbacks.indexOf(fn) === -1) {
+ 			this.renderCallbacks.push(fn);
+ 		}
+ 

@@ -1,0 +1,12 @@
+From: RagnarokMac <noreply@ragnarokmac>
+Subject: [PATCH] Add WASD / arrow-key movement
+
+Ragnarok has no directional walk packet, only "walk to this cell", so held
+keys are translated into a repeated destination a few cells ahead - the same
+approach the on-screen joystick already uses. The vector is rotated by the
+camera so "up" means up the screen, not up the map.
+
+Adds src/Controls/KeyboardMove.js and initialises it alongside MapControl.
+Guards against walking while typing in chat, ignores Cmd/Ctrl/Alt combinations
+so shortcuts still work, supports diagonals, and clears held keys on window
+blur so the character does not keep walking after a Cmd-Tab.

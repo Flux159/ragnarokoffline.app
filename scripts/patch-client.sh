@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Apply RagnarokMac's changes to the vendored roBrowserLegacy checkout.
+#
+# Done as idempotent in-place edits rather than `git apply`, so an upstream
+# change to unrelated lines does not break the whole patch set. Each edit
+# checks whether it has already been made. See patches/ for the rationale.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RB="$ROOT/vendor/roBrowserLegacy"
+
+python3 - "$ROOT" "$RB" <<'PY'
+import shutil, sys
+from pathlib import Path
+
+root, rb = Path(sys.argv[1]), Path(sys.argv[2])
+
+# 0001 - Renderer.render(fn) must be idempotent. Components register on every
+# show/tab-change; without this a window opened N times renders N times per
+# frame, interleaving clearRect with async sprite draws (flicker, ghost heads).
+p = rb / "src/Renderer/Renderer.js"
+s = p.read_text()
+old = """	static render(fn) {
+		if (fn) {
+			this.renderCallbacks.push(fn);
+		}"""
+new = """	static render(fn) {
+		// Idempotent: callers register on every show/tab-change and never
+		// expect to be run more than once per frame.
+		if (fn && this.renderCallbacks.indexOf(fn) === -1) {
+			this.renderCallbacks.push(fn);
+		}"""
+if old in s:
+    p.write_text(s.replace(old, new))
+    print("patched Renderer.js (render callback dedupe)")
+elif "indexOf(fn) === -1" in s:
+    print("Renderer.js already patched")
+else:
+    sys.exit("Renderer.js: render() no longer matches; re-check the patch")
+
+# 0002 - WASD / arrow-key movement.
+shutil.copyfile(root / "patches/KeyboardMove.js", rb / "src/Controls/KeyboardMove.js")
+p = rb / "src/Engine/MapEngine.js"
+s = p.read_text()
+if "KeyboardMove" not in s:
+    s = s.replace(
+        "import MapControl from 'Controls/MapControl.js';",
+        "import MapControl from 'Controls/MapControl.js';\nimport KeyboardMove from 'Controls/KeyboardMove.js';",
+    )
+    s = s.replace("\t\t\tMapControl.init();", "\t\t\tMapControl.init();\n\t\t\tKeyboardMove.init();")
+    p.write_text(s)
+    print("patched MapEngine.js (keyboard movement)")
+else:
+    print("MapEngine.js already patched")
+PY
