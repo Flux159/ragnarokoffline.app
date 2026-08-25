@@ -52,6 +52,34 @@ docker_() { "$DOCKER_BIN" "$@"; }
 
 # rAthena writes with printf(3), which block-buffers when stdout is not a tty.
 # Without -t, errors sit in a 4 KiB buffer and never reach `docker logs`.
+# The Kafra teleport prices are hardcoded in npc/kafras/functions_kafras.txt,
+# with no config knob. Rather than rebuild the image to change them, keep an
+# editable copy of that script directory in state and mount it over the image's
+# — the same directory-mount approach used for conf/import.
+prepare_kafra_scripts() {
+    local dir="$STATE/npc/kafras"
+    if [ ! -f "$dir/functions_kafras.txt" ]; then
+        mkdir -p "$STATE/npc"
+        local cid
+        cid=$(docker_ create "$IMAGE" true 2>/dev/null) || return 0
+        # Copy into the parent: docker cp nests when the target already exists.
+        rm -rf "$dir"
+        docker_ cp "$cid:/rathena/npc/kafras" "$STATE/npc/" >/dev/null 2>&1 || true
+        docker_ rm "$cid" >/dev/null 2>&1 || true
+        [ -f "$dir/functions_kafras.txt" ] || return 0
+        cp "$dir/functions_kafras.txt" "$dir/functions_kafras.orig"
+    fi
+
+    # Every warp price is a number on a `setarray @wrpP[0], ...` line, one per
+    # town, so zeroing those lines makes every destination free everywhere.
+    if [ -f "$STATE/free_kafra_warp" ]; then
+        sed 's/^\(\s*setarray @wrpP\[0\].*\)$/\1/; /setarray @wrpP\[0\]/ s/[0-9][0-9]*/0/g' \
+            "$dir/functions_kafras.orig" > "$dir/functions_kafras.txt"
+    else
+        cp "$dir/functions_kafras.orig" "$dir/functions_kafras.txt"
+    fi
+}
+
 run_server() {
     local name="$1" port="$2" binary="$3"
     docker_ rm -f "$name" >/dev/null 2>&1 || true
@@ -61,9 +89,15 @@ run_server() {
     # same mount from a space-free path works, and a directory mount works from
     # either, so mounting conf/import wholesale sidesteps it entirely. rAthena
     # reads whichever of these files exist and ignores the rest.
+    local -a extra=()
+    # Only the map server runs NPC scripts.
+    if [ "$name" = ragnarok-map ] && [ -f "$STATE/npc/kafras/functions_kafras.txt" ]; then
+        extra+=(-v "$STATE/npc/kafras:/rathena/npc/kafras:ro")
+    fi
     docker_ run -d -t --name "$name" --network "$NET" \
         -p "127.0.0.1:$port:$port" \
         -v "$STATE/conf:/rathena/conf/import:ro" \
+        ${extra[@]+"${extra[@]}"} \
         "$IMAGE" "$binary" >/dev/null
 }
 
@@ -150,6 +184,7 @@ EOF
     local web="$ROOT/vendor/roBrowserLegacy/dist/Web"
     [ -d "$web" ] && cp "$STATE/endpoint.json" "$web/endpoint.json"
 
+    prepare_kafra_scripts
     run_server ragnarok-login 6900 /rathena/login-server
     run_server ragnarok-char  6121 /rathena/char-server
     run_server ragnarok-map   5121 /rathena/map-server

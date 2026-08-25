@@ -32,6 +32,10 @@ pub struct Settings {
     pub item_rate_card: u32,
     pub zeny_rate: u32,
     pub atcommand_enabled: bool,
+    /// Kafra warp prices are hardcoded per town in the NPC scripts, so this is
+    /// applied by rewriting a copy of those scripts rather than through conf.
+    #[serde(default)]
+    pub free_kafra_warp: bool,
 }
 
 impl Default for Settings {
@@ -45,6 +49,7 @@ impl Default for Settings {
             item_rate_card: 100,
             zeny_rate: 100,
             atcommand_enabled: true,
+            free_kafra_warp: false,
         }
     }
 }
@@ -380,7 +385,7 @@ fn assets_stop(state: tauri::State<'_, AppState>) {
 
 #[tauri::command]
 fn get_settings(app: tauri::AppHandle) -> Settings {
-    let path = project_root(&app).join(".ragnarokmac/settings.json");
+    let path = state_dir(&app).join("settings.json");
     std::fs::read_to_string(path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -391,19 +396,26 @@ fn get_settings(app: tauri::AppHandle) -> Settings {
 /// restarted because several of these are only read at map-server startup.
 #[tauri::command]
 fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<String, String> {
-    let root = project_root(&app);
-    let state_dir = root.join(".ragnarokmac");
-    std::fs::create_dir_all(state_dir.join("conf")).map_err(|e| e.to_string())?;
+    // state_dir(), not project_root(): in a packaged app the runtime tree is
+    // replaced on update, and settings written there would be silently lost.
+    let state = state_dir(&app);
+    std::fs::create_dir_all(state.join("conf")).map_err(|e| e.to_string())?;
     std::fs::write(
-        state_dir.join("settings.json"),
+        state.join("settings.json"),
         serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
-    std::fs::write(
-        state_dir.join("conf/battle_conf.txt"),
-        settings.to_battle_conf(),
-    )
-    .map_err(|e| e.to_string())?;
+    std::fs::write(state.join("conf/battle_conf.txt"), settings.to_battle_conf())
+        .map_err(|e| e.to_string())?;
+
+    // A marker rather than a value: stack.sh regenerates the Kafra scripts from
+    // a pristine copy on every start and only needs to know which way.
+    let marker = state.join("free_kafra_warp");
+    if settings.free_kafra_warp {
+        std::fs::write(&marker, "").map_err(|e| e.to_string())?;
+    } else {
+        let _ = std::fs::remove_file(&marker);
+    }
     run_stack(&app, "up")
 }
 
