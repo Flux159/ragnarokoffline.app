@@ -14,6 +14,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE="${RAGNAROKMAC_STATE:-$ROOT/.ragnarokmac}"
 NET=ragnarokmac
 IMAGE="${RAGNAROKMAC_IMAGE:-ragnarokmac/rathena:20200401}"
+BUGS_URL="${RAGNAROKMAC_BUGS_URL:-https://github.com/Flux159/ragnarokmac/issues}"
 NEBULA="${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}"
 
 # A GUI app launched from Finder inherits launchd's minimal PATH
@@ -176,7 +177,21 @@ login_ip: ragnarok-login
 char_ip: 127.0.0.1
 pincode_enabled: no
 EOF
-    printf 'char_ip: ragnarok-char\nmap_ip: 127.0.0.1\n'   > "$STATE/conf/map_conf.txt"
+    # The greeting on entering a map. map_athena.conf points motd_txt at
+    # conf/motd.txt by default; redirect it into the mounted import directory so
+    # it can be changed without rebuilding the image.
+    case "$(uname -s)" in
+        Darwin)              PRODUCT=RagnarokMac ;;
+        Linux)               PRODUCT=RagnarokLinux ;;
+        MINGW*|MSYS*|CYGWIN*) PRODUCT=RagnarokWindows ;;
+        *)                   PRODUCT=Ragnarok ;;
+    esac
+    cat > "$STATE/conf/motd.txt" <<EOF
+Welcome to $PRODUCT Offline! Please report any bugs on Github
+$BUGS_URL
+EOF
+    printf 'char_ip: ragnarok-char\nmap_ip: 127.0.0.1\nmotd_txt: conf/import/motd.txt\n' \
+        > "$STATE/conf/map_conf.txt"
     printf '{"host":"127.0.0.1","login":6900,"char":6121,"map":5121}\n' > "$STATE/endpoint.json"
 
     # The game page reads this from the asset server's static root. It exists so
@@ -198,8 +213,20 @@ cmd_down() {
     echo "stack down"
 }
 
+# Emitted as "<name><TAB>Up|<state>" rather than raw `docker ps` output: the
+# name is the *last* column there, so anything matching "<name> ... Up" never
+# matches. docker-slim has no --format, but it does have inspect.
 cmd_status() {
-    docker_ ps -a 2>/dev/null | awk 'NR==1 || /ragnarok-(db|login|char|map)/'
+    local c st
+    for c in ragnarok-db ragnarok-login ragnarok-char ragnarok-map; do
+        st=$(docker_ inspect -f '{{.State.Status}}' "$c" 2>/dev/null) || st=""
+        [ -n "$st" ] || st="absent"
+        if [ "$st" = running ]; then
+            printf '%s\tUp\n' "$c"
+        else
+            printf '%s\t%s\n' "$c" "$st"
+        fi
+    done
 }
 
 case "${1:-status}" in
