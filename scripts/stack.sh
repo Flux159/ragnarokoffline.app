@@ -225,8 +225,10 @@ cmd_up() {
     # tables - and with a modern client that can exceed a minute. The socket is
     # then dropped, the client reports "Failed to connect to server", and the
     # account is left marked online, which is the "Someone has logged in with
-    # this ID" that follows. Give it room.
-    printf 'stall_time: 300\n' > "$STATE/conf/packet_conf.txt"
+    # this ID" that follows. Set generously: on a single-player offline server
+    # nothing is gained by reaping idle sockets, and being dropped mid-load is
+    # the one failure a player cannot diagnose.
+    printf 'stall_time: 1800\n' > "$STATE/conf/packet_conf.txt"
 
     # rAthena ships new_account: no, so roBrowser's "simplified registration"
     # (a Name_M / Name_F username on the login screen) has nothing to talk to.
