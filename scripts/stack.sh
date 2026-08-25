@@ -226,7 +226,17 @@ cmd_up() {
     # then dropped, the client reports "Failed to connect to server", and the
     # account is left marked online, which is the "Someone has logged in with
     # this ID" that follows. Give it room.
-    printf 'stall_time: 300\n' > "$STATE/conf/packet_conf.txt"
+    # Every client arrives through the WebSocket proxy, so every connection has
+    # the same source address. rAthena's flood protection counts connections per
+    # IP and blocks one that opens more than ddos_count (5) within ddos_interval
+    # (3s) for ddos_autoreset - ten minutes, silently. A single player opens
+    # login, char and map in a few seconds and trips it on sight, and any retry
+    # digs deeper. There is nothing to defend here: one address is the only
+    # address, so the rules are off.
+    cat > "$STATE/conf/packet_conf.txt" <<'EOF'
+stall_time: 300
+enable_ip_rules: no
+EOF
 
     # rAthena ships new_account: no, so roBrowser's "simplified registration"
     # (a Name_M / Name_F username on the login screen) has nothing to talk to.
