@@ -154,9 +154,34 @@ wait_for_db() {
     echo "timed out waiting for the database" >&2; return 1
 }
 
+# A fresh machine has no guest kernel or rootfs, and no running engine. Both
+# ship with the app, so neither needs the network.
+ensure_engine() {
+    local home="${NEBULA_HOME:-$HOME/.nebula}"
+    if [ ! -f "$home/kernel/Image" ] || [ ! -f "$home/images/rootfs-pristine.img" ]; then
+        if [ -f "$ROOT/guest/Image.gz" ] && [ -f "$ROOT/guest/rootfs.img.gz" ]; then
+            echo "installing guest images…"
+            "$NEBULA" install-image \
+                --kernel "$ROOT/guest/Image.gz" \
+                --rootfs "$ROOT/guest/rootfs.img.gz" >/dev/null || return 1
+        fi
+    fi
+    # `nebula up` is a no-op when the engine is already healthy.
+    "$NEBULA" up >/dev/null 2>&1 || true
+    # The docker socket appears a moment after the VM reports healthy.
+    local tries=45
+    while [ $tries -gt 0 ]; do
+        docker_ ps >/dev/null 2>&1 && return 0
+        sleep 2; tries=$((tries - 1))
+    done
+    echo "the nebula engine did not come up" >&2
+    return 1
+}
+
 cmd_up() {
     mkdir -p "$STATE/conf" "$STATE/sql"
     acquire_lock
+    ensure_engine || exit 1
     # A failed single-file bind leaves a *directory* behind at the source path.
     # Clear anything in conf/ that is not a regular file so a stale one cannot
     # shadow the config we are about to write.

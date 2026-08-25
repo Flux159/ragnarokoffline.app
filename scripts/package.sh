@@ -27,6 +27,18 @@ cp "$ROOT"/scripts/*.sh "$ROOT"/scripts/*.py "$PAYLOAD/scripts/"
 cp "$ROOT"/config/*                          "$PAYLOAD/config/"
 cp "$ROOT"/patches/*                         "$PAYLOAD/patches/"
 
+echo "==> guest images"
+# nebula downloads these from its GitHub releases on first `up`. Shipping them
+# is what makes a fresh machine work with no network at all, and nebula's
+# install-image accepts gzip artifacts precisely for app bundles.
+mkdir -p "$PAYLOAD/guest"
+if [ ! -f "$PAYLOAD/guest/Image.gz" ]; then
+    gzip -1 -c "$HOME/.nebula/kernel/Image" > "$PAYLOAD/guest/Image.gz"
+fi
+if [ ! -f "$PAYLOAD/guest/rootfs.img.gz" ]; then
+    gzip -1 -c "$HOME/.nebula/images/rootfs-pristine.img" > "$PAYLOAD/guest/rootfs.img.gz"
+fi
+
 echo "==> database schema"
 # Extracted from the rAthena image by bootstrap; MariaDB's entrypoint imports
 # it on first boot. Without this a packaged app starts with an empty database.
