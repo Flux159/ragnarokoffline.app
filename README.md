@@ -119,11 +119,31 @@ Nebula gives a known-good Linux userland at a ~0.6 s boot and ~1 GiB idle cost, 
 server runs on the platform it is actually tested on. The containers are built
 **arm64-native** — no Rosetta in the hot path.
 
-**Why RemoteClient-JS specifically?** It collapses three processes (static file
-server, GRF asset server, `wsproxy`) into one Node process on one port, with an LRU
-asset cache, GRF indexing for O(1) lookups, and the CP949/Korean-filename handling
-that RO assets require. One supervised process instead of three is a materially
-smaller thing to ship.
+**Why RemoteClient-JS specifically?** Its *unified server mode* collapses three
+processes into one Node process on one port — the embedded static server replaces
+`live-server`/Vite for the client bundle, the GRF controller replaces the PHP remote
+client, and the built-in proxy replaces standalone `wsproxy.js`:
+
+```ini
+PORT=3338
+ENABLE_STATIC_SERVE=true                 # serves the built roBrowserLegacy client
+ENABLE_WSPROXY=true                      # /ws/{host}:{port} -> raw TCP
+ROBROWSER_PATH=../roBrowserLegacy        # points at the client build
+WS_ALLOWED_TARGETS=127.0.0.1:6900,127.0.0.1:6121,127.0.0.1:5121
+DATA_OVERRIDE_PATH=                      # loose files not inside any GRF
+CACHE_MAX_FILES=5000
+CACHE_MAX_MEMORY_MB=1024
+```
+
+That means **one supervised process, one port, one healthcheck** for the entire client
+side — the Tauri game window just opens `http://127.0.0.1:3338/…` and everything
+(client JS, sprites decoded out of the GRF, and the game socket) comes from that
+single origin. No CORS, no second server to babysit, no port juggling when we later
+rebind for LAN mode. It also brings an LRU asset cache, GRF indexing for O(1) lookups,
+and the CP949/Korean-filename handling RO assets require.
+
+`WS_ALLOWED_TARGETS` is a genuine allowlist, which is the right primitive for the
+later "expose to friends" mode — the proxy will only ever dial our own rAthena.
 
 ---
 
@@ -175,6 +195,23 @@ resources/
 0=rdata.grf
 1=data.grf
 ```
+
+Load order matters: **lower index wins**. Overlay GRFs (costume/effect packs) go
+above the base client GRFs:
+
+```ini
+[Data]
+0=kro_data.grf          ; overlay: costumes, effects, modern UI
+1=official_data.grf     ; overlay
+2=rdata.grf             ; kRO base
+3=data.grf              ; kRO base — maps, models, palettes, lua
+```
+
+`scripts/grfls.py` inspects a GRF and reports what it does and does not contain. Run
+it on your files before wiring anything up — a GRF with no `.rsw`/`.gnd`/`.gat`
+entries is a sprite overlay, not a playable client, and it will fail at map load
+rather than at startup. The same check runs on first launch so the app can say
+"this GRF has no maps" instead of hanging on a black screen.
 
 Requirements worth knowing before you start:
 
