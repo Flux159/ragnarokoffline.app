@@ -219,6 +219,15 @@ cmd_up() {
 
     # char and map hand the client an address to reconnect to. Everything is
     # published on the host's loopback, so that address is simply 127.0.0.1.
+    # rAthena drops a connection that has been idle for stall_time seconds
+    # (default 60). After character select the client sits on the char socket
+    # while it parses its databases - a 22 MB item table and the lua name
+    # tables - and with a modern client that can exceed a minute. The socket is
+    # then dropped, the client reports "Failed to connect to server", and the
+    # account is left marked online, which is the "Someone has logged in with
+    # this ID" that follows. Give it room.
+    printf 'stall_time: 300\n' > "$STATE/conf/packet_conf.txt"
+
     # rAthena ships new_account: no, so roBrowser's "simplified registration"
     # (a Name_M / Name_F username on the login screen) has nothing to talk to.
     # This is a single-player server on loopback, so allow it. The name and
