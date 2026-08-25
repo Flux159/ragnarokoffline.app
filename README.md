@@ -315,7 +315,7 @@ Working end to end on Apple Silicon (macOS 26.5, M-series):
 | GRF asset serving | **1,012,440 files** indexed across 3 GRFs in 2.2 s |
 | WebSocket proxy | browser-shaped `CA_LOGIN` returns `AC_ACCEPT_LOGIN` |
 | login → char handshake | verified over the advertised address |
-| Tauri shell | `RagnarokMac.app` + DMG bundle |
+| Tauri shell | `RagnarokMac.app` (14 MB) + DMG, launcher UI live and driving the Rust commands |
 
 ### Known issue: Nebula's published-port forwarder
 
@@ -348,6 +348,11 @@ fresh DHCP lease on every boot.
 Note also that the daemon's `/v1alpha1/status` reported a stale `agent.ip`
 (`192.168.64.8`) while the live address was `192.168.64.2`, so discovery probes
 before trusting it.
+
+One Tauri v2 detail worth recording: the launcher frontend is plain HTML with no
+bundler, so it reaches Rust through `window.__TAURI__`. That global is only
+injected when `app.withGlobalTauri` is `true` — without it the window still
+renders but every `invoke` throws, which looks exactly like a dead UI.
 
 ### Still to do
 
