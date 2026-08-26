@@ -259,7 +259,15 @@ cmd_up() {
     if ! docker_ image inspect "$IMAGE" >/dev/null 2>&1; then
         phase "Loading the server images… (first run only)"
     fi
-    "$ROOT/scripts/precache.sh" ensure >/dev/null 2>&1 || true
+    # Not `|| true`. If the images do not load there is nothing to run, and
+    # swallowing the reason meant the next `docker run` tried to pull
+    # ragnarokmac/mariadb from a public registry and died with "too many
+    # redirects" — an error about a network we should never have touched,
+    # reported far from the thing that actually broke.
+    if ! RAGNAROKMAC_DOCKER="$DOCKER_BIN" "$ROOT/scripts/precache.sh" ensure 2>&1; then
+        echo "could not load the bundled server images" >&2
+        exit 1
+    fi
     docker_ network create "$NET" >/dev/null 2>&1 || true
 
     if [ "$(docker_ inspect -f '{{.State.Running}}' ragnarok-db 2>/dev/null)" != true ]; then
