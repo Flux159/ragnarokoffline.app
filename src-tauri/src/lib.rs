@@ -503,6 +503,7 @@ fn open_game(app: tauri::AppHandle) -> Result<(), String> {
     WebviewWindowBuilder::new(&app, "game", WebviewUrl::App("index.html".into()))
         .title("Ragnarok Offline")
         .inner_size(1280.0, 800.0)
+        .disable_drag_drop_handler()
         .build()
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -633,6 +634,17 @@ pub fn run() {
                 .title("Ragnarok Offline")
                 .inner_size(1280.0, 800.0)
                 .center()
+                // Without this you cannot drag a potion from the inventory onto
+                // the hotkey bar. Tauri installs an OS-level drag-and-drop
+                // handler by default whose callback always returns true, and
+                // wry reads that as "handled" and skips forwarding the drag to
+                // WKWebView (`if !listener(..) { msg_send![super, ..] }`). An
+                // in-page HTML5 drag is a real macOS drag session, so it comes
+                // back through that same path and the page never sees dragover
+                // or drop — the drag starts and then silently does nothing.
+                // Tauri's own docs say this is only needed on Windows; it is
+                // not. We use none of its drag-drop events, so nothing is lost.
+                .disable_drag_drop_handler()
                 .build()?;
 
             // A signal terminates the process without an ExitRequested event,
