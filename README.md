@@ -5,11 +5,11 @@
 # RagnarokMac
 
 <sub>Icon generated with GPT Image 2. It is our own artwork — no Gravity assets are
-used in it, for the same reason none ship with the app.</sub>
+used in it.</sub>
 
 A single, self-contained macOS `.app` that runs **Ragnarok Online offline** — server,
-client, and game window in one icon. Double-click it and you are in Prontera. No
-Docker Desktop, no terminal, no MySQL install, no `.exe` under Wine.
+client, and game window in one icon. Double-click it and you are in Midgard after obtaining
+the assets.
 
 Under the hood it stitches together three existing projects:
 
