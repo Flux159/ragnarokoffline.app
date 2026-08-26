@@ -82,68 +82,123 @@ not a web page in a frame.
 
 ## Architecture
 
-```
-┌──────────────────────── RagnarokMac.app ───────────────────────────┐
-│                                                                    │
-│  Tauri shell (Rust)                                                │
-│   ├── Launcher window   — start/stop, progress, status, logs       │
-│   ├── Settings window   — rates, renewal, QoL toggles (⌘,)         │
-│   └── Game window       — WKWebView → http://127.0.0.1:3338/…      │
-│                                                                    │
-│  Supervisor (Rust)                                                 │
-│   └── drives the Nebula REST API (127.0.0.1:7440, v1alpha1)        │
-│       via sdk/typescript's Rust equivalent / plain HTTP            │
-│                                                                    │
-│  Embedded Nebula engine ──► Linux microVM (Virtualization.framework)│
-│      ┌──────────────────────────────────────────────────────┐      │
-│      │  mariadb          :3306   accounts, chars, storage   │      │
-│      │  rathena-login    :6900                              │      │
-│      │  rathena-char     :6121                              │      │
-│      │  rathena-map      :5121                              │      │
-│      │  rathena-web      :8888   (emblems, party icons)     │      │
-│      │  remoteclient-js  :3338   static client + GRF assets │      │
-│      │                           + WebSocket proxy          │      │
-│      └──────────────────────────────────────────────────────┘      │
-│                    ports published to localhost by Nebula          │
-└────────────────────────────────────────────────────────────────────┘
+The short version: **rAthena and roBrowserLegacy run unmodified, inside Linux
+containers, inside a microVM the app carries with it.** Nothing is ported. The
+hard part of running an RO server on a Mac is not the server — it is that the
+server was never meant to run on a Mac. So we do not make it; we bring Linux.
 
-Browser/WKWebView ──HTTP──► :3338 (client JS + sprites/maps out of the GRF)
-                  ──WS────► :3338/ws/127.0.0.1:6900 ──TCP──► login/char/map
-```
+```mermaid
+flowchart TB
+    subgraph APP["RagnarokMac.app  —  one signed bundle, no installers"]
+        direction TB
+        TAURI["Tauri shell (Rust)<br/>boot · settings · game window (WKWebView)"]
+        ASSETS["robrowser-remoteclient (Rust, 1.7 MB)<br/>:3338 — client JS · GRF decoding · WS→TCP proxy"]
+        NEB["nebula + nebulad<br/>microVM supervisor"]
+    end
 
-**Why a microVM instead of building rAthena natively?** rAthena officially supports
-Linux and Windows only; macOS is not a supported target, and Apple Silicon even less
-so. Compiling it against Homebrew MariaDB works for some people some of the time and
-is exactly the kind of "works on my machine" fragility a shipped `.app` cannot have.
-Nebula gives a known-good Linux userland at a ~0.6 s boot and ~1 GiB idle cost, so the
-server runs on the platform it is actually tested on. The containers are built
-**arm64-native** — no Rosetta in the hot path.
+    subgraph VM["Linux microVM  —  Virtualization.framework, ~0.6 s boot"]
+        direction TB
+        SLIMD["slimd — container engine (Rust, 9 MB rootfs)"]
+        subgraph C["containers, arm64-native"]
+            direction LR
+            DB[("mariadb :3306<br/>accounts · characters")]
+            LOGIN["rathena login :6900"]
+            CHAR["rathena char :6121"]
+            MAP["rathena map :5121"]
+        end
+    end
 
-**Why RemoteClient-JS specifically?** Its *unified server mode* collapses three
-processes into one Node process on one port — the embedded static server replaces
-`live-server`/Vite for the client bundle, the GRF controller replaces the PHP remote
-client, and the built-in proxy replaces standalone `wsproxy.js`:
+    TAURI -->|"opens http://127.0.0.1:3338"| ASSETS
+    TAURI -->|"scripts/stack.sh"| NEB
+    NEB --> SLIMD
+    SLIMD --> C
+    ASSETS -->|"/ws/127.0.0.1:6900 → raw TCP"| LOGIN
+    ASSETS -.->|"then char, then map"| CHAR
+    CHAR -.-> MAP
+    LOGIN --> DB
+    CHAR --> DB
+    MAP --> DB
 
-```ini
-PORT=3338
-ENABLE_STATIC_SERVE=true                 # serves the built roBrowserLegacy client
-ENABLE_WSPROXY=true                      # /ws/{host}:{port} -> raw TCP
-ROBROWSER_PATH=../roBrowserLegacy        # points at the client build
-WS_ALLOWED_TARGETS=127.0.0.1:6900,127.0.0.1:6121,127.0.0.1:5121
-DATA_OVERRIDE_PATH=                      # loose files not inside any GRF
-CACHE_MAX_FILES=5000
-CACHE_MAX_MEMORY_MB=1024
+    GRF[/"your kRO client<br/>data.grf · rdata.grf · BGM"/]
+    GRF -->|"read in place, never copied"| ASSETS
 ```
 
-That means **one supervised process, one port, one healthcheck** for the entire client
-side — the Tauri game window just opens `http://127.0.0.1:3338/…` and everything
-(client JS, sprites decoded out of the GRF, and the game socket) comes from that
-single origin. No CORS, no second server to babysit, no port juggling when we later
-rebind for LAN mode. It also brings an LRU asset cache, GRF indexing for O(1) lookups,
-and the CP949/Korean-filename handling RO assets require.
+Ports are published to `127.0.0.1` only. The GRFs stay wherever you keep them —
+the app symlinks them into a server root and reads them where they lie, so a
+3.5 GB client is never duplicated.
 
-`WS_ALLOWED_TARGETS` is a genuine allowlist, which is the right primitive for the
-later "expose to friends" mode — the proxy will only ever dial our own rAthena.
+### What actually happens when you press play
+
+```mermaid
+sequenceDiagram
+    participant U as You
+    participant T as Tauri shell
+    participant N as nebula
+    participant S as slimd
+    participant R as rAthena
+    participant A as asset server
+
+    U->>T: launch
+    T->>N: nebula up
+    N-->>T: microVM healthy (~0.6 s)
+    T->>S: docker load (first run only)
+    T->>S: run mariadb, login, char, map
+    S->>R: containers start
+    R->>R: map-server reads db/map_cache.dat<br/>registers 1265 maps with char-server
+    Note over T,R: the boot window names each step,<br/>so a stall says where
+    T->>A: start asset server on :3338
+    T->>U: game window → http://127.0.0.1:3338
+    U->>A: login
+    A->>R: WebSocket → raw TCP
+```
+
+### Why a microVM rather than a native build
+
+rAthena officially targets Linux and Windows. macOS is not a supported platform
+and Apple Silicon less so. Compiling it against Homebrew MariaDB works for some
+people some of the time, which is precisely the fragility a shipped `.app`
+cannot have.
+
+So the server runs on the platform it is actually tested on, and we inherit
+every upstream fix instead of maintaining a fork. The cost is a microVM, and
+with nebula-slim that cost is small: a **9.4 MB** compressed guest rootfs
+running `slimd` — a Rust container engine — rather than the ~130 MB of
+dockerd + containerd + runc it replaces.
+
+The same property is what makes this cross-platform. The Linux side does not
+change between macOS, Windows and Linux; only the host-side VM integration does.
+
+### Why the client runs in a WebView
+
+roBrowserLegacy is a WebGL RO client, so the "game window" is a WKWebView
+pointed at a local HTTP server. That server —
+[a Rust rewrite](https://github.com/Flux159/roBrowserLegacyRemoteClient-Rust) of
+upstream's Node RemoteClient — does three jobs on one port:
+
+- serves the built roBrowser client,
+- decodes sprites, maps and textures out of the GRF archives on demand,
+  including the CP949 Korean filenames RO uses,
+- proxies WebSocket connections to raw TCP, because a browser cannot open the
+  TCP socket an RO client needs: `/ws/127.0.0.1:6900` → the login server.
+
+One origin for everything means no CORS, one healthcheck, and one port to
+rebind when this later grows a "join a friend's server" mode. The proxy's
+allowlist (`WS_ALLOWED_TARGETS`) is the right primitive for that: it will only
+ever dial hosts it has been told about.
+
+Rewriting it in Rust replaced a 106 MB Node runtime and its dependency tree with
+a single 1.7 MB static binary, which is most of why the download is what it is.
+
+### What each piece is, and whose it is
+
+| Piece | Origin | Role here |
+|---|---|---|
+| [rAthena](https://github.com/rathena/rathena) | upstream, GPL-3.0 | the server. Unmodified; built arm64-native at image build time |
+| [roBrowserLegacy](https://github.com/MrAntares/roBrowserLegacy) | upstream, GPL-3.0 | the client. Built from source with a few patches in `patches/` |
+| RemoteClient | ours, GPL-3.0 | Rust rewrite of upstream's Node asset server |
+| [nebula](https://github.com/Flux159/nebula) | ours | microVM + container engine; the reason any of this is portable |
+| Tauri shell | ours | windows, settings, lifecycle, backup/restore, repair |
+| Game assets | **yours** | Gravity's copyright. Never bundled, never redistributed |
 
 ---
 
