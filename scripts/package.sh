@@ -17,9 +17,12 @@ echo "==> binaries"
 # nebula/nebulad host the microVM; docker-slim is nebula-slim's docker client,
 # so the app never depends on a docker CLI being installed. The asset server is
 # a single static Rust binary, so there is no language runtime to ship either.
-cp "$NEBULA_SRC/target/release/nebula"                  "$PAYLOAD/bin/"
-cp "$NEBULA_SRC/target/release/nebulad"                 "$PAYLOAD/bin/"
-cp "$NEBULA_SRC/slim/target/release/docker-slim"        "$PAYLOAD/bin/"
+# All three come from nebula's slim embed kit so the host binaries and the guest
+# rootfs below are always the same build. kubectl-slim/helm-slim are in the kit
+# too and deliberately left out: this app has no Kubernetes in it.
+EMBED="$NEBULA_SRC/dist-embed-slim"
+[ -d "$EMBED" ] || { echo "no slim embed kit at $EMBED (build it in the nebula repo)" >&2; exit 1; }
+cp "$EMBED/bin/nebula" "$EMBED/bin/nebulad" "$EMBED/bin/docker-slim" "$PAYLOAD/bin/"
 # The asset server: one 1.7 MB static binary in place of a 106 MB Node runtime
 # plus its dependency tree.
 cp "${REMOTECLIENT_SRC:-$HOME/Projects/roBrowserLegacy-RemoteClient-Rust}/target/release/robrowser-remoteclient" \
@@ -34,13 +37,14 @@ echo "==> guest images"
 # nebula downloads these from its GitHub releases on first `up`. Shipping them
 # is what makes a fresh machine work with no network at all, and nebula's
 # install-image accepts gzip artifacts precisely for app bundles.
+#
+# The slim rootfs, not the full one: the guest runs slimd (Rust) rather than
+# dockerd + containerd + runc, which is 9 MB instead of 130 MB compressed. The
+# app used a fraction of the Go stack's surface — run, exec, logs, load, binds,
+# published ports — and slim covers all of it (nebula PR #17).
 mkdir -p "$PAYLOAD/guest"
-if [ ! -f "$PAYLOAD/guest/Image.gz" ]; then
-    gzip -1 -c "$HOME/.nebula/kernel/Image" > "$PAYLOAD/guest/Image.gz"
-fi
-if [ ! -f "$PAYLOAD/guest/rootfs.img.gz" ]; then
-    gzip -1 -c "$HOME/.nebula/images/rootfs-pristine.img" > "$PAYLOAD/guest/rootfs.img.gz"
-fi
+cp "$EMBED/images/kernel-Image.gz" "$PAYLOAD/guest/Image.gz"
+cp "$EMBED/images/rootfs.img.gz"   "$PAYLOAD/guest/rootfs.img.gz"
 
 echo "==> database schema"
 # Extracted from the rAthena image by bootstrap; MariaDB's entrypoint imports

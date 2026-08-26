@@ -6,7 +6,8 @@
 #   scripts/precache.sh load            # restore it (first launch)
 #   scripts/precache.sh ensure          # load only if an image is missing
 #
-# ~135 MB gzipped for rAthena + MariaDB.
+# Built with the real docker CLI against full nebula: slim implements `load`
+# but not `save` (it stores layers unpacked, so the original tars are gone).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,7 +27,7 @@ case "${1:-ensure}" in
     save)
         mkdir -p "$(dirname "$BUNDLE")"
         echo "saving ${IMAGES[*]}"
-        docker_ save "${IMAGES[@]}" | gzip -1 > "$BUNDLE"
+        docker_ save "${IMAGES[@]}" | gzip -9 > "$BUNDLE"
         echo "wrote $BUNDLE ($(du -h "$BUNDLE" | cut -f1))"
         ;;
     load)
