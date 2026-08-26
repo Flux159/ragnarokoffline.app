@@ -281,6 +281,20 @@ cmd_up() {
     fi
     phase "Starting the database…"
     wait_for_db
+    # Also applied here, not only in the seed SQL. MariaDB's entrypoint imports
+    # docker-entrypoint-initdb.d exactly once, when it creates the data
+    # directory -- so an install that predates this would never get the account
+    # and its owner would have to know the _M registration trick or wipe their
+    # database. INSERT IGNORE makes it a no-op once the row exists, including
+    # when the player has since changed the password.
+    # NOT EXISTS, not INSERT IGNORE: userid carries a plain KEY rather than a
+    # UNIQUE one, so IGNORE suppresses nothing and adds a duplicate account on
+    # every start. Two rows with the same userid is worse than none.
+    docker_ exec ragnarok-db mariadb -uragnarok -pragnarok ragnarok -e \
+        "INSERT INTO login (userid, user_pass, sex, email, group_id)
+         SELECT 'ragnarok', 'ragnarok', 'M', 'ragnarok@localhost', 99 FROM DUAL
+          WHERE NOT EXISTS (SELECT 1 FROM login WHERE userid = 'ragnarok');" \
+        >/dev/null 2>&1 || true
 
     # char and map hand the client an address to reconnect to. Everything is
     # published on the host's loopback, so that address is simply 127.0.0.1.
