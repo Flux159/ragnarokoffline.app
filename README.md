@@ -178,10 +178,16 @@ bundled, or redistributed with this app — `.gitignore` blocks GRFs, `BGM/`, `S
 and the client folder deliberately. The app points at a client directory you supply,
 with a first-run screen that explains what is needed.
 
-A working set is a full kRO client. The kRO full-client and patch mirrors linked from
-[**ratemyserver.net's kRO download page**](https://ratemyserver.net/index.php?page=download_kROLinks)
-are the usual source; the reference set this project is developed against is the
-**2020-06-03 kRO renewal client** from there.
+A working set is a full kRO client, plus the ROenglishRE overlay if you want
+translated artwork. Where to obtain those is left to you: this project ships no
+Gravity data and does not point at places to download it.
+
+Unzipping a full client gives you `data.grf`, `rdata.grf`, `BGM/`, `System/` and
+`AI/` in one folder, which is all the setup screen needs -- point it at that
+folder and it finds the rest. The overlay, `official_data.grf`, is optional:
+without it the game runs and the *text* is still English, because the ROenglishRE
+tables ship inside the app. What the overlay adds is translated *art* -- UI
+chrome, signage and item icons with Korean baked into the pixels.
 
 ### What a complete set looks like
 
