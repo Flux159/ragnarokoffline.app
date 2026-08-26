@@ -1,4 +1,11 @@
+<p align="center">
+  <img src="assets/icon.png" alt="Ragnarok Offline" width="200">
+</p>
+
 # RagnarokMac
+
+<sub>Icon generated with GPT Image 2. It is our own artwork — no Gravity assets are
+used in it, for the same reason none ship with the app.</sub>
 
 A single, self-contained macOS `.app` that runs **Ragnarok Online offline** — server,
 client, and game window in one icon. Double-click it and you are in Prontera. No

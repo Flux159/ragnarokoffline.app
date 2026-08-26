@@ -43,7 +43,7 @@
         }
       ],
       "category": "public.app-category.games",
-      "icon": "build/icon.icns",
+      "icon": "assets/icon.icns",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "electron/entitlements.mac.plist",
