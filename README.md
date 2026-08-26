@@ -12,7 +12,7 @@ Under the hood it stitches together three existing projects:
 | game server | [**rAthena**](https://github.com/rathena/rathena) | The open-source RO server emulator (login / char / map / web) + MariaDB |
 | game client | [**roBrowserLegacy**](https://github.com/MrAntares/roBrowserLegacy) + [**RemoteClient-JS**](https://github.com/FranciscoWallison/roBrowserLegacy-RemoteClient-JS) | WebGL RO client, GRF asset server, and TCP↔WebSocket proxy |
 
-The app shell is **Tauri** (Rust + WKWebView), matching Nebula's own `ui/`, so the two
+The app shell is **Electron**, so the same Chromium renders the client on macOS, Linux and Windows
 share a toolchain and a signing/notarization pipeline.
 
 ---
@@ -58,7 +58,7 @@ Nothing about the stack should be a black box the user cannot inspect or restart
 
 ### 5. Play, then get out of the way
 
-The game itself renders in a dedicated Tauri window — fullscreen-capable, correct
+The game itself renders in a dedicated Electron window — fullscreen-capable, correct
 retina scaling, no browser chrome, no address bar. It should feel like a native game,
 not a web page in a frame.
 
@@ -91,7 +91,7 @@ server was never meant to run on a Mac. So we do not make it; we bring Linux.
 flowchart TB
     subgraph APP["RagnarokMac.app  —  one signed bundle, no installers"]
         direction TB
-        TAURI["Tauri shell (Rust)<br/>boot · settings · game window (WKWebView)"]
+        TAURI["Electron shell<br/>boot · settings · game window (Chromium)"]
         ASSETS["robrowser-remoteclient (Rust, 1.7 MB)<br/>:3338 — client JS · GRF decoding · WS→TCP proxy"]
         NEB["nebula + nebulad<br/>microVM supervisor"]
     end
@@ -132,7 +132,7 @@ the app symlinks them into a server root and reads them where they lie, so a
 ```mermaid
 sequenceDiagram
     participant U as You
-    participant T as Tauri shell
+    participant T as Electron shell
     participant N as nebula
     participant S as slimd
     participant R as rAthena
@@ -168,6 +168,20 @@ dockerd + containerd + runc it replaces.
 The same property is what makes this cross-platform. The Linux side does not
 change between macOS, Windows and Linux; only the host-side VM integration does.
 
+### Why Electron rather than a system webview
+
+The shell was Tauri, which uses whatever webview the OS provides: WKWebView on
+macOS, WebKitGTK on Linux, WebView2 on Windows. That means three renderers and
+three sets of rendering bugs, and we hit one — character sprites drew with two
+heads on one body in character select, creation and the equipment window, on
+WebKit only. The same client and server in Chrome were correct
+([roBrowserLegacy #1350](https://github.com/MrAntares/roBrowserLegacy/issues/1350),
+open, no cause found).
+
+Electron carries its own Chromium, so there is one renderer to test against on
+every platform. It costs about 70 MB of download; it buys not debugging three
+browsers for the life of the project.
+
 ### Why the client runs in a WebView
 
 roBrowserLegacy is a WebGL RO client, so the "game window" is a WKWebView
@@ -197,7 +211,7 @@ a single 1.7 MB static binary, which is most of why the download is what it is.
 | [roBrowserLegacy](https://github.com/MrAntares/roBrowserLegacy) | upstream, GPL-3.0 | the client. Built from source with a few patches in `patches/` |
 | RemoteClient | ours, GPL-3.0 | Rust rewrite of upstream's Node asset server |
 | [nebula](https://github.com/Flux159/nebula) | ours | microVM + container engine; the reason any of this is portable |
-| Tauri shell | ours | windows, settings, lifecycle, backup/restore, repair |
+| Electron shell | ours | windows, settings, lifecycle, backup/restore, repair |
 | Game assets | **yours** | Gravity's copyright. Never bundled, never redistributed |
 
 ---
@@ -206,7 +220,7 @@ a single 1.7 MB static binary, which is most of why the download is what it is.
 
 ```
 ragnarokmac/
-├── src-tauri/            Rust: app shell, supervisor, Nebula client, config writer
+├── electron/             app shell: windows, IPC, lifecycle, signing hook
 ├── src/                  Launcher + Settings UI
 ├── containers/
 │   ├── rathena/          arm64 Dockerfile + build script for rAthena
@@ -373,7 +387,7 @@ do not inherit it blindly.
 ```bash
 scripts/bootstrap.sh ~/Downloads     # clone + build upstreams, link GRFs, build rAthena
 scripts/stack.sh up                  # MariaDB + login/char/map in the microVM
-cd src-tauri && cargo tauri build     # produces RagnarokMac.app + a DMG
+scripts/release.sh --dmg ~/Downloads  # builds, signs and verifies the .dmg
 ```
 
 Then open `RagnarokMac.app`, press **Start server**, then **Play**.
@@ -394,7 +408,7 @@ Working end to end on Apple Silicon (macOS 26.5, M-series):
 | WebSocket proxy | browser-shaped `CA_LOGIN` returns `AC_ACCEPT_LOGIN` |
 | login → char handshake | verified over the advertised address |
 | English client | `msgstringtable.txt` + 22.7 MB English item table served over the Korean originals |
-| Tauri shell | `RagnarokMac.app` (14 MB) + DMG, launcher UI live and driving the Rust commands |
+| Electron shell | `RagnarokMac.app` + DMG, launcher UI live and driving the shell commands |
 
 ### Two Nebula bugs, found and fixed
 

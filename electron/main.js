@@ -438,6 +438,15 @@ function makeWindow(id, file, opts) {
 	// Electron adopts the loaded page's <title>, and the game page calls itself
 	// "roBrowserLegacy". Ours is the name on the icon the user launched.
 	win.on('page-title-updated', e => e.preventDefault());
+
+	// roBrowser sets window.onbeforeunload ("Are you sure to exit roBrowser ?")
+	// in App/Online.js. In a browser tab that produces the leave-site prompt; in
+	// Electron it just vetoes the close, so the red button appeared dead and the
+	// app could only be quit from the menu. preventDefault here overrides the
+	// veto. Nothing is lost by ignoring it: the confirmation exists to stop
+	// someone navigating away from a tab, and quitting runs the same teardown
+	// either way.
+	win.webContents.on('will-prevent-unload', e => e.preventDefault());
 	win.loadFile(path.join(__dirname, '..', 'src', file));
 	win.on('closed', () => delete windows[id]);
 	windows[id] = win;
