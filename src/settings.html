@@ -51,6 +51,7 @@
       <button id="start">Start</button>
       <button id="stop" class="ghost">Stop</button>
       <button id="play" class="ghost">Open game</button>
+      <button id="repair" class="ghost">Repair…</button>
     </div>
   </div>
 
@@ -150,6 +151,14 @@ $('stop').onclick = async () => {
 $('play').onclick = () => invoke('open_game').catch(e => log('error: ' + e));
 
 $('change-client').onclick = () => invoke('open_setup').catch(e => log('error: ' + e));
+
+$('repair').onclick = async () => {
+  if (!confirm('Restart the server from scratch?\n\nThis stops the virtual machine, clears the game servers and starts them again. Your characters are not affected.')) return;
+  const b = $('repair'); b.disabled = true; b.textContent = 'Repairing…';
+  try { await invoke('stack_repair'); } catch (e) { alert(String(e)); }
+  b.disabled = false; b.textContent = 'Repair…';
+  refresh();
+};
 
 const { save: saveDialog, open: openDialog } = window.__TAURI__.dialog;
 

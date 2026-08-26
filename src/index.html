@@ -39,6 +39,7 @@
     <div class="status" id="status">Starting the server…</div>
     <div class="fail" id="fail" hidden></div>
     <button id="retry" hidden>Retry</button>
+    <button id="repair" class="ghost" hidden>Repair…</button>
   </div>
 <script>
 const { invoke } = window.__TAURI__.core;
@@ -49,6 +50,7 @@ const status = document.getElementById('status');
 let lastPhase = 'Starting the server…';
 const fail = document.getElementById('fail');
 const retry = document.getElementById('retry');
+const repair = document.getElementById('repair');
 const mark = document.getElementById('mark');
 
 // The stack takes ~30s from cold: MariaDB has to come up healthy before the
@@ -61,7 +63,7 @@ const DEADLINE_MS = 180000;
 const ready = () => invoke('assets_ready');
 
 async function boot() {
-  fail.hidden = true; retry.hidden = true; mark.hidden = false;
+  fail.hidden = true; retry.hidden = true; repair.hidden = true; mark.hidden = false;
 
   // No client configured yet: hand off to the setup window and stop here.
   if (!(await invoke('client_ready'))) {
@@ -110,7 +112,7 @@ async function boot() {
     await new Promise(r => setTimeout(r, 1500));
   }
   ticking = false;
-  giveUp(`Stalled at: ${lastPhase}\nThe server did not come up in time. Open Settings (⌘,) to see what is running.`);
+  giveUp(`Stalled at: ${lastPhase}\nThe server did not come up in time.`);
 }
 
 function giveUp(message) {
@@ -120,9 +122,25 @@ function giveUp(message) {
   fail.style.whiteSpace = 'pre-line';
   fail.hidden = false;
   retry.hidden = false;
+  repair.hidden = false;
 }
 
 retry.onclick = boot;
+
+// Restarting the engine is the one recovery that works when the daemon itself
+// is stuck, and it is the only one available to someone with no terminal.
+repair.onclick = async () => {
+  repair.disabled = true;
+  fail.textContent = 'Repairing…';
+  try {
+    await invoke('stack_repair');
+    repair.disabled = false;
+    boot();
+  } catch (e) {
+    repair.disabled = false;
+    giveUp(String(e));
+  }
+};
 boot();
 </script>
 </body>

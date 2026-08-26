@@ -475,6 +475,13 @@ fn data_location(app: tauri::AppHandle) -> String {
         .into_owned()
 }
 
+/// The in-app recovery path. A shipped user has no terminal and no docker CLI,
+/// so anything that can only be fixed from a shell is, for them, unfixable.
+#[tauri::command]
+async fn stack_repair(app: tauri::AppHandle) -> Result<String, String> {
+    off_main(move || run_stack(&app, "repair")).await
+}
+
 #[tauri::command]
 async fn db_backup(app: tauri::AppHandle, path: String) -> Result<String, String> {
     off_main(move || run_stack_args(&app, &["backup", &path])).await
@@ -815,6 +822,7 @@ pub fn run() {
             stack_status,
             stack_up,
             stack_down,
+            stack_repair,
             db_backup,
             db_restore,
             data_location,
