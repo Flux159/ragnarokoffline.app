@@ -20,6 +20,14 @@ IMAGE="${RAGNAROKMAC_IMAGE:-ragnarokmac/rathena:20200401}"
 DB_IMAGE="${RAGNAROKMAC_DB_IMAGE:-ragnarokmac/mariadb:11.4}"
 NEBULA="${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}"
 
+# The app runs its own engine, not the user's. Sharing ~/.nebula would mean
+# installing our guest images over whatever they already had, showing our
+# containers in their `nebula ps`, and letting either side's `nebula down` stop
+# the other's. It also has to be a fixed path rather than one derived from
+# STATE, because `nebula up` registers a launchd label derived from this.
+export NEBULA_HOME="${NEBULA_HOME:-$HOME/Library/Application Support/com.ragnarokmac.app/nebula}"
+mkdir -p "$NEBULA_HOME"
+
 # A GUI app launched from Finder inherits launchd's minimal PATH
 # (/usr/bin:/bin:/usr/sbin:/sbin), so none of the tools installed by Homebrew,
 # Rancher Desktop or Docker Desktop are visible. `nebula docker` wraps the real
@@ -50,7 +58,7 @@ if [ -z "$DOCKER_BIN" ]; then
     done
 fi
 [ -n "$DOCKER_BIN" ] || { echo "no docker client found (bundled or installed)" >&2; exit 1; }
-export DOCKER_HOST="${DOCKER_HOST:-unix://$HOME/.nebula/run/docker.sock}"
+export DOCKER_HOST="${DOCKER_HOST:-unix://$NEBULA_HOME/run/docker.sock}"
 
 docker_() { "$DOCKER_BIN" "$@"; }
 
@@ -161,7 +169,13 @@ wait_for_db() {
 # A fresh machine has no guest kernel or rootfs, and no running engine. Both
 # ship with the app, so neither needs the network.
 ensure_engine() {
-    local home="${NEBULA_HOME:-$HOME/.nebula}"
+    local home="$NEBULA_HOME"
+    # Must be in place before the first `up`: nebula reads it when it creates
+    # the instance, and the API/DNS/k8s ports in it are what keep this engine
+    # from colliding with a standalone Nebula install on the same machine.
+    if [ ! -f "$home/config.toml" ] && [ -f "$ROOT/config/nebula.toml" ]; then
+        cp "$ROOT/config/nebula.toml" "$home/config.toml"
+    fi
     if [ ! -f "$home/kernel/Image" ] || [ ! -f "$home/images/rootfs-pristine.img" ]; then
         if [ -f "$ROOT/guest/Image.gz" ] && [ -f "$ROOT/guest/rootfs.img.gz" ]; then
             echo "installing guest images…"

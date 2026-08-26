@@ -1,0 +1,17 @@
+# Engine settings for the app's own Nebula instance, copied into NEBULA_HOME
+# before the first `nebula up`.
+#
+# The ports matter: a developer with a standalone Nebula install runs its API on
+# 7440, DNS on 42053 and k3s on 6443. The app must not squat on those, or
+# whichever came up first wins and the other silently fails to start.
+api_port = 7462
+dns_port = 42062
+k8s_port = 6462
+
+# Ceilings, not reservations — ballooning hands idle RAM back to macOS, so a
+# generous ceiling costs nothing while rAthena loads its scripts.
+max_ram_mib = 4096
+cpus = 4
+data_disk_gib = 16
+
+dns_zone = "ragnarok.local"
