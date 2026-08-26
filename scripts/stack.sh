@@ -250,6 +250,11 @@ ensure_engine() {
 
 cmd_up() {
     mkdir -p "$STATE/conf" "$STATE/sql" "$STATE/backups"
+    # Clear the previous run's result immediately. Leaving "Ready" in place
+    # while this run is still bringing containers up makes anything that polls
+    # the file -- the boot window, or a person -- believe a stack that is not
+    # there yet.
+    phase "Starting…"
     acquire_lock
     phase "Starting the virtual machine…"
     ensure_engine || exit 1
@@ -403,6 +408,7 @@ cmd_down() {
     done
     docker_ stop -t 10 ragnarok-db >/dev/null 2>&1 || true
     remove_container ragnarok-db
+    phase "Stopped"
     echo "stack down"
 }
 
