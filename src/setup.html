@@ -20,6 +20,11 @@
   .label .name { font-weight: 600; }
   .label .tag { font-size: 11px; color: var(--dim); }
   .picker { display: flex; gap: 8px; }
+  .field.folder { padding-bottom: 4px; }
+  .or {
+    margin: 14px 0 10px; text-align: center; color: var(--dim);
+    font-size: 12px; text-transform: lowercase;
+  }
   .path {
     flex: 1; background: var(--panel-hi); border: 1px solid var(--line);
     border-radius: 6px; padding: 8px 10px; font-size: 12px;
@@ -48,6 +53,16 @@
     at a Ragnarok client you already have. The files are read where they are, not
     copied, so a multi-gigabyte client is not duplicated.
   </p>
+
+  <div class="field folder">
+    <div class="label"><span class="name">Your client folder</span><span class="tag">fastest — fills in everything below</span></div>
+    <div class="picker">
+      <div class="path" id="p-folder">Pick the folder you unzipped the full client into</div>
+      <button id="pick-folder">Choose folder…</button>
+    </div>
+  </div>
+
+  <div class="or">or set them individually</div>
 
   <div class="field">
     <div class="label"><span class="name">data.grf</span><span class="tag">required — maps, models, palettes</span></div>
@@ -101,6 +116,28 @@ function render() {
   }
   $('save').disabled = !(paths.data_grf && paths.rdata_grf);
 }
+
+$('pick-folder').onclick = async () => {
+  const dir = await open({ multiple: false, directory: true });
+  if (typeof dir !== 'string') return;
+  const found = await invoke('scan_client_dir', { dir });
+  let n = 0;
+  for (const k of KEYS) {
+    if (found[k]) { paths[k] = found[k]; n++; }
+  }
+  $('p-folder').textContent = dir;
+  $('p-folder').classList.add('set');
+  // Say what was and was not found: the English overlay is a separate download,
+  // so a folder that yields three of four is the normal case, not a failure.
+  const missing = KEYS.filter(k => !paths[k]);
+  $('msg').className = 'msg' + (paths.data_grf && paths.rdata_grf ? '' : ' bad');
+  $('msg').textContent = n === 0
+    ? 'No .grf files in that folder — is it the folder you unzipped the client into?'
+    : missing.length
+      ? `Found ${n}. Still missing: ${missing.join(', ')}. Set those below if you have them.`
+      : 'Found everything.';
+  render();
+};
 
 for (const btn of document.querySelectorAll('[data-pick]')) {
   btn.onclick = async () => {

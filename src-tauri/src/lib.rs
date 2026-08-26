@@ -220,6 +220,51 @@ fn client_ready(app: tauri::AppHandle) -> bool {
 
 /// Save the chosen client and symlink it into the asset server. The GRFs are
 /// never copied — a full client is gigabytes and stays where the user put it.
+/// Fill in a whole client from one folder.
+///
+/// The practical way to get a client is a full-client archive from the rAthena
+/// forums: unzip it and everything except the English overlay is in that one
+/// directory. Asking for each file separately made the user do a scavenger hunt
+/// through a folder they had just extracted.
+///
+/// Case-insensitive because the archives are packed on Windows and come out
+/// with mixed case. Also looks one level into `dll_exe/`, which some repacks
+/// nest everything under -- link-assets.sh already knows about that layout.
+#[tauri::command]
+fn scan_client_dir(dir: String) -> ClientPaths {
+    let root = PathBuf::from(&dir);
+    let mut found = ClientPaths::default();
+
+    for base in [root.clone(), root.join("dll_exe")] {
+        let Ok(entries) = std::fs::read_dir(&base) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            if path.is_dir() {
+                if name == "bgm" && found.bgm_dir.is_empty() {
+                    found.bgm_dir = path.to_string_lossy().into_owned();
+                }
+                continue;
+            }
+            let target = match name.as_str() {
+                "data.grf" => &mut found.data_grf,
+                "rdata.grf" => &mut found.rdata_grf,
+                // The English overlay is a separate download and people rename
+                // it, so take any other .grf as a candidate rather than
+                // insisting on one filename.
+                other if other.ends_with(".grf") => &mut found.official_grf,
+                _ => continue,
+            };
+            if target.is_empty() {
+                *target = path.to_string_lossy().into_owned();
+            }
+        }
+    }
+    found
+}
+
 #[tauri::command]
 async fn set_client_paths(app: tauri::AppHandle, paths: ClientPaths) -> Result<String, String> {
     off_main(move || link_client(&app, &paths)).await
@@ -692,6 +737,7 @@ pub fn run() {
             launch_game,
             get_client_paths,
             set_client_paths,
+            scan_client_dir,
             client_ready,
             open_setup,
             close_setup
