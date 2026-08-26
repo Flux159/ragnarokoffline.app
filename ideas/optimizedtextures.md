@@ -260,13 +260,21 @@ Compression tops out around 15% here. The only route to a 1 GB install is not
 shipping 987 maps and 46,583 textures that one player will mostly never see.
 
 A player who never leaves Prontera and the starting fields touches a small
-fraction of that. Fetch assets on demand from a local or remote store, cache
-what is used, and the *installed* footprint becomes a function of where someone
-has actually been rather than everything Gravity ever shipped. That is what
-`rodownloader` was sketched for, and it is a far bigger lever than any codec in
-this document.
+fraction of that. Fetch assets on demand, cache what is used, and the
+*installed* footprint becomes a function of where someone has actually been
+rather than everything Gravity ever shipped. That is a far bigger lever than any
+codec in this document — 5x where compression is 1.15x.
 
 The catch is that it trades a one-time download for a stall on first visit to a
-new map, and offline-first is this project's whole premise — so it probably
-wants a "fetch everything" option for people who want the current behaviour.
-Worth its own document if it is ever picked up.
+new map, and offline-first is this project's whole premise — so it would need a
+"fetch everything" option for people who want the current behaviour. Worth its
+own document if it is ever picked up.
+
+**This is not what `rodownloader` is for.** That project is a cross-platform
+WARPGATE alternative: it acquires and updates a full client once, and writes an
+install manifest so this app can find what it installed. It solves *getting the
+assets at all* — which today means running a Windows installer in a VM — not
+shipping fewer of them. On-demand fetching would be a separate piece of work
+sitting between the asset server and the client, and the two are complementary:
+rodownloader gets the bytes onto the machine, this would decide which of them
+ever need to arrive.
