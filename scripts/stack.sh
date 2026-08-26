@@ -166,6 +166,26 @@ wait_for_db() {
     echo "timed out waiting for the database" >&2; return 1
 }
 
+# The map-server listens on 5121 long before it is usable: it then spends some
+# seconds reading ~1265 maps and the whole npc/re tree, and only afterwards
+# registers those maps with the char-server. A character logging in during that
+# window is told "Map is not available" and bounced, because the char-server
+# genuinely has nowhere to send it yet. The container being Up is therefore not
+# readiness; the char-server saying it has the maps is.
+wait_for_maps() {
+    local tries=90
+    while [ $tries -gt 0 ]; do
+        if docker_ logs ragnarok-char 2>&1 | grep -q "loading complete"; then
+            return 0
+        fi
+        sleep 2; tries=$((tries - 1))
+    done
+    # Don't fail the launch over this — the stack is up and will finish loading
+    # shortly. Say so, so a slow machine's first login is explicable.
+    echo "map-server has not registered its maps yet; first login may need a retry" >&2
+    return 0
+}
+
 # A fresh machine has no guest kernel or rootfs, and no running engine. Both
 # ship with the app, so neither needs the network.
 ensure_engine() {
@@ -303,6 +323,7 @@ EOF
     run_server ragnarok-login 6900 /rathena/login-server
     run_server ragnarok-char  6121 /rathena/char-server
     run_server ragnarok-map   5121 /rathena/map-server
+    wait_for_maps
     echo "stack up"
 }
 
