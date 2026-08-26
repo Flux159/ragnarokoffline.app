@@ -178,9 +178,12 @@ wait_for_db() {
     echo "timed out waiting for the database" >&2; return 1
 }
 
-# The map-server listens on 5121 long before it is usable: it then spends some
-# seconds reading ~1265 maps and the whole npc/re tree, and only afterwards
-# registers those maps with the char-server. A character logging in during that
+# The map-server listens on 5121 long before it is usable: it then reads its
+# 1265 maps and the whole npc/re tree, and only afterwards registers those maps
+# with the char-server. That read is quick — a few seconds on an idle machine,
+# because db/map_cache.dat is a prebuilt binary cache baked into the image at
+# build time rather than 987 .gnd/.gat files parsed at startup — but "quick" is
+# not "instant", and the gap is a real window a fast player can land in. A character logging in during that
 # window is told "Map is not available" and bounced, because the char-server
 # genuinely has nowhere to send it yet. The container being Up is therefore not
 # readiness; the char-server saying it has the maps is.
@@ -254,7 +257,7 @@ cmd_up() {
     # no-op once the images are present, and a phase that says "first run only"
     # on every run trains people to ignore it.
     if ! docker_ image inspect "$IMAGE" >/dev/null 2>&1; then
-        phase "Loading the server images… (first run only, ~1 min)"
+        phase "Loading the server images… (first run only)"
     fi
     "$ROOT/scripts/precache.sh" ensure >/dev/null 2>&1 || true
     docker_ network create "$NET" >/dev/null 2>&1 || true
@@ -344,7 +347,7 @@ EOF
     run_server ragnarok-login 6900 /rathena/login-server
     run_server ragnarok-char  6121 /rathena/char-server
     run_server ragnarok-map   5121 /rathena/map-server
-    phase "Loading maps and NPCs… (up to 2 min)"
+    phase "Loading maps and NPCs…"
     wait_for_maps
     phase "Ready"
     echo "stack up"
