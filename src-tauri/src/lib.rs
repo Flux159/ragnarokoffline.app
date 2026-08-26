@@ -138,11 +138,7 @@ fn runtime_root(app: &tauri::AppHandle) -> PathBuf {
     }
 
     let bundled = app.path().resource_dir().ok().map(|r| r.join("payload"));
-    let installed = app
-        .path()
-        .app_data_dir()
-        .map(|d| d.join("runtime"))
-        .unwrap_or_default();
+    let installed = data_root(app).join("runtime");
 
     if let Some(payload) = bundled.filter(|p| p.join("scripts/stack.sh").exists()) {
         let want = std::fs::read_to_string(payload.join("VERSION")).unwrap_or_default();
@@ -181,6 +177,56 @@ fn project_root(app: &tauri::AppHandle) -> PathBuf {
     runtime_root(app)
 }
 
+/// `~/Library/Application Support/RagnarokMac`.
+///
+/// Not `app_data_dir()`, which derives the folder name from the bundle
+/// identifier and so produces `com.ragnarokmac.app` — a plain folder whose name
+/// ends in `.app`, which Finder then draws as an application bundle and refuses
+/// to open by double-click. The identifier stays reverse-DNS because that is
+/// what it is for; the folder people actually browse gets a readable name.
+fn data_root(app: &tauri::AppHandle) -> PathBuf {
+    if let Some(home) = std::env::var_os("HOME") {
+        return PathBuf::from(home)
+            .join("Library/Application Support")
+            .join("RagnarokMac");
+    }
+    app.path().app_data_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+/// Move data written under the old identifier-named folder, once.
+///
+/// Skipped entirely when the new location already exists, so it cannot clobber
+/// a live install. The engine is stopped first: `nebula up` registers a launchd
+/// label derived from NEBULA_HOME, and moving the directory under a running
+/// instance leaves it writing to a path that no longer exists.
+fn migrate_data_root(app: &tauri::AppHandle) {
+    let new = data_root(app);
+    if new.exists() {
+        return;
+    }
+    let Some(home) = std::env::var_os("HOME") else { return };
+    let old = PathBuf::from(home)
+        .join("Library/Application Support")
+        .join("com.ragnarokmac.app");
+    if !old.exists() {
+        return;
+    }
+    let old_nebula = old.join("nebula");
+    if old_nebula.exists() {
+        let _ = Command::new(old.join("runtime/bin/nebula"))
+            .arg("down")
+            .env("NEBULA_HOME", &old_nebula)
+            .output();
+    }
+    if let Some(parent) = new.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match std::fs::rename(&old, &new) {
+        Ok(_) => eprintln!("moved {} -> {}", old.display(), new.display()),
+        Err(e) => eprintln!("could not move {}: {e}", old.display()),
+    }
+}
+
 /// Generated conf, the imported schema and the merged System directory. Kept
 /// out of runtime/ so an app update, which replaces runtime/ wholesale, does
 /// not discard it.
@@ -188,18 +234,12 @@ fn state_dir(app: &tauri::AppHandle) -> PathBuf {
     if let Ok(dir) = std::env::var("RAGNAROKMAC_STATE") {
         return PathBuf::from(dir);
     }
-    match app.path().app_data_dir() {
-        Ok(d) => d.join("state"),
-        Err(_) => project_root(app).join(".ragnarokmac"),
-    }
+    data_root(app).join("state")
 }
 
-/// ~/Library/Application Support/com.ragnarokmac.app/client.json
+/// ~/Library/Application Support/RagnarokMac/client.json
 fn client_config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("no application data directory: {e}"))?;
+    let dir = data_root(app);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir.join("client.json"))
 }
@@ -370,10 +410,14 @@ fn find_tool(app: &tauri::AppHandle, name: &str) -> Option<PathBuf> {
 }
 
 fn run_stack(app: &tauri::AppHandle, arg: &str) -> Result<String, String> {
+    run_stack_args(app, &[arg])
+}
+
+fn run_stack_args(app: &tauri::AppHandle, args: &[&str]) -> Result<String, String> {
     let root = project_root(app);
     let out = Command::new("bash")
         .arg(root.join("scripts/stack.sh"))
-        .arg(arg)
+        .args(args)
         .current_dir(&root)
         .env("PATH", tool_path())
         .env("NEBULA_BIN", root.join("bin/nebula"))
@@ -414,6 +458,31 @@ async fn stack_status(app: tauri::AppHandle) -> Result<String, String> {
 #[tauri::command]
 async fn stack_up(app: tauri::AppHandle) -> Result<String, String> {
     off_main(move || run_stack(&app, "up")).await
+}
+
+/// Where the player's data actually lives, for the Settings window to show.
+///
+/// Deliberately the Application Support path and not the volume's own
+/// mountpoint. `docker volume inspect` reports
+/// /var/lib/nebula/slim/volumes/ragnarokmac-db/_data, which is a path *inside*
+/// the guest and exists nowhere on macOS — showing it would send people looking
+/// for a directory they can never find.
+#[tauri::command]
+fn data_location(app: tauri::AppHandle) -> String {
+    data_root(&app)
+        .join("nebula/disks/data.img")
+        .to_string_lossy()
+        .into_owned()
+}
+
+#[tauri::command]
+async fn db_backup(app: tauri::AppHandle, path: String) -> Result<String, String> {
+    off_main(move || run_stack_args(&app, &["backup", &path])).await
+}
+
+#[tauri::command]
+async fn db_restore(app: tauri::AppHandle, path: String) -> Result<String, String> {
+    off_main(move || run_stack_args(&app, &["restore", &path])).await
 }
 
 #[tauri::command]
@@ -687,6 +756,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let handle = app.handle();
+            // Before anything reads a path: an existing install still has its
+            // 4 GB of engine data under the old folder name.
+            migrate_data_root(handle);
             handle.set_menu(build_menu(handle)?)?;
 
             // Created here rather than declared in tauri.conf.json: a
@@ -743,6 +815,9 @@ pub fn run() {
             stack_status,
             stack_up,
             stack_down,
+            db_backup,
+            db_restore,
+            data_location,
             start_stack,
             assets_ready,
             assets_start,

@@ -37,7 +37,7 @@ NEBULA="${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}"
 # containers in their `nebula ps`, and letting either side's `nebula down` stop
 # the other's. It also has to be a fixed path rather than one derived from
 # STATE, because `nebula up` registers a launchd label derived from this.
-export NEBULA_HOME="${NEBULA_HOME:-$HOME/Library/Application Support/com.ragnarokmac.app/nebula}"
+export NEBULA_HOME="${NEBULA_HOME:-$HOME/Library/Application Support/RagnarokMac/nebula}"
 mkdir -p "$NEBULA_HOME"
 
 # A GUI app launched from Finder inherits launchd's minimal PATH
@@ -99,10 +99,21 @@ acquire_lock() {
 # Remove and wait: docker returns before the name is released, so creating the
 # replacement immediately can still collide.
 remove_container() {
-    local name="$1" tries=30
-    docker_ rm -f "$name" >/dev/null 2>&1 || true
+    local name="$1" tries=30 ids
+    # By id, not by name. A name is not reliably unique here: a container that
+    # exited without being cleaned up keeps its name, and `rm -f <name>` then
+    # fails with "multiple containers match" -- so the one call that could
+    # clear the mess is the one that refuses to run. Removing every id that
+    # answers to the name works whether there is one or five.
+    ids=$(docker_ ps -aq --filter "name=$name" 2>/dev/null || true)
+    for id in $ids; do
+        docker_ rm -f "$id" >/dev/null 2>&1 || true
+    done
+    # Removal is asynchronous; the name stays taken for a moment afterwards and
+    # creating the replacement inside that window is the "already in use" error.
     while [ $tries -gt 0 ]; do
-        docker_ inspect -f '{{.Id}}' "$name" >/dev/null 2>&1 || return 0
+        ids=$(docker_ ps -aq --filter "name=$name" 2>/dev/null || true)
+        [ -z "$ids" ] && return 0
         sleep 0.5; tries=$((tries - 1))
     done
     return 0
@@ -144,7 +155,13 @@ prepare_kafra_scripts() {
 
 run_server() {
     local name="$1" port="$2" binary="$3"
-    docker_ rm -f "$name" >/dev/null 2>&1 || true
+    # remove_container, not a bare `rm -f`: removal is asynchronous, and the
+    # name stays taken for a moment after the call returns. Creating the
+    # replacement in that window fails with `Conflict. The container name
+    # "/ragnarok-login" is already in use`, which reads like something else is
+    # running when in fact it is our own container still going away. cmd_down
+    # already waits; this path was the one that did not.
+    remove_container "$name"
     # One directory mount, not five file mounts. Docker mis-handles a
     # single-file bind whose host path contains a space, and the standard macOS
     # location -- ~/Library/Application Support/<bundle id> -- always does. The
@@ -232,7 +249,7 @@ ensure_engine() {
 }
 
 cmd_up() {
-    mkdir -p "$STATE/conf" "$STATE/sql"
+    mkdir -p "$STATE/conf" "$STATE/sql" "$STATE/backups"
     acquire_lock
     phase "Starting the virtual machine…"
     ensure_engine || exit 1
@@ -276,6 +293,7 @@ cmd_up() {
             -e MARIADB_ROOT_PASSWORD=ragnarok -e MARIADB_DATABASE=ragnarok \
             -e MARIADB_USER=ragnarok -e MARIADB_PASSWORD=ragnarok \
             -v "$STATE/sql:/docker-entrypoint-initdb.d:ro" \
+            -v "$STATE/backups:/backups" \
             -v ragnarokmac-db:/var/lib/mysql \
             "$DB_IMAGE" >/dev/null
     fi
@@ -404,10 +422,51 @@ cmd_status() {
     done
 }
 
+# Backups go through a bind-mounted directory rather than a pipe. slim's
+# `exec -i` never returns and its `cp` reports success while transferring
+# nothing, so the only dependable channel between host and container is a mount
+# both sides can see.
+cmd_backup() {
+    local dest="${1:?destination file required}"
+    mkdir -p "$STATE/backups"
+    local tmp="ragnarokmac-$$.sql"
+    docker_ exec ragnarok-db sh -c \
+        "mariadb-dump -uragnarok -pragnarok --single-transaction --routines \
+         --databases ragnarok > /backups/$tmp" || {
+        echo "the database did not produce a dump (is the server running?)" >&2
+        return 1
+    }
+    # --single-transaction keeps the server writable during the dump, which
+    # matters because the player may well be logged in while taking one.
+    [ -s "$STATE/backups/$tmp" ] || { echo "the dump came out empty" >&2; rm -f "$STATE/backups/$tmp"; return 1; }
+    mv "$STATE/backups/$tmp" "$dest"
+    echo "wrote $dest ($(du -h "$dest" | cut -f1))"
+}
+
+cmd_restore() {
+    local src="${1:?source file required}"
+    [ -f "$src" ] || { echo "no such backup: $src" >&2; return 1; }
+    mkdir -p "$STATE/backups"
+    local tmp="restore-$$.sql"
+    cp "$src" "$STATE/backups/$tmp"
+    # The dump carries CREATE DATABASE + USE, so this replaces the schema
+    # wholesale rather than merging into whatever is there now.
+    if ! docker_ exec ragnarok-db sh -c \
+        "mariadb -uragnarok -pragnarok < /backups/$tmp"; then
+        rm -f "$STATE/backups/$tmp"
+        echo "restore failed; the database is unchanged" >&2
+        return 1
+    fi
+    rm -f "$STATE/backups/$tmp"
+    echo "restored from $src"
+}
+
 case "${1:-status}" in
     up) cmd_up ;;
+    backup) cmd_backup "${2:-}" ;;
+    restore) cmd_restore "${2:-}" ;;
     down) cmd_down ;;
     status) cmd_status ;;
     logs) docker_ logs --tail "${3:-40}" "ragnarok-${2:-map}" ;;
-    *) echo "usage: $0 up|down|status|logs [service]" >&2; exit 2 ;;
+    *) echo "usage: $0 up|down|status|logs|backup <file>|restore <file>" >&2; exit 2 ;;
 esac

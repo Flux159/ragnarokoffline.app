@@ -64,6 +64,16 @@
        references them, so nothing is copied or duplicated.</p>
   </div>
 
+  <h2>Save data</h2>
+  <div class="card">
+    <div class="row"><span class="name">Characters &amp; accounts</span><span class="state" id="s-dbfile">—</span></div>
+    <div class="actions">
+      <button id="backup" class="ghost">Back up…</button>
+      <button id="restore" class="ghost">Restore…</button>
+    </div>
+    <div class="note" id="db-note">Everything you have played is inside that disk image; it is not a folder you can open.</div>
+  </div>
+
   <h2>Rates</h2>
   <div class="panel">
     <label><span>Base EXP</span><input type="range" id="base_exp_rate" min="100" max="5000" step="100"><span class="val" id="v-base_exp_rate"></span></label>
@@ -140,6 +150,40 @@ $('stop').onclick = async () => {
 $('play').onclick = () => invoke('open_game').catch(e => log('error: ' + e));
 
 $('change-client').onclick = () => invoke('open_setup').catch(e => log('error: ' + e));
+
+const { save: saveDialog, open: openDialog } = window.__TAURI__.dialog;
+
+invoke('data_location').then(p => { if (p) $('s-dbfile').textContent = p; }).catch(() => {});
+
+$('backup').onclick = async () => {
+  // Default name carries the date so successive backups do not overwrite each
+  // other -- the usual reason a backup feature turns out to be useless.
+  const stamp = new Date().toISOString().slice(0, 10);
+  const path = await saveDialog({ defaultPath: `ragnarokmac-${stamp}.sql`,
+                                  filters: [{ name: 'SQL dump', extensions: ['sql'] }] });
+  if (typeof path !== 'string') return;
+  $('db-note').textContent = 'Backing up…';
+  try {
+    $('db-note').textContent = (await invoke('db_backup', { path })).trim();
+  } catch (e) {
+    $('db-note').textContent = String(e);
+  }
+};
+
+$('restore').onclick = async () => {
+  const path = await openDialog({ multiple: false, directory: false,
+                                  filters: [{ name: 'SQL dump', extensions: ['sql'] }] });
+  if (typeof path !== 'string') return;
+  // Restoring replaces the schema wholesale, so say so before doing it.
+  if (!confirm('Restore this backup?\n\nEvery character and account currently on this server is replaced by the contents of the file. This cannot be undone.')) return;
+  $('db-note').textContent = 'Restoring…';
+  try {
+    $('db-note').textContent = (await invoke('db_restore', { path })).trim()
+      + ' — restart the server for it to take effect.';
+  } catch (e) {
+    $('db-note').textContent = String(e);
+  }
+};
 
 $('save').onclick = async () => {
   const settings = await invoke('get_settings');

@@ -17,13 +17,14 @@ RUN apk add --no-cache mariadb mariadb-client tzdata \
     && sed -i 's/^skip-networking/#skip-networking/' /etc/my.cnf.d/mariadb-server.cnf \
     && sed -i 's/^#bind-address=.*/bind-address=0.0.0.0/' /etc/my.cnf.d/mariadb-server.cnf \
     # Alpine's mariadb packages put ~198 MB in /usr/bin, of which this image
-    # calls six: the server, the client, mariadb-admin's ping/shutdown, and the
-    # three mariadb-install-db shells out to. The rest is maintenance and test
+    # calls seven: the server, the client, mariadb-admin's ping/shutdown,
+    # mariadb-dump for the backup feature, and the three mariadb-install-db
+    # shells out to. The rest is maintenance and test
     # tooling — aria/myisam repair, the embedded server, RocksDB, Galera SST, a
     # connector test harness — for a database created once from a fixed schema
     # and never administered by hand. Scoped to package-owned files, so
     # busybox's applets, which also live in /usr/bin, are untouched.
-    && keep=' mariadbd mariadb mariadb-admin my_print_defaults resolveip mariadb-install-db mariadbd-safe ' \
+    && keep=' mariadbd mariadb mariadb-admin mariadb-dump my_print_defaults resolveip mariadb-install-db mariadbd-safe ' \
     && apk info -L mariadb mariadb-client mariadb-common 2>/dev/null \
        | grep '^usr/bin/' \
        | while read -r f; do \
@@ -37,6 +38,7 @@ RUN apk add --no-cache mariadb mariadb-client tzdata \
     && mariadbd --version >/dev/null \
     && mariadb --version >/dev/null \
     && mariadb-admin --version >/dev/null \
+    && mariadb-dump --version >/dev/null \
     && sh -n /usr/bin/mariadb-install-db
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

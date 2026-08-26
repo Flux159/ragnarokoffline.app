@@ -34,10 +34,23 @@ if [ -z "$DOCKER_BIN" ]; then
     done
 fi
 [ -n "$DOCKER_BIN" ] || { echo "no docker client found (bundled or installed)" >&2; exit 1; }
-export NEBULA_HOME="${NEBULA_HOME:-$HOME/Library/Application Support/com.ragnarokmac.app/nebula}"
+export NEBULA_HOME="${NEBULA_HOME:-$HOME/Library/Application Support/RagnarokMac/nebula}"
 export DOCKER_HOST="${DOCKER_HOST:-unix://$NEBULA_HOME/run/docker.sock}"
 
 docker_() { "$DOCKER_BIN" "$@"; }
+
+# `save` is the one verb that must go to a real docker daemon: slim stores
+# layers unpacked, so the original layer tars no longer exist for it to write
+# out, and it rejects the command outright. That is a developer-machine path
+# only -- the app never saves, it only loads -- so requiring a real docker CLI
+# here costs shipped users nothing.
+# Also pinned to the *full* nebula engine, not the app's. The app runs its own
+# slim instance, and this script inherits NEBULA_HOME from stack.sh when it is
+# called from there -- pointing `save` at slimd, which cannot do it. Images are
+# built against the full engine, so that is where they are saved from.
+docker_real_() {
+    NEBULA_HOME="${RAGNAROKMAC_BUILD_HOME:-$HOME/.nebula}" "$NEBULA" docker "$@"
+}
 
 have_all() {
     for img in "${IMAGES[@]}"; do
@@ -49,7 +62,11 @@ case "${1:-ensure}" in
     save)
         mkdir -p "$(dirname "$BUNDLE")"
         echo "saving ${IMAGES[*]}"
-        docker_ save "${IMAGES[@]}" | gzip -9 > "$BUNDLE"
+        docker_real_ save "${IMAGES[@]}" | gzip -9 > "$BUNDLE"
+        # A slim client silently produces a non-archive here; catch it now
+        # rather than at load time on someone else's machine.
+        gunzip -c "$BUNDLE" | tar t 2>/dev/null | grep -q "manifest.json\|index.json" \
+            || { echo "that is not a docker-save archive; is a real docker CLI available?" >&2; exit 1; }
         echo "wrote $BUNDLE ($(du -h "$BUNDLE" | cut -f1))"
         ;;
     load)
