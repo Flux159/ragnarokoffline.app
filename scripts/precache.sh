@@ -13,7 +13,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NEBULA="${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}"
 BUNDLE="${RAGNAROKMAC_BUNDLE:-$ROOT/dist/images.tar.gz}"
-IMAGES=("${RAGNAROKMAC_IMAGE:-ragnarokmac/rathena:20200401}" "${RAGNAROKMAC_DB_IMAGE:-ragnarokmac/mariadb:11.4}")
+IMAGES=("${RAGNAROKMAC_IMAGE:-ragnarokmac/rathena:20221005}" "${RAGNAROKMAC_DB_IMAGE:-ragnarokmac/mariadb:11.4}")
 
 # Resolve a docker client exactly as stack.sh does, and for the same reason: on
 # a machine that has never had Docker installed there is no docker CLI to wrap.

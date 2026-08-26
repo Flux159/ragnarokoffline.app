@@ -25,7 +25,7 @@ phase() {
     printf '%s\n' "$1" > "$STATE/phase" 2>/dev/null || true
     echo "$1"
 }
-IMAGE="${RAGNAROKMAC_IMAGE:-ragnarokmac/rathena:20200401}"
+IMAGE="${RAGNAROKMAC_IMAGE:-ragnarokmac/rathena:20221005}"
 # Pinned deliberately. MariaDB cannot open a data directory written by a newer
 # major version, so floating on a tag like `noble` means a rebuild can silently
 # upgrade the server and leave existing characters unreadable on any rollback.

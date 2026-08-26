@@ -14,7 +14,7 @@ WORKDIR /rathena
 COPY . /rathena
 
 # Must match roBrowser's `packetver` and the era of the client GRFs.
-ARG PACKETVER=20200401
+ARG PACKETVER=20221005
 RUN ./configure --enable-packetver=${PACKETVER} \
     && make -j"$(nproc)" server \
     && strip login-server char-server map-server web-server || true

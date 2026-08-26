@@ -10,7 +10,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENDOR="$ROOT/vendor"
 CLIENT="${1:-$HOME/Downloads}"
-PACKETVER=20200401
+PACKETVER=20221005
 NEBULA="${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}"
 
 clone() {

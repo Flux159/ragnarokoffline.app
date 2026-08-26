@@ -23,7 +23,7 @@ window.ROConfigLocal = {
 			// cover as mojibake ("¼¼»òÀ»"). 949 is ASCII-compatible, so English
 			// is untouched and leftover Korean renders as actual Korean.
 			langtype: 0,
-			packetver: 20200401,
+			packetver: 20221005,
 			renewal: true,
 			worldMapSettings: { episode: 20 },
 			packetKeys: false,
