@@ -1,0 +1,60 @@
+{
+  "name": "ragnarokmac",
+  "version": "0.1.0",
+  "description": "Ragnarok Online, offline, in one app",
+  "license": "GPL-3.0",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.chronotale.ragnarokmac",
+    "productName": "RagnarokMac",
+    "copyright": "GPL-3.0",
+    "directories": {
+      "output": "dist/electron",
+      "buildResources": "electron"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "!**/node_modules/**"
+    ],
+    "extraResources": [
+      {
+        "from": "payload",
+        "to": "payload"
+      }
+    ],
+    "afterSign": "electron/afterSign.js",
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64"]
+        }
+      ],
+      "category": "public.app-category.games",
+      "icon": "src-tauri/icons/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "electron/entitlements.mac.plist",
+      "entitlementsInherit": "electron/entitlements.mac.plist",
+      "extendInfo": {
+        "LSMinimumSystemVersion": "13.0"
+      }
+    },
+    "dmg": {
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    }
+  }
+}

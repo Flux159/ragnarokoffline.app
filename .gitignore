@@ -50,3 +50,7 @@ data.ini
 /payload/
 /bin/
 /vendor/node/
+
+# Electron shell
+/node_modules/
+/dist/electron/
