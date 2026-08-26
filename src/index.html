@@ -44,6 +44,9 @@
 const { invoke } = window.__TAURI__.core;
 
 const status = document.getElementById('status');
+// Remembered so a failure can name the step it died on, which is the one thing
+// worth knowing when someone reports "it just hung".
+let lastPhase = 'Starting the server…';
 const fail = document.getElementById('fail');
 const retry = document.getElementById('retry');
 const mark = document.getElementById('mark');
@@ -67,30 +70,54 @@ async function boot() {
     return;
   }
 
-  status.textContent = 'Starting the server…';
+  const started = Date.now();
+
+  // start_stack is one blocking call that can run for minutes on a first
+  // launch, so the phase has to be polled *alongside* it rather than after —
+  // otherwise the window shows one unchanging line for the whole wait and a
+  // hang looks exactly like slow progress.
+  let ticking = true;
+  const show = async () => {
+    while (ticking) {
+      const p = await invoke('stack_phase').catch(() => '');
+      if (p && p !== 'Ready') lastPhase = p;
+      const secs = Math.round((Date.now() - started) / 1000);
+      status.textContent = `${lastPhase} ${secs}s`;
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  };
+  show();
+
   try {
     await invoke('start_stack');
   } catch (e) {
+    ticking = false;
     return giveUp(String(e));
   }
-  const started = Date.now();
-  while (Date.now() - started < DEADLINE_MS) {
+  // Deadline runs from when the stack finished starting, not from boot(). On a
+  // first launch stack.sh itself can take several minutes — installing guest
+  // images, loading 58 MB of container images, initialising the database — and
+  // timing that against the readiness budget would fail a run that was working
+  // fine. `started` stays as it is purely for the elapsed display.
+  const readyFrom = Date.now();
+  while (Date.now() - readyFrom < DEADLINE_MS) {
     if (await ready()) {
+      ticking = false;
       status.textContent = 'Loading the client…';
       await invoke('launch_game');
       return;
     }
-    const secs = Math.round((Date.now() - started) / 1000);
-    status.textContent = `Starting the server… ${secs}s`;
     await new Promise(r => setTimeout(r, 1500));
   }
-  giveUp('The server did not come up in time. Open Settings (⌘,) to see what is running.');
+  ticking = false;
+  giveUp(`Stalled at: ${lastPhase}\nThe server did not come up in time. Open Settings (⌘,) to see what is running.`);
 }
 
 function giveUp(message) {
   mark.hidden = true;
   status.textContent = '';
   fail.textContent = message;
+  fail.style.whiteSpace = 'pre-line';
   fail.hidden = false;
   retry.hidden = false;
 }

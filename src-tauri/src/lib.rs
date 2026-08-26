@@ -213,6 +213,19 @@ fn get_client_paths(app: tauri::AppHandle) -> ClientPaths {
         .unwrap_or_default()
 }
 
+/// The current startup step, for the boot window to display.
+///
+/// stack.sh writes this as it goes. Polled rather than streamed because
+/// `stack.sh up` is one blocking call that can run for minutes, and the point is
+/// to see where it is *while* it blocks. Empty string when nothing has been
+/// written yet, which the caller shows as its own default.
+#[tauri::command]
+fn stack_phase(app: tauri::AppHandle) -> String {
+    std::fs::read_to_string(state_dir(&app).join("phase"))
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default()
+}
+
 #[tauri::command]
 fn client_ready(app: tauri::AppHandle) -> bool {
     get_client_paths(app).complete()
@@ -606,6 +619,10 @@ fn start_stack_blocking(app: &tauri::AppHandle) -> Result<String, String> {
     // it is skipped once a client is remembered.
     let saved = get_client_paths(app.clone());
     if saved.complete() {
+        let _ = std::fs::write(
+            state_dir(app).join("phase"),
+            "Indexing your client…\n",
+        );
         link_client(app, &saved)?;
     }
     run_stack(app, "up")
@@ -738,6 +755,7 @@ pub fn run() {
             get_client_paths,
             set_client_paths,
             scan_client_dir,
+            stack_phase,
             client_ready,
             open_setup,
             close_setup

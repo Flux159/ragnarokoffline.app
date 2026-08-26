@@ -13,6 +13,18 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # that. Falls back to the repo directory when run from a checkout.
 STATE="${RAGNAROKMAC_STATE:-$ROOT/.ragnarokmac}"
 NET=ragnarokmac
+
+# First launch spends minutes in half a dozen distinct steps — materialising the
+# runtime, installing guest images, booting the microVM, loading 58 MB of
+# container images, initialising the database, loading 1265 maps. The boot
+# window used to show one unchanging line for all of it, so a hang was
+# indistinguishable from slow, and "it stalled" carried no information. Each
+# step names itself here; the app polls this file and shows the last line.
+phase() {
+    mkdir -p "$STATE"
+    printf '%s\n' "$1" > "$STATE/phase" 2>/dev/null || true
+    echo "$1"
+}
 IMAGE="${RAGNAROKMAC_IMAGE:-ragnarokmac/rathena:20200401}"
 # Pinned deliberately. MariaDB cannot open a data directory written by a newer
 # major version, so floating on a tag like `noble` means a rebuild can silently
@@ -198,7 +210,7 @@ ensure_engine() {
     fi
     if [ ! -f "$home/kernel/Image" ] || [ ! -f "$home/images/rootfs-pristine.img" ]; then
         if [ -f "$ROOT/guest/Image.gz" ] && [ -f "$ROOT/guest/rootfs.img.gz" ]; then
-            echo "installing guest images…"
+            phase "Installing the virtual machine image… (first run only)"
             "$NEBULA" install-image \
                 --kernel "$ROOT/guest/Image.gz" \
                 --rootfs "$ROOT/guest/rootfs.img.gz" >/dev/null || return 1
@@ -219,6 +231,7 @@ ensure_engine() {
 cmd_up() {
     mkdir -p "$STATE/conf" "$STATE/sql"
     acquire_lock
+    phase "Starting the virtual machine…"
     ensure_engine || exit 1
     # A failed single-file bind leaves a *directory* behind at the source path.
     # Clear anything in conf/ that is not a regular file so a stale one cannot
@@ -237,6 +250,12 @@ cmd_up() {
     [ -f "$STATE/conf/battle_conf.txt" ] || : > "$STATE/conf/battle_conf.txt"
     [ -x "$NEBULA" ] || { echo "nebula engine not found at $NEBULA" >&2; exit 1; }
     # A fresh install has no images until the shipped bundle is unpacked.
+    # Only announce the load when there is actually one to do: `ensure` is a
+    # no-op once the images are present, and a phase that says "first run only"
+    # on every run trains people to ignore it.
+    if ! docker_ image inspect "$IMAGE" >/dev/null 2>&1; then
+        phase "Loading the server images… (first run only, ~1 min)"
+    fi
     "$ROOT/scripts/precache.sh" ensure >/dev/null 2>&1 || true
     docker_ network create "$NET" >/dev/null 2>&1 || true
 
@@ -249,6 +268,7 @@ cmd_up() {
             -v ragnarokmac-db:/var/lib/mysql \
             "$DB_IMAGE" >/dev/null
     fi
+    phase "Starting the database…"
     wait_for_db
 
     # char and map hand the client an address to reconnect to. Everything is
@@ -320,10 +340,13 @@ EOF
     [ -d "$web" ] && cp "$STATE/endpoint.json" "$web/endpoint.json"
 
     prepare_kafra_scripts
+    phase "Starting the login, character and map servers…"
     run_server ragnarok-login 6900 /rathena/login-server
     run_server ragnarok-char  6121 /rathena/char-server
     run_server ragnarok-map   5121 /rathena/map-server
+    phase "Loading maps and NPCs… (up to 2 min)"
     wait_for_maps
+    phase "Ready"
     echo "stack up"
 }
 
