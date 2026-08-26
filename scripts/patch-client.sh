@@ -63,6 +63,38 @@ elif "_ctx.length = 0;" in s:
 else:
     sys.exit("EquipmentCommon.js: init() no longer matches; re-check the patch")
 
+# 0004 - CharSelect: reset the canvas context list on init, same bug as 0003.
+# _ctx is module-level and pushed to in Component.init without ever being
+# cleared, so re-entering character select adds another context per slot. The
+# render loop does clearRect + draw once per entry, and sprite draws land
+# asynchronously, so the later ones arrive after the earlier clears - the
+# character is drawn twice, slightly offset. That is the doubled head in the
+# character select and creation screens (upstream #1350, reported there as a
+# WebKit-only fault; WebKit is likely just slower to resolve the sprite loads,
+# which widens the window rather than causing it).
+p = rb / "src/UI/Components/CharSelect/CharSelectCommon.js"
+s = p.read_text()
+old = """	Component.init = function init() {
+		const root = this.getRoot();
+"""
+new = """	Component.init = function init() {
+		const root = this.getRoot();
+
+		// init() runs again every time character select is re-entered; without
+		// this the contexts accumulate and each character is drawn once per
+		// stale entry.
+		_ctx.length = 0;
+"""
+# Check "already applied" first: `old` is a prefix of `new`, so it still
+# matches a patched file and testing it first re-applies on every run.
+if "_ctx.length = 0;" in s:
+    print("CharSelectCommon.js already patched")
+elif old in s:
+    p.write_text(s.replace(old, new, 1))
+    print("patched CharSelectCommon.js (context list reset)")
+else:
+    sys.exit("CharSelectCommon.js: init() no longer matches; re-check the patch")
+
 # 0002 - WASD / arrow-key movement.
 shutil.copyfile(root / "patches/KeyboardMove.js", rb / "src/Controls/KeyboardMove.js")
 p = rb / "src/Engine/MapEngine.js"

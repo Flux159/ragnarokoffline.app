@@ -66,6 +66,13 @@ cp "$ROOT/dist/images.tar.gz" "$PAYLOAD/dist/"
 echo "==> client runtime"
 mkdir -p "$PAYLOAD/vendor/roBrowserLegacy/dist"
 cp -R "$ROOT/vendor/roBrowserLegacy/dist/Web" "$PAYLOAD/vendor/roBrowserLegacy/dist/Web"
+# `npm run build:all` emits seven ~12 MB bundles and the game loads exactly one.
+# bootstrap.sh prunes the rest, but anyone who rebuilds the client directly
+# skips that and silently adds 24 MB per unpruned viewer to the download. Prune
+# here too, where it is on the path every build takes.
+(cd "$PAYLOAD/vendor/roBrowserLegacy/dist/Web" && rm -f \
+    GrfViewer.js MapViewer.js ModelViewer.js StrViewer.js EffectViewer.js \
+    GrannyModelViewer.js screenshotwide.png screenshotnarrow.png)
 
 echo "==> english translation"
 EN="$PAYLOAD/vendor/ROenglishRE/Translation/Renewal"
