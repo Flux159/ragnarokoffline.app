@@ -51,6 +51,13 @@ echo "==> database schema"
 # it on first boot. Without this a packaged app starts with an empty database.
 mkdir -p "$PAYLOAD/sql"
 cp "$ROOT"/.ragnarokmac/sql/*.sql "$PAYLOAD/sql/"
+# Anything checked into sql/ ships too, and wins on name collision. The rAthena
+# schema is extracted by bootstrap into .ragnarokmac/sql, but our own additions
+# -- 03-account.sql, which gives a fresh install a login -- live in the repo,
+# and copying only the extracted set silently dropped them from the bundle.
+if compgen -G "$ROOT/sql/*.sql" >/dev/null; then
+    cp "$ROOT"/sql/*.sql "$PAYLOAD/sql/"
+fi
 
 echo "==> container images"
 [ -f "$ROOT/dist/images.tar.gz" ] || "$ROOT/scripts/precache.sh" save
