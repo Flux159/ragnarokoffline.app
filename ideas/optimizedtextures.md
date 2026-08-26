@@ -174,15 +174,47 @@ texture binds. Faster map loads are something a player notices.
 
 ---
 
+# Part 3 — the redundancy nobody encodes away
+
+Measured after the fact, and it is the cheapest win in this document because it
+is pure deduplication: no codec, no quality question, no client change to the
+renderer.
+
+**~195 MB of `rdata.grf` is a byte-identical copy of files already in
+`data.grf`.** 21,504 of its 24,756 names (87%) also exist in `data.grf`, and
+sampling 303 of those, 78.5% hash identically. rdata.grf is 276 MB, so roughly
+**71% of the renewal archive is a duplicate of the base archive**.
+
+That is not a flaw in the format — it is how GRF overlays work, and DATA.INI
+resolves by first match, so the copies are simply never read. A transform that
+drops entries already present and identical in a lower-priority archive costs
+nothing but the comparison.
+
+Worth checking before assuming the obvious about the other two:
+`official_data.grf` shares only **15 names** with `data.grf`, so it is *not* an
+override. The base archive uses Korean sprite paths
+(`data\sprite\book\책갈피.act`) while the English patch uses romanised ones
+(`data\sprite\npc\2_clb_k_1.act`) — parallel trees, not layers. There is no
+duplication to reclaim there, which is the opposite of what "747 MB of
+translated assets" suggests.
+
+---
+
 # Together
 
 | | stored today | plausible saving |
 |---|---|---|
+| cross-GRF dedup (rdata vs data) | 276 MB | ~195 MB (measured) |
 | textures (WebP lossless, truecolour only) | 1,408 MB | ~260 MB (measured) |
 | lightmaps (dedup + BC1 + atlas) | 488 MB | ~150–250 MB (estimated) |
 
-Roughly **400–500 MB off a 4.8 GB asset set — about 10%**, for a substantial
-amount of work and a permanent divergence from stock roBrowser.
+Roughly **600–700 MB off a 4.8 GB asset set — about 14%**, for a substantial
+amount of work and a permanent divergence from stock roBrowser. The dedup third
+of that is by far the cheapest and should be done first if any of it is.
+
+Nothing here approaches halving the assets, and no combination of codecs will:
+the content is simply large. Getting under ~1 GB means **shipping less of it**,
+not encoding it better — see the note at the end.
 
 That is the honest headline. It is not a size breakthrough. The better arguments
 are the runtime ones (load time, VRAM, texture binds) and the fact that owning
@@ -218,3 +250,23 @@ the pipeline opens doors beyond compression.
   change as well.
 - `.spr`/`.act` (480 + 199 MB) are sprites and animations, already compressing
   4.2× and 11×. Not worth attacking.
+
+
+---
+
+## The other lever: don't ship it at all
+
+Compression tops out around 15% here. The only route to a 1 GB install is not
+shipping 987 maps and 46,583 textures that one player will mostly never see.
+
+A player who never leaves Prontera and the starting fields touches a small
+fraction of that. Fetch assets on demand from a local or remote store, cache
+what is used, and the *installed* footprint becomes a function of where someone
+has actually been rather than everything Gravity ever shipped. That is what
+`rodownloader` was sketched for, and it is a far bigger lever than any codec in
+this document.
+
+The catch is that it trades a one-time download for a stall on first visit to a
+new map, and offline-first is this project's whole premise — so it probably
+wants a "fetch everything" option for people who want the current behaviour.
+Worth its own document if it is ever picked up.
