@@ -8,6 +8,15 @@ set -e
 DATADIR=/var/lib/mysql
 SOCK=/run/mysqld/init.sock
 
+# The image creates this and hands it to mysql, but the ownership does not
+# always survive into the running container — nebula-slim's image loader drops
+# uid/gid, so the directory arrives root-owned and mariadbd, which runs as
+# mysql, cannot create its socket in it ("Bind on unix socket: Permission
+# denied"). We are still root here, so just assert it every boot; the official
+# image does the same thing for the same reason.
+mkdir -p /run/mysqld
+chown mysql:mysql /run/mysqld
+
 if [ ! -d "$DATADIR/mysql" ]; then
     echo "initialising a new database in $DATADIR"
     chown -R mysql:mysql "$DATADIR"
