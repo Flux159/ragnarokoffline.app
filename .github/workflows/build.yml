@@ -348,8 +348,16 @@ jobs:
           [ "$built" = "$shipped" ] \
             || { echo "ragnarok-stack in the bundle is not from this build" >&2; exit 1; }
           # And prove the shipped one actually runs after signing.
-          "$APP/Contents/Resources/payload/bin/ragnarok-stack" bogus 2>&1 | grep -q usage \
-            || { echo "the bundled ragnarok-stack does not run" >&2; exit 1; }
+          #
+          # Captured, not piped: an unknown verb prints usage and exits 2 by
+          # design, and this shell runs with pipefail -- so `binary | grep`
+          # reports the binary's exit code even when grep matched, and the
+          # check failed on a binary that was working perfectly.
+          out=$("$APP/Contents/Resources/payload/bin/ragnarok-stack" bogus 2>&1 || true)
+          case "$out" in
+            *usage*) ;;
+            *) echo "the bundled ragnarok-stack did not print usage: $out" >&2; exit 1 ;;
+          esac
           cmp -s scripts/precache.sh "$APP/Contents/Resources/payload/scripts/precache.sh" \
             || { echo "precache.sh in the bundle differs from source" >&2; exit 1; }
           codesign --verify --strict "$APP" || echo "unsigned (no certificate configured)"
