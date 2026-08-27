@@ -192,9 +192,15 @@ jobs:
       # Built by images.yml on native Linux runners and fetched by its rolling
       # tag rather than as "the latest release" — the latest release of this
       # repo is an app version, which carries no images.
+      # github.token, not DEPS_TOKEN: these assets are in this repo, and the
+      # run's own token has a per-run quota of its own. DEPS_TOKEN is a personal
+      # access token whose 5,000/hr is shared with every other thing that account
+      # does — including a person running `gh` at a terminal — so borrowing it
+      # for a download it is not needed for makes the build fail for reasons
+      # that have nothing to do with the build. It did exactly that on v0.1.0.
       - name: Fetch server images and schema
         env:
-          GH_TOKEN: ${{ secrets.DEPS_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -e
           gh release download images --repo ${{ github.repository }} \
