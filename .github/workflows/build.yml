@@ -358,8 +358,8 @@ jobs:
             *usage*) ;;
             *) echo "the bundled ragnarok-stack did not print usage: $out" >&2; exit 1 ;;
           esac
-          cmp -s scripts/precache.sh "$APP/Contents/Resources/payload/scripts/precache.sh" \
-            || { echo "precache.sh in the bundle differs from source" >&2; exit 1; }
+          # No scripts/ check: the payload deliberately carries none. Everything
+          # the app runs is the supervisor binary, verified above.
           codesign --verify --strict "$APP" || echo "unsigned (no certificate configured)"
         shell: bash
 
