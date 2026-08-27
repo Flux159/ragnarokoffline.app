@@ -86,9 +86,8 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # One app per platform. macOS is the only one that signs, because it is the
-  # only one with a certificate today and the only platform whose engine is
-  # known to work — see the note on the linux/windows entries below.
+  # One app per platform. Only macOS signs, because it is the only one with a
+  # certificate today — not because the others are less real.
   # ---------------------------------------------------------------------------
   app:
     needs: client
@@ -99,17 +98,18 @@ jobs:
           - os: macos-14
             platform: mac
             arch: arm64
-          # Linux and Windows build the shell and package it. Whether the
-          # *engine* runs there is a separate question — slimd is Linux-native
-          # and may not need a VM at all on Linux, and Windows needs whatever
-          # nebula supports. These entries exist so the packaging is exercised
-          # and the artifacts are real, not because the result is known-good.
+            triple: aarch64-apple-darwin
+          # nebula-slim is validated on Linux and Windows, so these are real
+          # targets rather than packaging exercises. Each pulls the embed kit
+          # built for its own host triple.
           - os: ubuntu-latest
             platform: linux
             arch: x64
+            triple: x64-unknown-linux
           - os: windows-latest
             platform: win
             arch: x64
+            triple: x64-pc-windows
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -136,13 +136,15 @@ jobs:
             echo "See the header of this file for what it needs access to." >&2
             exit 1
           fi
-          mkdir -p payload/bin payload/guest
-          gh release download --repo Flux159/nebula --pattern 'embed-slim-*.tar.gz' --dir /tmp
-          tar xzf /tmp/embed-slim-*.tar.gz -C /tmp
-          cp /tmp/dist-embed-slim/bin/nebula /tmp/dist-embed-slim/bin/nebulad \
-             /tmp/dist-embed-slim/bin/docker-slim payload/bin/
-          cp /tmp/dist-embed-slim/images/kernel-Image.gz payload/guest/Image.gz
-          cp /tmp/dist-embed-slim/images/rootfs.img.gz   payload/guest/rootfs.img.gz
+          mkdir -p payload/bin payload/guest /tmp/kit
+          # nebula publishes one kit per host triple; the tarball's contents are
+          # the same shape in each, so only the filename varies.
+          gh release download --repo Flux159/nebula \
+             --pattern 'nebula-slim-embed-${{ matrix.triple }}.tar.gz' --dir /tmp
+          tar xzf /tmp/nebula-slim-embed-${{ matrix.triple }}.tar.gz -C /tmp/kit
+          cp /tmp/kit/bin/nebula /tmp/kit/bin/nebulad /tmp/kit/bin/docker-slim payload/bin/
+          cp /tmp/kit/images/kernel-Image.gz payload/guest/Image.gz
+          cp /tmp/kit/images/rootfs.img.gz   payload/guest/rootfs.img.gz
           gh release download --repo Flux159/roBrowserLegacy-RemoteClient-Rust \
              --pattern 'robrowser-remoteclient-*' --dir /tmp
           cp /tmp/robrowser-remoteclient-* payload/bin/robrowser-remoteclient
