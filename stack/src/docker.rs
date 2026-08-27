@@ -215,16 +215,49 @@ impl Docker {
             return Ok(());
         }
         self.quiet(["exec", container, "mkdir", "-p", dest]);
-        let src = format!("{}{}.", host.display(), std::path::MAIN_SEPARATOR);
-        self.output(["cp", &src, &format!("{container}:{dest}")])
-            .map(|_| ())
-            .map_err(|e| format!("could not copy {} into {container}:{dest}: {e}", host.display()))
+        // Relative to the parent directory, never absolute.
+        //
+        // `docker cp` tells a local path from a container path by looking for a
+        // colon -- and on Windows every absolute path starts with one, so
+        // `C:\Users\...` reads as container "C". Real docker special-cases a
+        // single-letter prefix as a drive; slim does not, and refuses with "one
+        // of the paths must be a container path" while looking at two of them.
+        // Running from the parent and naming the directory relatively keeps a
+        // drive letter out of the argument entirely, on every platform.
+        let parent = host.parent().ok_or_else(|| format!("{} has no parent", host.display()))?;
+        let name = host.file_name().ok_or_else(|| format!("{} has no name", host.display()))?;
+        let src = format!("{}{}.", name.to_string_lossy(), std::path::MAIN_SEPARATOR);
+        let mut c = self.base();
+        c.current_dir(parent);
+        c.args(["cp", &src, &format!("{container}:{dest}")]);
+        let out = c.output().map_err(|e| e.to_string())?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "could not copy {} into {container}:{dest}: {}",
+                host.display(),
+                String::from_utf8_lossy(&out.stderr).trim()
+            ))
+        }
     }
 
     pub fn copy_out(&self, container: &str, src: &str, host: &Path) -> Result<(), String> {
-        self.output(["cp", &format!("{container}:{src}"), &host.display().to_string()])
-            .map(|_| ())
-            .map_err(|e| format!("could not copy {container}:{src} out: {e}"))
+        // Same drive-letter problem in the other direction.
+        let parent = host.parent().ok_or_else(|| format!("{} has no parent", host.display()))?;
+        let name = host.file_name().ok_or_else(|| format!("{} has no name", host.display()))?;
+        let mut c = self.base();
+        c.current_dir(parent);
+        c.args(["cp", &format!("{container}:{src}"), &name.to_string_lossy().to_string()]);
+        let out = c.output().map_err(|e| e.to_string())?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "could not copy {container}:{src} out: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ))
+        }
     }
 }
 
