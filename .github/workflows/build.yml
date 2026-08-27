@@ -1,0 +1,238 @@
+name: build
+
+# Builds Ragnarok Offline for macOS, Linux and Windows.
+#
+# The shape of this file is dictated by one fact: the app is mostly *other
+# people's software*, and the pieces come from three different places with three
+# different build requirements.
+#
+#   payload/vendor  roBrowserLegacy + ROenglishRE — public, built here with npm
+#   payload/dist    rAthena + MariaDB images — needs a real Docker daemon, and
+#                   must match the *guest* architecture, not the runner's
+#   payload/bin     nebula, nebulad, docker-slim, robrowser-remoteclient —
+#                   private repos, built there and consumed here
+#   payload/guest   nebula's kernel + slim rootfs — prebuilt artifacts
+#
+# So this does not try to build everything from source. It assembles a payload
+# from released artifacts and builds the app around it. The alternative — having
+# CI clone and build nebula and the asset server — makes every app build depend
+# on two other toolchains and turns a five-minute job into a forty-minute one.
+#
+# Required secrets:
+#   DEPS_TOKEN            PAT with read access to the private dependency repos
+#   MACOS_CERT_P12        Developer ID Application cert, base64 of a .p12
+#   MACOS_CERT_PASSWORD   password for that .p12
+#   APPLE_API_KEY         App Store Connect .p8, base64          (notarisation)
+#   APPLE_API_KEY_ID      key id                                  (notarisation)
+#   APPLE_API_ISSUER      issuer uuid                             (notarisation)
+#
+# Notarisation is skipped when the Apple secrets are absent, so the workflow is
+# useful before they are set up.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # The client is public and platform-independent, so it is built once and
+  # shared. It is also the slowest npm step, and rebuilding it per-platform
+  # would triple that for an identical result.
+  # ---------------------------------------------------------------------------
+  client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Fetch roBrowserLegacy and ROenglishRE
+        run: |
+          mkdir -p vendor
+          git clone --depth 1 https://github.com/MrAntares/roBrowserLegacy.git vendor/roBrowserLegacy
+          git clone --depth 1 https://github.com/llchrisll/ROenglishRE.git vendor/ROenglishRE
+
+      - name: Apply our patches
+        run: scripts/patch-client.sh
+
+      - name: Build the client
+        working-directory: vendor/roBrowserLegacy
+        run: |
+          npm install --no-audit --no-fund
+          npm run build:all
+
+      # build:all emits seven ~12 MB bundles and the game loads one. package.sh
+      # prunes too, but pruning here keeps the artifact small enough to be worth
+      # caching between jobs.
+      - name: Prune the viewer bundles
+        working-directory: vendor/roBrowserLegacy/dist/Web
+        run: rm -f GrfViewer.js MapViewer.js ModelViewer.js StrViewer.js EffectViewer.js GrannyModelViewer.js
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client
+          path: |
+            vendor/roBrowserLegacy/dist/Web
+            vendor/ROenglishRE/Translation/Renewal
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # One app per platform. macOS is the only one that signs, because it is the
+  # only one with a certificate today and the only platform whose engine is
+  # known to work — see the note on the linux/windows entries below.
+  # ---------------------------------------------------------------------------
+  app:
+    needs: client
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: mac
+            arch: arm64
+          # Linux and Windows build the shell and package it. Whether the
+          # *engine* runs there is a separate question — slimd is Linux-native
+          # and may not need a VM at all on Linux, and Windows needs whatever
+          # nebula supports. These entries exist so the packaging is exercised
+          # and the artifacts are real, not because the result is known-good.
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+          - os: windows-latest
+            platform: win
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: client
+          path: vendor
+
+      # The private half. These are built in their own repos and published as
+      # release assets; consuming them here keeps this workflow independent of
+      # two Rust toolchains and a kernel build.
+      - name: Fetch engine and asset server
+        env:
+          GH_TOKEN: ${{ secrets.DEPS_TOKEN }}
+        run: |
+          set -e
+          if [ -z "$GH_TOKEN" ]; then
+            echo "DEPS_TOKEN is not set — cannot fetch the engine or asset server." >&2
+            echo "See the header of this file for what it needs access to." >&2
+            exit 1
+          fi
+          mkdir -p payload/bin payload/guest
+          gh release download --repo Flux159/nebula --pattern 'embed-slim-*.tar.gz' --dir /tmp
+          tar xzf /tmp/embed-slim-*.tar.gz -C /tmp
+          cp /tmp/dist-embed-slim/bin/nebula /tmp/dist-embed-slim/bin/nebulad \
+             /tmp/dist-embed-slim/bin/docker-slim payload/bin/
+          cp /tmp/dist-embed-slim/images/kernel-Image.gz payload/guest/Image.gz
+          cp /tmp/dist-embed-slim/images/rootfs.img.gz   payload/guest/rootfs.img.gz
+          gh release download --repo Flux159/roBrowserLegacy-RemoteClient-Rust \
+             --pattern 'robrowser-remoteclient-*' --dir /tmp
+          cp /tmp/robrowser-remoteclient-* payload/bin/robrowser-remoteclient
+          chmod +x payload/bin/*
+        shell: bash
+
+      # Container images have to match the guest architecture, and the guest
+      # matches the host — so an arm64 app needs arm64 images. They are built
+      # and published separately for that reason rather than being rebuilt here
+      # on whatever the runner happens to be.
+      - name: Fetch server images
+        env:
+          GH_TOKEN: ${{ secrets.DEPS_TOKEN }}
+        run: |
+          set -e
+          mkdir -p payload/dist
+          gh release download --repo ${{ github.repository }} \
+             --pattern "images-${{ matrix.arch }}.tar.gz" --dir payload/dist || {
+            echo "No prebuilt server images for ${{ matrix.arch }}." >&2
+            echo "Build them with scripts/precache.sh save and attach to a release." >&2
+            exit 1
+          }
+          mv payload/dist/images-${{ matrix.arch }}.tar.gz payload/dist/images.tar.gz
+        shell: bash
+
+      - name: Assemble the payload
+        run: scripts/package.sh
+        shell: bash
+
+      - name: Import signing certificate
+        if: matrix.platform == 'mac' && env.CERT != ''
+        env:
+          CERT: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          echo "$CERT" | base64 --decode > /tmp/cert.p12
+          security create-keychain -p ci build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p ci build.keychain
+          security import /tmp/cert.p12 -k build.keychain -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k ci build.keychain
+          rm -f /tmp/cert.p12
+
+      - name: Build
+        env:
+          # electron-builder notarises when these are present and skips when
+          # they are not, which is what makes this workflow usable before the
+          # Apple credentials exist.
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.platform == 'mac' }}
+        run: |
+          npm install --no-audit --no-fund
+          npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
+        shell: bash
+
+      # The check that matters: the shell scripts inside the bundle must be the
+      # ones in this commit. The payload is copied at build time, so a stale
+      # assembly step ships silently — it did twice, locally, before this
+      # existed.
+      - name: Verify the bundle matches the source
+        if: matrix.platform == 'mac'
+        run: |
+          APP="dist/electron/mac-arm64/Ragnarok Offline.app"
+          for f in stack.sh precache.sh link-assets.sh; do
+            cmp -s "scripts/$f" "$APP/Contents/Resources/payload/scripts/$f" \
+              || { echo "$f in the bundle differs from scripts/$f" >&2; exit 1; }
+          done
+          codesign --verify --strict "$APP" || echo "unsigned (no certificate configured)"
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ragnarok-offline-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            dist/electron/*.dmg
+            dist/electron/*.AppImage
+            dist/electron/*.exe
+          if-no-files-found: warn
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
