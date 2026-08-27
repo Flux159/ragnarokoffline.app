@@ -323,11 +323,17 @@ jobs:
         if: matrix.platform == 'mac'
         run: |
           APP="dist/electron/mac-arm64/Ragnarok Offline.app"
-          # The supervisor is the payload's one piece of compiled logic, so it
-          # is the one worth proving came from this commit.
-          cmp -s stack/target/release/ragnarok-stack \
-                 "$APP/Contents/Resources/payload/bin/ragnarok-stack" \
-            || { echo "ragnarok-stack in the bundle differs from the build" >&2; exit 1; }
+          # Against the hash sidecar, not the binary: signing rewrites the
+          # Mach-O, so the shipped binary never matches the build output byte
+          # for byte. The sidecar is a text file, is not signed, and still
+          # catches the failure this guards -- a stale payload in the bundle.
+          built=$(shasum -a 256 stack/target/release/ragnarok-stack | awk '{print $1}')
+          shipped=$(cat "$APP/Contents/Resources/payload/bin/ragnarok-stack.sha256")
+          [ "$built" = "$shipped" ] \
+            || { echo "ragnarok-stack in the bundle is not from this build" >&2; exit 1; }
+          # And prove the shipped one actually runs after signing.
+          "$APP/Contents/Resources/payload/bin/ragnarok-stack" bogus 2>&1 | grep -q usage \
+            || { echo "the bundled ragnarok-stack does not run" >&2; exit 1; }
           cmp -s scripts/precache.sh "$APP/Contents/Resources/payload/scripts/precache.sh" \
             || { echo "precache.sh in the bundle differs from source" >&2; exit 1; }
           codesign --verify --strict "$APP" || echo "unsigned (no certificate configured)"

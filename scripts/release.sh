@@ -49,9 +49,10 @@ grep -q "afterSign: sidecars signed" "$BUILD_LOG" \
 # rather than built in place, so a stale one ships silently -- which is what
 # this catches. It did happen twice, with the shell scripts this replaced.
 echo "==> verifying the bundle matches the source tree"
-cmp -s "$ROOT/stack/target/release/ragnarok-stack" \
-       "$APP/Contents/Resources/payload/bin/ragnarok-stack" \
-    || { echo "  ragnarok-stack in the bundle differs from the build" >&2; exit 1; }
+built=$(shasum -a 256 "$ROOT/stack/target/release/ragnarok-stack" | awk '{print $1}')
+shipped=$(cat "$APP/Contents/Resources/payload/bin/ragnarok-stack.sha256" 2>/dev/null || echo none)
+[ "$built" = "$shipped" ] \
+    || { echo "  ragnarok-stack in the bundle is not from this build" >&2; exit 1; }
 echo "  ragnarok-stack matches"
 codesign --verify --strict "$APP"
 codesign -d --entitlements - "$APP/Contents/Resources/payload/bin/nebulad" 2>&1 \

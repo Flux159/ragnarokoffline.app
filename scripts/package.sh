@@ -63,6 +63,16 @@ else
     ( cd "$ROOT/stack" && cargo build --release --quiet )
     cp "$ROOT/stack/target/release/ragnarok-stack$EXE" "$PAYLOAD/bin/"
 fi
+# A hash of what was copied, recorded beside it.
+#
+# The obvious check -- compare the bundled binary to the build output -- cannot
+# work on macOS: electron-builder code-signs every binary it finds in
+# extraResources, which rewrites the Mach-O, so the shipped copy is never
+# byte-identical to an unsigned build. A text sidecar is not signed and travels
+# into the bundle unchanged, so it still answers the question that matters:
+# was this payload assembled from this build, or is it stale?
+shasum -a 256 "$PAYLOAD/bin/ragnarok-stack$EXE" | awk '{print $1}' \
+    > "$PAYLOAD/bin/ragnarok-stack.sha256"
 
 # The asset server: one 1.7 MB static binary in place of a 106 MB Node runtime
 # plus its dependency tree.
