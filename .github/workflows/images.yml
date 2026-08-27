@@ -1,0 +1,131 @@
+name: images
+
+# Builds the two container images the app ships with, and publishes them as a
+# rolling release asset.
+#
+# These cannot be built in the app workflow. Two reasons, either sufficient:
+#
+#   * They must match the *guest* architecture, not the runner's. The macOS app
+#     runs an arm64 guest; the Linux and Windows apps run x86_64 ones. Building
+#     them alongside the app would produce arm64 images for a macOS runner and
+#     x86_64 for the others by luck rather than by intent, and would produce
+#     nothing at all on Windows, which has no Linux docker daemon.
+#   * `docker save` needs a real docker daemon. nebula-slim stores layers
+#     unpacked and rejects the command outright, so this is one of the few
+#     things the slim engine cannot do.
+#
+# So they are built here, on native Linux runners with real Docker, and the app
+# build downloads them.
+#
+# Output, attached to the rolling `images` prerelease:
+#   images-arm64.tar.gz   ragnarokmac/rathena + ragnarokmac/mariadb, docker save
+#   images-x64.tar.gz     the same, for x86_64 guests
+#   rathena-sql.tar.gz    main.sql + logs.sql, extracted from the image
+#
+# The schema is in here rather than in the repo because it belongs to the
+# rAthena build: `bootstrap.sh` extracts it from the image it just built, and
+# MariaDB imports it on first boot. A schema that drifted from the server
+# binary would fail at runtime, on someone else's machine, as a query error.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'containers/**'
+      - '.github/workflows/images.yml'
+      # The packetver lives here and is a build arg for the rAthena image, so a
+      # bump has to rebuild. It over-triggers on unrelated bootstrap edits;
+      # a stale image is the worse failure.
+      - 'scripts/bootstrap.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Native runners. Emulated cross-builds of rAthena take the better
+          # part of an hour and have their own failure modes; both arches have
+          # a real runner, so neither is worth it.
+          - runner: ubuntu-24.04
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # One source of truth for the packetver: the value bootstrap.sh builds
+      # with, which is also the image tag precache.sh looks for at runtime. A
+      # second copy here would drift and the app would silently pull nothing.
+      - name: Read the packetver
+        run: |
+          set -e
+          ver=$(grep -m1 '^PACKETVER=' scripts/bootstrap.sh | cut -d= -f2)
+          [ -n "$ver" ] || { echo "no PACKETVER in scripts/bootstrap.sh" >&2; exit 1; }
+          echo "PACKETVER=$ver" >> "$GITHUB_ENV"
+          echo "building for packetver $ver"
+
+      - name: Build the database image
+        run: docker build -t ragnarokmac/mariadb:11.4 containers/mariadb
+
+      # rAthena's source is the build context, so our Dockerfile is copied into
+      # the checkout — the same thing bootstrap.sh does locally.
+      - name: Build rAthena
+        run: |
+          set -e
+          git clone --depth 1 https://github.com/rathena/rathena.git /tmp/rathena
+          cp containers/rathena/Dockerfile /tmp/rathena/Dockerfile.ragnarokmac
+          docker build -f /tmp/rathena/Dockerfile.ragnarokmac \
+            --build-arg "PACKETVER=$PACKETVER" \
+            -t "ragnarokmac/rathena:$PACKETVER" /tmp/rathena
+
+      - name: Save the bundle
+        run: |
+          set -e
+          docker save "ragnarokmac/rathena:$PACKETVER" ragnarokmac/mariadb:11.4 \
+            | gzip -9 > "images-${{ matrix.arch }}.tar.gz"
+          # The same assertion precache.sh makes: confirm this is a docker-save
+          # archive before publishing it, rather than discovering at load time
+          # on a user's machine that it is not.
+          gunzip -c "images-${{ matrix.arch }}.tar.gz" | tar t 2>/dev/null \
+            | grep -q "manifest.json\|index.json" \
+            || { echo "not a docker-save archive" >&2; exit 1; }
+          ls -lh "images-${{ matrix.arch }}.tar.gz"
+
+      # Architecture-independent, so one job publishes it and the other does
+      # not — two jobs uploading the same asset name race each other.
+      - name: Extract the database schema
+        if: matrix.arch == 'x64'
+        run: |
+          set -e
+          mkdir -p sql
+          cid=$(docker create "ragnarokmac/rathena:$PACKETVER" true)
+          docker cp "$cid:/rathena/sql-files/main.sql" sql/01-main.sql
+          docker cp "$cid:/rathena/sql-files/logs.sql" sql/02-logs.sql
+          docker rm "$cid" >/dev/null
+          tar czf rathena-sql.tar.gz -C sql .
+          ls -lh rathena-sql.tar.gz
+
+      # A rolling tag, not a version. These track the Dockerfiles, which change
+      # on their own schedule, and the app build fetches them by this tag
+      # explicitly — so cutting an app release never has to carry a fresh copy
+      # of two container images with it. Marked prerelease so it does not
+      # present itself as a version of the app on the releases page.
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: images
+          name: Container images
+          prerelease: true
+          body: |
+            Container images for the app payload, rebuilt when the Dockerfiles
+            change. Not a release of Ragnarok Offline — consumed by the `build`
+            workflow.
+          files: |
+            images-${{ matrix.arch }}.tar.gz
+            rathena-sql.tar.gz

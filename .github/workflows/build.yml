@@ -8,7 +8,8 @@ name: build
 #
 #   payload/vendor  roBrowserLegacy + ROenglishRE — public, built here with npm
 #   payload/dist    rAthena + MariaDB images — needs a real Docker daemon, and
-#                   must match the *guest* architecture, not the runner's
+#                   must match the *guest* architecture, not the runner's, so
+#                   images.yml builds them on native Linux runners
 #   payload/bin     nebula, nebulad, docker-slim, robrowser-remoteclient —
 #   payload/lib     private repos, built there and consumed here. Three
 #   payload/guest   separate release assets: the embed kit (nebula, nebulad,
@@ -184,26 +185,30 @@ jobs:
           echo "REMOTECLIENT_BIN=/tmp/$bin" >> "$GITHUB_ENV"
         shell: bash
 
-      # Container images have to match the guest architecture, and the guest
-      # matches the host — so an arm64 app needs arm64 images. They are built
-      # and published separately for that reason rather than being rebuilt here
-      # on whatever the runner happens to be.
-      - name: Fetch server images
+      # Built by images.yml on native Linux runners and fetched by its rolling
+      # tag rather than as "the latest release" — the latest release of this
+      # repo is an app version, which carries no images.
+      - name: Fetch server images and schema
         env:
           GH_TOKEN: ${{ secrets.DEPS_TOKEN }}
         run: |
           set -e
-          gh release download --repo ${{ github.repository }} \
+          gh release download images --repo ${{ github.repository }} \
              --pattern "images-${{ matrix.arch }}.tar.gz" --dir /tmp || {
-            echo "No prebuilt server images for ${{ matrix.arch }}." >&2
-            echo "Build them with scripts/precache.sh save and attach to a release." >&2
+            echo "No server images for ${{ matrix.arch }}." >&2
+            echo "Run the images workflow, which publishes them to the 'images' tag." >&2
             exit 1
           }
+          # The rAthena schema, extracted from the image it belongs to. package.sh
+          # takes it from .ragnarokmac/sql, which locally is written by bootstrap
+          # and here comes down with the images it was extracted from.
+          mkdir -p .ragnarokmac/sql
+          gh release download images --repo ${{ github.repository }} \
+             --pattern 'rathena-sql.tar.gz' --dir /tmp
+          tar xzf /tmp/rathena-sql.tar.gz -C .ragnarokmac/sql
+          ls .ragnarokmac/sql
         shell: bash
 
-      # package.sh starts with `rm -rf payload`, so anything staged into it
-      # before this step is deleted. Everything fetched above is handed over as
-      # a path and copied in by the script itself.
       - name: Assemble the payload
         run: scripts/package.sh
         shell: bash
