@@ -10,7 +10,7 @@
 // sprites render doubled on WebKit (roBrowserLegacy #1350). One engine
 // everywhere is worth ~60 MB of download.
 //
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -618,6 +618,49 @@ function makeWindow(id, file, opts) {
 	return win;
 }
 
+// This machine's address on the network, found the same way the supervisor
+// finds it: ask the routing table which source address would reach the
+// internet. A connected UDP socket sends nothing, but the kernel still binds
+// it, and the address it picks is the one a peer would see.
+function lanIp() {
+	try {
+		const sock = require('dgram').createSocket('udp4');
+		sock.connect(80, '1.1.1.1');
+		const addr = sock.address && sock.address();
+		sock.close();
+		return addr && addr.address && addr.address !== '0.0.0.0' ? addr.address : null;
+	} catch {
+		return null;
+	}
+}
+
+// Ask macOS for local-network access at the moment the player turns LAN
+// hosting on, rather than when the game first tries to reach a peer.
+//
+// The permission is triggered by touching a local address, so the prompt used
+// to appear mid-login: the connection that provoked it was also the connection
+// it blocked, so the first attempt failed, and the second -- because the
+// dialog is answered asynchronously and the retry raced it. It took three
+// logins to get in. Doing it here means the dialog appears next to the switch
+// that caused it, and is answered long before anything depends on it.
+function nudgeLocalNetworkPermission() {
+	if (process.platform !== 'darwin') return;
+	const ip = lanIp();
+	if (!ip) return;
+	try {
+		// Any attempt to reach a local address is enough; whether it connects
+		// is irrelevant, so this is deliberately short and its result ignored.
+		const sock = require('net').connect({ host: ip, port: 3338 });
+		sock.setTimeout(1500);
+		const done = () => sock.destroy();
+		sock.on('connect', done);
+		sock.on('timeout', done);
+		sock.on('error', done);
+	} catch {
+		/* the prompt is best-effort; the game still works without it */
+	}
+}
+
 // Which world this window is showing. Two people on a call, one hosting and
 // one joining, otherwise see identical windows -- and someone who has switched
 // servers has no way to tell which one they are actually on.
@@ -747,6 +790,8 @@ const handlers = {
 		const next = { ...prev };
 		if (mode !== undefined) next.mode = mode;
 		if (lan !== undefined) next.lan = !!lan;
+		// Provoke the macOS prompt here, next to the switch that needs it.
+		if (lan === true && !prev.lan) nudgeLocalNetworkPermission();
 		if (join_host !== undefined) next.join_host = String(join_host).trim();
 		fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
 		// Before anything slow: the mode has already changed, and leaving the
@@ -774,6 +819,8 @@ const handlers = {
 	scan_client_dir: ({ dir }) => scanClientDir(dir),
 	get_settings: () => getSettings(),
 	save_settings: ({ settings }) => saveSettings(settings),
+
+	copy_text: ({ text }) => clipboard.writeText(String(text || '')),
 
 	// Windows
 	// Reload when the window is already there, do not just focus it.

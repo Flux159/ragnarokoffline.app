@@ -449,8 +449,22 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool) -> Result<(), String> {
     }
     // PIN codes are a live-service anti-theft feature; offline they are just a
     // second password screen.
+    // One start point, not the five rAthena ships.
+    //
+    // Renewal's default is a colon-separated list -- iz_int through iz_int04 --
+    // and a new character is assigned one at random. Each tutorial room exits
+    // into its own copy of Izlude (izlude, izlude_a .. izlude_d), which are
+    // separate maps that look nearly identical. Two friends who join the same
+    // server and walk to "the same place in Izlude" can end up on different
+    // maps, unable to see each other, with nothing to suggest why: same town,
+    // same coordinates, no one there.
+    //
+    // Those duplicates exist to spread load across a live server's population.
+    // This is a handful of friends, so the split costs everything and buys
+    // nothing.
     write_conf(&conf, "char_conf.txt",
-        &format!("login_ip: ragnarok-login\nchar_ip: {advertise}\npincode_enabled: no\n"))?;
+        &format!("login_ip: ragnarok-login\nchar_ip: {advertise}\npincode_enabled: no\n\
+                  start_point: iz_int,18,26\n"))?;
 
     let product = if cfg!(target_os = "macos") { "RagnarokMac" }
         else if cfg!(windows) { "RagnarokWindows" }

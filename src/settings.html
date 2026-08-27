@@ -93,10 +93,18 @@
         <span class="name">Let other machines connect</span>
         <input type="checkbox" id="mp-lan" />
       </div>
-      <div class="row"><span class="name">Your address</span><span class="state" id="mp-addr">—</span></div>
+      <div class="row">
+        <span class="name">Your address</span>
+        <span class="state" id="mp-addr">—</span>
+        <button id="mp-copy" class="ghost" style="margin-left:10px">Copy</button>
+      </div>
+      <div class="row actions" style="padding-top:10px">
+        <button id="mp-restart" class="ghost">Restart server</button>
+      </div>
       <p class="note">Off by default: the server listens only on this machine.
          Turning this on makes it reachable by anyone who can reach your computer
-         on the network. Restart the server for a change to take effect.</p>
+         on the network. The engine reads this setting when it starts, so use
+         Restart server to apply a change.</p>
     </div>
 
     <div id="mp-join" style="display:none">
@@ -186,6 +194,36 @@ $('mp-mode').onchange = async () => {
 $('mp-lan').onchange = async () => {
   await invoke('set_mode', { lan: $('mp-lan').checked });
   await refreshMode();
+  // The engine reads this at startup, so the switch alone changes nothing yet.
+  // Say so rather than letting someone toggle it and wonder why no one can
+  // connect.
+  log($('mp-lan').checked
+    ? 'now restart the server to let other machines connect'
+    : 'now restart the server to go back to this machine only');
+};
+
+// One button for "apply this and take me back to the game". Restarting the
+// stack leaves the window on a page served by the server that just went away,
+// so reopening is part of the same action rather than a second thing to find.
+$('mp-restart').onclick = async () => {
+  $('mp-restart').disabled = true;
+  log('restarting the server…');
+  try {
+    await invoke('stack_down').catch(() => {});
+    log(await invoke('start_stack'));
+    await refreshMode();
+    await invoke('open_game');
+  } catch (e) {
+    log('error: ' + e);
+  }
+  $('mp-restart').disabled = false;
+};
+
+$('mp-copy').onclick = async () => {
+  const addr = $('mp-addr').textContent.trim();
+  if (!addr || addr === '—' || addr.includes(' ')) { log('no address to copy yet'); return; }
+  await invoke('copy_text', { text: addr });
+  log(`copied ${addr}`);
 };
 // One button back to your own world. Changing the dropdown does the same
 // thing, but "switch this select, then find the button that opens the game" is
