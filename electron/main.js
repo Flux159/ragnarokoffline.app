@@ -749,6 +749,10 @@ const handlers = {
 		if (lan !== undefined) next.lan = !!lan;
 		if (join_host !== undefined) next.join_host = String(join_host).trim();
 		fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
+		// Before anything slow: the mode has already changed, and leaving the
+		// window claiming (Local) over a server that is about to stop is the
+		// same staleness as a boot page that checked once.
+		if (windows.game && !windows.game.isDestroyed()) windows.game.setTitle(gameTitle());
 
 		// Switching to a friend's server stops your own. Nothing would use it,
 		// and leaving it up means a microVM, four containers and an asset
