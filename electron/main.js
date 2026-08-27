@@ -97,10 +97,36 @@ function projectRoot() {
 			if (!cloned) {
 				fs.cpSync(bundled, installed, { recursive: true, verbatimSymlinks: true });
 			}
+			unpackTranslationData(installed);
 		}
 		return installed;
 	}
 	return fs.existsSync(installed) ? installed : bundled;
+}
+
+// The English translation's texture tree ships as a tar and is unpacked here.
+//
+// 21 of its names are CP949 bytes read as Latin-1, and macOS filesystems
+// normalise them differently -- so as loose files in the bundle they change
+// byte sequence when the app is copied out of the .dmg, which breaks the code
+// signature's seal and gets the app refused as "damaged". Inside the archive
+// the bytes are opaque, and what lands here is never code-signed.
+//
+// System tar, because every platform we ship to has one: macOS and Linux
+// always, and Windows since 1803 ships bsdtar as tar.exe.
+function unpackTranslationData(root) {
+	const dir = path.join(root, 'vendor/ROenglishRE/Translation/Renewal');
+	const archive = path.join(dir, 'data.tar');
+	if (!fs.existsSync(archive)) return; // older payload, already a directory
+	try {
+		const r = spawnSync('tar', ['-xf', archive, '-C', dir], { stdio: 'ignore' });
+		if (r.status !== 0) throw new Error(`tar exited ${r.status}`);
+		fs.rmSync(archive, { force: true });
+	} catch (e) {
+		// Not fatal: the game runs, the English interface textures do not
+		// appear. Say so rather than failing the whole launch.
+		console.error(`could not unpack the translation textures: ${e.message}`);
+	}
 }
 
 function readIfExists(p) {

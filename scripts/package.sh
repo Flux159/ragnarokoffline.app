@@ -140,7 +140,21 @@ cp -R "$ROOT/vendor/roBrowserLegacy/dist/Web" "$PAYLOAD/vendor/roBrowserLegacy/d
 echo "==> english translation"
 EN="$PAYLOAD/vendor/ROenglishRE/Translation/Renewal"
 mkdir -p "$EN"
-cp -R "$ROOT/vendor/ROenglishRE/Translation/Renewal/data"     "$EN/data"
+# As a tar, not a directory tree.
+#
+# 21 of these files carry CP949 bytes read as Latin-1, and macOS filesystems
+# disagree about how to normalise them: the DMG stores one byte sequence and
+# APFS another, so the names change when the app is dragged to /Applications.
+# A code signature records exact names, so the seal breaks on copy and the app
+# is refused as "damaged" -- while verifying perfectly inside the .dmg, which
+# is what made it look like a notarisation problem.
+#
+# Inside a tar the bytes are opaque payload rather than filesystem names, the
+# archive's own name is plain ASCII and normalisation-stable, and what gets
+# unpacked at runtime is never code-signed. Nothing else in the bundle has a
+# name that changes under normalisation -- this one subtree is the whole
+# problem.
+tar -cf "$EN/data.tar" -C "$ROOT/vendor/ROenglishRE/Translation/Renewal" data
 cp -R "$ROOT/vendor/ROenglishRE/Translation/Renewal/SystemEN" "$EN/SystemEN"
 
 # A marker the app compares against, so a new build refreshes the copy it

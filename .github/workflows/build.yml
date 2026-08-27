@@ -347,6 +347,23 @@ jobs:
           shipped=$(cat "$APP/Contents/Resources/payload/bin/ragnarok-stack.sha256")
           [ "$built" = "$shipped" ] \
             || { echo "ragnarok-stack in the bundle is not from this build" >&2; exit 1; }
+          # The check that 0.2.0 needed and did not have: mount the .dmg,
+          # copy the app out, and verify the signature there.
+          #
+          # The image is HFS+ and a destination like /Applications is APFS,
+          # and they normalise non-ASCII filenames differently. A bundle
+          # carrying one can verify perfectly inside the image and be refused
+          # as "damaged" the moment it is dragged out -- which is exactly what
+          # shipped, past a check that only ever looked inside.
+          DMG=$(ls dist/electron/*.dmg | head -1)
+          MP=$(mktemp -d); OUT=$(mktemp -d)
+          hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MP" >/dev/null
+          cp -R "$MP/Ragnarok Offline.app" "$OUT/"
+          hdiutil detach "$MP" >/dev/null
+          codesign --verify --strict "$OUT/Ragnarok Offline.app" \
+            || { echo "the app is not validly signed after being copied out of the dmg" >&2; exit 1; }
+          rm -rf "$OUT" "$MP"
+
           # And prove the shipped one actually runs after signing.
           #
           # Captured, not piped: an unknown verb prints usage and exits 2 by

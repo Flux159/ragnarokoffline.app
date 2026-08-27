@@ -3,7 +3,7 @@
 #
 #   scripts/release.sh [--install] [--dmg <dir>]
 #
-# electron-builder does the building and signing (see electron/afterSign.js for
+# electron-builder does the building and signing (see electron/afterPack.js for
 # the sidecar entitlements). What it does not do is check that what came out
 # matches what went in, and that is the failure this script exists to catch:
 # package.sh refreshes payload/, but the payload is copied into the bundle at
@@ -42,8 +42,8 @@ if ! (cd "$ROOT" && npx electron-builder --mac) >"$BUILD_LOG" 2>&1; then
     echo "(full log: $BUILD_LOG)" >&2
     exit 1
 fi
-grep -q "afterSign: sidecars signed" "$BUILD_LOG" \
-    || { echo "afterSign did not run — the VZ entitlements are not guaranteed" >&2; exit 1; }
+grep -q "afterPack: payload binaries signed" "$BUILD_LOG" \
+    || { echo "afterPack did not run — the VZ entitlements are not guaranteed" >&2; exit 1; }
 
 # The supervisor carries all the runtime logic and is copied into the payload
 # rather than built in place, so a stale one ships silently -- which is what
@@ -77,11 +77,26 @@ fi
 echo "==> verifying the disk image"
 MP=$(hdiutil attach -nobrowse -readonly "$DMG" | awk '/\/Volumes\//{ $1=$2=""; sub(/^ +/,""); print; exit }')
 trap '[ -n "${MP:-}" ] && hdiutil detach "$MP" >/dev/null 2>&1 || true' EXIT
-cmp -s "$ROOT/stack/target/release/ragnarok-stack" \
-       "$MP/$NAME.app/Contents/Resources/payload/bin/ragnarok-stack" \
+built=$(shasum -a 256 "$ROOT/stack/target/release/ragnarok-stack" | awk '{print $1}')
+shipped=$(cat "$MP/$NAME.app/Contents/Resources/payload/bin/ragnarok-stack.sha256" 2>/dev/null || echo none)
+[ "$built" = "$shipped" ] \
     || { echo "  the .dmg carries a different ragnarok-stack than the source" >&2; exit 1; }
 codesign -v "$MP/$NAME.app" || { echo "  the app inside the .dmg is not validly signed" >&2; exit 1; }
-echo "  contents match source, signature valid"
+
+# Then verify it again after copying *out* of the image, which is what a user
+# does. This is not redundant: the .dmg is HFS+ and /Applications is APFS, and
+# they normalise non-ASCII filenames differently -- so a bundle containing one
+# can verify perfectly inside the image and be refused as "damaged" the moment
+# it is dragged out. That shipped in 0.2.0, past a check that only looked
+# inside the image.
+COPY=$(mktemp -d)
+cp -R "$MP/$NAME.app" "$COPY/" \
+    || { echo "  could not copy the app out of the .dmg" >&2; exit 1; }
+codesign --verify --strict "$COPY/$NAME.app" \
+    || { echo "  the app is not validly signed after being copied out of the .dmg" >&2;
+         rm -rf "$COPY"; exit 1; }
+rm -rf "$COPY"
+echo "  contents match source, signature valid in the image and after copying out"
 
 mkdir -p "$DMG_DIR"
 cp "$DMG" "$DMG_DIR/"
