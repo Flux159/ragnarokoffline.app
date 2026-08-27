@@ -49,6 +49,20 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+# Pinned, not "whatever is latest".
+#
+# An unpinned fetch takes the newest release, which is only correct if every
+# release has its kits attached by the time anything asks. nebula tags first
+# and its three kit workflows attach afterwards, so there is a window -- minutes
+# to hours -- where the newest release has no kits at all and every app build
+# fails on a fetch that has nothing to do with the app. It also means the engine
+# inside a shipped build was whatever happened to be current that afternoon,
+# which is not a property a release should have.
+#
+# Bump deliberately, once the kits for the new version exist.
+env:
+  NEBULA_VERSION: v0.1.2
+
 permissions:
   contents: write
 
@@ -184,7 +198,7 @@ jobs:
           # identical across platforms — macOS carries the slim CLIs and no
           # lib/, Linux and Windows carry lib/ and no CLIs — so this only
           # unpacks it. package.sh knows what to take out of it.
-          gh release download --repo Flux159/nebula \
+          gh release download "$NEBULA_VERSION" --repo Flux159/nebula \
              --pattern 'nebula-slim-embed-${{ matrix.triple }}.tar.gz' --dir /tmp
           tar xzf /tmp/nebula-slim-embed-${{ matrix.triple }}.tar.gz -C /tmp/kit
 
@@ -192,7 +206,7 @@ jobs:
           # The Linux and Windows embed kits do not include it, and the app
           # cannot talk to the engine without it.
           if [ ! -e /tmp/kit/bin/docker-slim ] && [ ! -e /tmp/kit/bin/docker-slim.exe ]; then
-            gh release download --repo Flux159/nebula \
+            gh release download "$NEBULA_VERSION" --repo Flux159/nebula \
                --pattern 'nebula-slim-clis-*-${{ matrix.clis }}.tar.gz' --dir /tmp/clis
             tar xzf /tmp/clis/*.tar.gz -C /tmp/clis --strip-components=1
             echo "DOCKER_SLIM_BIN=$(ls /tmp/clis/docker-slim*)" >> "$GITHUB_ENV"
