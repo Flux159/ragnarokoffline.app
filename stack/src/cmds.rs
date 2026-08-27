@@ -517,6 +517,23 @@ pub fn down(cfg: &Config, dk: &Docker) -> Result<(), String> {
     }
     dk.quiet(["stop", "-t", "10", DB_CONTAINER]);
     dk.remove_container(DB_CONTAINER);
+
+    // And the microVM itself, last -- after the database has closed cleanly,
+    // never before.
+    //
+    // This used to be left running on the theory that the next start would be
+    // quicker for it. The cost is worse than the saving: a VM holding a 4 GiB
+    // ceiling stays resident after the player has quit the app, which on a
+    // laptop is simply battery burned for nothing. On Windows it is worse
+    // still -- the engine runs out of the runtime directory, and Windows locks
+    // a running executable, so the next version could not replace the tree and
+    // the app refused to start with "EBUSY: resource busy or locked". They
+    // also accumulated, one per version installed.
+    //
+    // Booting the VM again costs a couple of seconds, which is the right side
+    // of that trade.
+    let _ = nebula(cfg, &["down"]);
+
     phase(cfg, "Stopped");
     println!("stack down");
     Ok(())

@@ -89,7 +89,17 @@ function projectRoot() {
 		const have = readIfExists(path.join(installed, 'VERSION'));
 		if (want !== have || !fs.existsSync(path.join(installed, marker))) {
 			fs.mkdirSync(path.dirname(installed), { recursive: true });
-			fs.rmSync(installed, { recursive: true, force: true });
+			// Stop the engine before replacing the tree it runs from.
+			//
+			// nebulad deliberately outlives the app -- quitting removes the
+			// containers but leaves the engine up so the next start is quick --
+			// and it runs from runtime/bin. Unix lets you unlink a running
+			// executable; Windows locks it, so an update failed with "EBUSY:
+			// resource busy or locked, rmdir ...\runtime" before the app could
+			// do anything about it. They also accumulate: two were holding the
+			// directory, from two earlier versions.
+			stopEngineIn(installed);
+			rmWithRetries(installed);
 			// -c asks APFS for copy-on-write clones: the payload is ~150 MB and
 			// this runs on every version change. There is no equivalent
 			// elsewhere, so the other platforms use a plain recursive copy.
@@ -135,6 +145,45 @@ function unpackTranslationData(root) {
 		// Not fatal: the game runs, the English interface textures do not
 		// appear. Say so rather than failing the whole launch.
 		console.error(`could not unpack the translation textures: ${e.message}`);
+	}
+}
+
+// Ask an installed runtime's own engine to shut down, so its files can be
+// replaced. Best-effort: an absent or already-stopped engine is the normal
+// case, and a failure here is reported by the removal that follows.
+function stopEngineIn(runtime) {
+	const nebula = path.join(runtime, 'bin', `nebula${EXE}`);
+	if (!fs.existsSync(nebula)) return;
+	try {
+		spawnSync(nebula, ['down'], {
+			env: { ...process.env, NEBULA_HOME: path.join(dataRoot(), 'nebula') },
+			stdio: 'ignore',
+			timeout: 30000,
+		});
+	} catch {
+		/* nothing was running */
+	}
+}
+
+// Windows releases a lock a moment after the holder exits rather than
+// instantly, so a single attempt can fail on a directory that is about to be
+// free. Fails loudly if it never is -- silently continuing would leave a
+// half-replaced runtime, which is worse than not starting.
+function rmWithRetries(dir) {
+	for (let i = 0; i < 10; i++) {
+		try {
+			fs.rmSync(dir, { recursive: true, force: true });
+			return;
+		} catch (e) {
+			if (i === 9) {
+				throw new Error(
+					`could not replace ${dir}: ${e.message}\n\n` +
+					'Something is still using it. Quit the app, end any nebulad ' +
+					'processes, and start it again.'
+				);
+			}
+			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+		}
 	}
 }
 
