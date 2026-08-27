@@ -214,23 +214,38 @@ impl Docker {
         if !host.exists() {
             return Ok(());
         }
-        self.quiet(["exec", container, "mkdir", "-p", dest]);
-        // Relative to the parent directory, never absolute.
+        // Staged through a directory named after the destination.
         //
-        // `docker cp` tells a local path from a container path by looking for a
-        // colon -- and on Windows every absolute path starts with one, so
-        // `C:\Users\...` reads as container "C". Real docker special-cases a
-        // single-letter prefix as a drive; slim does not, and refuses with "one
-        // of the paths must be a container path" while looking at two of them.
-        // Running from the parent and naming the directory relatively keeps a
-        // drive letter out of the argument entirely, on every platform.
-        let parent = host.parent().ok_or_else(|| format!("{} has no parent", host.display()))?;
-        let name = host.file_name().ok_or_else(|| format!("{} has no name", host.display()))?;
-        let src = format!("{}{}.", name.to_string_lossy(), std::path::MAIN_SEPARATOR);
+        // slim's `cp` does not implement docker's `SRC/.` convention. It names
+        // the tar entries after the source directory and unpacks them into the
+        // destination's *parent*, so `cp conf container:/rathena/conf/import`
+        // puts the files in /rathena/conf/conf and leaves conf/import as the
+        // image shipped it. rAthena then read its own defaults and dialled
+        // 127.0.0.1 for a database that lives on another host -- a silent
+        // wrong answer rather than an error.
+        //
+        // Copying into a staging directory called `import` first makes the
+        // names line up: entries are `import/...`, unpacked at /rathena/conf,
+        // which is exactly where they belong.
+        let dest_name = dest.rsplit('/').find(|p| !p.is_empty())
+            .ok_or_else(|| format!("destination {dest} has no name"))?;
+        let stage = std::env::temp_dir().join(format!("ro-cp-{}-{}", std::process::id(), dest_name));
+        let _ = fs::remove_dir_all(&stage);
+        let staged = stage.join(dest_name);
+        copy_dir_all(host, &staged)?;
+
+        let parent = dest.rsplit_once('/').map(|(p, _)| p).filter(|p| !p.is_empty()).unwrap_or("/");
+        self.quiet(["exec", container, "mkdir", "-p", parent]);
+
         let mut c = self.base();
-        c.current_dir(parent);
-        c.args(["cp", &src, &format!("{container}:{dest}")]);
-        let out = c.output().map_err(|e| e.to_string())?;
+        c.current_dir(&stage);
+        // Relative, so no Windows drive letter reaches the argument -- `cp`
+        // splits local from container paths on a colon and `C:` looks like a
+        // container to it.
+        c.args(["cp", dest_name, &format!("{container}:{dest}")]);
+        let out = c.output().map_err(|e| e.to_string());
+        let _ = fs::remove_dir_all(&stage);
+        let out = out?;
         if out.status.success() {
             Ok(())
         } else {
@@ -270,4 +285,24 @@ pub fn older_than(path: &Path, secs: u64) -> bool {
             .unwrap_or(false),
         Err(_) => true,
     }
+}
+
+/// Recursive directory copy. std has no equivalent, and the alternative is a
+/// dependency for twelve lines.
+fn copy_dir_all(from: &Path, to: &Path) -> Result<(), String> {
+    fs::create_dir_all(to).map_err(|e| format!("creating {}: {e}", to.display()))?;
+    for entry in fs::read_dir(from).map_err(|e| format!("reading {}: {e}", from.display()))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let dst = to.join(entry.file_name());
+        let ty = entry.file_type().map_err(|e| e.to_string())?;
+        if ty.is_dir() {
+            copy_dir_all(&entry.path(), &dst)?;
+        } else {
+            // Symlinks are followed rather than recreated: the container needs
+            // the bytes, and a link to a host path means nothing inside it.
+            fs::copy(entry.path(), &dst)
+                .map_err(|e| format!("copying {}: {e}", entry.path().display()))?;
+        }
+    }
+    Ok(())
 }
