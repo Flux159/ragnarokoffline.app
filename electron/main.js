@@ -363,8 +363,15 @@ function probeHost(url) {
 	});
 }
 
-// `host:port`, defaulted to the asset server's port so a player can paste
-/// just an address. Returned as a URL because that is what every caller wants.
+// The client's entry point on an asset server. Not the root: the root serves
+// roBrowser's own default page, which loads but is not this game -- joining
+// would have appeared to work and shown the wrong thing. Defined once so the
+// local and remote paths cannot drift.
+const GAME_PATH = '/api.html?app=ONLINE';
+
+// `host:port`, defaulted to the asset server's port so a player can paste just
+// an address. Returned as a base URL: callers append GAME_PATH when they want
+// the game, and probe the base when they only want to know it is up.
 function joinUrl(hostSpec) {
 	const spec = String(hostSpec || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
 	if (!spec) return '';
@@ -570,7 +577,7 @@ function makeWindow(id, file, opts) {
 // it goes straight to the host.
 const openGame = () => {
 	const c = getClientPaths();
-	const url = c.mode === 'join' ? joinUrl(c.join_host) : null;
+	const url = c.mode === 'join' ? joinUrl(c.join_host) + GAME_PATH : null;
 	return makeWindow('game', 'index.html', {
 		width: 1280, height: 800,
 		title: url ? `${productName()} — ${c.join_host}` : productName(),
@@ -690,7 +697,7 @@ const handlers = {
 	},
 	launch_game: () => {
 		const win = openGame();
-		win.loadURL('http://127.0.0.1:3338/api.html?app=ONLINE');
+		win.loadURL(`http://127.0.0.1:3338${GAME_PATH}`);
 	},
 
 	// Dialogs — Tauri's plugin API, reimplemented so the pages keep their shape
