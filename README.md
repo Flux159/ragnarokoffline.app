@@ -4,8 +4,7 @@
 
 # Ragnarok Offline
 
-<sub>Icon generated with GPT Image 2. It is our own artwork — no Gravity assets are
-used in it.</sub>
+<sub>Icon generated with GPT Image 2. No Gravity assets used.</sub>
 
 A single, self-contained app that runs **Ragnarok Online offline** — server, client,
 and game window in one icon. Double-click it and you are in Midgard after obtaining
