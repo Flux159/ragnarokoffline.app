@@ -250,7 +250,7 @@ async function assetsStart() {
 			...process.env,
 			PATH: toolPath(),
 			PORT: '3338',
-			CLIENT_PUBLIC_URL: 'http://127.0.0.1:3338',
+			CLIENT_PUBLIC_URL: `http://${advertiseHost()}:3338`,
 			NODE_ENV: 'production',
 			SERVER_ROOT: path.join(stateDir(), 'assets'),
 			CLIENT_RESPATH: 'resources/',
@@ -258,7 +258,13 @@ async function assetsStart() {
 			ENABLE_STATIC_SERVE: 'true',
 			ROBROWSER_PATH: path.join(root, 'vendor/roBrowserLegacy/dist/Web'),
 			ENABLE_WSPROXY: 'true',
-			WS_ALLOWED_TARGETS: '127.0.0.1:6900,127.0.0.1:6121,127.0.0.1:5121',
+			// The proxy refuses anything not listed, so a LAN host must allow
+			// its own routable address as well as loopback -- a joining client
+			// asks the proxy to reach the address the char-server handed it,
+			// which is the LAN one.
+			WS_ALLOWED_TARGETS: [...new Set(['127.0.0.1', advertiseHost()])]
+				.flatMap(h => [`${h}:6900`, `${h}:6121`, `${h}:5121`])
+				.join(','),
 			DATA_OVERRIDE_PATH: path.join(root, 'vendor/ROenglishRE/Translation/Renewal/data'),
 		},
 		stdio: ['ignore', log, log],
@@ -296,12 +302,73 @@ function assetsStop() {
 // Client paths and settings
 // ---------------------------------------------------------------------------
 
+// One executable, three runtime modes, chosen here rather than at build time:
+//
+//   host    run the server locally and play on it (the original behaviour)
+//   join    connect to someone else's host and play as a pure client
+//
+// and `lan`, which is host mode listening on the network instead of loopback.
+// A joining player needs no assets, no engine and no containers: the host is
+// already serving the client, the GRF contents and the WebSocket proxy over
+// HTTP for its own use, so joining is that URL in a window.
+const DEFAULT_CLIENT = {
+	mode: 'host', join_host: '', lan: false,
+	data_grf: '', rdata_grf: '', official_grf: '', bgm_dir: '',
+};
+
 function getClientPaths() {
 	try {
-		return JSON.parse(fs.readFileSync(clientConfigPath(), 'utf8'));
+		return { ...DEFAULT_CLIENT, ...JSON.parse(fs.readFileSync(clientConfigPath(), 'utf8')) };
 	} catch {
-		return { data_grf: '', rdata_grf: '', official_grf: '', bgm_dir: '' };
+		return { ...DEFAULT_CLIENT };
 	}
+}
+
+// The address this host tells other machines to come back to.
+//
+// Read from the endpoint.json the supervisor just wrote rather than computed
+// again here. The two must agree: rAthena hands a connecting client the
+// address in char_ip/map_ip, and the WebSocket proxy refuses any target not on
+// its allow-list. If those disagree the client is told to go somewhere the
+// proxy will not take it, and the failure is a silent hang with nothing in any
+// log to explain it.
+function advertiseHost() {
+	try {
+		const ep = JSON.parse(fs.readFileSync(path.join(stateDir(), 'endpoint.json'), 'utf8'));
+		if (ep && ep.host) return ep.host;
+	} catch {
+		/* not written yet -- first boot, or host mode without LAN */
+	}
+	return '127.0.0.1';
+}
+
+// Confirm a host is actually serving before a window is pointed at it, so an
+// address typo or an offline friend produces a sentence rather than a blank
+// window that never loads.
+function probeHost(url) {
+	return new Promise((resolve, reject) => {
+		const req = require('http').get(url, { timeout: 8000 }, res => {
+			res.resume();
+			// Any HTTP answer means something is listening and speaking HTTP,
+			// which is all this needs to establish.
+			resolve();
+		});
+		req.on('timeout', () => {
+			req.destroy();
+			reject(new Error(`${url} did not answer within 8 seconds. Is the host running, and are you on the same network?`));
+		});
+		req.on('error', e => {
+			reject(new Error(`Could not reach ${url}: ${e.message}`));
+		});
+	});
+}
+
+// `host:port`, defaulted to the asset server's port so a player can paste
+/// just an address. Returned as a URL because that is what every caller wants.
+function joinUrl(hostSpec) {
+	const spec = String(hostSpec || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+	if (!spec) return '';
+	return `http://${spec.includes(':') ? spec : spec + ':3338'}`;
 }
 
 function clientComplete(p) {
@@ -413,7 +480,7 @@ async function saveSettings(settings) {
 	if (settings.free_kafra_warp) fs.writeFileSync(marker, '');
 	else fs.rmSync(marker, { force: true });
 
-	return runStack(['up']);
+	return runStack(getClientPaths().lan ? ['up', '--lan'] : ['up']);
 }
 
 // Fill in a whole client from one folder. A full-client archive unzips to
@@ -489,13 +556,27 @@ function makeWindow(id, file, opts) {
 	// someone navigating away from a tab, and quitting runs the same teardown
 	// either way.
 	win.webContents.on('will-prevent-unload', e => e.preventDefault());
-	win.loadFile(path.join(__dirname, '..', 'src', file));
+	// `opts.url` wins over a bundled page: a joining player's game window is
+	// the host's own client, served over HTTP, not a local copy of it.
+	if (opts && opts.url) win.loadURL(opts.url);
+	else win.loadFile(path.join(__dirname, '..', 'src', file));
 	win.on('closed', () => delete windows[id]);
 	windows[id] = win;
 	return win;
 }
 
-const openGame = () => makeWindow('game', 'index.html', { width: 1280, height: 800, title: productName() });
+// index.html is the local boot page: it polls the stack's phase and only then
+// navigates to the asset server. A joining player has no stack to wait for, so
+// it goes straight to the host.
+const openGame = () => {
+	const c = getClientPaths();
+	const url = c.mode === 'join' ? joinUrl(c.join_host) : null;
+	return makeWindow('game', 'index.html', {
+		width: 1280, height: 800,
+		title: url ? `${productName()} — ${c.join_host}` : productName(),
+		url,
+	});
+};
 const openSetup = () => makeWindow('setup', 'setup.html', { width: 620, height: 620, resizable: false, title: `${productName()} — set up your client` });
 const openSettings = () => makeWindow('settings', 'settings.html', { width: 620, height: 780, title: `${productName()} — settings` });
 
@@ -516,12 +597,24 @@ const handlers = {
 	// symlinks or DATA.INI in it yet, and only the setup window writes those.
 	start_stack: async () => {
 		const saved = getClientPaths();
+		// Joining runs no engine, no containers and no asset server: the host
+		// runs all of it. Confirm the host answers instead, so an unreachable
+		// address fails here with something a player can act on rather than as
+		// a blank window later.
+		if (saved.mode === 'join') {
+			const url = joinUrl(saved.join_host);
+			fs.mkdirSync(stateDir(), { recursive: true });
+			fs.writeFileSync(path.join(stateDir(), 'phase'), `Connecting to ${saved.join_host}…\n`);
+			await probeHost(url);
+			fs.writeFileSync(path.join(stateDir(), 'phase'), 'Ready\n');
+			return 'joined';
+		}
 		if (clientComplete(saved)) {
 			fs.mkdirSync(stateDir(), { recursive: true });
 			fs.writeFileSync(path.join(stateDir(), 'phase'), 'Indexing your client…\n');
 			await linkClient(saved);
 		}
-		const out = await runStack(['up']);
+		const out = await runStack(getClientPaths().lan ? ['up', '--lan'] : ['up']);
 		// The asset server starts here, not in launch_game: the boot page polls
 		// assets_ready() before it will navigate, so nothing would ever start it.
 		await assetsStart();
@@ -540,13 +633,49 @@ const handlers = {
 	// macOS, and showing it would send people hunting for a directory they can
 	// never find.
 	data_location: () => path.join(dataRoot(), 'nebula/disks/data.img'),
-	client_ready: () => clientComplete(getClientPaths()),
+	client_ready: () => {
+		const c = getClientPaths();
+		return c.mode === 'join' ? !!c.join_host : clientComplete(c);
+	},
 	get_client_paths: () => getClientPaths(),
 	set_client_paths: async ({ paths }) => {
-		if (!fs.existsSync(paths.data_grf)) throw new Error('data.grf is not a file');
-		if (!fs.existsSync(paths.rdata_grf)) throw new Error('rdata.grf is not a file');
-		fs.writeFileSync(clientConfigPath(), JSON.stringify(paths, null, 2));
-		return linkClient(paths);
+		const next = { ...getClientPaths(), ...paths };
+		if (next.mode === 'join') {
+			// A joining player supplies an address and nothing else -- no GRFs
+			// to validate, and nothing to link, because the host serves both
+			// the client and its assets.
+			const url = joinUrl(next.join_host);
+			if (!url) throw new Error('Enter the address your friend gave you.');
+			await probeHost(url);
+			next.join_host = url.replace(/^http:\/\//, '');
+			fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
+			return 'joined';
+		}
+		if (!fs.existsSync(next.data_grf)) throw new Error('data.grf is not a file');
+		if (!fs.existsSync(next.rdata_grf)) throw new Error('rdata.grf is not a file');
+		fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
+		return linkClient(next);
+	},
+
+	// Host mode, LAN toggle, and the string a host gives out. Kept separate
+	// from set_client_paths because switching mode must not require re-picking
+	// a client that is already configured.
+	get_mode: () => {
+		const c = getClientPaths();
+		return {
+			mode: c.mode, lan: !!c.lan, join_host: c.join_host,
+			// Only meaningful once the stack has run; before that there is no
+			// endpoint.json and no address to give out.
+			join_address: c.mode === 'host' && c.lan ? `${advertiseHost()}:3338` : '',
+		};
+	},
+	set_mode: ({ mode, lan, join_host }) => {
+		const next = getClientPaths();
+		if (mode !== undefined) next.mode = mode;
+		if (lan !== undefined) next.lan = !!lan;
+		if (join_host !== undefined) next.join_host = String(join_host).trim();
+		fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
+		return next;
 	},
 	scan_client_dir: ({ dir }) => scanClientDir(dir),
 	get_settings: () => getSettings(),

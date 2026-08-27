@@ -20,7 +20,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process::exit;
 
-const USAGE: &str = "usage: ragnarok-stack up|down|repair|status|logs [service] [tail]\n\
+const USAGE: &str = "usage: ragnarok-stack up [--lan]|down|repair [--lan]|status|logs [service] [tail]\n\
                      \x20      backup <file>|restore <file>\n\
                      \x20      link-assets <data.grf> <rdata.grf> [official_data.grf] [bgm-dir]";
 
@@ -59,10 +59,15 @@ fn main() {
     };
     let dk = Docker::new(cfg.docker.clone(), cfg.nebula_home.clone());
 
+    // LAN hosting is opt-in per invocation rather than sticky state: the app
+    // passes it from a setting the player can see, and a plain `up` from a
+    // terminal stays loopback-only.
+    let lan = args.iter().any(|a| a == "--lan");
+
     let result = match verb {
-        "up" => cmds::up(&cfg, &dk),
+        "up" => cmds::up(&cfg, &dk, lan),
         "down" => cmds::down(&cfg, &dk),
-        "repair" => cmds::repair(&cfg, &dk),
+        "repair" => cmds::repair(&cfg, &dk, lan),
         "status" => {
             cmds::status(&dk);
             Ok(())

@@ -37,6 +37,19 @@
   label > span:first-child { color: var(--dim); width: 128px; flex: none; }
   input[type=range] { flex: 1; accent-color: var(--accent); }
   .val { width: 50px; text-align: right; font-variant-numeric: tabular-nums; color: var(--accent-hi); }
+  /* The multiplayer section is the first place this window asks for typed
+     input or a choice, so these controls have no styles yet. Browser defaults
+     on a dark panel are unreadable rather than merely plain. */
+  select, input[type=text] {
+    background: var(--panel-hi); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 10px; font-size: 13px;
+    color: var(--text); font-family: inherit; min-width: 200px;
+  }
+  select:focus, input[type=text]:focus { outline: none; border-color: var(--accent-dim); }
+  input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
+  .row select, .row input[type=text] { margin-left: auto; }
+  .row input[type=checkbox] { margin-left: auto; }
+
   .note { color: var(--dim); font-size: 11px; margin-top: 8px; line-height: 1.6; }
   pre { margin: 0; color: var(--dim); font-size: 11px; white-space: pre-wrap; }
 </style>
@@ -61,8 +74,45 @@
     <div class="row actions" style="padding-top:10px">
       <button id="change-client" class="ghost">Change asset locations…</button>
     </div>
-    <p class="note">The GRFs and music stay where they are — RagnarokMac only
+    <p class="note">The GRFs and music stay where they are — Ragnarok Offline only
        references them, so nothing is copied or duplicated.</p>
+  </div>
+
+  <h2>Multiplayer</h2>
+  <div class="panel">
+    <div class="row">
+      <span class="name">Mode</span>
+      <select id="mp-mode">
+        <option value="host">Host a server</option>
+        <option value="join">Join a friend</option>
+      </select>
+    </div>
+
+    <div id="mp-host">
+      <div class="row">
+        <span class="name">Let other machines connect</span>
+        <input type="checkbox" id="mp-lan" />
+      </div>
+      <div class="row"><span class="name">Your address</span><span class="state" id="mp-addr">—</span></div>
+      <p class="note">Off by default: the server listens only on this machine.
+         Turning this on makes it reachable by anyone who can reach your computer
+         on the network. Restart the server for a change to take effect.</p>
+    </div>
+
+    <div id="mp-join" style="display:none">
+      <div class="row">
+        <span class="name">Server address</span>
+        <input type="text" id="mp-host-addr" placeholder="192.168.1.20:3338"
+               autocapitalize="off" autocorrect="off" spellcheck="false" />
+      </div>
+      <div class="row actions" style="padding-top:10px">
+        <button id="mp-connect" class="ghost">Connect…</button>
+      </div>
+      <p class="note">Joining runs nothing locally — no server, no virtual
+         machine, no game files. Everything comes from the host, so this starts
+         in seconds. Register on their login screen by adding <code>_M</code> or
+         <code>_F</code> to a new username.</p>
+    </div>
   </div>
 
   <h2>Save data</h2>
@@ -115,7 +165,41 @@ function paint(el, ok, text) {
   el.className = 'state ' + (ok ? 'up' : 'down');
 }
 
+async function refreshMode() {
+  const m = await invoke('get_mode');
+  $('mp-mode').value = m.mode;
+  $('mp-lan').checked = m.lan;
+  $('mp-host-addr').value = m.join_host || '';
+  $('mp-host').style.display = m.mode === 'host' ? '' : 'none';
+  $('mp-join').style.display = m.mode === 'join' ? '' : 'none';
+  // Only known once the server has started with LAN on: the address comes from
+  // what the supervisor actually advertised, not a second guess made here.
+  $('mp-addr').textContent = m.join_address
+    || (m.lan ? 'starts with the server' : 'not shared');
+}
+
+$('mp-mode').onchange = async () => {
+  await invoke('set_mode', { mode: $('mp-mode').value });
+  await refreshMode();
+};
+$('mp-lan').onchange = async () => {
+  await invoke('set_mode', { lan: $('mp-lan').checked });
+  await refreshMode();
+};
+$('mp-connect').onclick = async () => {
+  const host = $('mp-host-addr').value.trim();
+  log(`contacting ${host}…`);
+  try {
+    await invoke('set_client_paths', { paths: { mode: 'join', join_host: host } });
+    log('connected — open the game to play');
+    await refreshMode();
+  } catch (e) {
+    log('error: ' + e);
+  }
+};
+
 async function refresh() {
+  await refreshMode();
   const client = await invoke('get_client_paths');
   const named = n => (n ? n.split('/').pop() : null);
   const parts = [named(client.data_grf), named(client.rdata_grf)].filter(Boolean);

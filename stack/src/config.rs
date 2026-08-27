@@ -148,3 +148,22 @@ pub fn widen_path() {
         env::set_var("PATH", joined);
     }
 }
+
+/// The address other machines on the network can reach this host at.
+///
+/// Found by asking the routing table which source address it would use to
+/// reach the internet: a connected UDP socket sends nothing, but the kernel
+/// still binds it, and the local address it picks is the one a peer would see.
+/// That is more reliable than enumerating interfaces and guessing which is
+/// "the" LAN one on a machine with VPNs, bridges and virtual adapters.
+pub fn lan_ip() -> Option<std::net::IpAddr> {
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    // A public address that needs no name lookup and is never contacted.
+    sock.connect("1.1.1.1:80").ok()?;
+    let addr = sock.local_addr().ok()?.ip();
+    if addr.is_loopback() || addr.is_unspecified() {
+        None
+    } else {
+        Some(addr)
+    }
+}

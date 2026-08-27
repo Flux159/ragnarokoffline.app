@@ -41,6 +41,22 @@
   button.ghost { background: transparent; color: var(--dim); border: 1px solid var(--line); }
   button.ghost:hover { border-color: var(--accent-dim); color: var(--text); }
   button:disabled { opacity: .4; cursor: default; }
+  .tabs { display: flex; gap: 4px; margin: 0 0 18px; border-bottom: 1px solid var(--line); }
+  .tab {
+    background: none; border: 0; border-bottom: 2px solid transparent;
+    color: var(--dim); padding: 8px 14px; font-size: 13px; font-weight: 600;
+    cursor: pointer; border-radius: 0;
+  }
+  .tab:hover { color: var(--text); background: none; }
+  .tab.on { color: var(--accent-hi); border-bottom-color: var(--accent); }
+  .pane { display: none; flex-direction: column; }
+  .pane.on { display: flex; }
+  input[type=text] {
+    flex: 1; background: var(--panel-hi); border: 1px solid var(--line);
+    border-radius: 6px; padding: 9px 11px; font-size: 13px; color: var(--text);
+    font-family: inherit;
+  }
+  input[type=text]:focus { outline: none; border-color: var(--accent-dim); }
   .foot { margin-top: auto; display: flex; align-items: center; gap: 12px; }
   .msg { flex: 1; font-size: 12px; color: var(--dim); }
   .msg.bad { color: var(--bad); }
@@ -48,10 +64,17 @@
 </head>
 <body>
   <h1>Set up your client</h1>
+
+  <div class="tabs">
+    <button class="tab on" data-tab="host">Host a server</button>
+    <button class="tab" data-tab="join">Join a friend</button>
+  </div>
+
+  <div class="pane on" id="pane-host">
   <p class="lede">
-    RagnarokMac does not ship game assets — they are Gravity's copyright. Point it
-    at a Ragnarok client you already have. The files are read where they are, not
-    copied, so a multi-gigabyte client is not duplicated.
+    Ragnarok Offline does not ship game assets — they are Gravity's copyright.
+    Point it at a Ragnarok client you already have. The files are read where they
+    are, not copied, so a multi-gigabyte client is not duplicated.
   </p>
 
   <div class="field folder">
@@ -96,6 +119,31 @@
     </div>
   </div>
 
+  </div><!-- /pane-host -->
+
+  <div class="pane" id="pane-join">
+    <p class="lede">
+      Play on someone else's server. You need nothing but the address they give
+      you — no game files, no download. Their machine serves the client and the
+      artwork, so this starts in seconds.
+    </p>
+    <div class="field">
+      <div class="label">
+        <span class="name">Server address</span>
+        <span class="tag">from your friend, e.g. 192.168.1.20:3338</span>
+      </div>
+      <div class="picker">
+        <input type="text" id="join_host" placeholder="192.168.1.20:3338"
+               autocapitalize="off" autocorrect="off" spellcheck="false" />
+      </div>
+    </div>
+    <p class="lede" style="margin-top:2px">
+      You will make your own character on their server. On the login screen, add
+      <code>_M</code> to the end of a new username to register as male or
+      <code>_F</code> for female — the account is created as you log in.
+    </p>
+  </div><!-- /pane-join -->
+
   <div class="foot">
     <div class="msg" id="msg">English text is built in; it does not come from these files.</div>
     <button id="save" disabled>Continue</button>
@@ -107,6 +155,12 @@ const { open } = window.__TAURI__.dialog;
 const $ = id => document.getElementById(id);
 const KEYS = ['data_grf', 'rdata_grf', 'official_grf', 'bgm_dir'];
 const paths = { data_grf: '', rdata_grf: '', official_grf: '', bgm_dir: '' };
+let mode = 'host';
+
+const HINT = {
+  host: 'English text is built in; it does not come from these files.',
+  join: 'You do not need any game files to join — everything comes from the host.',
+};
 
 function render() {
   for (const k of KEYS) {
@@ -114,8 +168,27 @@ function render() {
     el.textContent = paths[k] || 'Not selected';
     el.classList.toggle('set', !!paths[k]);
   }
-  $('save').disabled = !(paths.data_grf && paths.rdata_grf);
+  // Each mode has its own idea of "enough to continue": a host needs the two
+  // required GRFs, a guest needs only an address.
+  $('save').disabled = mode === 'join'
+    ? !$('join_host').value.trim()
+    : !(paths.data_grf && paths.rdata_grf);
+  $('save').textContent = mode === 'join' ? 'Connect' : 'Continue';
 }
+
+for (const t of document.querySelectorAll('.tab')) {
+  t.onclick = () => {
+    mode = t.dataset.tab;
+    for (const x of document.querySelectorAll('.tab')) x.classList.toggle('on', x === t);
+    for (const p of document.querySelectorAll('.pane')) {
+      p.classList.toggle('on', p.id === 'pane-' + mode);
+    }
+    $('msg').className = 'msg';
+    $('msg').textContent = HINT[mode];
+    render();
+  };
+}
+$('join_host').oninput = render;
 
 $('pick-folder').onclick = async () => {
   const dir = await open({ multiple: false, directory: true });
@@ -155,9 +228,16 @@ for (const btn of document.querySelectorAll('[data-pick]')) {
 $('save').onclick = async () => {
   $('save').disabled = true;
   $('msg').className = 'msg';
-  $('msg').textContent = 'Linking your client…';
+  const joining = mode === 'join';
+  $('msg').textContent = joining
+    ? `Contacting ${$('join_host').value.trim()}…`
+    : 'Linking your client…';
   try {
-    await invoke('set_client_paths', { paths });
+    await invoke('set_client_paths', {
+      paths: joining
+        ? { mode: 'join', join_host: $('join_host').value.trim() }
+        : { ...paths, mode: 'host' },
+    });
     await invoke('open_game');
     await invoke('close_setup');
   } catch (e) {
@@ -167,7 +247,14 @@ $('save').onclick = async () => {
   }
 };
 
-invoke('get_client_paths').then(p => { Object.assign(paths, p); render(); });
+invoke('get_client_paths').then(p => {
+  Object.assign(paths, p);
+  if (p.join_host) $('join_host').value = p.join_host;
+  // Reopen on the tab they last used, so changing a host address is not a
+  // hunt through a screen built for first-run asset picking.
+  if (p.mode === 'join') document.querySelector('.tab[data-tab=join]').click();
+  else render();
+});
 render();
 </script>
 </body>

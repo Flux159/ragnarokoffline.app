@@ -1,6 +1,6 @@
 //! The stack commands themselves.
 
-use crate::config::{Config, DB_CONTAINER, NET, SERVERS};
+use crate::config::{lan_ip, Config, DB_CONTAINER, NET, SERVERS};
 use crate::docker::{older_than, Docker, Mount};
 use std::fs;
 use std::io::Write;
@@ -247,7 +247,7 @@ fn wait_for_maps(dk: &Docker) {
     eprintln!("map-server has not registered its maps yet; first login may need a retry");
 }
 
-fn run_server(cfg: &Config, dk: &Docker, name: &str, port: u16, binary: &str) -> Result<(), String> {
+fn run_server(cfg: &Config, dk: &Docker, name: &str, port: u16, binary: &str, lan: bool) -> Result<(), String> {
     dk.remove_container(name);
 
     // One directory mount, not five file mounts: a single-file bind whose host
@@ -268,16 +268,21 @@ fn run_server(cfg: &Config, dk: &Docker, name: &str, port: u16, binary: &str) ->
     }
     // -t because rAthena writes with printf(3), which block-buffers when
     // stdout is not a tty; without it errors never reach `docker logs`.
+    // Loopback by default: an offline single-player server has no business
+    // listening on the network. LAN hosting is an explicit choice, and it is
+    // the whole difference between "only this machine" and "anyone who can
+    // reach this machine".
+    let bind = if lan { "0.0.0.0" } else { "127.0.0.1" };
     let opts = vec![
         "-t".to_string(),
         "--network".into(), NET.into(),
-        "-p".into(), format!("127.0.0.1:{port}:{port}"),
+        "-p".into(), format!("{bind}:{port}:{port}"),
     ];
     dk.run_container(name, &cfg.image, &[binary.to_string()], &mounts, &opts)
         .map_err(|e| format!("starting {name}: {e}"))
 }
 
-pub fn up(cfg: &Config, dk: &Docker) -> Result<(), String> {
+pub fn up(cfg: &Config, dk: &Docker, lan: bool) -> Result<(), String> {
     let conf = cfg.state.join("conf");
     for d in ["conf", "sql", "backups"] {
         fs::create_dir_all(cfg.state.join(d)).map_err(|e| format!("creating {d}: {e}"))?;
@@ -380,10 +385,24 @@ pub fn up(cfg: &Config, dk: &Docker) -> Result<(), String> {
     // nothing to talk to. This is a single-player server on loopback.
     write_conf(&conf, "login_conf.txt",
         "new_account: yes\nacc_name_min_length: 4\npassword_min_length: 4\n")?;
+    // The address char and map hand the client to reconnect to. This is the
+    // one that actually decides whether a LAN player can play: everything can
+    // be bound wide and reachable, and the client will still be told to go to
+    // 127.0.0.1 -- its own machine -- and fail with nothing in any log to say
+    // why.
+    let advertise = if lan {
+        lan_ip().map(|i| i.to_string()).unwrap_or_else(|| "127.0.0.1".into())
+    } else {
+        "127.0.0.1".into()
+    };
+    if lan && advertise == "127.0.0.1" {
+        eprintln!("LAN hosting was requested but no network address was found; \
+                   falling back to loopback, which only this machine can reach");
+    }
     // PIN codes are a live-service anti-theft feature; offline they are just a
     // second password screen.
     write_conf(&conf, "char_conf.txt",
-        "login_ip: ragnarok-login\nchar_ip: 127.0.0.1\npincode_enabled: no\n")?;
+        &format!("login_ip: ragnarok-login\nchar_ip: {advertise}\npincode_enabled: no\n"))?;
 
     let product = if cfg!(target_os = "macos") { "RagnarokMac" }
         else if cfg!(windows) { "RagnarokWindows" }
@@ -392,27 +411,33 @@ pub fn up(cfg: &Config, dk: &Docker) -> Result<(), String> {
     write_conf(&conf, "motd.txt",
         &format!("Welcome to {product} Offline! Please report any bugs on Github\n"))?;
     write_conf(&conf, "map_conf.txt",
-        "char_ip: ragnarok-char\nmap_ip: 127.0.0.1\nmotd_txt: conf/import/motd.txt\n")?;
+        &format!("char_ip: ragnarok-char\nmap_ip: {advertise}\nmotd_txt: conf/import/motd.txt\n"))?;
 
-    let endpoint = "{\"host\":\"127.0.0.1\",\"login\":6900,\"char\":6121,\"map\":5121}\n";
-    fs::write(cfg.state.join("endpoint.json"), endpoint)
+    let endpoint = format!(
+        "{{\"host\":\"{advertise}\",\"login\":6900,\"char\":6121,\"map\":5121}}\n");
+    fs::write(cfg.state.join("endpoint.json"), &endpoint)
         .map_err(|e| format!("writing endpoint.json: {e}"))?;
     // The game page reads this from the asset server's static root. It exists
     // so LAN mode can later advertise a different address.
     let web = cfg.root.join("vendor/roBrowserLegacy/dist/Web");
     if web.is_dir() {
-        let _ = fs::write(web.join("endpoint.json"), endpoint);
+        let _ = fs::write(web.join("endpoint.json"), &endpoint);
     }
 
     prepare_kafra_scripts(cfg, dk);
     phase(cfg, "Starting the login, character and map servers…");
-    run_server(cfg, dk, "ragnarok-login", 6900, "/rathena/login-server")?;
-    run_server(cfg, dk, "ragnarok-char", 6121, "/rathena/char-server")?;
-    run_server(cfg, dk, "ragnarok-map", 5121, "/rathena/map-server")?;
+    run_server(cfg, dk, "ragnarok-login", 6900, "/rathena/login-server", lan)?;
+    run_server(cfg, dk, "ragnarok-char", 6121, "/rathena/char-server", lan)?;
+    run_server(cfg, dk, "ragnarok-map", 5121, "/rathena/map-server", lan)?;
     phase(cfg, "Loading maps and NPCs…");
     wait_for_maps(dk);
     phase(cfg, "Ready");
     println!("stack up");
+    // The one string a host pastes to a friend. Printed rather than only
+    // written, so it is visible from a terminal too.
+    if lan {
+        println!("join address: {advertise}:3338");
+    }
     Ok(())
 }
 
@@ -508,7 +533,7 @@ pub fn restore(cfg: &Config, dk: &Docker, src: &str) -> Result<(), String> {
 /// cannot reach: an engine that is itself wedged, where nothing
 /// container-level can be cleaned because the daemon is not answering.
 /// Player data is untouched — characters live in the ragnarokmac-db volume.
-pub fn repair(cfg: &Config, dk: &Docker) -> Result<(), String> {
+pub fn repair(cfg: &Config, dk: &Docker, lan: bool) -> Result<(), String> {
     phase(cfg, "Repairing…");
     // Break the lock rather than wait: the usual reason to reach for repair is
     // a previous run that died holding one.
@@ -516,7 +541,7 @@ pub fn repair(cfg: &Config, dk: &Docker) -> Result<(), String> {
     let _ = nebula(cfg, &["down"]);
     sleep(Duration::from_secs(2));
     let _ = nebula(cfg, &["up"]);
-    up(cfg, dk)
+    up(cfg, dk, lan)
 }
 
 pub fn logs(dk: &Docker, service: &str, tail: &str) {
