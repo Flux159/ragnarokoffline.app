@@ -191,8 +191,13 @@ $('mp-connect').onclick = async () => {
   log(`contacting ${host}…`);
   try {
     await invoke('set_client_paths', { paths: { mode: 'join', join_host: host } });
-    log('connected — open the game to play');
     await refreshMode();
+    // Straight there, rather than telling someone to press a second button:
+    // the game window is still showing the local server that was just stopped,
+    // so leaving it as it is means the visible result of "Connect" is a dead
+    // page.
+    log('connected — opening ' + host);
+    await invoke('open_game');
   } catch (e) {
     log('error: ' + e);
   }

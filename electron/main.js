@@ -771,7 +771,15 @@ const handlers = {
 	open_game: () => {
 		const existed = windows.game && !windows.game.isDestroyed();
 		const win = openGame();
-		if (existed && win && !win.isDestroyed()) win.reload();
+		// Load the boot page, not reload(). By the time this is called the
+		// window has usually navigated away to whichever server was serving it,
+		// and reload() would simply fetch that same URL again -- the local one
+		// that was just stopped when the player switched to a friend's server.
+		// This is "start the boot flow", so it has to put the window back on
+		// the page that runs it, wherever it had got to.
+		if (existed && win && !win.isDestroyed()) {
+			win.loadFile(path.join(__dirname, '..', 'src', 'index.html'));
+		}
 	},
 	open_setup: () => void openSetup(),
 	open_settings: () => void openSettings(),
