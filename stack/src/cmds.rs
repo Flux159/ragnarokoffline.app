@@ -60,9 +60,42 @@ fn write_conf(dir: &Path, name: &str, body: &str) -> Result<(), String> {
     fs::write(dir.join(name), body).map_err(|e| format!("writing {name}: {e}"))
 }
 
+/// Set a top-level key in nebula's config.toml, reporting whether it changed.
+///
+/// Inserted before the first table header rather than appended: a key written
+/// after a `[section]` line belongs to that section, and would be silently
+/// ignored as a top-level setting. The file we ship has no tables today, which
+/// is exactly the kind of assumption that stops being true quietly.
+fn set_engine_flag(path: &Path, key: &str, value: bool) -> Result<bool, String> {
+    let line = format!("{key} = {value}");
+    let existing = fs::read_to_string(path).unwrap_or_default();
+    if existing.lines().any(|l| l.trim() == line) {
+        return Ok(false);
+    }
+    let mut out: Vec<String> = Vec::new();
+    let mut placed = false;
+    for l in existing.lines() {
+        if l.trim_start().starts_with(&format!("{key} ")) || l.trim_start().starts_with(&format!("{key}=")) {
+            out.push(line.clone());
+            placed = true;
+        } else {
+            if !placed && l.trim_start().starts_with('[') {
+                out.push(line.clone());
+                placed = true;
+            }
+            out.push(l.to_string());
+        }
+    }
+    if !placed {
+        out.push(line);
+    }
+    fs::write(path, out.join("\n") + "\n").map_err(|e| format!("writing {}: {e}", path.display()))?;
+    Ok(true)
+}
+
 /// A fresh machine has no guest kernel or rootfs and no running engine. Both
 /// ship with the app, so neither needs the network.
-fn ensure_engine(cfg: &Config, dk: &Docker) -> Result<(), String> {
+fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool) -> Result<(), String> {
     let _ = fs::create_dir_all(&cfg.nebula_home);
     // Must be in place before the first `up`: nebula reads it when it creates
     // the instance, and the ports in it are what keep this engine from
@@ -74,6 +107,21 @@ fn ensure_engine(cfg: &Config, dk: &Docker) -> Result<(), String> {
     }
     if !cfg.nebula.exists() {
         return Err(format!("nebula engine not found at {}", cfg.nebula.display()));
+    }
+
+    // nebula binds published ports to 127.0.0.1 unless this is on, so LAN
+    // hosting needs it -- and it is off by default there for the same reason
+    // it is off by default here: exposing a guest's ports to the network is a
+    // decision, not a detail.
+    //
+    // nebulad reads it once, at startup. Changing it under a running engine
+    // does nothing, and the symptom is a LAN switch that appears to work and
+    // silently does not, so a change restarts the engine.
+    let changed = set_engine_flag(&cfg_toml, "allow_public_publish", lan)?;
+    if changed && dk.quiet(["ps"]) {
+        phase(cfg, "Restarting the virtual machine for the network change…");
+        let _ = nebula(cfg, &["down"]);
+        sleep(Duration::from_secs(2));
     }
 
     let kernel = cfg.nebula_home.join("kernel/Image");
@@ -293,7 +341,7 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool) -> Result<(), String> {
     phase(cfg, "Starting…");
     let _lock = Lock::acquire(cfg)?;
     phase(cfg, "Starting the virtual machine…");
-    ensure_engine(cfg, dk)?;
+    ensure_engine(cfg, dk, lan)?;
 
     // A failed single-file bind leaves a directory behind at the source path.
     // Clear anything in conf/ that is not a regular file so a stale one cannot

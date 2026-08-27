@@ -15,3 +15,10 @@ cpus = 4
 data_disk_gib = 16
 
 dns_zone = "ragnarok.local"
+
+# Published ports bind 127.0.0.1 unless this is on. The supervisor sets it to
+# match the app's LAN switch on every start, so the value here is only the
+# default a fresh instance begins with — off, because exposing the game servers
+# to the network is a decision the player makes, not one an install makes for
+# them.
+allow_public_publish = false
