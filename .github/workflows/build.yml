@@ -209,6 +209,12 @@ jobs:
             echo "Run the images workflow, which publishes them to the 'images' tag." >&2
             exit 1
           }
+          # Where package.sh looks for it. If this file is absent the script
+          # falls back to building the images with precache.sh, which needs a
+          # real docker client the runner does not have -- so staging it
+          # afterwards is too late.
+          mkdir -p dist
+          mv /tmp/images-${{ matrix.arch }}.tar.gz dist/images.tar.gz
           # The rAthena schema, extracted from the image it belongs to. package.sh
           # takes it from .ragnarokmac/sql, which locally is written by bootstrap
           # and here comes down with the images it was extracted from.
@@ -221,13 +227,6 @@ jobs:
 
       - name: Assemble the payload
         run: scripts/package.sh
-        shell: bash
-
-      - name: Add the server images to the payload
-        run: |
-          set -e
-          mkdir -p payload/dist
-          cp /tmp/images-${{ matrix.arch }}.tar.gz payload/dist/images.tar.gz
         shell: bash
 
       - name: Report the signing configuration
