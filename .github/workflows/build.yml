@@ -127,8 +127,12 @@ jobs:
     # the resulting booleans instead. Job-level env is in scope for a step's
     # `if:`; a step's own `env:` is not (GitHub evaluates the condition first).
     env:
-      HAS_CERT: ${{ secrets.APPLE_CERT_P12_BASE64 != '' }}
-      HAS_NOTARY_KEY: ${{ secrets.APPLE_API_KEY_P8 != '' }}
+      # Every part of a credential, not just its first part. A .p12 with no
+      # password fails `security import` outright rather than skipping, which
+      # would take the whole release down over a missing secret; notarisation
+      # needs all three App Store Connect values or none.
+      HAS_CERT: ${{ secrets.APPLE_CERT_P12_BASE64 != '' && secrets.APPLE_CERT_PASSWORD != '' }}
+      HAS_NOTARY_KEY: ${{ secrets.APPLE_API_KEY_P8 != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER_ID != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -220,6 +224,16 @@ jobs:
           cp /tmp/images-${{ matrix.arch }}.tar.gz payload/dist/images.tar.gz
         shell: bash
 
+      - name: Report the signing configuration
+        if: matrix.platform == 'mac'
+        run: |
+          echo "code signing: ${{ env.HAS_CERT }}"
+          echo "notarisation: ${{ env.HAS_NOTARY_KEY }}"
+          [ "${{ env.HAS_CERT }}" = "true" ] || \
+            echo "::warning::Building an unsigned macOS app — APPLE_CERT_P12_BASE64 and APPLE_CERT_PASSWORD must both be set to sign."
+          [ "${{ env.HAS_NOTARY_KEY }}" = "true" ] || \
+            echo "::warning::Skipping notarisation — APPLE_API_KEY_P8, APPLE_API_KEY_ID and APPLE_API_ISSUER_ID must all be set."
+
       - name: Import signing certificate
         if: matrix.platform == 'mac' && env.HAS_CERT == 'true'
         env:
@@ -254,8 +268,8 @@ jobs:
           # otherwise, which is what makes this workflow usable before the Apple
           # credentials exist. APPLE_API_KEY comes from the step above via
           # GITHUB_ENV when it ran.
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_ID: ${{ env.HAS_NOTARY_KEY == 'true' && secrets.APPLE_API_KEY_ID || '' }}
+          APPLE_API_ISSUER: ${{ env.HAS_NOTARY_KEY == 'true' && secrets.APPLE_API_ISSUER_ID || '' }}
           # Auto-discovery hunts the keychain for an identity and fails the
           # build when there is none, so it follows the certificate rather than
           # the platform.
