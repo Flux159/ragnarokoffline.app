@@ -138,6 +138,11 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool) -> Result<(), String> {
     }
     // `nebula up` is a no-op when the engine is already healthy.
     let _ = nebula(cfg, &["up"]);
+    // Its own phase. Installing the image and waiting for the engine are
+    // different steps with very different durations, and leaving the install
+    // message up for the whole wait made a healthy engine that the client
+    // could not reach look like an install stuck at 100 seconds.
+    phase(cfg, "Waiting for the engine…");
     // The docker socket appears a moment after the VM reports healthy.
     for _ in 0..45 {
         if dk.quiet(["ps"]) {

@@ -7,6 +7,7 @@
 //! here would mean owning that difference ourselves for no gain.
 
 use std::ffi::OsStr;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread::sleep;
@@ -35,14 +36,22 @@ impl Docker {
 
     fn base(&self) -> Command {
         let mut c = Command::new(&self.bin);
-        // On unix the socket lives in the instance directory. On Windows the
-        // client resolves the loopback port itself from the same directory, so
-        // pointing DOCKER_HOST at a unix path there would actively break it.
-        if !cfg!(windows) {
-            c.env(
-                "DOCKER_HOST",
-                format!("unix://{}", self.nebula_home.join("run/docker.sock").display()),
-            );
+        let sock = self.nebula_home.join("run/docker.sock");
+        if cfg!(windows) {
+            // Windows has no AF_UNIX here, so run/docker.sock is a *file*
+            // holding the loopback port nebulad's proxy listens on. The client
+            // does not read it -- given only NEBULA_HOME it falls back to
+            // Docker's default 2375 and fails with "connection refused",
+            // which reads as the engine being down when it is running fine.
+            // So the port is read here and passed explicitly.
+            if let Ok(port) = fs::read_to_string(&sock) {
+                let port = port.trim();
+                if !port.is_empty() {
+                    c.env("DOCKER_HOST", format!("tcp://127.0.0.1:{port}"));
+                }
+            }
+        } else {
+            c.env("DOCKER_HOST", format!("unix://{}", sock.display()));
         }
         c.env("NEBULA_HOME", &self.nebula_home);
         c
