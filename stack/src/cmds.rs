@@ -60,6 +60,25 @@ fn write_conf(dir: &Path, name: &str, body: &str) -> Result<(), String> {
     fs::write(dir.join(name), body).map_err(|e| format!("writing {name}: {e}"))
 }
 
+/// A cheap content fingerprint of the shipped guest images.
+///
+/// FNV-1a over the bytes: no dependency, and fast enough on ~25 MB that it is
+/// not worth being cleverer. Size alone would miss a rebuild that kept the
+/// same length, and mtime changes every time the payload is copied, which
+/// would reinstall the images on every launch.
+fn guest_fingerprint(paths: &[&Path]) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for p in paths {
+        if let Ok(bytes) = fs::read(p) {
+            for b in bytes {
+                hash ^= b as u64;
+                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+    }
+    format!("{hash:016x}")
+}
+
 /// Set a top-level key in nebula's config.toml, reporting whether it changed.
 ///
 /// Inserted before the first table header rather than appended: a key written
@@ -124,16 +143,39 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool) -> Result<(), String> {
         sleep(Duration::from_secs(2));
     }
 
+    // Install the guest images when they are missing *or* when the ones we
+    // ship differ from the ones installed.
+    //
+    // This used to install only when the files were absent, so an instance
+    // created once was pinned to that engine forever: a new app version could
+    // ship a newer kernel and rootfs and they would never be installed. The
+    // guest rootfs contains slimd, so an engine bug fixed upstream stayed
+    // broken on every machine that had already run the app once -- and the
+    // symptom was that a release "fixing" something changed nothing at all.
+    //
+    // Upgrading the engine is the normal case for anyone embedding nebula, not
+    // an edge case; being unable to is a defect.
     let kernel = cfg.nebula_home.join("kernel/Image");
     let rootfs = cfg.nebula_home.join("images/rootfs-pristine.img");
-    if !kernel.exists() || !rootfs.exists() {
-        let k = cfg.root.join("guest/Image.gz");
-        let r = cfg.root.join("guest/rootfs.img.gz");
-        if k.exists() && r.exists() {
-            phase(cfg, "Installing the virtual machine image… (first run only)");
+    let k = cfg.root.join("guest/Image.gz");
+    let r = cfg.root.join("guest/rootfs.img.gz");
+    if k.exists() && r.exists() {
+        let shipped = guest_fingerprint(&[&k, &r]);
+        let marker = cfg.nebula_home.join(".guest-images");
+        let installed = fs::read_to_string(&marker).unwrap_or_default();
+        let missing = !kernel.exists() || !rootfs.exists();
+        if missing || installed.trim() != shipped {
+            phase(cfg, if missing {
+                "Installing the virtual machine image… (first run only)"
+            } else {
+                "Updating the virtual machine image…"
+            });
             nebula(cfg, &["install-image",
                 "--kernel", &k.display().to_string(),
                 "--rootfs", &r.display().to_string()])?;
+            // Only after a successful install: a marker written first would
+            // convince the next run that a failed upgrade had happened.
+            let _ = fs::write(&marker, &shipped);
         }
     }
     // `nebula up` is a no-op when the engine is already healthy.
