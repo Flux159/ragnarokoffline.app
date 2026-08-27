@@ -288,16 +288,58 @@ fn wait_for_db(dk: &Docker) -> Result<(), String> {
 /// the char-server. A character logging in during that window is told "Map is
 /// not available" and bounced. The container being Up is not readiness; the
 /// char-server saying it has the maps is.
-fn wait_for_maps(dk: &Docker) {
+fn wait_for_maps(dk: &Docker) -> Result<(), String> {
     for _ in 0..90 {
         if dk.logs("ragnarok-char", "400").contains("loading complete") {
-            return;
+            return Ok(());
+        }
+        // A server that has exited is not a slow server. Waiting three minutes
+        // for one and then reporting success is how a stack with no game
+        // servers at all still went on to start the asset server and present
+        // itself as ready -- the launch looked slow, then looked fine, and
+        // nothing worked.
+        let dead: Vec<&str> = SERVERS.iter().copied().filter(|c| !dk.is_running(c)).collect();
+        if !dead.is_empty() {
+            // The server's own last words are worth more than anything this
+            // could say about them: rAthena reports what it could not reach.
+            let tail = dk.logs(dead[0], "8");
+            let reason = tail
+                .lines()
+                .filter(|l| l.contains("Error") || l.contains("error"))
+                .last()
+                .map(|l| strip_ansi(l))
+                .unwrap_or_else(|| "no error was logged".into());
+            return Err(format!(
+                "{} stopped during startup: {reason}",
+                dead.join(", ")
+            ));
         }
         sleep(Duration::from_secs(2));
     }
-    // Don't fail the launch over this — the stack is up and will finish
-    // shortly. Say so, so a slow machine's first login is explicable.
+    // Still running, just slow. That is worth saying rather than failing --
+    // a first launch on a slow machine genuinely takes a while, and the maps
+    // finish loading shortly after.
     eprintln!("map-server has not registered its maps yet; first login may need a retry");
+    Ok(())
+}
+
+/// rAthena colours its output, and an escape sequence in an error message
+/// makes it unreadable wherever it is shown.
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            for c in chars.by_ref() {
+                if c.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out.trim().to_string()
 }
 
 fn run_server(cfg: &Config, dk: &Docker, name: &str, port: u16, binary: &str, lan: bool) -> Result<(), String> {
@@ -497,7 +539,7 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool) -> Result<(), String> {
     run_server(cfg, dk, "ragnarok-char", 6121, "/rathena/char-server", lan)?;
     run_server(cfg, dk, "ragnarok-map", 5121, "/rathena/map-server", lan)?;
     phase(cfg, "Loading maps and NPCs…");
-    wait_for_maps(dk);
+    wait_for_maps(dk)?;
     phase(cfg, "Ready");
     println!("stack up");
     // The one string a host pastes to a friend. Printed rather than only
