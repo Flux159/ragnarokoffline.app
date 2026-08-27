@@ -54,3 +54,6 @@ data.ini
 # Electron shell
 /node_modules/
 /dist/electron/
+
+# The supervisor crate build output.
+stack/target/

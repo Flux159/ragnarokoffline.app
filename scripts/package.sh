@@ -7,6 +7,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+EXE=""; case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) EXE=".exe";; esac
 PAYLOAD="$ROOT/payload"
 NEBULA_SRC="${NEBULA_SRC:-$HOME/Projects/nebula}"
 # CI has no nebula checkout — it unpacks a released embed kit and points here.
@@ -16,7 +17,7 @@ EMBED="${NEBULA_EMBED_KIT:-$NEBULA_SRC/dist-embed-slim}"
 EXE=""; case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) EXE=".exe";; esac
 
 rm -rf "$PAYLOAD"
-mkdir -p "$PAYLOAD"/{bin,scripts,config,patches,dist}
+mkdir -p "$PAYLOAD"/{bin,config,patches,dist}
 
 echo "==> binaries"
 # nebula/nebulad host the microVM; docker-slim is nebula-slim's docker client,
@@ -52,13 +53,26 @@ if [ "$(uname -s)" != "Darwin" ] && [ -d "$EMBED/lib" ]; then
     mkdir -p "$PAYLOAD/lib"
     cp "$EMBED"/lib/* "$PAYLOAD/lib/"
 fi
+# The stack supervisor, built from stack/. It replaced stack.sh and
+# link-assets.sh: the app ships to Windows, which has no POSIX shell, and one
+# binary is one implementation rather than a shell copy and a PowerShell copy
+# that must agree forever.
+if [ -n "${RAGNAROK_STACK_BIN:-}" ] && [ -e "$RAGNAROK_STACK_BIN" ]; then
+    cp "$RAGNAROK_STACK_BIN" "$PAYLOAD/bin/ragnarok-stack$EXE"
+else
+    ( cd "$ROOT/stack" && cargo build --release --quiet )
+    cp "$ROOT/stack/target/release/ragnarok-stack$EXE" "$PAYLOAD/bin/"
+fi
+
 # The asset server: one 1.7 MB static binary in place of a 106 MB Node runtime
 # plus its dependency tree.
 cp "${REMOTECLIENT_BIN:-${REMOTECLIENT_SRC:-$HOME/Projects/roBrowserLegacy-RemoteClient-Rust}/target/release/robrowser-remoteclient$EXE}" \
    "$PAYLOAD/bin/robrowser-remoteclient$EXE"
 
-echo "==> scripts and config"
-cp "$ROOT"/scripts/*.sh "$ROOT"/scripts/*.py "$PAYLOAD/scripts/"
+echo "==> config"
+# No scripts. Everything the app does at runtime is in bin/ragnarok-stack now,
+# and the rest of scripts/ is development tooling -- packaging, releasing, GRF
+# inspection -- which has no business inside a player's app bundle.
 cp "$ROOT"/config/*                          "$PAYLOAD/config/"
 cp "$ROOT"/patches/*                         "$PAYLOAD/patches/"
 

@@ -1,0 +1,536 @@
+//! The stack commands themselves.
+
+use crate::config::{Config, DB_CONTAINER, NET, SERVERS};
+use crate::docker::{older_than, Docker, Mount};
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::thread::sleep;
+use std::time::Duration;
+
+/// First launch spends minutes in half a dozen distinct steps. The boot window
+/// used to show one unchanging line for all of it, so a hang was
+/// indistinguishable from slow. Each step names itself here; the app polls this
+/// file and shows the last line.
+pub fn phase(cfg: &Config, msg: &str) {
+    let _ = fs::create_dir_all(&cfg.state);
+    let _ = fs::write(cfg.state.join("phase"), format!("{msg}\n"));
+    println!("{msg}");
+}
+
+/// Only one up/down at a time. The app can start the stack from the boot page
+/// and from Settings and tears it down on quit, so invocations overlap; when
+/// they do, both remove the containers and then both try to create them, and
+/// the loser fails with "container name is already in use".
+///
+/// Directory creation is the atomic primitive on every platform we ship to,
+/// which advisory file locking is not.
+pub struct Lock(PathBuf);
+
+impl Lock {
+    pub fn acquire(cfg: &Config) -> Result<Lock, String> {
+        let dir = cfg.lock_dir();
+        let _ = fs::create_dir_all(&cfg.state);
+        for _ in 0..120 {
+            match fs::create_dir(&dir) {
+                Ok(_) => return Ok(Lock(dir)),
+                Err(_) => {
+                    // A lock older than two minutes is a crashed run, not a
+                    // live one.
+                    if older_than(&dir, 120) {
+                        let _ = fs::remove_dir_all(&dir);
+                        continue;
+                    }
+                    sleep(Duration::from_secs(1));
+                }
+            }
+        }
+        Err("timed out waiting for another start/stop to finish".into())
+    }
+}
+
+impl Drop for Lock {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn write_conf(dir: &Path, name: &str, body: &str) -> Result<(), String> {
+    fs::write(dir.join(name), body).map_err(|e| format!("writing {name}: {e}"))
+}
+
+/// A fresh machine has no guest kernel or rootfs and no running engine. Both
+/// ship with the app, so neither needs the network.
+fn ensure_engine(cfg: &Config, dk: &Docker) -> Result<(), String> {
+    let _ = fs::create_dir_all(&cfg.nebula_home);
+    // Must be in place before the first `up`: nebula reads it when it creates
+    // the instance, and the ports in it are what keep this engine from
+    // colliding with a standalone nebula install on the same machine.
+    let cfg_toml = cfg.nebula_home.join("config.toml");
+    let shipped = cfg.root.join("config/nebula.toml");
+    if !cfg_toml.exists() && shipped.exists() {
+        let _ = fs::copy(&shipped, &cfg_toml);
+    }
+    if !cfg.nebula.exists() {
+        return Err(format!("nebula engine not found at {}", cfg.nebula.display()));
+    }
+
+    let kernel = cfg.nebula_home.join("kernel/Image");
+    let rootfs = cfg.nebula_home.join("images/rootfs-pristine.img");
+    if !kernel.exists() || !rootfs.exists() {
+        let k = cfg.root.join("guest/Image.gz");
+        let r = cfg.root.join("guest/rootfs.img.gz");
+        if k.exists() && r.exists() {
+            phase(cfg, "Installing the virtual machine image… (first run only)");
+            nebula(cfg, &["install-image",
+                "--kernel", &k.display().to_string(),
+                "--rootfs", &r.display().to_string()])?;
+        }
+    }
+    // `nebula up` is a no-op when the engine is already healthy.
+    let _ = nebula(cfg, &["up"]);
+    // The docker socket appears a moment after the VM reports healthy.
+    for _ in 0..45 {
+        if dk.quiet(["ps"]) {
+            return Ok(());
+        }
+        sleep(Duration::from_secs(2));
+    }
+    Err("the nebula engine did not come up".into())
+}
+
+fn nebula(cfg: &Config, args: &[&str]) -> Result<(), String> {
+    let st = Command::new(&cfg.nebula)
+        .args(args)
+        .env("NEBULA_HOME", &cfg.nebula_home)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|e| format!("running nebula: {e}"))?;
+    if st.success() { Ok(()) } else { Err(format!("nebula {} failed", args[0])) }
+}
+
+/// Load the bundled image tarball when the images are not already present.
+///
+/// This was `precache.sh ensure`. It is here because the app must be able to
+/// start on a machine with no shell interpreter, and because the failure it
+/// guards is unforgiving: with no images, `run` falls through to pulling
+/// `ragnarokmac/mariadb` from a registry that has never heard of it, and the
+/// error is about a network we should never have touched.
+fn ensure_images(cfg: &Config, dk: &Docker) -> Result<(), String> {
+    if dk.image_exists(&cfg.image) && dk.image_exists(&cfg.db_image) {
+        return Ok(());
+    }
+    let bundle = cfg.root.join("dist/images.tar.gz");
+    if !bundle.exists() {
+        return Err(format!("no server images, and no bundle at {}", bundle.display()));
+    }
+    // Only announce it when there is one to do: a phase that says "first run
+    // only" on every run trains people to ignore it.
+    phase(cfg, "Loading the server images… (first run only)");
+    // `docker load` reads gzip directly, so this needs no external gunzip —
+    // which is the whole point of not shelling out here.
+    let f = fs::File::open(&bundle).map_err(|e| format!("opening the image bundle: {e}"))?;
+    let st = Command::new(&cfg.docker)
+        .arg("load")
+        .env("NEBULA_HOME", &cfg.nebula_home)
+        .stdin(Stdio::from(f))
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .status()
+        .map_err(|e| format!("running docker load: {e}"))?;
+    if !st.success() {
+        return Err("could not load the bundled server images".into());
+    }
+    // Verify rather than trust the exit status: a partial load leaves the
+    // caller to run an image that is not there.
+    if !dk.image_exists(&cfg.image) || !dk.image_exists(&cfg.db_image) {
+        return Err(format!("image load did not produce {} and {}", cfg.image, cfg.db_image));
+    }
+    Ok(())
+}
+
+/// The Kafra teleport prices are hardcoded in the NPC script with no config
+/// knob, so keep an editable copy in state and overlay it.
+fn prepare_kafra_scripts(cfg: &Config, dk: &Docker) {
+    let dir = cfg.state.join("npc/kafras");
+    let orig = dir.join("functions_kafras.orig");
+    let live = dir.join("functions_kafras.txt");
+
+    if !live.exists() {
+        let _ = fs::create_dir_all(cfg.state.join("npc"));
+        let cid = match dk.output(["create", &cfg.image, "true"]) {
+            Ok(s) => s.trim().to_string(),
+            Err(_) => return,
+        };
+        let _ = fs::remove_dir_all(&dir);
+        let _ = dk.copy_out(&cid, "/rathena/npc/kafras", &cfg.state.join("npc"));
+        dk.quiet(["rm", &cid]);
+        if !live.exists() {
+            return;
+        }
+        let _ = fs::copy(&live, &orig);
+    }
+    if !orig.exists() {
+        return;
+    }
+    let Ok(src) = fs::read_to_string(&orig) else { return };
+
+    let out = if cfg.state.join("free_kafra_warp").exists() {
+        // Two edits make every Kafra service free: zero the per-town warp price
+        // arrays, and pin the storage fee assignment to 0.
+        src.lines()
+            .map(|l| {
+                if l.contains("setarray @wrpP[0]") {
+                    zero_numbers(l)
+                } else if l.trim_start().starts_with(".@fee = getarg(1);") {
+                    let indent: String = l.chars().take_while(|c| c.is_whitespace()).collect();
+                    format!("{indent}.@fee = 0;")
+                } else {
+                    l.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n"
+    } else {
+        src
+    };
+    let _ = fs::write(&live, out);
+}
+
+/// Replace every run of digits with a single 0, leaving everything else alone.
+fn zero_numbers(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut in_num = false;
+    for c in line.chars() {
+        if c.is_ascii_digit() {
+            if !in_num {
+                out.push('0');
+                in_num = true;
+            }
+        } else {
+            in_num = false;
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Poll for the thing actually depended on — the database answering queries —
+/// rather than a container healthcheck.
+fn wait_for_db(dk: &Docker) -> Result<(), String> {
+    for _ in 0..90 {
+        if dk.exec_sql("SELECT 1").is_ok() {
+            return Ok(());
+        }
+        sleep(Duration::from_secs(2));
+    }
+    Err("timed out waiting for the database".into())
+}
+
+/// The map-server listens on 5121 long before it is usable: it then reads its
+/// maps and the whole npc tree, and only afterwards registers those maps with
+/// the char-server. A character logging in during that window is told "Map is
+/// not available" and bounced. The container being Up is not readiness; the
+/// char-server saying it has the maps is.
+fn wait_for_maps(dk: &Docker) {
+    for _ in 0..90 {
+        if dk.logs("ragnarok-char", "400").contains("loading complete") {
+            return;
+        }
+        sleep(Duration::from_secs(2));
+    }
+    // Don't fail the launch over this — the stack is up and will finish
+    // shortly. Say so, so a slow machine's first login is explicable.
+    eprintln!("map-server has not registered its maps yet; first login may need a retry");
+}
+
+fn run_server(cfg: &Config, dk: &Docker, name: &str, port: u16, binary: &str) -> Result<(), String> {
+    dk.remove_container(name);
+
+    // One directory mount, not five file mounts: a single-file bind whose host
+    // path contains a space is mishandled, and the standard macOS location
+    // always contains one. rAthena reads whichever of these files exist.
+    let mut mounts = vec![Mount::Bind {
+        host: cfg.state.join("conf"),
+        container: "/rathena/conf/import".into(),
+        ro: true,
+    }];
+    // Only the map server runs NPC scripts.
+    if name == "ragnarok-map" && cfg.state.join("npc/kafras/functions_kafras.txt").exists() {
+        mounts.push(Mount::Bind {
+            host: cfg.state.join("npc/kafras"),
+            container: "/rathena/npc/kafras".into(),
+            ro: true,
+        });
+    }
+    // -t because rAthena writes with printf(3), which block-buffers when
+    // stdout is not a tty; without it errors never reach `docker logs`.
+    let opts = vec![
+        "-t".to_string(),
+        "--network".into(), NET.into(),
+        "-p".into(), format!("127.0.0.1:{port}:{port}"),
+    ];
+    dk.run_container(name, &cfg.image, &[binary.to_string()], &mounts, &opts)
+        .map_err(|e| format!("starting {name}: {e}"))
+}
+
+pub fn up(cfg: &Config, dk: &Docker) -> Result<(), String> {
+    let conf = cfg.state.join("conf");
+    for d in ["conf", "sql", "backups"] {
+        fs::create_dir_all(cfg.state.join(d)).map_err(|e| format!("creating {d}: {e}"))?;
+    }
+    // Clear the previous run's result immediately: leaving "Ready" in place
+    // while this run is still starting makes anything polling the file believe
+    // in a stack that is not there yet.
+    phase(cfg, "Starting…");
+    let _lock = Lock::acquire(cfg)?;
+    phase(cfg, "Starting the virtual machine…");
+    ensure_engine(cfg, dk)?;
+
+    // A failed single-file bind leaves a directory behind at the source path.
+    // Clear anything in conf/ that is not a regular file so a stale one cannot
+    // shadow the config about to be written.
+    if let Ok(rd) = fs::read_dir(&conf) {
+        for e in rd.flatten() {
+            if !e.path().is_file() {
+                let _ = fs::remove_dir_all(e.path());
+            }
+        }
+    }
+    // The schema ships with the app; seed it on first run so MariaDB's
+    // entrypoint imports it instead of coming up empty.
+    if let Ok(rd) = fs::read_dir(cfg.root.join("sql")) {
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.extension().map(|x| x == "sql").unwrap_or(false) {
+                let dest = cfg.state.join("sql").join(e.file_name());
+                if !dest.exists() {
+                    let _ = fs::copy(&p, &dest);
+                }
+            }
+        }
+    }
+    // Create if absent, never truncate: settings are written here and the stack
+    // restarted, so clobbering would discard every setting as it was applied.
+    let battle = conf.join("battle_conf.txt");
+    if !battle.exists() {
+        let _ = fs::write(&battle, "");
+    }
+
+    ensure_images(cfg, dk)?;
+    dk.quiet(["network", "create", NET]);
+
+    if !dk.is_running(DB_CONTAINER) {
+        dk.remove_container(DB_CONTAINER);
+        let mounts = vec![
+            Mount::Bind {
+                host: cfg.state.join("sql"),
+                container: "/docker-entrypoint-initdb.d".into(),
+                ro: true,
+            },
+            // A named volume rather than a bind: backups have to survive on
+            // Windows too, where a host directory cannot be mounted, and the
+            // dump is fetched back out with `cp`.
+            if cfg!(windows) {
+                Mount::Volume { name: "ragnarokmac-backups".into(), container: "/backups".into() }
+            } else {
+                Mount::Bind { host: cfg.state.join("backups"), container: "/backups".into(), ro: false }
+            },
+            Mount::Volume { name: "ragnarokmac-db".into(), container: "/var/lib/mysql".into() },
+        ];
+        let opts: Vec<String> = [
+            "--network", NET,
+            "-e", "MARIADB_ROOT_PASSWORD=ragnarok",
+            "-e", "MARIADB_DATABASE=ragnarok",
+            "-e", "MARIADB_USER=ragnarok",
+            "-e", "MARIADB_PASSWORD=ragnarok",
+        ].iter().map(|s| s.to_string()).collect();
+        dk.run_container(DB_CONTAINER, &cfg.db_image, &[], &mounts, &opts)
+            .map_err(|e| format!("starting the database: {e}"))?;
+    }
+    phase(cfg, "Starting the database…");
+    wait_for_db(dk)?;
+
+    // Applied here, not only in the seed SQL: the entrypoint imports
+    // initdb.d exactly once, when it creates the data directory, so an install
+    // predating this would never get the account.
+    // NOT EXISTS rather than INSERT IGNORE: userid carries a plain KEY, not a
+    // UNIQUE one, so IGNORE suppresses nothing and adds a duplicate account on
+    // every start.
+    let _ = dk.exec_sql(
+        "INSERT INTO login (userid, user_pass, sex, email, group_id)
+         SELECT 'ragnarok', 'ragnarok', 'M', 'ragnarok@localhost', 99 FROM DUAL
+          WHERE NOT EXISTS (SELECT 1 FROM login WHERE userid = 'ragnarok');",
+    );
+
+    // Every client arrives through the WebSocket proxy, so every connection has
+    // the same source address; rAthena's per-IP flood protection trips on sight
+    // and blocks for ten minutes, silently. And after character select the
+    // client sits on the char socket parsing its databases, which can exceed
+    // the default 60s stall_time on a modern client.
+    write_conf(&conf, "packet_conf.txt", "stall_time: 300\nenable_ip_rules: no\n")?;
+    write_conf(&conf, "inter_conf.txt", concat!(
+        "login_server_ip: ragnarok-db\n", "ipban_db_ip: ragnarok-db\n",
+        "char_server_ip: ragnarok-db\n", "map_server_ip: ragnarok-db\n",
+        "web_server_ip: ragnarok-db\n", "log_db_ip: ragnarok-db\n"))?;
+    // rAthena ships new_account: no, so roBrowser's simplified registration has
+    // nothing to talk to. This is a single-player server on loopback.
+    write_conf(&conf, "login_conf.txt",
+        "new_account: yes\nacc_name_min_length: 4\npassword_min_length: 4\n")?;
+    // PIN codes are a live-service anti-theft feature; offline they are just a
+    // second password screen.
+    write_conf(&conf, "char_conf.txt",
+        "login_ip: ragnarok-login\nchar_ip: 127.0.0.1\npincode_enabled: no\n")?;
+
+    let product = if cfg!(target_os = "macos") { "RagnarokMac" }
+        else if cfg!(windows) { "RagnarokWindows" }
+        else if cfg!(target_os = "linux") { "RagnarokLinux" }
+        else { "Ragnarok" };
+    write_conf(&conf, "motd.txt",
+        &format!("Welcome to {product} Offline! Please report any bugs on Github\n"))?;
+    write_conf(&conf, "map_conf.txt",
+        "char_ip: ragnarok-char\nmap_ip: 127.0.0.1\nmotd_txt: conf/import/motd.txt\n")?;
+
+    let endpoint = "{\"host\":\"127.0.0.1\",\"login\":6900,\"char\":6121,\"map\":5121}\n";
+    fs::write(cfg.state.join("endpoint.json"), endpoint)
+        .map_err(|e| format!("writing endpoint.json: {e}"))?;
+    // The game page reads this from the asset server's static root. It exists
+    // so LAN mode can later advertise a different address.
+    let web = cfg.root.join("vendor/roBrowserLegacy/dist/Web");
+    if web.is_dir() {
+        let _ = fs::write(web.join("endpoint.json"), endpoint);
+    }
+
+    prepare_kafra_scripts(cfg, dk);
+    phase(cfg, "Starting the login, character and map servers…");
+    run_server(cfg, dk, "ragnarok-login", 6900, "/rathena/login-server")?;
+    run_server(cfg, dk, "ragnarok-char", 6121, "/rathena/char-server")?;
+    run_server(cfg, dk, "ragnarok-map", 5121, "/rathena/map-server")?;
+    phase(cfg, "Loading maps and NPCs…");
+    wait_for_maps(dk);
+    phase(cfg, "Ready");
+    println!("stack up");
+    Ok(())
+}
+
+pub fn down(cfg: &Config, dk: &Docker) -> Result<(), String> {
+    let _lock = Lock::acquire(cfg)?;
+    // Game servers hold no state, so killing them is fine. The database does:
+    // stop it gracefully so InnoDB closes cleanly rather than recovering.
+    for c in SERVERS {
+        dk.remove_container(c);
+    }
+    dk.quiet(["stop", "-t", "10", DB_CONTAINER]);
+    dk.remove_container(DB_CONTAINER);
+    phase(cfg, "Stopped");
+    println!("stack down");
+    Ok(())
+}
+
+/// Emitted as "<name>\tUp|<state>" rather than raw `ps` output: the name is the
+/// last column there, so anything matching "<name> ... Up" never matches.
+pub fn status(dk: &Docker) {
+    let mut all = vec![DB_CONTAINER];
+    all.extend(SERVERS);
+    let mut out = String::new();
+    for c in all {
+        let st = dk.state(c).unwrap_or_else(|| "absent".into());
+        let shown = if st == "running" { "Up" } else { &st };
+        out.push_str(&format!("{c}\t{shown}\n"));
+    }
+    print!("{out}");
+}
+
+pub fn backup(cfg: &Config, dk: &Docker, dest: &str) -> Result<(), String> {
+    let backups = cfg.state.join("backups");
+    fs::create_dir_all(&backups).map_err(|e| e.to_string())?;
+    let tmp = format!("ragnarokmac-{}.sql", std::process::id());
+
+    // --single-transaction keeps the server writable during the dump, which
+    // matters because the player may well be logged in while taking one.
+    dk.output([
+        "exec", DB_CONTAINER, "sh", "-c",
+        &format!("mariadb-dump -uragnarok -pragnarok --single-transaction --routines \
+                  --databases ragnarok > /backups/{tmp}"),
+    ])
+    .map_err(|_| "the database did not produce a dump (is the server running?)".to_string())?;
+
+    let staged = backups.join(&tmp);
+    if cfg!(windows) {
+        // No bind mount there, so the dump is inside a named volume; fetch it.
+        dk.copy_out(DB_CONTAINER, &format!("/backups/{tmp}"), &staged)?;
+    }
+    let size = fs::metadata(&staged).map(|m| m.len()).unwrap_or(0);
+    if size == 0 {
+        let _ = fs::remove_file(&staged);
+        return Err("the dump came out empty".into());
+    }
+    fs::rename(&staged, dest)
+        .or_else(|_| fs::copy(&staged, dest).map(|_| ()))
+        .map_err(|e| format!("could not write {dest}: {e}"))?;
+    let _ = fs::remove_file(&staged);
+    dk.quiet(["exec", DB_CONTAINER, "rm", "-f", &format!("/backups/{tmp}")]);
+    println!("wrote {dest} ({})", human(size));
+    Ok(())
+}
+
+pub fn restore(cfg: &Config, dk: &Docker, src: &str) -> Result<(), String> {
+    if !Path::new(src).is_file() {
+        return Err(format!("no such backup: {src}"));
+    }
+    let backups = cfg.state.join("backups");
+    fs::create_dir_all(&backups).map_err(|e| e.to_string())?;
+    let tmp = format!("restore-{}.sql", std::process::id());
+    let staged = backups.join(&tmp);
+    fs::copy(src, &staged).map_err(|e| format!("staging the backup: {e}"))?;
+    if cfg!(windows) {
+        dk.copy_into(DB_CONTAINER, &backups, "/backups")?;
+    }
+    // The dump carries CREATE DATABASE + USE, so this replaces the schema
+    // wholesale rather than merging into whatever is there now.
+    let r = dk.output([
+        "exec", DB_CONTAINER, "sh", "-c",
+        &format!("mariadb -uragnarok -pragnarok < /backups/{tmp}"),
+    ]);
+    let _ = fs::remove_file(&staged);
+    dk.quiet(["exec", DB_CONTAINER, "rm", "-f", &format!("/backups/{tmp}")]);
+    r.map_err(|_| "restore failed; the database is unchanged".to_string())?;
+    println!("restored from {src}");
+    Ok(())
+}
+
+/// The escape hatch for a shipped user with no terminal and no docker CLI.
+///
+/// Everything here is also done by `up`. This exists for the case automation
+/// cannot reach: an engine that is itself wedged, where nothing
+/// container-level can be cleaned because the daemon is not answering.
+/// Player data is untouched — characters live in the ragnarokmac-db volume.
+pub fn repair(cfg: &Config, dk: &Docker) -> Result<(), String> {
+    phase(cfg, "Repairing…");
+    // Break the lock rather than wait: the usual reason to reach for repair is
+    // a previous run that died holding one.
+    let _ = fs::remove_dir_all(cfg.lock_dir());
+    let _ = nebula(cfg, &["down"]);
+    sleep(Duration::from_secs(2));
+    let _ = nebula(cfg, &["up"]);
+    up(cfg, dk)
+}
+
+pub fn logs(dk: &Docker, service: &str, tail: &str) {
+    let mut out = std::io::stdout();
+    let _ = out.write_all(dk.logs(&format!("ragnarok-{service}"), tail).as_bytes());
+}
+
+fn human(bytes: u64) -> String {
+    const U: [&str; 4] = ["B", "KB", "MB", "GB"];
+    let mut v = bytes as f64;
+    let mut i = 0;
+    while v >= 1024.0 && i < U.len() - 1 {
+        v /= 1024.0;
+        i += 1;
+    }
+    if i == 0 { format!("{} {}", bytes, U[0]) } else { format!("{v:.1} {}", U[i]) }
+}

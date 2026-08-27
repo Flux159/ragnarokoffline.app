@@ -45,15 +45,14 @@ fi
 grep -q "afterSign: sidecars signed" "$BUILD_LOG" \
     || { echo "afterSign did not run — the VZ entitlements are not guaranteed" >&2; exit 1; }
 
-# Shell scripts are the part that changes most and the part that is copied
-# rather than compiled, so a byte comparison against source is the right signal.
+# The supervisor carries all the runtime logic and is copied into the payload
+# rather than built in place, so a stale one ships silently -- which is what
+# this catches. It did happen twice, with the shell scripts this replaced.
 echo "==> verifying the bundle matches the source tree"
-for f in stack.sh precache.sh link-assets.sh; do
-    [ -f "$ROOT/scripts/$f" ] || continue
-    cmp -s "$ROOT/scripts/$f" "$APP/Contents/Resources/payload/scripts/$f" \
-        || { echo "  $f in the bundle differs from scripts/$f" >&2; exit 1; }
-    echo "  $f matches"
-done
+cmp -s "$ROOT/stack/target/release/ragnarok-stack" \
+       "$APP/Contents/Resources/payload/bin/ragnarok-stack" \
+    || { echo "  ragnarok-stack in the bundle differs from the build" >&2; exit 1; }
+echo "  ragnarok-stack matches"
 codesign --verify --strict "$APP"
 codesign -d --entitlements - "$APP/Contents/Resources/payload/bin/nebulad" 2>&1 \
     | grep -qi virtualization \
@@ -77,8 +76,9 @@ fi
 echo "==> verifying the disk image"
 MP=$(hdiutil attach -nobrowse -readonly "$DMG" | awk '/\/Volumes\//{ $1=$2=""; sub(/^ +/,""); print; exit }')
 trap '[ -n "${MP:-}" ] && hdiutil detach "$MP" >/dev/null 2>&1 || true' EXIT
-cmp -s "$ROOT/scripts/stack.sh" "$MP/$NAME.app/Contents/Resources/payload/scripts/stack.sh" \
-    || { echo "  the .dmg carries a different stack.sh than the source" >&2; exit 1; }
+cmp -s "$ROOT/stack/target/release/ragnarok-stack" \
+       "$MP/$NAME.app/Contents/Resources/payload/bin/ragnarok-stack" \
+    || { echo "  the .dmg carries a different ragnarok-stack than the source" >&2; exit 1; }
 codesign -v "$MP/$NAME.app" || { echo "  the app inside the .dmg is not validly signed" >&2; exit 1; }
 echo "  contents match source, signature valid"
 

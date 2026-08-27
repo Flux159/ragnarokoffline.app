@@ -1,0 +1,21 @@
+[package]
+name = "ragnarok-stack"
+version = "0.1.0"
+edition = "2021"
+description = "Bring the Ragnarok Offline server stack up or down inside nebula's microVM"
+
+# No dependencies, deliberately. This is a process supervisor: it spawns
+# docker-slim and nebula, moves files, and waits. std covers all of it, the
+# build stays under a minute on every runner, and there is no dependency tree
+# to audit in something that ships inside a signed app bundle.
+[dependencies]
+
+[[bin]]
+name = "ragnarok-stack"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+panic = "abort"

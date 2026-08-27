@@ -10,7 +10,8 @@ name: build
 #   payload/dist    rAthena + MariaDB images — needs a real Docker daemon, and
 #                   must match the *guest* architecture, not the runner's, so
 #                   images.yml builds them on native Linux runners
-#   payload/bin     nebula, nebulad, docker-slim, robrowser-remoteclient —
+#   payload/bin     ragnarok-stack (built here from stack/), plus nebula,
+#                   nebulad, docker-slim, robrowser-remoteclient —
 #   payload/lib     private repos, built there and consumed here. Three
 #   payload/guest   separate release assets: the embed kit (nebula, nebulad,
 #                   guest images, and on Linux/Windows libkrun), the slim host
@@ -149,6 +150,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      # The one thing this workflow compiles. stack/ is a small dependency-free
+      # crate, so a cached build is under a minute; it is built per-platform
+      # here rather than fetched, because unlike nebula and the asset server it
+      # is our own code in this repo.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: stack
 
       - uses: actions/download-artifact@v4
         with:
@@ -313,10 +323,13 @@ jobs:
         if: matrix.platform == 'mac'
         run: |
           APP="dist/electron/mac-arm64/Ragnarok Offline.app"
-          for f in stack.sh precache.sh link-assets.sh; do
-            cmp -s "scripts/$f" "$APP/Contents/Resources/payload/scripts/$f" \
-              || { echo "$f in the bundle differs from scripts/$f" >&2; exit 1; }
-          done
+          # The supervisor is the payload's one piece of compiled logic, so it
+          # is the one worth proving came from this commit.
+          cmp -s stack/target/release/ragnarok-stack \
+                 "$APP/Contents/Resources/payload/bin/ragnarok-stack" \
+            || { echo "ragnarok-stack in the bundle differs from the build" >&2; exit 1; }
+          cmp -s scripts/precache.sh "$APP/Contents/Resources/payload/scripts/precache.sh" \
+            || { echo "precache.sh in the bundle differs from source" >&2; exit 1; }
           codesign --verify --strict "$APP" || echo "unsigned (no certificate configured)"
         shell: bash
 

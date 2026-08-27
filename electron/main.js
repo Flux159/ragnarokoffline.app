@@ -20,12 +20,37 @@ const { spawn, execFile } = require('child_process');
 // Paths
 // ---------------------------------------------------------------------------
 
-// `~/Library/Application Support/Ragnarok Offline`, not Electron's app.getPath(),
-// which derives the folder from the app name and would drift if that changed.
-// The name is also deliberately not the bundle id: a folder ending in `.app` is
-// drawn by Finder as an application bundle and cannot be opened by double-click.
+// Not Electron's app.getPath(), which derives the folder from the app name and
+// would drift if that changed. The name is also deliberately not the bundle id:
+// a folder ending in `.app` is drawn by Finder as an application bundle and
+// cannot be opened by double-click.
+//
+// macOS keeps the path it has always had, because shipped installs have their
+// database and generated config there. Linux and Windows get their own
+// conventional locations rather than inheriting the macOS one — this used to
+// return the Library path on every platform, which created a literal
+// `~/Library/Application Support` directory on Linux.
+//
+// Must stay in step with data_root() in stack/src/config.rs.
 function dataRoot() {
-	return path.join(os.homedir(), 'Library/Application Support/Ragnarok Offline');
+	if (process.platform === 'darwin') {
+		return path.join(os.homedir(), 'Library/Application Support/Ragnarok Offline');
+	}
+	if (process.platform === 'win32') {
+		return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData/Roaming'),
+			'Ragnarok Offline');
+	}
+	return path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local/share'),
+		'Ragnarok Offline');
+}
+
+// The supervisor binary that replaced stack.sh and link-assets.sh. One
+// implementation for all three platforms; Windows has no POSIX shell, and a
+// second PowerShell copy of the same logic would be two things that must agree
+// forever and eventually would not.
+function stackBin() {
+	return path.join(projectRoot(), 'bin', process.platform === 'win32'
+		? 'ragnarok-stack.exe' : 'ragnarok-stack');
 }
 
 function stateDir() {
@@ -49,17 +74,28 @@ function projectRoot() {
 		: path.join(__dirname, '..', 'payload');
 	const installed = path.join(dataRoot(), 'runtime');
 
-	if (fs.existsSync(path.join(bundled, 'scripts/stack.sh'))) {
+	const marker = process.platform === 'win32' ? 'bin/ragnarok-stack.exe' : 'bin/ragnarok-stack';
+	if (fs.existsSync(path.join(bundled, marker))) {
 		const want = readIfExists(path.join(bundled, 'VERSION'));
 		const have = readIfExists(path.join(installed, 'VERSION'));
-		if (want !== have || !fs.existsSync(path.join(installed, 'scripts/stack.sh'))) {
+		if (want !== have || !fs.existsSync(path.join(installed, marker))) {
 			fs.mkdirSync(path.dirname(installed), { recursive: true });
 			fs.rmSync(installed, { recursive: true, force: true });
 			// -c asks APFS for copy-on-write clones: the payload is ~150 MB and
-			// this runs on every version change.
-			const r = spawnSync('/bin/cp', ['-Rc', bundled, installed]);
-			if (r !== 0) {
-				spawnSync('/bin/cp', ['-R', bundled, installed]);
+			// this runs on every version change. There is no equivalent
+			// elsewhere, so the other platforms use a plain recursive copy.
+			//
+			// Checked on .status, not on the returned object: `r !== 0` is true
+			// for every spawnSync result, so the fallback copy used to run on
+			// every update regardless of whether the clone had succeeded --
+			// copying the payload twice.
+			let cloned = false;
+			if (process.platform === 'darwin') {
+				const r = spawnSync('/bin/cp', ['-Rc', bundled, installed]);
+				cloned = r.status === 0;
+			}
+			if (!cloned) {
+				fs.cpSync(bundled, installed, { recursive: true, verbatimSymlinks: true });
 			}
 		}
 		return installed;
@@ -144,15 +180,15 @@ function migrateDataRoot() {
 }
 
 // ---------------------------------------------------------------------------
-// stack.sh
+// The stack supervisor
 // ---------------------------------------------------------------------------
 
 function runStack(args) {
 	return new Promise((resolve, reject) => {
 		const root = projectRoot();
 		execFile(
-			'/bin/bash',
-			[path.join(root, 'scripts/stack.sh'), ...args],
+			stackBin(),
+			args,
 			{
 				cwd: root,
 				env: {
@@ -242,9 +278,15 @@ function assetsStop() {
 		}
 		assetsChild = null;
 	}
-	// A previous run may have left one behind with no handle to kill.
+	// A previous run may have left one behind with no handle to kill. pkill
+	// does not exist on Windows, so each platform gets the tool it has.
 	try {
-		require('child_process').execSync('pkill -f robrowser-remoteclient', { stdio: 'ignore' });
+		const { execFileSync } = require('child_process');
+		if (process.platform === 'win32') {
+			execFileSync('taskkill', ['/F', '/IM', 'robrowser-remoteclient.exe'], { stdio: 'ignore' });
+		} else {
+			execFileSync('pkill', ['-f', 'robrowser-remoteclient'], { stdio: 'ignore' });
+		}
 	} catch {
 		/* nothing matched */
 	}
@@ -297,16 +339,12 @@ function linkClient(paths) {
 			);
 		}
 	}
-	const args = [
-		path.join(root, 'scripts/link-assets.sh'),
-		paths.data_grf,
-		paths.rdata_grf,
-	];
+	const args = ['link-assets', paths.data_grf, paths.rdata_grf];
 	if (paths.official_grf || paths.bgm_dir) args.push(paths.official_grf || '');
 	if (paths.bgm_dir) args.push(paths.bgm_dir);
 	return new Promise((resolve, reject) => {
 		execFile(
-			'/bin/bash',
+			stackBin(),
 			args,
 			{
 				cwd: root,
@@ -599,8 +637,8 @@ function teardownAsync() {
 	return new Promise(resolve => {
 		const { cwd, env } = stackEnv();
 		const child = execFile(
-			'/bin/bash',
-			[path.join(cwd, 'scripts/stack.sh'), 'down'],
+			stackBin(),
+			['down'],
 			{ cwd, env, timeout: 120000 },
 			() => resolve()
 		);
@@ -616,8 +654,8 @@ function teardownSync() {
 	try {
 		const { cwd, env } = stackEnv();
 		require('child_process').execFileSync(
-			'/bin/bash',
-			[path.join(cwd, 'scripts/stack.sh'), 'down'],
+			stackBin(),
+			['down'],
 			{ cwd, env, stdio: 'ignore', timeout: 120000 }
 		);
 	} catch {
