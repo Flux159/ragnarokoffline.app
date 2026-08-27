@@ -172,14 +172,20 @@ function findTool(name) {
 // writing to a path that is gone.
 function migrateDataRoot() {
 	const dest = dataRoot();
-	if (fs.existsSync(dest)) return;
+	// Not "does the directory exist": anything that creates it -- a stray run
+	// of the supervisor with NEBULA_HOME pointed here, a half-finished copy --
+	// disables this one-shot migration permanently, and the owner silently
+	// starts over with an empty database while their characters sit in the old
+	// home. What marks a *real* install is a client.json, so that is the test.
+	if (fs.existsSync(path.join(dest, 'client.json'))) return;
 	// Two previous homes, oldest last: com.ragnarokmac.app was the Tauri bundle
 	// id, RagnarokMac was the readable folder that replaced it, and this is the
 	// rename to the product's real name. An install can be sitting on either, so
 	// take the first that exists rather than assuming a single hop.
 	const support = path.join(os.homedir(), 'Library/Application Support');
+	// Likewise, an old home only counts if it holds a configured install.
 	const old = [path.join(support, 'RagnarokMac'), path.join(support, 'com.ragnarokmac.app')]
-		.find(p => fs.existsSync(p));
+		.find(p => fs.existsSync(path.join(p, 'client.json')));
 	if (!old) return;
 
 	const oldNebula = path.join(old, 'nebula');
@@ -197,7 +203,17 @@ function migrateDataRoot() {
 			}
 		}
 	}
+	// rename() onto an existing non-empty directory fails, so anything already
+	// sitting at the destination is moved aside rather than merged or removed.
+	// It is never deleted: whatever it is, it is not ours to throw away, and
+	// the one thing worse than a failed migration is a successful one that
+	// took someone's data with it.
 	try {
+		if (fs.existsSync(dest)) {
+			const parked = `${dest}.orphaned-${Date.now()}`;
+			fs.renameSync(dest, parked);
+			console.log(`moved an unconfigured ${dest} aside -> ${parked}`);
+		}
 		fs.renameSync(old, dest);
 		console.log(`moved ${old} -> ${dest}`);
 	} catch (e) {
@@ -598,16 +614,17 @@ function makeWindow(id, file, opts) {
 	return win;
 }
 
-// index.html is the local boot page: it polls the stack's phase and only then
-// navigates to the asset server. A joining player has no stack to wait for, so
-// it goes straight to the host.
+// Always the boot page, in both modes. It reports which step is running,
+// surfaces a failure with a retry, and only then navigates -- a joining player
+// pointed straight at a host gets a blank window when that host is down, with
+// nothing to act on. Where it navigates *to* is decided in launch_game.
 const openGame = () => {
 	const c = getClientPaths();
-	const url = c.mode === 'join' ? joinUrl(c.join_host) + GAME_PATH : null;
 	return makeWindow('game', 'index.html', {
 		width: 1280, height: 800,
-		title: url ? `${productName()} — ${c.join_host}` : productName(),
-		url,
+		title: c.mode === 'join' && c.join_host
+			? `${productName()} — ${c.join_host}`
+			: productName(),
 	});
 };
 const openSetup = () => makeWindow('setup', 'setup.html', { width: 620, height: 620, resizable: false, title: `${productName()} — set up your client` });
@@ -657,7 +674,17 @@ const handlers = {
 	// Asset server
 	assets_start: () => assetsStart(),
 	assets_stop: () => assetsStop(),
-	assets_ready: () => assetsReady(),
+	// In host mode this is the local asset server coming up. A joining player
+	// starts no asset server at all, so waiting for one would spin until the
+	// boot page's deadline and then report a stall that never had anything to
+	// wait for; readiness there is the host answering.
+	assets_ready: () => {
+		const c = getClientPaths();
+		if (c.mode === 'join') {
+			return probeHost(joinUrl(c.join_host)).then(() => true, () => false);
+		}
+		return assetsReady();
+	},
 
 	// State
 	stack_phase: () => readIfExists(path.join(stateDir(), 'phase')).trim(),
@@ -702,12 +729,29 @@ const handlers = {
 			join_address: c.mode === 'host' && c.lan ? `${advertiseHost()}:3338` : '',
 		};
 	},
-	set_mode: ({ mode, lan, join_host }) => {
-		const next = getClientPaths();
+	set_mode: async ({ mode, lan, join_host }) => {
+		const prev = getClientPaths();
+		const next = { ...prev };
 		if (mode !== undefined) next.mode = mode;
 		if (lan !== undefined) next.lan = !!lan;
 		if (join_host !== undefined) next.join_host = String(join_host).trim();
 		fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
+
+		// Switching to a friend's server stops your own. Nothing would use it,
+		// and leaving it up means a microVM, four containers and an asset
+		// server running for a session spent entirely on someone else's host --
+		// on a laptop that is a lot of battery for nothing.
+		//
+		// The database is untouched: it lives in a volume that outlives the
+		// containers, so switching back to hosting finds the same characters.
+		if (mode === 'join' && prev.mode !== 'join') {
+			assetsStop();
+			try {
+				await runStack(['down']);
+			} catch {
+				/* nothing was running */
+			}
+		}
 		return next;
 	},
 	scan_client_dir: ({ dir }) => scanClientDir(dir),
@@ -715,15 +759,33 @@ const handlers = {
 	save_settings: ({ settings }) => saveSettings(settings),
 
 	// Windows
-	open_game: () => void openGame(),
+	// Reload when the window is already there, do not just focus it.
+	//
+	// The boot page checks client_ready once: on a first run it finds nothing
+	// configured, shows "Waiting for your client…", opens the setup window and
+	// returns. Setup then calls this when it finishes -- and makeWindow found
+	// an existing game window and only focused it, so the page that had
+	// already given up stayed on screen forever, with the assets saved and the
+	// server never started. Finishing setup is exactly the event that makes
+	// the earlier answer wrong, so the page has to run again.
+	open_game: () => {
+		const existed = windows.game && !windows.game.isDestroyed();
+		const win = openGame();
+		if (existed && win && !win.isDestroyed()) win.reload();
+	},
 	open_setup: () => void openSetup(),
 	open_settings: () => void openSettings(),
 	close_setup: () => {
 		if (windows.setup && !windows.setup.isDestroyed()) windows.setup.close();
 	},
 	launch_game: () => {
+		const c = getClientPaths();
+		// The host's asset server when joining, our own when hosting. Hardcoding
+		// loopback here sent a joining player to a server that does not exist on
+		// their machine.
+		const base = c.mode === 'join' ? joinUrl(c.join_host) : 'http://127.0.0.1:3338';
 		const win = openGame();
-		win.loadURL(`http://127.0.0.1:3338${GAME_PATH}`);
+		win.loadURL(base + GAME_PATH);
 	},
 
 	// Dialogs — Tauri's plugin API, reimplemented so the pages keep their shape
