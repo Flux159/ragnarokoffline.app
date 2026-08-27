@@ -20,11 +20,15 @@ name: build
 #
 # Required secrets:
 #   DEPS_TOKEN            PAT with read access to the private dependency repos
-#   MACOS_CERT_P12        Developer ID Application cert, base64 of a .p12
-#   MACOS_CERT_PASSWORD   password for that .p12
-#   APPLE_API_KEY         App Store Connect .p8, base64          (notarisation)
+#   APPLE_CERT_P12_BASE64 Developer ID Application cert, base64 of a .p12
+#   APPLE_CERT_PASSWORD   .p12 export password
+#   APPLE_API_KEY_P8      App Store Connect key, raw .p8 contents (notarisation)
 #   APPLE_API_KEY_ID      key id                                  (notarisation)
-#   APPLE_API_ISSUER      issuer uuid                             (notarisation)
+#   APPLE_API_ISSUER_ID   issuer uuid                             (notarisation)
+#
+# The Apple secret names deliberately match nebula's, which already has them
+# set for the same Developer ID — same names, same semantics, so a value that
+# works there works here without being reshaped.
 #
 # Notarisation is skipped when the Apple secrets are absent, so the workflow is
 # useful before they are set up.
@@ -178,10 +182,10 @@ jobs:
       # scope for its own `if:` — GitHub evaluates the condition first — so the
       # obvious-looking version is always false and never signs anything.
       - name: Import signing certificate
-        if: matrix.platform == 'mac' && secrets.MACOS_CERT_P12 != ''
+        if: matrix.platform == 'mac' && secrets.APPLE_CERT_P12_BASE64 != ''
         env:
-          CERT: ${{ secrets.MACOS_CERT_P12 }}
-          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          CERT: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
         run: |
           echo "$CERT" | base64 --decode > /tmp/cert.p12
           security create-keychain -p ci build.keychain
@@ -195,12 +199,14 @@ jobs:
       # electron-builder wants APPLE_API_KEY to be a *path* to the .p8, not its
       # contents, so the secret has to land on disk before the build.
       - name: Stage the notarisation key
-        if: matrix.platform == 'mac' && secrets.APPLE_API_KEY != ''
+        if: matrix.platform == 'mac' && secrets.APPLE_API_KEY_P8 != ''
         env:
-          KEY: ${{ secrets.APPLE_API_KEY }}
+          KEY: ${{ secrets.APPLE_API_KEY_P8 }}
         run: |
           mkdir -p ~/private_keys
-          echo "$KEY" | base64 --decode > ~/private_keys/AuthKey.p8
+          # Written verbatim, not base64-decoded: the secret holds the .p8's
+          # contents, which is how nebula stores the same key.
+          printf '%s' "$KEY" > ~/private_keys/AuthKey.p8
           echo "APPLE_API_KEY=$HOME/private_keys/AuthKey.p8" >> "$GITHUB_ENV"
 
       - name: Build
@@ -210,11 +216,11 @@ jobs:
           # credentials exist. APPLE_API_KEY comes from the step above via
           # GITHUB_ENV when it ran.
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
           # Auto-discovery hunts the keychain for an identity and fails the
           # build when there is none, so it follows the certificate rather than
           # the platform.
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.platform == 'mac' && secrets.MACOS_CERT_P12 != '' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.platform == 'mac' && secrets.APPLE_CERT_P12_BASE64 != '' }}
         run: |
           npm install --no-audit --no-fund
           npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
