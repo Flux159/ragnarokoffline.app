@@ -623,15 +623,34 @@ function makeWindow(id, file, opts) {
 // internet. A connected UDP socket sends nothing, but the kernel still binds
 // it, and the address it picks is the one a peer would see.
 function lanIp() {
-	try {
-		const sock = require('dgram').createSocket('udp4');
-		sock.connect(80, '1.1.1.1');
-		const addr = sock.address && sock.address();
-		sock.close();
-		return addr && addr.address && addr.address !== '0.0.0.0' ? addr.address : null;
-	} catch {
-		return null;
-	}
+	return new Promise(resolve => {
+		let settled = false;
+		let sock;
+		const finish = v => {
+			if (settled) return;
+			settled = true;
+			try { sock && sock.close(); } catch { /* already closed */ }
+			resolve(v);
+		};
+		try {
+			sock = require('dgram').createSocket('udp4');
+		} catch {
+			return finish(null);
+		}
+		sock.on('error', () => finish(null));
+		// connect() is asynchronous here: the socket is not bound until the
+		// callback runs, so reading address() before it returns the unbound
+		// state -- which is what made this always answer null.
+		sock.connect(80, '1.1.1.1', () => {
+			try {
+				const a = sock.address();
+				finish(a && a.address && a.address !== '0.0.0.0' ? a.address : null);
+			} catch {
+				finish(null);
+			}
+		});
+		setTimeout(() => finish(null), 1000);
+	});
 }
 
 // Ask macOS for local-network access at the moment the player turns LAN
@@ -643,9 +662,9 @@ function lanIp() {
 // dialog is answered asynchronously and the retry raced it. It took three
 // logins to get in. Doing it here means the dialog appears next to the switch
 // that caused it, and is answered long before anything depends on it.
-function nudgeLocalNetworkPermission() {
+async function nudgeLocalNetworkPermission() {
 	if (process.platform !== 'darwin') return;
-	const ip = lanIp();
+	const ip = await lanIp();
 	if (!ip) return;
 	try {
 		// Any attempt to reach a local address is enough; whether it connects
@@ -791,7 +810,7 @@ const handlers = {
 		if (mode !== undefined) next.mode = mode;
 		if (lan !== undefined) next.lan = !!lan;
 		// Provoke the macOS prompt here, next to the switch that needs it.
-		if (lan === true && !prev.lan) nudgeLocalNetworkPermission();
+		if (lan === true && !prev.lan) await nudgeLocalNetworkPermission();
 		if (join_host !== undefined) next.join_host = String(join_host).trim();
 		fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
 		// Before anything slow: the mode has already changed, and leaving the
