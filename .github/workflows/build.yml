@@ -28,6 +28,10 @@ name: build
 #   APPLE_API_KEY_P8      App Store Connect key, raw .p8 contents (notarisation)
 #   APPLE_API_KEY_ID      key id                                  (notarisation)
 #   APPLE_API_ISSUER_ID   issuer uuid                             (notarisation)
+# or, instead of those three:
+#   APPLE_ID              Apple ID used for notarisation
+#   APPLE_APP_SPECIFIC_PASSWORD   from appleid.apple.com
+#   APPLE_TEAM_ID         10-character team id
 #
 # The Apple secret names deliberately match nebula's, which already has them
 # set for the same Developer ID — same names, same semantics, so a value that
@@ -133,6 +137,12 @@ jobs:
       # needs all three App Store Connect values or none.
       HAS_CERT: ${{ secrets.APPLE_CERT_P12_BASE64 != '' && secrets.APPLE_CERT_PASSWORD != '' }}
       HAS_NOTARY_KEY: ${{ secrets.APPLE_API_KEY_P8 != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER_ID != '' }}
+      # The other way to notarise. An App Store Connect key is the better shape
+      # -- it does not expire with the Apple ID -- but its issuer uuid exists
+      # only in App Store Connect and cannot be recovered from a machine that
+      # has been notarising for months. An Apple ID with an app-specific
+      # password needs nothing that is not already on the developer's Mac.
+      HAS_NOTARY_APPLEID: ${{ secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -233,11 +243,17 @@ jobs:
         if: matrix.platform == 'mac'
         run: |
           echo "code signing: ${{ env.HAS_CERT }}"
-          echo "notarisation: ${{ env.HAS_NOTARY_KEY }}"
+          echo "notarisation (api key): ${{ env.HAS_NOTARY_KEY }}"
+          echo "notarisation (apple id): ${{ env.HAS_NOTARY_APPLEID }}"
           [ "${{ env.HAS_CERT }}" = "true" ] || \
             echo "::warning::Building an unsigned macOS app — APPLE_CERT_P12_BASE64 and APPLE_CERT_PASSWORD must both be set to sign."
-          [ "${{ env.HAS_NOTARY_KEY }}" = "true" ] || \
-            echo "::warning::Skipping notarisation — APPLE_API_KEY_P8, APPLE_API_KEY_ID and APPLE_API_ISSUER_ID must all be set."
+          if [ "${{ env.HAS_NOTARY_KEY }}" = "true" ]; then
+            echo "notarising with an App Store Connect API key"
+          elif [ "${{ env.HAS_NOTARY_APPLEID }}" = "true" ]; then
+            echo "notarising with an Apple ID and app-specific password"
+          else
+            echo "::warning::Skipping notarisation — set either APPLE_API_KEY_P8 + APPLE_API_KEY_ID + APPLE_API_ISSUER_ID, or APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID."
+          fi
 
       - name: Import signing certificate
         if: matrix.platform == 'mac' && env.HAS_CERT == 'true'
@@ -275,6 +291,11 @@ jobs:
           # GITHUB_ENV when it ran.
           APPLE_API_KEY_ID: ${{ env.HAS_NOTARY_KEY == 'true' && secrets.APPLE_API_KEY_ID || '' }}
           APPLE_API_ISSUER: ${{ env.HAS_NOTARY_KEY == 'true' && secrets.APPLE_API_ISSUER_ID || '' }}
+          # Only when the key path is not configured, so the two never both
+          # apply and leave it ambiguous which one notarised the build.
+          APPLE_ID: ${{ env.HAS_NOTARY_KEY != 'true' && env.HAS_NOTARY_APPLEID == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ env.HAS_NOTARY_KEY != 'true' && env.HAS_NOTARY_APPLEID == 'true' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ env.HAS_NOTARY_KEY != 'true' && env.HAS_NOTARY_APPLEID == 'true' && secrets.APPLE_TEAM_ID || '' }}
           # Auto-discovery hunts the keychain for an identity and fails the
           # build when there is none, so it follows the certificate rather than
           # the platform.
