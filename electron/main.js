@@ -763,6 +763,10 @@ function stackEnv() {
 // responsive even though the work behind it is slow.
 function teardownAsync() {
 	assetsStop();
+	// A joining player started no engine and no containers, so there is
+	// nothing to stop -- and `down` would spend its timeout talking to a
+	// docker socket that was never created.
+	if (getClientPaths().mode === 'join') return Promise.resolve();
 	return new Promise(resolve => {
 		const { cwd, env } = stackEnv();
 		const child = execFile(
@@ -780,6 +784,7 @@ function teardownAsync() {
 // nothing to await with.
 function teardownSync() {
 	assetsStop();
+	if (getClientPaths().mode === 'join') return;
 	try {
 		const { cwd, env } = stackEnv();
 		require('child_process').execFileSync(
@@ -797,7 +802,29 @@ app.whenReady().then(() => {
 	// under the old folder name.
 	migrateDataRoot();
 	Menu.setApplicationMenu(buildMenu());
-	openGame();
+
+	// Joining loads the host's page directly, so nothing on the way there
+	// would notice the host being down -- Electron would just render its own
+	// "cannot be reached" page, which says nothing about which host or why.
+	const c = getClientPaths();
+	if (c.mode === 'join' && c.join_host) {
+		probeHost(joinUrl(c.join_host))
+			.then(() => openGame())
+			.catch(err => {
+				dialog.showMessageBox({
+					type: 'warning',
+					message: `Could not reach ${c.join_host}`,
+					detail: `${err.message}\n\nCheck the address, and that the host has started their server.`,
+					buttons: ['Change address…', 'Try anyway'],
+					defaultId: 0,
+				}).then(({ response }) => {
+					if (response === 0) openSettings();
+					else openGame();
+				});
+			});
+	} else {
+		openGame();
+	}
 
 	app.on('activate', () => {
 		if (BrowserWindow.getAllWindows().length === 0) openGame();
