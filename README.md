@@ -141,9 +141,7 @@ change between macOS, Windows and Linux; only the host-side VM integration does.
 |---|---|---|
 | [rAthena](https://github.com/rathena/rathena) | upstream, GPL-3.0 | the server. Unmodified; built arch-native at image build time |
 | [roBrowserLegacy](https://github.com/MrAntares/roBrowserLegacy) | upstream, GPL-3.0 | the client. Built from source with a few patches in `patches/` |
-| RemoteClient | ours | Rust rewrite of upstream's Node asset server. To be open sourced |
-| nebula | ours | microVM + container engine; the reason any of this is portable. To be open sourced |
-| Electron shell | ours | windows, settings, lifecycle, backup/restore, repair |
+| RemoteClient | GPL-3.0 | Rust rewrite of roBrowserLegacy's Node asset server |
 
 ---
 
@@ -169,8 +167,8 @@ too.
 | [rAthena](https://github.com/rathena/rathena) | GPL-3.0 |
 | [roBrowserLegacy](https://github.com/MrAntares/roBrowserLegacy) | GPL-3.0 |
 | [ROenglishRE](https://github.com/llchrisll/ROenglishRE) | free to distribute, use and modify (see its headers) |
-| RemoteClient | GPL-3.0 |
-| nebula | ours |
+| RemoteClient-Rust | GPL-3.0 |
+| nebula | MIT |
 
 Game assets are copyright of Gravity Co., Ltd. and are not bundled or shipped with
 Ragnarok Offline.
