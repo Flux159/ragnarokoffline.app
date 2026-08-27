@@ -33,6 +33,10 @@ const { spawn, execFile } = require('child_process');
 //
 // Must stay in step with data_root() in stack/src/config.rs.
 function dataRoot() {
+	// Same override the supervisor honours (see data_root() in
+	// stack/src/config.rs), so the two agree and a test run can be pointed at a
+	// scratch directory instead of a real install.
+	if (process.env.RAGNAROK_OFFLINE_HOME) return process.env.RAGNAROK_OFFLINE_HOME;
 	if (process.platform === 'darwin') {
 		return path.join(os.homedir(), 'Library/Application Support/Ragnarok Offline');
 	}
@@ -614,18 +618,27 @@ function makeWindow(id, file, opts) {
 	return win;
 }
 
+// Which world this window is showing. Two people on a call, one hosting and
+// one joining, otherwise see identical windows -- and someone who has switched
+// servers has no way to tell which one they are actually on.
+function gameTitle() {
+	const c = getClientPaths();
+	return c.mode === 'join' && c.join_host
+		? `${productName()} (${c.join_host})`
+		: `${productName()} (Local)`;
+}
+
 // Always the boot page, in both modes. It reports which step is running,
 // surfaces a failure with a retry, and only then navigates -- a joining player
 // pointed straight at a host gets a blank window when that host is down, with
 // nothing to act on. Where it navigates *to* is decided in launch_game.
 const openGame = () => {
 	const c = getClientPaths();
-	return makeWindow('game', 'index.html', {
-		width: 1280, height: 800,
-		title: c.mode === 'join' && c.join_host
-			? `${productName()} — ${c.join_host}`
-			: productName(),
-	});
+	const win = makeWindow('game', 'index.html', { width: 1280, height: 800, title: gameTitle() });
+	// Also on an existing window: makeWindow only applies the title when it
+	// creates one, and the whole point is that this changes when you switch.
+	if (win && !win.isDestroyed()) win.setTitle(gameTitle());
+	return win;
 };
 const openSetup = () => makeWindow('setup', 'setup.html', { width: 620, height: 620, resizable: false, title: `${productName()} — set up your client` });
 const openSettings = () => makeWindow('settings', 'settings.html', { width: 620, height: 780, title: `${productName()} — settings` });
@@ -794,6 +807,7 @@ const handlers = {
 		const base = c.mode === 'join' ? joinUrl(c.join_host) : 'http://127.0.0.1:3338';
 		const win = openGame();
 		win.loadURL(base + GAME_PATH);
+		win.setTitle(gameTitle());
 	},
 
 	// Dialogs — Tauri's plugin API, reimplemented so the pages keep their shape

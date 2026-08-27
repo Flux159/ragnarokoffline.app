@@ -107,6 +107,7 @@
       </div>
       <div class="row actions" style="padding-top:10px">
         <button id="mp-connect" class="ghost">Connect…</button>
+        <button id="mp-golocal" class="ghost">Play on my own server</button>
       </div>
       <p class="note">Joining runs nothing locally — no server, no virtual
          machine, no game files. Everything comes from the host, so this starts
@@ -186,6 +187,20 @@ $('mp-lan').onchange = async () => {
   await invoke('set_mode', { lan: $('mp-lan').checked });
   await refreshMode();
 };
+// One button back to your own world. Changing the dropdown does the same
+// thing, but "switch this select, then find the button that opens the game" is
+// not an obvious way home from someone else's server.
+$('mp-golocal').onclick = async () => {
+  log('starting your own server…');
+  try {
+    await invoke('set_mode', { mode: 'host' });
+    await refreshMode();
+    await invoke('open_game');
+  } catch (e) {
+    log('error: ' + e);
+  }
+};
+
 $('mp-connect').onclick = async () => {
   const host = $('mp-host-addr').value.trim();
   log(`contacting ${host}…`);
