@@ -313,10 +313,20 @@ jobs:
     needs: app
     runs-on: ubuntu-latest
     steps:
+      # Only the app artifacts. Without a pattern this downloads every artifact
+      # in the run, which includes `client` -- the built roBrowser tree, some
+      # thousands of small files. Attaching those as release assets trips
+      # GitHub's secondary rate limit and fails the release.
       - uses: actions/download-artifact@v4
         with:
+          pattern: ragnarok-offline-*
           path: artifacts
       - uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          # Installers only, named explicitly rather than by a recursive glob,
+          # so a new artifact in the run cannot silently become a release asset.
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.AppImage
+            artifacts/**/*.exe
           generate_release_notes: true
