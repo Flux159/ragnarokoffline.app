@@ -9,6 +9,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PAYLOAD="$ROOT/payload"
 NEBULA_SRC="${NEBULA_SRC:-$HOME/Projects/nebula}"
+# CI has no nebula checkout — it unpacks a released embed kit and points here.
+# Same code path either way, so a CI payload and a local one are assembled by
+# the same lines rather than by a workflow that drifts from this script.
+EMBED="${NEBULA_EMBED_KIT:-$NEBULA_SRC/dist-embed-slim}"
+EXE=""; case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) EXE=".exe";; esac
 
 rm -rf "$PAYLOAD"
 mkdir -p "$PAYLOAD"/{bin,scripts,config,patches,dist}
@@ -20,13 +25,34 @@ echo "==> binaries"
 # All three come from nebula's slim embed kit so the host binaries and the guest
 # rootfs below are always the same build. kubectl-slim/helm-slim are in the kit
 # too and deliberately left out: this app has no Kubernetes in it.
-EMBED="$NEBULA_SRC/dist-embed-slim"
-[ -d "$EMBED" ] || { echo "no slim embed kit at $EMBED (build it in the nebula repo)" >&2; exit 1; }
-cp "$EMBED/bin/nebula" "$EMBED/bin/nebulad" "$EMBED/bin/docker-slim" "$PAYLOAD/bin/"
+[ -d "$EMBED" ] || { echo "no slim embed kit at $EMBED (build it in the nebula repo, or set NEBULA_EMBED_KIT)" >&2; exit 1; }
+# Copy the kit's bin/ wholesale and drop what this app has no use for, rather
+# than naming each binary: the kit's contents vary by platform. The macOS kit
+# is assembled by nebula's embed-kit.sh and carries the slim CLIs; the Linux
+# and Windows kits are assembled inline by their own workflows and carry only
+# nebula + nebulad, with docker-slim shipping as a separate release asset.
+cp "$EMBED"/bin/* "$PAYLOAD/bin/"
+rm -f "$PAYLOAD"/bin/kubectl-slim* "$PAYLOAD"/bin/helm-slim*
+# docker-slim is nebula-slim's docker client and the app cannot start without
+# it, so accept it from outside the kit when the kit does not carry it.
+if [ ! -e "$PAYLOAD/bin/docker-slim$EXE" ]; then
+    [ -n "${DOCKER_SLIM_BIN:-}" ] && [ -e "$DOCKER_SLIM_BIN" ] \
+        || { echo "the embed kit has no docker-slim and DOCKER_SLIM_BIN is unset" >&2; exit 1; }
+    cp "$DOCKER_SLIM_BIN" "$PAYLOAD/bin/docker-slim$EXE"
+fi
+# libkrun, which nebula loads from ../lib next to bin/. Only on Linux and
+# Windows: macOS drives the microVM through Virtualization.framework instead,
+# and the shipped app has never carried a libkrun. The macOS kit does contain
+# one — 14 MB of dylibs — so this is an explicit exclusion, not an accident of
+# the kit's contents.
+if [ "$(uname -s)" != "Darwin" ] && [ -d "$EMBED/lib" ]; then
+    mkdir -p "$PAYLOAD/lib"
+    cp "$EMBED"/lib/* "$PAYLOAD/lib/"
+fi
 # The asset server: one 1.7 MB static binary in place of a 106 MB Node runtime
 # plus its dependency tree.
-cp "${REMOTECLIENT_SRC:-$HOME/Projects/roBrowserLegacy-RemoteClient-Rust}/target/release/robrowser-remoteclient" \
-   "$PAYLOAD/bin/"
+cp "${REMOTECLIENT_BIN:-${REMOTECLIENT_SRC:-$HOME/Projects/roBrowserLegacy-RemoteClient-Rust}/target/release/robrowser-remoteclient$EXE}" \
+   "$PAYLOAD/bin/robrowser-remoteclient$EXE"
 
 echo "==> scripts and config"
 cp "$ROOT"/scripts/*.sh "$ROOT"/scripts/*.py "$PAYLOAD/scripts/"

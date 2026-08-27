@@ -10,8 +10,10 @@ name: build
 #   payload/dist    rAthena + MariaDB images — needs a real Docker daemon, and
 #                   must match the *guest* architecture, not the runner's
 #   payload/bin     nebula, nebulad, docker-slim, robrowser-remoteclient —
-#                   private repos, built there and consumed here
-#   payload/guest   nebula's kernel + slim rootfs — prebuilt artifacts
+#   payload/lib     private repos, built there and consumed here. Three
+#   payload/guest   separate release assets: the embed kit (nebula, nebulad,
+#                   guest images, and on Linux/Windows libkrun), the slim host
+#                   CLIs (docker-slim), and the asset server binary.
 #
 # So this does not try to build everything from source. It assembles a payload
 # from released artifacts and builds the app around it. The alternative — having
@@ -33,12 +35,12 @@ name: build
 # Notarisation is skipped when the Apple secrets are absent, so the workflow is
 # useful before they are set up.
 
+# Tags and manual runs only. A full build is three platforms, an npm client
+# build and a signed, notarised DMG — minutes of runner time and an Apple
+# notarisation round-trip. That is release work, not per-commit work.
 on:
   push:
-    branches: [main]
     tags: ['v*']
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -103,6 +105,7 @@ jobs:
             platform: mac
             arch: arm64
             triple: aarch64-apple-darwin
+            clis: macos-aarch64
           # nebula-slim is validated on Linux and Windows, so these are real
           # targets rather than packaging exercises. Each pulls the embed kit
           # built for its own host triple.
@@ -110,10 +113,12 @@ jobs:
             platform: linux
             arch: x64
             triple: x64-unknown-linux
+            clis: linux-x86_64
           - os: windows-latest
             platform: win
             arch: x64
             triple: x64-pc-windows
+            clis: windows-x86_64
     runs-on: ${{ matrix.os }}
     # The `secrets` context is not available in a step's `if:` — only in `env:`
     # and `with:`. So the presence of each credential is resolved once here, at
@@ -148,19 +153,35 @@ jobs:
             echo "See the header of this file for what it needs access to." >&2
             exit 1
           fi
-          mkdir -p payload/bin payload/guest /tmp/kit
-          # nebula publishes one kit per host triple; the tarball's contents are
-          # the same shape in each, so only the filename varies.
+          mkdir -p /tmp/kit /tmp/clis
+
+          # nebula publishes one embed kit per host triple. Its contents are not
+          # identical across platforms — macOS carries the slim CLIs and no
+          # lib/, Linux and Windows carry lib/ and no CLIs — so this only
+          # unpacks it. package.sh knows what to take out of it.
           gh release download --repo Flux159/nebula \
              --pattern 'nebula-slim-embed-${{ matrix.triple }}.tar.gz' --dir /tmp
           tar xzf /tmp/nebula-slim-embed-${{ matrix.triple }}.tar.gz -C /tmp/kit
-          cp /tmp/kit/bin/nebula /tmp/kit/bin/nebulad /tmp/kit/bin/docker-slim payload/bin/
-          cp /tmp/kit/images/kernel-Image.gz payload/guest/Image.gz
-          cp /tmp/kit/images/rootfs.img.gz   payload/guest/rootfs.img.gz
+
+          # docker-slim ships separately, as one of the three slim host CLIs.
+          # The Linux and Windows embed kits do not include it, and the app
+          # cannot talk to the engine without it.
+          if [ ! -e /tmp/kit/bin/docker-slim ] && [ ! -e /tmp/kit/bin/docker-slim.exe ]; then
+            gh release download --repo Flux159/nebula \
+               --pattern 'nebula-slim-clis-*-${{ matrix.clis }}.tar.gz' --dir /tmp/clis
+            tar xzf /tmp/clis/*.tar.gz -C /tmp/clis --strip-components=1
+            echo "DOCKER_SLIM_BIN=$(ls /tmp/clis/docker-slim*)" >> "$GITHUB_ENV"
+          fi
+
+          # Pinned to this platform's binary. A `robrowser-remoteclient-*` glob
+          # matches all three and copies whichever the shell lists last.
+          bin=robrowser-remoteclient-${{ matrix.triple }}
+          [ "${{ matrix.platform }}" = "win" ] && bin="$bin.exe"
           gh release download --repo Flux159/roBrowserLegacy-RemoteClient-Rust \
-             --pattern 'robrowser-remoteclient-*' --dir /tmp
-          cp /tmp/robrowser-remoteclient-* payload/bin/robrowser-remoteclient
-          chmod +x payload/bin/*
+             --pattern "$bin" --dir /tmp
+          chmod +x "/tmp/$bin" || true
+          echo "NEBULA_EMBED_KIT=/tmp/kit" >> "$GITHUB_ENV"
+          echo "REMOTECLIENT_BIN=/tmp/$bin" >> "$GITHUB_ENV"
         shell: bash
 
       # Container images have to match the guest architecture, and the guest
@@ -172,18 +193,26 @@ jobs:
           GH_TOKEN: ${{ secrets.DEPS_TOKEN }}
         run: |
           set -e
-          mkdir -p payload/dist
           gh release download --repo ${{ github.repository }} \
-             --pattern "images-${{ matrix.arch }}.tar.gz" --dir payload/dist || {
+             --pattern "images-${{ matrix.arch }}.tar.gz" --dir /tmp || {
             echo "No prebuilt server images for ${{ matrix.arch }}." >&2
             echo "Build them with scripts/precache.sh save and attach to a release." >&2
             exit 1
           }
-          mv payload/dist/images-${{ matrix.arch }}.tar.gz payload/dist/images.tar.gz
         shell: bash
 
+      # package.sh starts with `rm -rf payload`, so anything staged into it
+      # before this step is deleted. Everything fetched above is handed over as
+      # a path and copied in by the script itself.
       - name: Assemble the payload
         run: scripts/package.sh
+        shell: bash
+
+      - name: Add the server images to the payload
+        run: |
+          set -e
+          mkdir -p payload/dist
+          cp /tmp/images-${{ matrix.arch }}.tar.gz payload/dist/images.tar.gz
         shell: bash
 
       - name: Import signing certificate
