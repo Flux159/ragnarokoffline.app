@@ -14,8 +14,8 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.chronotale.ragnarokmac",
-    "productName": "RagnarokMac",
+    "appId": "com.chronotale.ragnarokoffline",
+    "productName": "Ragnarok Offline",
     "copyright": "GPL-3.0",
     "directories": {
       "output": "dist/electron",

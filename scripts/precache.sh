@@ -34,7 +34,7 @@ if [ -z "$DOCKER_BIN" ]; then
     done
 fi
 [ -n "$DOCKER_BIN" ] || { echo "no docker client found (bundled or installed)" >&2; exit 1; }
-export NEBULA_HOME="${NEBULA_HOME:-$HOME/Library/Application Support/RagnarokMac/nebula}"
+export NEBULA_HOME="${NEBULA_HOME:-$HOME/Library/Application Support/Ragnarok Offline/nebula}"
 export DOCKER_HOST="${DOCKER_HOST:-unix://$NEBULA_HOME/run/docker.sock}"
 
 docker_() { "$DOCKER_BIN" "$@"; }

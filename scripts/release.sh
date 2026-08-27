@@ -13,8 +13,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP="$ROOT/dist/electron/mac-arm64/RagnarokMac.app"
-DMG="$ROOT/dist/electron/RagnarokMac-0.1.0-arm64.dmg"
+# Derived from package.json rather than hardcoded: the product has been renamed
+# twice already, and every hardcoded copy of the name is a place the next rename
+# silently breaks.
+NAME="$(python3 -c 'import json;print(json.load(open("package.json"))["build"]["productName"])')"
+VERSION="$(python3 -c 'import json;print(json.load(open("package.json"))["version"])')"
+APP="$ROOT/dist/electron/mac-arm64/$NAME.app"
+DMG="$ROOT/dist/electron/$NAME-$VERSION-arm64.dmg"
 INSTALL=0
 DMG_DIR=""
 
@@ -57,11 +62,11 @@ echo "  signature valid, entitlements present"
 
 if [ "$INSTALL" = 1 ]; then
     echo "==> installing to /Applications"
-    pkill -f "RagnarokMac" 2>/dev/null || true
+    pkill -f "$NAME" 2>/dev/null || true
     sleep 2
-    rm -rf /Applications/RagnarokMac.app
-    cp -R "$APP" /Applications/RagnarokMac.app
-    codesign -v /Applications/RagnarokMac.app
+    rm -rf "/Applications/$NAME.app"
+    cp -R "$APP" "/Applications/$NAME.app"
+    codesign -v "/Applications/$NAME.app"
     echo "  installed and signature verified"
 fi
 
@@ -72,9 +77,9 @@ fi
 echo "==> verifying the disk image"
 MP=$(hdiutil attach -nobrowse -readonly "$DMG" | awk '/\/Volumes\//{ $1=$2=""; sub(/^ +/,""); print; exit }')
 trap '[ -n "${MP:-}" ] && hdiutil detach "$MP" >/dev/null 2>&1 || true' EXIT
-cmp -s "$ROOT/scripts/stack.sh" "$MP/RagnarokMac.app/Contents/Resources/payload/scripts/stack.sh" \
+cmp -s "$ROOT/scripts/stack.sh" "$MP/$NAME.app/Contents/Resources/payload/scripts/stack.sh" \
     || { echo "  the .dmg carries a different stack.sh than the source" >&2; exit 1; }
-codesign -v "$MP/RagnarokMac.app" || { echo "  the app inside the .dmg is not validly signed" >&2; exit 1; }
+codesign -v "$MP/$NAME.app" || { echo "  the app inside the .dmg is not validly signed" >&2; exit 1; }
 echo "  contents match source, signature valid"
 
 mkdir -p "$DMG_DIR"

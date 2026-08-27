@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Assemble everything the app needs at runtime into payload/, which Tauri
-# bundles into RagnarokMac.app/Contents/Resources.
+# bundles into the app under Contents/Resources.
 #
 # Game assets are deliberately NOT included: they are Gravity's copyright and
 # the user supplies their own client. Everything else ships.

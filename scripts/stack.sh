@@ -37,7 +37,7 @@ NEBULA="${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}"
 # containers in their `nebula ps`, and letting either side's `nebula down` stop
 # the other's. It also has to be a fixed path rather than one derived from
 # STATE, because `nebula up` registers a launchd label derived from this.
-export NEBULA_HOME="${NEBULA_HOME:-$HOME/Library/Application Support/RagnarokMac/nebula}"
+export NEBULA_HOME="${NEBULA_HOME:-$HOME/Library/Application Support/Ragnarok Offline/nebula}"
 mkdir -p "$NEBULA_HOME"
 
 # A GUI app launched from Finder inherits launchd's minimal PATH

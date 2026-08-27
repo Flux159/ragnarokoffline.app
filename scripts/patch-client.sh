@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Apply RagnarokMac's changes to the vendored roBrowserLegacy checkout.
+# Apply Ragnarok Offline's changes to the vendored roBrowserLegacy checkout.
 #
 # Done as idempotent in-place edits rather than `git apply`, so an upstream
 # change to unrelated lines does not break the whole patch set. Each edit
