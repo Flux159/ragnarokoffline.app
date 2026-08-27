@@ -115,6 +115,14 @@ jobs:
             arch: x64
             triple: x64-pc-windows
     runs-on: ${{ matrix.os }}
+    # The `secrets` context is not available in a step's `if:` — only in `env:`
+    # and `with:`. So the presence of each credential is resolved once here, at
+    # job level, where secrets *are* readable, and the steps below condition on
+    # the resulting booleans instead. Job-level env is in scope for a step's
+    # `if:`; a step's own `env:` is not (GitHub evaluates the condition first).
+    env:
+      HAS_CERT: ${{ secrets.APPLE_CERT_P12_BASE64 != '' }}
+      HAS_NOTARY_KEY: ${{ secrets.APPLE_API_KEY_P8 != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -178,11 +186,8 @@ jobs:
         run: scripts/package.sh
         shell: bash
 
-      # Condition on the secret, not on env.CERT: a step's own `env:` is not in
-      # scope for its own `if:` — GitHub evaluates the condition first — so the
-      # obvious-looking version is always false and never signs anything.
       - name: Import signing certificate
-        if: matrix.platform == 'mac' && secrets.APPLE_CERT_P12_BASE64 != ''
+        if: matrix.platform == 'mac' && env.HAS_CERT == 'true'
         env:
           CERT: ${{ secrets.APPLE_CERT_P12_BASE64 }}
           CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
@@ -199,7 +204,7 @@ jobs:
       # electron-builder wants APPLE_API_KEY to be a *path* to the .p8, not its
       # contents, so the secret has to land on disk before the build.
       - name: Stage the notarisation key
-        if: matrix.platform == 'mac' && secrets.APPLE_API_KEY_P8 != ''
+        if: matrix.platform == 'mac' && env.HAS_NOTARY_KEY == 'true'
         env:
           KEY: ${{ secrets.APPLE_API_KEY_P8 }}
         run: |
@@ -220,7 +225,7 @@ jobs:
           # Auto-discovery hunts the keychain for an identity and fails the
           # build when there is none, so it follows the certificate rather than
           # the platform.
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.platform == 'mac' && secrets.APPLE_CERT_P12_BASE64 != '' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.platform == 'mac' && env.HAS_CERT == 'true' }}
         run: |
           npm install --no-audit --no-fund
           npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
