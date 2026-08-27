@@ -8,6 +8,17 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXE=""; case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) EXE=".exe";; esac
+
+# macOS ships `shasum` (a Perl script) and no `sha256sum`; Git Bash on Windows
+# ships `sha256sum` and no `shasum`; most Linux images have both. Picking one
+# breaks a third of the matrix, which is exactly how this was found.
+sha256_of() {
+    if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+    elif command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+    elif command -v openssl >/dev/null 2>&1; then openssl dgst -sha256 "$1" | awk '{print $NF}'
+    else echo "no sha256 tool found (shasum, sha256sum or openssl)" >&2; return 1
+    fi
+}
 PAYLOAD="$ROOT/payload"
 NEBULA_SRC="${NEBULA_SRC:-$HOME/Projects/nebula}"
 # CI has no nebula checkout — it unpacks a released embed kit and points here.
@@ -71,8 +82,7 @@ fi
 # byte-identical to an unsigned build. A text sidecar is not signed and travels
 # into the bundle unchanged, so it still answers the question that matters:
 # was this payload assembled from this build, or is it stale?
-shasum -a 256 "$PAYLOAD/bin/ragnarok-stack$EXE" | awk '{print $1}' \
-    > "$PAYLOAD/bin/ragnarok-stack.sha256"
+sha256_of "$PAYLOAD/bin/ragnarok-stack$EXE" > "$PAYLOAD/bin/ragnarok-stack.sha256"
 
 # The asset server: one 1.7 MB static binary in place of a 106 MB Node runtime
 # plus its dependency tree.

@@ -328,6 +328,8 @@ jobs:
           # for byte. The sidecar is a text file, is not signed, and still
           # catches the failure this guards -- a stale payload in the bundle.
           built=$(shasum -a 256 stack/target/release/ragnarok-stack | awk '{print $1}')
+          # macOS-only step, so shasum is safe here; package.sh needs the
+          # portable version because it also runs on Windows.
           shipped=$(cat "$APP/Contents/Resources/payload/bin/ragnarok-stack.sha256")
           [ "$built" = "$shipped" ] \
             || { echo "ragnarok-stack in the bundle is not from this build" >&2; exit 1; }
