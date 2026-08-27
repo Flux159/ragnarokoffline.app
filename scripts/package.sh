@@ -22,9 +22,12 @@ echo "==> binaries"
 # nebula/nebulad host the microVM; docker-slim is nebula-slim's docker client,
 # so the app never depends on a docker CLI being installed. The asset server is
 # a single static Rust binary, so there is no language runtime to ship either.
-# All three come from nebula's slim embed kit so the host binaries and the guest
-# rootfs below are always the same build. kubectl-slim/helm-slim are in the kit
-# too and deliberately left out: this app has no Kubernetes in it.
+# nebula, nebulad and docker-slim come from nebula's slim embed kit, so the
+# host binaries and the guest rootfs below are always the same build --
+# except on kits predating nebula's stage-slim-clis.sh, where the Linux and
+# Windows kits carried no docker client and it is supplied separately.
+# kubectl-slim/helm-slim are in the kit too and deliberately left out: this
+# app has no Kubernetes in it.
 [ -d "$EMBED" ] || { echo "no slim embed kit at $EMBED (build it in the nebula repo, or set NEBULA_EMBED_KIT)" >&2; exit 1; }
 # Copy the kit's bin/ wholesale and drop what this app has no use for, rather
 # than naming each binary: the kit's contents vary by platform. The macOS kit
