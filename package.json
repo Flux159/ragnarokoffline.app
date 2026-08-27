@@ -1,6 +1,7 @@
 {
   "name": "ragnarokmac",
-  "version": "0.2.3",
+  "productName": "Ragnarok Offline",
+  "version": "0.2.4",
   "description": "Ragnarok Online, offline, in one app",
   "license": "GPL-3.0",
   "private": true,

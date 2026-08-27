@@ -75,8 +75,14 @@ impl Config {
             .map(PathBuf::from)
             .unwrap_or_else(|| data_root().join("nebula"));
 
+        // Fall back when NEBULA_BIN names something that is not there, rather
+        // than taking it on faith. An embedder that hands us a path without
+        // the platform's executable suffix -- which our own app did on Windows
+        // -- otherwise gets "nebula engine not found" naming a file it never
+        // meant to ask for, while the real binary sits beside it.
         let nebula = env::var_os("NEBULA_BIN")
             .map(PathBuf::from)
+            .filter(|p| p.exists())
             .unwrap_or_else(|| root.join(format!("bin/nebula{EXE}")));
 
         let docker = resolve_docker(&root)

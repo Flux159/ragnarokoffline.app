@@ -16,6 +16,11 @@ const fs = require('fs');
 const os = require('os');
 const { spawn, execFile } = require('child_process');
 
+// Windows ships every payload binary with a .exe suffix, which the embed kit
+// and our own build both produce correctly -- it was only ever this side that
+// asked for the wrong name.
+const EXE = process.platform === 'win32' ? '.exe' : '';
+
 // ---------------------------------------------------------------------------
 // Paths
 // ---------------------------------------------------------------------------
@@ -160,11 +165,19 @@ function toolPath() {
 }
 
 function findTool(name) {
-	const bundled = path.join(projectRoot(), 'bin', name);
-	if (fs.existsSync(bundled)) return bundled;
-	for (const dir of toolPath().split(':')) {
-		const p = path.join(dir, name);
-		if (dir && fs.existsSync(p)) return p;
+	// Both spellings, and path.delimiter rather than ':' -- PATH is
+	// semicolon-separated on Windows, so the fallback loop searched one
+	// enormous nonexistent directory.
+	for (const n of [`${name}${EXE}`, name]) {
+		const bundled = path.join(projectRoot(), 'bin', n);
+		if (fs.existsSync(bundled)) return bundled;
+	}
+	for (const dir of toolPath().split(path.delimiter)) {
+		if (!dir) continue;
+		for (const n of [`${name}${EXE}`, name]) {
+			const p = path.join(dir, n);
+			if (fs.existsSync(p)) return p;
+		}
 	}
 	return null;
 }
@@ -936,8 +949,8 @@ function stackEnv() {
 		env: {
 			...process.env,
 			PATH: toolPath(),
-			NEBULA_BIN: path.join(root, 'bin/nebula'),
-			RAGNAROKMAC_DOCKER: path.join(root, 'bin/docker-slim'),
+			NEBULA_BIN: path.join(root, `bin/nebula${EXE}`),
+			RAGNAROKMAC_DOCKER: path.join(root, `bin/docker-slim${EXE}`),
 			RAGNAROKMAC_STATE: stateDir(),
 		},
 	};
@@ -983,6 +996,11 @@ function teardownSync() {
 		/* best effort: nothing useful to do if the teardown itself fails */
 	}
 }
+
+// Before any menu is built: app.name otherwise falls back to package.json's
+// "name" field, which is the old project identifier, and every platform that
+// draws an application menu labels it with that.
+app.setName(productName());
 
 app.whenReady().then(() => {
 	// Before anything reads a path: an existing install still has its data
