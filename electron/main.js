@@ -801,10 +801,13 @@ const handlers = {
 			fs.writeFileSync(path.join(stateDir(), 'phase'), 'Indexing your client…\n');
 			await linkClient(saved);
 		}
+		appLog('start_stack: running the supervisor');
 		const out = await runStack(getClientPaths().lan ? ['up', '--lan'] : ['up']);
+		appLog('start_stack: supervisor finished, starting the asset server');
 		// The asset server starts here, not in launch_game: the boot page polls
 		// assets_ready() before it will navigate, so nothing would ever start it.
 		await assetsStart();
+		appLog('start_stack: asset server started');
 		return out;
 	},
 
@@ -956,10 +959,44 @@ const handlers = {
 	},
 };
 
+// Every failure gets written down.
+//
+// Electron's main process logs to stdout, which a packaged app does not have,
+// so a handler that threw left no trace anywhere: no message, no file, and a
+// phase file still naming the last step it reached. A launch that failed and a
+// launch that was slow looked identical, on a machine reachable only over SSH.
+// Several debugging rounds went into inferring from side effects what one line
+// of log would have said.
+function appLog(line) {
+	try {
+		const dir = stateDir();
+		fs.mkdirSync(dir, { recursive: true });
+		fs.appendFileSync(path.join(dir, 'app.log'), `${new Date().toISOString()} ${line}\n`);
+	} catch {
+		/* logging must never be the thing that breaks the app */
+	}
+}
+
 ipcMain.handle('invoke', async (_event, name, args) => {
 	const fn = handlers[name];
 	if (!fn) throw new Error(`unknown command: ${name}`);
-	return await fn(args || {});
+	try {
+		return await fn(args || {});
+	} catch (e) {
+		const msg = (e && e.message) || String(e);
+		appLog(`${name} failed: ${msg}`);
+		if (e && e.stack) appLog(e.stack.split('\n').slice(1, 4).join(' | '));
+		// The phase file is what the boot window shows. Leaving it on the last
+		// step it reached is how a failure reads as a hang.
+		if (name === 'start_stack') {
+			try {
+				fs.writeFileSync(path.join(stateDir(), 'phase'), `Failed: ${msg.split('\n')[0]}\n`);
+			} catch {
+				/* the thrown error below is still reported to the window */
+			}
+		}
+		throw e;
+	}
 });
 
 // ---------------------------------------------------------------------------
