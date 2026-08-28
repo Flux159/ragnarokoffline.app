@@ -294,26 +294,63 @@ function migrateDataRoot() {
 function runStack(args) {
 	return new Promise((resolve, reject) => {
 		const root = projectRoot();
-		execFile(
-			stackBin(),
-			args,
-			{
-				cwd: root,
-				env: {
-					...process.env,
-					PATH: toolPath(),
-					NEBULA_BIN: path.join(root, 'bin/nebula'),
-					RAGNAROKMAC_DOCKER: path.join(root, 'bin/docker-slim'),
-					RAGNAROKMAC_STATE: stateDir(),
-				},
-				maxBuffer: 8 * 1024 * 1024,
-				timeout: 15 * 60 * 1000,
+		// spawn, and settle on the process exiting -- not on its streams
+		// closing, which is what execFile waits for.
+		//
+		// `up` starts nebulad, and on Windows a daemon started this way keeps
+		// the inherited stdio pipe open after its parent exits. The supervisor
+		// finished, wrote "Ready" and was gone, and Node never saw EOF, so the
+		// callback never fired: the app waited on a completed process until
+		// execFile's fifteen-minute timeout. On the boot page that looked like
+		// a stack that never started, when the stack was up the whole time.
+		//
+		// The 'exit' event does not depend on the pipes, so a daemon holding
+		// one cannot hide the fact that the process ended.
+		const child = spawn(stackBin(), args, {
+			cwd: root,
+			env: {
+				...process.env,
+				PATH: toolPath(),
+				NEBULA_BIN: path.join(root, `bin/nebula${EXE}`),
+				RAGNAROKMAC_DOCKER: path.join(root, `bin/docker-slim${EXE}`),
+				RAGNAROKMAC_STATE: stateDir(),
 			},
-			(err, stdout, stderr) => {
-				if (err) return reject(new Error(`${stdout || ''}${stderr || ''}` || String(err)));
-				resolve(stdout);
-			}
-		);
+			stdio: ['ignore', 'pipe', 'pipe'],
+		});
+
+		let out = '';
+		let err = '';
+		const cap = 8 * 1024 * 1024;
+		child.stdout.on('data', d => { if (out.length < cap) out += d; });
+		child.stderr.on('data', d => { if (err.length < cap) err += d; });
+
+		let settled = false;
+		const timer = setTimeout(() => {
+			if (settled) return;
+			settled = true;
+			try { child.kill(); } catch { /* already gone */ }
+			reject(new Error(`the supervisor did not finish within 15 minutes\n${out}${err}`));
+		}, 15 * 60 * 1000);
+
+		child.on('error', e => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			reject(e);
+		});
+
+		child.on('exit', code => {
+			if (settled) return;
+			// A short grace so output already in flight is included; the
+			// streams may never close, so this cannot wait for them.
+			setTimeout(() => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				if (code === 0) resolve(out);
+				else reject(new Error(`${out}${err}`.trim() || `the supervisor exited with code ${code}`));
+			}, 250);
+		});
 	});
 }
 
