@@ -340,7 +340,17 @@ fn wait_for_maps(dk: &Docker) -> Result<(), String> {
         // servers at all still went on to start the asset server and present
         // itself as ready -- the launch looked slow, then looked fine, and
         // nothing worked.
-        let dead: Vec<&str> = SERVERS.iter().copied().filter(|c| !dk.is_running(c)).collect();
+        // Only a container that has actually stopped, not one that is merely
+        // not running yet. `docker start` returns before the container reports
+        // "running", so a server still coming up reads as "created" -- and
+        // treating that as death aborted the launch of a perfectly healthy
+        // stack, leaving three running servers, no asset server, and a phase
+        // frozen mid-sentence.
+        let dead: Vec<&str> = SERVERS
+            .iter()
+            .copied()
+            .filter(|c| matches!(dk.state(c).as_deref(), Some("exited") | Some("dead")))
+            .collect();
         if !dead.is_empty() {
             // The server's own last words are worth more than anything this
             // could say about them: rAthena reports what it could not reach.
