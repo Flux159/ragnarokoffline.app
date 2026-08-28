@@ -310,7 +310,7 @@ $('backup').onclick = async () => {
   // Default name carries the date so successive backups do not overwrite each
   // other -- the usual reason a backup feature turns out to be useless.
   const stamp = new Date().toISOString().slice(0, 10);
-  const path = await saveDialog({ defaultPath: `ragnarokmac-${stamp}.sql`,
+  const path = await saveDialog({ defaultPath: `ragnarokoffline-${stamp}.sql`,
                                   filters: [{ name: 'SQL dump', extensions: ['sql'] }] });
   if (typeof path !== 'string') return;
   $('db-note').textContent = 'Backing up…';
