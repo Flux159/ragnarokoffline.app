@@ -136,15 +136,70 @@ function projectRoot() {
 function unpackTranslationData(root) {
 	const dir = path.join(root, 'vendor/ROenglishRE/Translation/Renewal');
 	const archive = path.join(dir, 'data.tar');
-	if (!fs.existsSync(archive)) return; // older payload, already a directory
+	if (!fs.existsSync(archive)) return; // already unpacked, or an older payload
 	try {
-		const r = spawnSync('tar', ['-xf', archive, '-C', dir], { stdio: 'ignore' });
-		if (r.status !== 0) throw new Error(`tar exited ${r.status}`);
+		extractTarLatin1(archive, dir);
 		fs.rmSync(archive, { force: true });
 	} catch (e) {
-		// Not fatal: the game runs, the English interface textures do not
-		// appear. Say so rather than failing the whole launch.
-		console.error(`could not unpack the translation textures: ${e.message}`);
+		appLog(`could not unpack the translation textures: ${e.message}`);
+	}
+}
+
+// A tar reader that decodes member names as UTF-8, on every platform.
+//
+// The names are CP949 bytes that were already stored as UTF-8 in the
+// filesystem the archive was built from, so UTF-8 is the decoding that
+// round-trips: read it, write it back, get the same bytes the client asks for.
+//
+// System tar does not do this. It decodes through whatever the platform
+// considers current, and answers differently on each: on Windows it used the
+// OEM codepage and produced box-drawing characters -- U+251C, U+2551 -- so 114
+// button bitmaps sat on disk under names nothing would ever request. The menu
+// text was translated and the buttons were not.
+//
+// Doing it here rather than shelling out is what makes the answer the same
+// everywhere. tar has now produced three different results for these names.
+function extractTarLatin1(archive, dest) {
+	const buf = fs.readFileSync(archive);
+	const BLOCK = 512;
+	let off = 0;
+	let longName = null;
+
+	const str = (start, len) => {
+		const end = buf.indexOf(0, start) === -1 ? start + len
+			: Math.min(buf.indexOf(0, start), start + len);
+		return buf.toString('utf8', start, end);
+	};
+
+	while (off + BLOCK <= buf.length) {
+		if (buf[off] === 0) break; // end-of-archive padding
+		const name = str(off, 100);
+		const sizeField = buf.toString('ascii', off + 124, off + 136).replace(/\0.*$/, '').trim();
+		const size = parseInt(sizeField, 8) || 0;
+		const type = String.fromCharCode(buf[off + 156]);
+		const prefix = str(off + 345, 155);
+		off += BLOCK;
+
+		// GNU long name: the following record's data is the real name.
+		if (type === 'L') {
+			longName = buf.toString('utf8', off, off + size).replace(/\0+$/, '');
+			off += Math.ceil(size / BLOCK) * BLOCK;
+			continue;
+		}
+
+		let full = longName || (prefix ? `${prefix}/${name}` : name);
+		longName = null;
+		// Never let an archive write outside its destination.
+		const parts = full.split('/').filter(p => p && p !== '.' && p !== '..');
+		const target = path.join(dest, ...parts);
+
+		if (type === '5' || full.endsWith('/')) {
+			fs.mkdirSync(target, { recursive: true });
+		} else if (type === '0' || type === '\0' || type === '') {
+			fs.mkdirSync(path.dirname(target), { recursive: true });
+			fs.writeFileSync(target, buf.subarray(off, off + size));
+		}
+		off += Math.ceil(size / BLOCK) * BLOCK;
 	}
 }
 
