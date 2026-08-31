@@ -21,6 +21,10 @@ the assets. macOS, Linux and Windows.
 somewhere you can find again; unzipping a full client gives you a folder containing
 `data.grf`, `rdata.grf` and a `BGM` folder, which is what the app looks for.
 
+If you only want to join a friend who is hosting a server, see
+[Hosting and playing with friends on your LAN](#hosting-and-playing-with-friends-on-your-lan)
+— you do not need the assets at all.
+
 **3. Open the app and point it at that folder.** The setup screen has a folder
 picker: choose the folder you unzipped and it finds the rest. Then it starts the
 server and drops you at the login screen.
@@ -31,6 +35,61 @@ first run — and make a character.
 First launch takes a few minutes: it unpacks the runtime, boots the microVM, loads
 the container images and initialises the database. The window names each step as it
 goes, so you can see where it is. Every launch after that is seconds.
+
+---
+
+## Hosting and playing with friends on your LAN
+
+Everyone on the same wifi can play together on one person's machine. Only the
+host needs the game files.
+
+### If you are hosting
+
+**1. Go to Settings, tick "Let other machines connect", and restart the server.**
+The engine reads this when it starts, so the *Restart server* button is what
+applies it. Off by default, the server listens only on your own machine.
+
+<img src="docs/assets/hostingsettings.png" alt="Multiplayer settings in host mode, with 'Let other machines connect' ticked" width="640">
+
+**2. Copy the address next to *Your address* and send it to your friends.** It is
+the one they type in, and it only works for people who can already reach your
+computer on the network. The first time you turn this on, your machine will
+likely ask you to approve local network access — say yes, or nobody can connect.
+
+**3. Keep the app running.** You are the server: when you quit, everyone's session
+ends. Characters live on your machine too, so they stay with you rather than with
+their owners.
+
+### If you are joining
+
+Your friend downloads the same app and **does not need the game files at all** —
+no client to obtain, nothing to point at. On the setup screen they pick
+**Join a friend** and enter the address you sent.
+
+<img src="docs/assets/joinafriend.png" alt="First-run setup screen on the Join a friend tab, asking for the host's server address" width="640">
+
+Everything — the client and the artwork — is served by the host, so joining
+starts in seconds rather than the first-run few minutes. They make their own
+character on your server: on the login screen, adding `_M` or `_F` to the end of
+a new username registers that account as it logs in.
+
+### Switching between the two
+
+The same app does both, and you can change your mind at any time. In Settings,
+switch **Mode**:
+
+<p>
+  <img src="docs/assets/swap.png" alt="The Mode dropdown in Settings, offering 'Host a server' and 'Join a friend'" width="420">
+  <img src="docs/assets/swap2.png" alt="Settings in join mode, with a server address field and a 'Play on my own server' button" width="420">
+</p>
+
+Picking **Join a friend** asks for their address; **Play on my own server** takes
+you back to hosting. Joining runs nothing locally — no server, no microVM — so
+switching to it stops your stack, and switching back starts it again.
+
+One thing worth being plain about: when you host, your machine serves the game
+artwork to whoever joins. That is fine among friends who each own a copy of the
+client, and it is not something to point at the open internet.
 
 ---
 
@@ -89,7 +148,9 @@ flowchart TB
     GRF -->|"read in place, never copied"| ASSETS
 ```
 
-Ports are published to `127.0.0.1` only. The GRFs stay wherever you keep them —
+Ports are published to `127.0.0.1` unless you turn on
+[LAN hosting](#hosting-and-playing-with-friends-on-your-lan), which binds them to
+your network interface instead. The GRFs stay wherever you keep them —
 the app symlinks them into a server root and reads them where they lie, so a
 3.5 GB client is never duplicated.
 
