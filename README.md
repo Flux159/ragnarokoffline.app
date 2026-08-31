@@ -14,6 +14,9 @@ the assets. macOS, Linux and Windows.
 
 ## Getting started
 
+**[Watch the setup walkthrough](https://youtu.be/1Ib_KqHDCLA)** — download,
+assets, first launch — or follow the same three steps below.
+
 **1. Download a build.** Grab the latest release for your platform from the
 [releases page](../../releases).
 
@@ -42,6 +45,9 @@ goes, so you can see where it is. Every launch after that is seconds.
 
 Everyone on the same wifi can play together on one person's machine. Only the
 host needs the game files.
+
+**[Watch two machines play together](https://youtu.be/-7QMhD4R97k)** — hosting
+on one, joining from another.
 
 ### If you are hosting
 
