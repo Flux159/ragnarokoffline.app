@@ -62,16 +62,15 @@ their owners.
 
 ### If you are joining
 
-Your friend downloads the same app and **does not need the game files at all** —
-no client to obtain, nothing to point at. On the setup screen they pick
-**Join a friend** and enter the address you sent.
+Joining a friend's server does not require you to download assets. On the setup
+screen, just click **Join a friend** and enter the address that your friend sent.
 
 <img src="docs/assets/joinafriend.png" alt="First-run setup screen on the Join a friend tab, asking for the host's server address" width="640">
 
-Everything — the client and the artwork — is served by the host, so joining
-starts in seconds rather than the first-run few minutes. They make their own
-character on your server: on the login screen, adding `_M` or `_F` to the end of
-a new username registers that account as it logs in.
+The host serves the client and the artwork, so joining starts in seconds instead
+of the few minutes a first run takes. You make your own character on their
+server: on the login screen, add `_M` or `_F` to the end of a new username and
+that account is created as you log in.
 
 ### Switching between the two
 
