@@ -219,6 +219,14 @@ too.
 
 ---
 
+## Advanced features
+
+Backing up and restoring your characters, where the app keeps its data on each
+platform, how much disk it uses, and how to reset an install to a fresh state:
+**[docs/ADVANCED_FEATURES.md](docs/ADVANCED_FEATURES.md)**.
+
+---
+
 ## License
 
 | Component | License |
