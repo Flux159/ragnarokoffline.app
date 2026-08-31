@@ -86,10 +86,6 @@ Picking **Join a friend** asks for their address; **Play on my own server** take
 you back to hosting. Joining runs nothing locally — no server, no microVM — so
 switching to it stops your stack, and switching back starts it again.
 
-One thing worth being plain about: when you host, your machine serves the game
-artwork to whoever joins. That is fine among friends who each own a copy of the
-client, and it is not something to point at the open internet.
-
 ---
 
 ## Architecture
