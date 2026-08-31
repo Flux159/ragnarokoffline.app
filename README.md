@@ -94,9 +94,9 @@ Under the hood it stitches together three existing projects:
 
 | Piece | Project | Role |
 |---|---|---|
-| microVM orchestrator | **nebula** | Runs the Linux side of the stack in a fast, embedded microVM |
+| microVM orchestrator | [**nebula**](https://github.com/Flux159/nebula) | Runs the Linux side of the stack in a fast, embedded microVM |
 | game server | [**rAthena**](https://github.com/rathena/rathena) | The open-source RO server emulator (login / char / map) + MariaDB |
-| game client | [**roBrowserLegacy**](https://github.com/MrAntares/roBrowserLegacy) + **RemoteClient** | WebGL RO client, GRF asset server, and TCP↔WebSocket proxy |
+| game client | [**roBrowserLegacy**](https://github.com/MrAntares/roBrowserLegacy) + [**RemoteClient**](https://github.com/Flux159/roBrowserLegacy-RemoteClient-Rust) | WebGL RO client, GRF asset server, and TCP↔WebSocket proxy |
 
 The short version: **rAthena and roBrowserLegacy run unmodified, inside Linux
 containers, inside a microVM the app carries with it.** Nothing is ported. The hard
@@ -196,7 +196,7 @@ change between macOS, Windows and Linux; only the host-side VM integration does.
 |---|---|---|
 | [rAthena](https://github.com/rathena/rathena) | upstream, GPL-3.0 | the server. Unmodified; built arch-native at image build time |
 | [roBrowserLegacy](https://github.com/MrAntares/roBrowserLegacy) | upstream, GPL-3.0 | the client. Built from source with a few patches in `patches/` |
-| RemoteClient | GPL-3.0 | Rust rewrite of roBrowserLegacy's Node asset server |
+| [RemoteClient](https://github.com/Flux159/roBrowserLegacy-RemoteClient-Rust) | GPL-3.0 | Rust rewrite of roBrowserLegacy's Node asset server |
 
 ---
 
@@ -230,8 +230,8 @@ platform, how much disk it uses, and how to reset an install to a fresh state:
 | [rAthena](https://github.com/rathena/rathena) | GPL-3.0 |
 | [roBrowserLegacy](https://github.com/MrAntares/roBrowserLegacy) | GPL-3.0 |
 | [ROenglishRE](https://github.com/llchrisll/ROenglishRE) | free to distribute, use and modify (see its headers) |
-| RemoteClient-Rust | GPL-3.0 |
-| nebula | MIT |
+| [RemoteClient-Rust](https://github.com/Flux159/roBrowserLegacy-RemoteClient-Rust) | GPL-3.0 |
+| [nebula](https://github.com/Flux159/nebula) | MIT |
 
 Game assets are copyright of Gravity Co., Ltd. and are not bundled or shipped with
 Ragnarok Offline.
