@@ -64,6 +64,18 @@ if [ "$(uname -s)" != "Darwin" ] && [ -d "$EMBED/lib" ]; then
     mkdir -p "$PAYLOAD/lib"
     cp "$EMBED"/lib/* "$PAYLOAD/lib/"
 fi
+# The licences for what the kit contains, which we redistribute inside a signed
+# app. On Linux and Windows that includes lib/: libkrun and MoltenVK are
+# Apache-2.0, virglrenderer and libepoxy are MIT, and all four require their
+# notice to travel with the binary. Copied on macOS too even though it ships no
+# lib/ -- the notice is 18 KB, and a rule that exempts one platform is a rule
+# that breaks quietly the day macOS gains a libkrun.
+if [ -d "$EMBED/licenses" ]; then
+    mkdir -p "$PAYLOAD/licenses"
+    cp "$EMBED"/licenses/* "$PAYLOAD/licenses/"
+else
+    echo "warning: the embed kit has no licenses/ — nebula 0.1.7 or newer ships one" >&2
+fi
 # The stack supervisor, built from stack/. It replaced stack.sh and
 # link-assets.sh: the app ships to Windows, which has no POSIX shell, and one
 # binary is one implementation rather than a shell copy and a PowerShell copy
