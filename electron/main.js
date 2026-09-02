@@ -1125,7 +1125,11 @@ const handlers = {
 		const totalMib = Math.floor(os.totalmem() / (1024 * 1024));
 		const freeMib = Math.floor(os.freemem() / (1024 * 1024));
 		add('app', [
-			`version   ${readIfExists(path.join(projectRoot(), 'VERSION')) || 'unknown'}`,
+			// Both: the release is what a player can tell us ("I'm on 1.0.3")
+			// and what a fix ships in, the commit is what actually built the
+			// payload. A report carrying only the hash meant looking it up to
+			// learn something the tag would have said outright.
+			`version   ${app.getVersion()} (build ${readIfExists(path.join(projectRoot(), 'VERSION')) || 'unknown'})`,
 			`platform  ${process.platform} ${process.arch}`,
 			`electron  ${process.versions.electron}`,
 			`data      ${dataRoot()}`,
