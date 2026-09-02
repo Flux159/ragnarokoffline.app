@@ -29,10 +29,10 @@ index 5baa8fb..6a4264e 100644
  
  	if (!message || !*message) {
 diff --git a/src/custom/battle_config_init.inc b/src/custom/battle_config_init.inc
-index e1ef127..a188b52 100644
+index e1ef127..921806a 100644
 --- a/src/custom/battle_config_init.inc
 +++ b/src/custom/battle_config_init.inc
-@@ -12,6 +12,10 @@
+@@ -12,6 +12,11 @@
   **/
  
  
@@ -40,14 +40,15 @@ index e1ef127..a188b52 100644
 +{ "population_engine_demand_spawn",&battle_config.population_engine_demand_spawn,1,0,1,},
 +{ "population_engine_demand_grace_ms",&battle_config.population_engine_demand_grace_ms,300000,0,3600000,},
 +{ "population_engine_density_pct",&battle_config.population_engine_density_pct,100,10,500,},
++{ "population_engine_level_from_map",&battle_config.population_engine_level_from_map,1,0,1,},
  { "population_engine_max_count",&battle_config.population_engine_max_count,1000,1,30000,},
  { "population_engine_equipment_strict_load",&battle_config.population_engine_equipment_strict_load,0,0,1,},
  { "population_engine_chat_enable",&battle_config.population_engine_chat_enable,0,0,1,},
 diff --git a/src/custom/battle_config_struct.inc b/src/custom/battle_config_struct.inc
-index 03e5b76..c381259 100644
+index 03e5b76..4c88470 100644
 --- a/src/custom/battle_config_struct.inc
 +++ b/src/custom/battle_config_struct.inc
-@@ -13,6 +13,17 @@
+@@ -13,6 +13,20 @@
   **/
  
  
@@ -62,6 +63,9 @@ index 03e5b76..c381259 100644
 +/// Percentage applied to every spawn-table population before it is
 +/// distributed across a map list. 100 = exactly what the YAML asks for.
 +int32 population_engine_density_pct;
++/// Take a shell's level from the monsters on its map, within the range its
++/// profile declares. Lets a mod add a map without curating levels for it.
++int32 population_engine_level_from_map;
  int32 population_engine_max_count;
  /// 0 = warn and fix invalid YAML rows; 1 = discard entire equipment DB if any validation error
  int32 population_engine_equipment_strict_load;

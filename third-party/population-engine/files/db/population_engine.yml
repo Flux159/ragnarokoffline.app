@@ -99,6 +99,8 @@ Body:
   - Profile: novice_default
     Jobs:
       Novice: novice_set
+    BaseLevel: [1, 12]
+    JobLevel: [1, 10]
     NameProfile: default
     ChatProfile: default
     Hair: [0, 42]
@@ -120,6 +122,56 @@ Body:
       Assassin : para_thief
       Rogue    : para_thief
       Alchemist: para_merchant
+    BaseLevel: [35, 58]
+    JobLevel: [25, 50]
+    NameProfile: default
+    ChatProfile: default
+    Hair: [0, 42]
+    HairColor: [0, 131]
+    ClothesColor: [0, 699]
+    Flags:
+      - mortal
+    TownBehavior: wander
+    FieldBehavior: combat
+    DungeonBehavior: combat
+
+  - Profile: combat_pve_low           # newbie fields: level 10-24, level 1-4 gear
+    Jobs:
+      Swordsman: low_melee
+      Mage     : low_rod
+      Archer   : low_bow
+      Acolyte  : low_blunt
+      Thief    : low_melee
+      Priest   : low_blunt
+      Assassin : low_melee
+      Rogue    : low_melee
+      Alchemist: low_melee
+    BaseLevel: [10, 24]
+    JobLevel: [8, 30]
+    NameProfile: default
+    ChatProfile: default
+    Hair: [0, 42]
+    HairColor: [0, 131]
+    ClothesColor: [0, 699]
+    Flags:
+      - mortal
+    TownBehavior: wander
+    FieldBehavior: combat
+    DungeonBehavior: combat
+
+  - Profile: combat_pve_high          # late fields and dungeons: level 70-99
+    Jobs:
+      Swordsman: para_swordsman
+      Mage     : para_mage
+      Archer   : para_bow
+      Acolyte  : para_mage
+      Thief    : para_thief
+      Priest   : para_mage
+      Assassin : para_thief
+      Rogue    : para_thief
+      Alchemist: para_merchant
+    BaseLevel: [70, 99]
+    JobLevel: [40, 70]
     NameProfile: default
     ChatProfile: default
     Hair: [0, 42]

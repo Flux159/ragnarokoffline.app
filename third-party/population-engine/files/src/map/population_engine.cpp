@@ -979,6 +979,50 @@ static void population_engine_write_count_sql(uint32_t count)
 	g_last_db_written_count = count;
 }
 
+// ---- RAGNAROKMAC: level shells to the map they stand on -------------------
+//
+// A profile's BaseLevel is global, so the same range applies on a newbie field
+// and in a late dungeon. Banding the spawn tables fixes the maps we ship, but a
+// mod that adds its own map cannot be curated in advance -- and mods are meant
+// to need no rebuild. So where the map has monsters, let them say what level
+// its inhabitants should be.
+//
+// The result is clamped to the profile's own range, which is not a nicety: gear
+// sets are chosen per profile and pc_equipitem enforces each item's equip level,
+// so a shell pushed below its profile's band would silently equip nothing and
+// stand there unarmed. Picking a *band* stays a YAML decision; this picks a
+// level within it.
+static std::unordered_map<int16_t, int> g_pop_map_mob_level;
+
+static int pop_collect_mob_level(struct block_list *bl, va_list ap) {
+	auto *out = va_arg(ap, std::vector<int>*);
+	if (bl == nullptr || out->size() >= 64)
+		return 0;
+	const int lv = status_get_lv(bl);
+	if (lv > 0)
+		out->push_back(lv);
+	return 1;
+}
+
+/// Median monster level on a map, or 0 where it has none (towns). Computed once
+/// per map: mob spawns are in place long before shells are, and this is called
+/// on every spawn.
+static int pop_map_mob_level(int16_t m) {
+	const auto it = g_pop_map_mob_level.find(m);
+	if (it != g_pop_map_mob_level.end())
+		return it->second;
+
+	std::vector<int> levels;
+	map_foreachinmap(pop_collect_mob_level, m, BL_MOB, &levels);
+	int out = 0;
+	if (!levels.empty()) {
+		std::sort(levels.begin(), levels.end());
+		out = levels[levels.size() / 2];
+	}
+	g_pop_map_mob_level[m] = out;
+	return out;
+}
+
 // ---- RAGNAROKMAC: demand-driven population -------------------------------
 //
 // Upstream fills every map named in population_spawn.yml whether or not anyone
@@ -1601,6 +1645,9 @@ bool population_engine_reload_equipment(uint32_t *out_entry_count)
 	else
 		ShowWarning("Population engine: population_vendors.yml reload failed (missing or invalid).\n");
 
+	// RAGNAROKMAC: a reload may follow a mod adding or changing map monsters.
+	g_pop_map_mob_level.clear();
+
 	// Drop the dynamic-vendor cache so reloaded YAML/spawn data takes effect immediately.
 	population_engine_vendor_dyn_cache_clear();
 	population_engine_vendor_job_pool_clear();
@@ -1723,8 +1770,21 @@ static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, in
 
 	if (pop_cfg != nullptr && pop_cfg->base_level_min >= 0) {
 		const int16_t hi = pop_cfg->base_level_max >= 0 ? pop_cfg->base_level_max : pop_cfg->base_level_min;
-		sd->status.base_level = cap_value(population_roll_closed_range(pop_cfg->base_level_min, hi), 1, MAX_LEVEL);
+		int16_t rolled = population_roll_closed_range(pop_cfg->base_level_min, hi);
+		// RAGNAROKMAC: on a map with monsters, take the level from them rather
+		// than from a uniform roll across the profile's band. +8 because a
+		// player hunting a field is usually a little above what lives there.
+		if (battle_config.population_engine_level_from_map) {
+			const int mobs = pop_map_mob_level(sd->m);
+			if (mobs > 0)
+				rolled = static_cast<int16_t>(cap_value(mobs + 8,
+					static_cast<int>(pop_cfg->base_level_min), static_cast<int>(hi)));
+		}
+		sd->status.base_level = cap_value(rolled, 1, MAX_LEVEL);
 	} else {
+		// Upstream defaults an undeclared BaseLevel to 99, which is how a
+		// newbie field ended up full of level 99 Novices. Every profile we ship
+		// declares one; this stays as the upstream fallback.
 		sd->status.base_level = 99;
 	}
 	if (pop_cfg != nullptr && pop_cfg->job_level_min >= 0) {

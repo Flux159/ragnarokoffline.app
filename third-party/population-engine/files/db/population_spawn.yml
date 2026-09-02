@@ -55,8 +55,25 @@ Body:
       - new_1-3
     TownsPopulation: 20
 
-  - Profile: combat_pve     # Swordsman, Mage, Archer, Acolyte, Thief, Priest,
-                            # Assassin, Rogue, Alchemist (1st/2nd PvE jobs)
+  - Profile: combat_pve_low
+    Fields:
+      - gef_fild00
+      - gef_fild01
+      - gef_fild04
+      - gef_fild07
+      - moc_fild07
+      - moc_fild11
+      - moc_fild12
+      - moc_fild18
+      - pay_fild01
+      - pay_fild03
+      - prt_fild01
+      - prt_fild06
+      - prt_fild07
+      - prt_fild08
+    FieldsPopulation: 420
+
+  - Profile: combat_pve
     Towns:
       - prontera
       - morocc
@@ -75,55 +92,32 @@ Body:
       - louyang
     TownsPopulation: 60
     Fields:
-      - gef_fild00
-      - gef_fild01
       - gef_fild02
       - gef_fild03
-      - gef_fild04
       - gef_fild05
-      - gef_fild06
-      - gef_fild07
-      - gef_fild08
       - gef_fild09
       - gef_fild10
-      - gef_fild11
       - gef_fild12
       - gef_fild13
       - gef_fild14
       - moc_fild01
       - moc_fild02
       - moc_fild03
-      - moc_fild07
-      - moc_fild11
-      - moc_fild12
-      - moc_fild13
-      - moc_fild16
-      - moc_fild17
-      - moc_fild18
       - moc_fild19
-      - pay_fild01
       - pay_fild02
-      - pay_fild03
       - pay_fild04
       - pay_fild05
       - pay_fild06
       - pay_fild07
       - pay_fild08
       - pay_fild09
-      - pay_fild10
       - pay_fild11
-      - prt_fild01
       - prt_fild02
       - prt_fild03
       - prt_fild04
       - prt_fild05
-      - prt_fild06
-      - prt_fild07
-      - prt_fild08
-      - prt_fild09
       - prt_fild10
-      - prt_fild11
-    FieldsPopulation: 1440
+    FieldsPopulation: 750
     Dungeons:
       - prt_maze01
       - prt_sewb1
@@ -132,8 +126,23 @@ Body:
       - prt_sewb4
       - iz_dun00
       - iz_dun01
-      - iz_dun02
       - gef_dun00
+    DungeonsPopulation: 192
+
+  - Profile: combat_pve_high
+    Fields:
+      - gef_fild06
+      - gef_fild08
+      - gef_fild11
+      - moc_fild13
+      - moc_fild16
+      - moc_fild17
+      - pay_fild10
+      - prt_fild09
+      - prt_fild11
+    FieldsPopulation: 270
+    Dungeons:
+      - iz_dun02
       - gef_dun01
       - gef_dun02
       - gl_cas01
@@ -150,7 +159,7 @@ Body:
       - gl_sew04
       - gl_step
       - orcsdun01
-    DungeonsPopulation: 1000
+    DungeonsPopulation: 408
 
   - Profile: pve_knight     # Knight
     Towns:
@@ -171,14 +180,10 @@ Body:
       - louyang
     TownsPopulation: 20
     Fields:
-      - prt_fild01
       - prt_fild02
       - prt_fild03
       - prt_fild04
       - prt_fild05
-      - prt_fild06
-      - prt_fild07
-      - prt_fild08
       - prt_fild09
       - prt_fild10
       - prt_fild11
@@ -217,9 +222,7 @@ Body:
       - louyang
     TownsPopulation: 20
     Fields:
-      - pay_fild01
       - pay_fild02
-      - pay_fild03
       - pay_fild04
       - pay_fild05
       - pay_fild06
@@ -263,14 +266,10 @@ Body:
       - louyang
     TownsPopulation: 20
     Fields:
-      - gef_fild00
-      - gef_fild01
       - gef_fild02
       - gef_fild03
-      - gef_fild04
       - gef_fild05
       - gef_fild06
-      - gef_fild07
       - gef_fild08
       - gef_fild09
       - gef_fild10
@@ -281,13 +280,9 @@ Body:
       - moc_fild01
       - moc_fild02
       - moc_fild03
-      - moc_fild07
-      - moc_fild11
-      - moc_fild12
       - moc_fild13
       - moc_fild16
       - moc_fild17
-      - moc_fild18
       - moc_fild19
     FieldsPopulation: 100
     Dungeons:
@@ -317,9 +312,7 @@ Body:
       - louyang
     TownsPopulation: 60
     Fields:
-      - pay_fild01
       - pay_fild02
-      - pay_fild03
       - pay_fild04
       - pay_fild05
       - pay_fild06
@@ -375,14 +368,10 @@ Body:
       - yuno_fild02
       - yuno_fild03
       - yuno_fild04
-      - gef_fild00
-      - gef_fild01
       - gef_fild02
       - gef_fild03
-      - gef_fild04
       - gef_fild05
       - gef_fild06
-      - gef_fild07
       - gef_fild08
       - gef_fild09
       - gef_fild10
@@ -393,13 +382,9 @@ Body:
       - moc_fild01
       - moc_fild02
       - moc_fild03
-      - moc_fild07
-      - moc_fild11
-      - moc_fild12
       - moc_fild13
       - moc_fild16
       - moc_fild17
-      - moc_fild18
       - moc_fild19
     FieldsPopulation: 100
     Dungeons:
@@ -434,17 +419,11 @@ Body:
       - moc_fild01
       - moc_fild02
       - moc_fild03
-      - moc_fild07
-      - moc_fild11
-      - moc_fild12
       - moc_fild13
       - moc_fild16
       - moc_fild17
-      - moc_fild18
       - moc_fild19
-      - pay_fild01
       - pay_fild02
-      - pay_fild03
       - pay_fild04
       - pay_fild05
       - pay_fild06
@@ -489,9 +468,7 @@ Body:
       - louyang
     TownsPopulation: 15
     Fields:
-      - pay_fild01
       - pay_fild02
-      - pay_fild03
       - pay_fild04
       - pay_fild05
       - pay_fild06
@@ -500,11 +477,8 @@ Body:
       - pay_fild09
       - pay_fild10
       - pay_fild11
-      - gef_fild00
-      - gef_fild01
       - gef_fild02
       - gef_fild03
-      - gef_fild04
       - gef_fild05
     FieldsPopulation: 60
     Dungeons:
@@ -544,15 +518,10 @@ Body:
       - louyang
     TownsPopulation: 40
     Fields:
-      - gef_fild00
-      - gef_fild01
       - gef_fild02
       - gef_fild03
-      - gef_fild04
       - gef_fild05
-      - pay_fild01
       - pay_fild02
-      - pay_fild03
       - pay_fild04
       - pay_fild05
       - pay_fild06
@@ -588,14 +557,10 @@ Body:
       - yuno_fild02
       - yuno_fild03
       - yuno_fild04
-      - gef_fild00
-      - gef_fild01
       - gef_fild02
       - gef_fild03
-      - gef_fild04
       - gef_fild05
       - gef_fild06
-      - gef_fild07
       - gef_fild08
       - gef_fild09
       - gef_fild10
@@ -644,13 +609,9 @@ Body:
       - moc_fild01
       - moc_fild02
       - moc_fild03
-      - moc_fild07
-      - moc_fild11
-      - moc_fild12
       - moc_fild13
       - moc_fild16
       - moc_fild17
-      - moc_fild18
       - moc_fild19
       - cmd_fild01
       - cmd_fild02
@@ -688,11 +649,8 @@ Body:
     Fields:
       - lou_fild01
       - ama_fild01
-      - gef_fild00
-      - gef_fild01
       - gef_fild02
       - gef_fild03
-      - gef_fild04
       - gef_fild05
       - gef_fild06
     FieldsPopulation: 50

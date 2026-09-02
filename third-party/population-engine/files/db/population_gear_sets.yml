@@ -470,3 +470,79 @@ Body:
       - Ring
     AccR:
       - Ring
+
+###########################################################################
+# RAGNAROKMAC — low-tier sets
+#
+# Everything upstream ships is Paradise/Eden gear, whose weapons start at
+# equip level 26. pc_equipitem enforces that, so a low-level shell handed a
+# para set silently equips nothing and stands on the map unarmed. These use
+# plain level 1-4 equipment so a newbie-band shell is actually dressed and
+# actually fights.
+###########################################################################
+  - GearSetName: low_melee
+    HeadTop:
+      - Hood
+    HeadMid: 0
+    HeadBottom: 0
+    Armor:
+      - Cotton_Shirt
+    Weapon:
+      - Sword
+      - Knife
+      - Main_Gauche
+    Shield: 0
+    Garment: 0
+    Shoes:
+      - Sandals
+    AccL: 0
+    AccR: 0
+
+  - GearSetName: low_rod
+    HeadTop:
+      - Hood
+    HeadMid: 0
+    HeadBottom: 0
+    Armor:
+      - Cotton_Shirt
+    Weapon:
+      - Rod
+    Shield: 0
+    Garment: 0
+    Shoes:
+      - Sandals
+    AccL: 0
+    AccR: 0
+
+  - GearSetName: low_bow
+    HeadTop:
+      - Hood
+    HeadMid: 0
+    HeadBottom: 0
+    Armor:
+      - Cotton_Shirt
+    Weapon:
+      - Bow
+    Shield: 0
+    Garment: 0
+    Shoes:
+      - Sandals
+    AccL: 0
+    AccR: 0
+
+  - GearSetName: low_blunt
+    HeadTop:
+      - Hood
+    HeadMid: 0
+    HeadBottom: 0
+    Armor:
+      - Cotton_Shirt
+    Weapon:
+      - Club
+      - Waghnakh
+    Shield: 0
+    Garment: 0
+    Shoes:
+      - Sandals
+    AccL: 0
+    AccR: 0
