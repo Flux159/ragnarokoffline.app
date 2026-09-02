@@ -361,6 +361,29 @@ generally fine.
 This is not something the app can work around: both want exclusive use of the
 same hardware feature.
 
+### Windows: "An Application Control policy has blocked this file"
+
+Windows refused to run the app because our files are not code-signed yet, and
+**Smart App Control** blocks programs it does not recognise. Nothing is wrong
+with your computer and nothing is infected — it is a certificate we have not
+finished buying.
+
+It affects newer Windows 11 installs, because Smart App Control is on by default
+there and turns itself off on machines that have been in use for a while. That
+is why it works for some people and not others.
+
+To play now:
+
+```
+Windows Security -> App & browser control -> Smart App Control settings -> Off
+```
+
+**Turning it off is permanent** — Windows will not let it be switched back on
+without reinstalling. If you would rather not, a signed release needs no change
+on your side; it is in progress and tracked in
+[#8](../../issues/8). The certificate authority has to verify our identity
+first, which takes weeks.
+
 ### Windows: the app cannot start its virtual machine
 
 The server runs in a small Linux virtual machine, which needs two separate

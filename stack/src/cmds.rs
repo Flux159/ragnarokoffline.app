@@ -193,7 +193,14 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
             });
             nebula(cfg, &["install-image",
                 "--kernel", &k.display().to_string(),
-                "--rootfs", &r.display().to_string()])?;
+                "--rootfs", &r.display().to_string()])
+                .map_err(|e| {
+                    #[cfg(windows)]
+                    if is_app_control_block(&e) {
+                        return app_control_help(&e);
+                    }
+                    e
+                })?;
             // Only after a successful install: a marker written first would
             // convince the next run that a failed upgrade had happened.
             let _ = fs::write(&marker, &shipped);
@@ -212,14 +219,25 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
     // retrying forever would only hide that.
     if check_guest_images(cfg).is_err() && k.exists() && r.exists() {
         phase(cfg, "Repairing the virtual machine image…");
-        let _ = nebula(cfg, &["install-image",
+        let repair = nebula(cfg, &["install-image",
             "--kernel", &k.display().to_string(),
             "--rootfs", &r.display().to_string()]);
+        #[cfg(windows)]
+        if let Err(e) = &repair {
+            if is_app_control_block(e) {
+                return Err(app_control_help(e));
+            }
+        }
+        let _ = repair;
         let _ = fs::write(cfg.nebula_home.join(".guest-images"), guest_fingerprint(&[&k, &r]));
     }
     check_guest_images(cfg)?;
 
     if let Err(e) = nebula(cfg, &["up"]) {
+        #[cfg(windows)]
+        if is_app_control_block(&e) {
+            return Err(app_control_help(&e));
+        }
         return Err(engine_failure_help(&e));
     }
     // Its own phase. Installing the image and waiting for the engine are
@@ -316,6 +334,44 @@ fn check_guest_images(cfg: &Config) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Windows refused to run one of our binaries under a code-integrity policy.
+///
+/// Smart App Control, and WDAC policies generally, block executables that are
+/// unsigned or have no reputation. Ours are unsigned today, so on a machine
+/// enforcing it the app is stopped before it does anything -- and the failure
+/// arrives looking like a hypervisor problem, which sends people to their BIOS
+/// for a code-signing fault. Error 4551 is ERROR_VIRUS_INFECTED's neighbour in
+/// spirit but not in cause: nothing is wrong with the file except who signed it.
+#[cfg(windows)]
+fn is_app_control_block(msg: &str) -> bool {
+    msg.contains("os error 4551")
+        || msg.contains("Application Control policy has blocked")
+}
+
+#[cfg(windows)]
+fn app_control_help(reason: &str) -> String {
+    format!(
+        "{reason}\n\n\
+         Windows blocked this app from running. Its files are not code-signed \
+         yet, and Smart App Control refuses programs it does not recognise.\n\n\
+         This is not a problem with your computer, and it is not a virus -- it \
+         is a signature we have not bought yet. It affects people on newer \
+         Windows 11 installs, because Smart App Control is on by default there \
+         and switches itself off on older machines.\n\n\
+         To play now, turn Smart App Control off:\n\n\
+         \x20   Windows Security -> App & browser control -> \
+         Smart App Control settings -> Off\n\n\
+         Read this part before you do: turning it off is PERMANENT. Windows \
+         will not let it be switched back on without reinstalling Windows. If \
+         you would rather not, waiting for a signed release costs you nothing \
+         but time.\n\n\
+         We are working on signing, which fixes this properly and needs no \
+         change on your side. It takes a few weeks -- the certificate authority \
+         has to verify our identity first. Progress:\n\n\
+         \x20   https://github.com/Flux159/ragnarokoffline.app/issues/8"
+    )
 }
 
 /// Why the virtual machine will not start, in steps a player can act on.
