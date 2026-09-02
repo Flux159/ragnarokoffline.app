@@ -1088,6 +1088,29 @@ const handlers = {
 			}
 		}
 
+		// Which game files the player's Ragnarok folder does not have. Every
+		// asset pack is a little different, and a file the client needs but
+		// cannot read fails quietly: the game stops without an error, and the
+		// server logs all look perfectly healthy. assets.log only says how many
+		// were missing, never which -- so a report arrives reading "it just
+		// won't connect" and there is no way to tell from it what is absent.
+		const missing = path.join(stateDir(), 'assets', 'logs', 'missing-files.log');
+		if (fs.existsSync(missing)) {
+			const seen = new Set();
+			for (const line of tail(missing, 400).split('\n')) {
+				if (!line.trim()) continue;
+				try {
+					seen.add(JSON.parse(line).requestedPath);
+				} catch {
+					// A torn first line from the tail, or a format change.
+					seen.add(line.trim());
+				}
+			}
+			add('missing game files', seen.size
+				? `${seen.size} distinct\n${[...seen].sort().join('\n')}`
+				: 'none');
+		}
+
 		// The engine's own logs. When the virtual machine will not start there
 		// are no server logs at all, and these are the only record of why --
 		// which is exactly the report that is hardest to get out of someone.
