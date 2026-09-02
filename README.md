@@ -10,6 +10,10 @@ A single, self-contained app that runs **Ragnarok Online offline** — server, c
 and game window in one icon. Double-click it and you are in Midgard after obtaining
 the assets. macOS, Linux and Windows.
 
+**[Join the Discord](https://discord.gg/jUYC9dMbu5)** for help getting set up, or
+read the [Troubleshooting](#troubleshooting) section below. Bugs and feature
+requests are welcome as [issues](../../issues).
+
 ---
 
 ## Getting started
@@ -254,6 +258,69 @@ contains no text at all, only translated sprites and textures — put it in the 
 folder as your other GRFs. The app picks it up automatically and gives it priority
 over the Korean artwork, so UI chrome, signage and item icons come out in English
 too.
+
+---
+
+## Troubleshooting
+
+Answers to the things people have actually hit. If yours is not here, the
+Settings window has a **Report a problem** button that copies everything a fix
+needs — logs, paths, versions — and opens a new issue ready to paste it into.
+Or ask in the [Discord](https://discord.gg/jUYC9dMbu5).
+
+### "Could not link … needs the client and the app data directory on the same drive"
+
+Windows only, and it means your client folder is on a different drive from where
+the app keeps its data (usually `C:`).
+
+The app does not copy your GRFs — they are gigabytes — it links them. Windows
+allows that in two ways, and both can be unavailable at once: a *hard link*
+cannot cross drives, and a *symlink* needs Developer Mode. A client on `D:` with
+Developer Mode off has neither.
+
+Any one of these fixes it:
+
+1. **Move the client folder to your `C:` drive** and pick it again. Simplest, and
+   the one that has worked for people so far.
+2. **Turn on Developer Mode** — Settings → System → For developers → Developer
+   Mode — then pick the folder again.
+3. **Run the app as Administrator** once while selecting the folder.
+
+macOS and Linux are unaffected. Tracked as [#5](../../issues/5); the long-term
+fix is to stop linking the GRFs at all.
+
+### `ragnarok` / `ragnarok` does not work on the very first login
+
+**Close the app and open it again**, then log in. This has fixed it for everyone
+who has hit it.
+
+The account is created the first time the server starts, and on a fresh install
+that could race the database still importing its schema — the account creation
+failed and nothing reported it. Reopening the app runs it again, against a
+database that is now ready.
+
+Fixed in the next release: the app now waits for the schema rather than just a
+connection, and refuses to start with an error if the account is not there,
+instead of leaving you at a login screen that cannot work.
+
+### The window is stuck on "Loading maps and NPCs"
+
+Give it a minute on first launch — the server loads about 24,000 NPCs, and a
+cold start also unpacks the container images once. If it sits there much longer
+than that, use **Repair…** in Settings, which rebuilds the stack from scratch
+without touching your characters.
+
+### My characters are gone / I want to move them to another machine
+
+Settings → **Back up…** writes everything to a single file, and **Restore…**
+reads it back. Characters live inside the app's database, not in a folder you
+can copy.
+
+### It is slow, or my machine gets hot
+
+Turn down **How busy** in Settings, or switch off **Fake players** entirely. The
+AI characters are the only part of the server that costs meaningful CPU, and the
+game itself runs on very little.
 
 ---
 
