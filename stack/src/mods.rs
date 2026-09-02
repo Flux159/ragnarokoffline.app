@@ -87,6 +87,14 @@ pub fn assemble(cfg: &Config) -> Result<Assembled, String> {
         }
     }
     names.sort();
+
+    // A mod is disabled by naming it in state/mods/disabled.txt, one per line,
+    // rather than by moving the folder: a folder that moves loses its place in
+    // the merge order, and a player who disables a mod to test something wants
+    // it back exactly where it was.
+    let disabled = read_disabled(&cfg.state);
+    names.retain(|n| !disabled.contains(n));
+
     if names.is_empty() {
         return Ok(Assembled::empty());
     }
@@ -145,4 +153,63 @@ fn collect_scripts(dir: &Path, prefix: &str, out: &mut String) {
             out.push_str(&format!("npc: {prefix}/{name}\n"));
         }
     }
+}
+
+/// Mods the player has switched off. Missing file means none.
+pub fn read_disabled(state: &Path) -> Vec<String> {
+    fs::read_to_string(state.join("mods/disabled.txt"))
+        .map(|b| {
+            b.lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// What is installed, and whether each one is on. Used by the Settings window.
+pub fn list(state: &Path) -> Vec<(String, bool, String)> {
+    let root = state.join("mods");
+    let disabled = read_disabled(state);
+    let mut out = Vec::new();
+    if let Ok(rd) = fs::read_dir(&root) {
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') || !e.path().is_dir() {
+                continue;
+            }
+            // The description is the one field worth surfacing: a list of
+            // folder names tells a player nothing about what they turned on.
+            let desc = fs::read_to_string(e.path().join("mod.json"))
+                .ok()
+                .and_then(|b| {
+                    b.split("\"description\"").nth(1).and_then(|rest| {
+                        let rest = rest.trim_start().strip_prefix(':')?.trim_start();
+                        let rest = rest.strip_prefix('"')?;
+                        rest.find('"').map(|i| rest[..i].to_string())
+                    })
+                })
+                .unwrap_or_default();
+            out.push((name.clone(), !disabled.contains(&name), desc));
+        }
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// Turn one mod on or off, leaving the rest alone.
+pub fn set_enabled(state: &Path, name: &str, on: bool) -> Result<(), String> {
+    let mut disabled = read_disabled(state);
+    disabled.retain(|n| n != name);
+    if !on {
+        disabled.push(name.to_string());
+    }
+    disabled.sort();
+    let path = state.join("mods/disabled.txt");
+    let _ = fs::create_dir_all(state.join("mods"));
+    let body = format!(
+        "# Mods listed here are installed but switched off.\n# Managed from Settings; one name per line.\n{}\n",
+        disabled.join("\n")
+    );
+    fs::write(&path, body).map_err(|e| format!("writing {}: {e}", path.display()))
 }

@@ -979,6 +979,63 @@ static void population_engine_write_count_sql(uint32_t count)
 	g_last_db_written_count = count;
 }
 
+// ---- RAGNAROKMAC: shop titles ---------------------------------------------
+//
+// Upstream falls back to the literal string "Shop" for any vendor whose YAML
+// does not name one, and most of them do not -- so a market is forty identical
+// signs. A real RO town is the opposite: the signs are the character of the
+// place. These are picked per stall, once, when it opens.
+//
+// Kept under MESSAGE_SIZE (80) by a wide margin; the client truncates rather
+// than complains, which would be a quiet way to look broken.
+static const char *POP_SHOP_TITLES[] = {
+	"Cheap Potions!",
+	"Everything Must Go",
+	"Buy 2 Get 1 Free",
+	"Newbie Friendly Prices",
+	"Best Deals in Prontera",
+	"Fresh Loot, Just Farmed",
+	"Selling Cheap, No Haggling",
+	"Overstocked! Help Me Out",
+	"Quitting - Selling All",
+	"Rare Finds Inside",
+	"Cards & Curios",
+	"Potions, Wings, Fly Wings",
+	"Adventurer Supplies",
+	"Field Drops, Fair Prices",
+	"Dungeon Haul",
+	"Zeny Needed, Prices Slashed",
+	"One Stop Shop",
+	"Discount Corner",
+	"Bulk Deals Here",
+	"Arrows & Ammo",
+	"Blacksmith Surplus",
+	"Alchemy Leftovers",
+	"Cheaper Than Kafra",
+	"Honest Prices, Honest Merchant",
+	"No Refunds, Sorry",
+	"Weekly Special",
+	"Clearance!",
+	"Just Browsing? Come In",
+	"Support Your Local Merchant",
+	"Emergency Supplies",
+	"Healing Items Stocked",
+	"Restock Day",
+	"Everything Half Off",
+	"Trader's Rest",
+	"Merchant Guild Approved",
+	"Priced to Move",
+	"Last Stock of the Day",
+	"Fresh From Payon",
+	"Straight From Geffen",
+	"Morocc Imports",
+	"Traveller's Kit",
+	"Buy Now, Level Later",
+	"Small Shop, Good Prices",
+	"Thanks For Stopping By",
+	"Come Back Anytime",
+};
+
 // ---- RAGNAROKMAC: level shells to the map they stand on -------------------
 //
 // A profile's BaseLevel is global, so the same range applies on a newbie field
@@ -2558,8 +2615,12 @@ static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, in
 			if (pop_cfg && !pop_cfg->vendor_key.empty())
 				vendor_cfg = population_vendor_db().find(pop_cfg->vendor_key);
 
-			// Determine vend title (vendor_cfg title > VendorMessage > fallback "Shop").
-			const char *vend_title = "Shop";
+			// Determine vend title (vendor_cfg title > VendorMessage > a random
+			// one of ours). RAGNAROKMAC: the fallback was the literal "Shop",
+			// which is what most stalls end up showing, because most jobs have
+			// no vendor entry naming a title.
+			const char *vend_title =
+				POP_SHOP_TITLES[rnd() % ARRAYLENGTH(POP_SHOP_TITLES)];
 			if (vendor_cfg && !vendor_cfg->title.empty())
 				vend_title = vendor_cfg->title.c_str();
 			else if (pop_cfg && !pop_cfg->vendor_message.empty())

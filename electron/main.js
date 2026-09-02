@@ -975,6 +975,23 @@ const handlers = {
 	stack_down: () => runStack(['down']),
 	stack_status: () => runStack(['status']),
 
+	// Mods
+	list_mods: async () => {
+		const out = await runStack(['mods']);
+		return out.split('\n').filter(Boolean).map(l => {
+			const [state, name, ...rest] = l.split('\t');
+			return { name, enabled: state === 'on', description: rest.join('\t') };
+		});
+	},
+	set_mod_enabled: ({ name, enabled }) =>
+		runStack([enabled ? 'mod-enable' : 'mod-disable', name]),
+	open_mods_folder: () => {
+		const dir = path.join(stateDir(), 'mods');
+		fs.mkdirSync(dir, { recursive: true });
+		shell.openPath(dir);
+		return dir;
+	},
+
 	// One file a player can attach to a bug report.
 	//
 	// Reading a server log otherwise means knowing the app's private

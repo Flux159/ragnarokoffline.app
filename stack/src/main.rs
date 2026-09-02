@@ -21,7 +21,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process::exit;
 
-const USAGE: &str = "usage: ragnarok-stack up [--lan] [--ram MiB]|down|repair [--lan] [--ram MiB]|status|logs [service] [tail]\n\
+const USAGE: &str = "usage: ragnarok-stack mods|mod-enable NAME|mod-disable NAME|up [--lan] [--ram MiB]|down|repair [--lan] [--ram MiB]|status|logs [service] [tail]\n\
                      \x20      backup <file>|restore <file>\n\
                      \x20      link-assets <data.grf> <rdata.grf> [official_data.grf] [bgm-dir]";
 
@@ -92,6 +92,18 @@ fn main() {
             None => Err("destination file required".into()),
         },
         "link-assets" => assets::link(&cfg, &args[1..]),
+        // Listing and toggling are separate from `up` so the Settings window
+        // can show what is installed without starting a server.
+        "mods" => {
+            for (name, on, desc) in mods::list(&cfg.state) {
+                println!("{}\t{}\t{}", if on { "on" } else { "off" }, name, desc);
+            }
+            Ok(())
+        }
+        "mod-enable" | "mod-disable" => match args.get(1) {
+            Some(n) => mods::set_enabled(&cfg.state, n, verb == "mod-enable"),
+            None => Err("mod name required".into()),
+        },
         "restore" => match args.get(1) {
             Some(p) => cmds::restore(&cfg, &dk, p),
             None => Err("source file required".into()),

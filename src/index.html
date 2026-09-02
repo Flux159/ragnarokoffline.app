@@ -120,6 +120,12 @@ function giveUp(message) {
   status.textContent = '';
   fail.textContent = message;
   fail.style.whiteSpace = 'pre-line';
+  // A one-line failure reads best centred; numbered steps do not. Anything with
+  // instructions in it gets left-aligned and given room, because the whole
+  // point of those messages is that someone can follow them.
+  const instructions = message.split('\n').length > 2;
+  fail.style.textAlign = instructions ? 'left' : 'center';
+  fail.style.maxWidth = instructions ? '620px' : '460px';
   fail.hidden = false;
   retry.hidden = false;
   repair.hidden = false;

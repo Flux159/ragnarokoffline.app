@@ -140,6 +140,18 @@
     <div class="note" id="db-note">Everything you have played is inside that disk image; it is not a folder you can open.</div>
   </div>
 
+  <h2>Mods</h2>
+  <div class="panel">
+    <div id="mods-list" class="note">Looking…</div>
+    <div class="actions" style="margin-top:10px">
+      <button id="mods-folder" class="ghost">Open mods folder</button>
+      <button id="mods-apply" class="ghost">Apply</button>
+    </div>
+    <p class="note">A mod is a folder. Drop one in and it appears here. Server
+       changes need the server restarted, which Apply does; client changes —
+       sprites, styling — need the app restarted.</p>
+  </div>
+
   <h2>Population</h2>
   <div class="panel">
     <label>
@@ -471,6 +483,47 @@ $('report').onclick = () =>
   withButton('report', 'Collecting…', 'Report a problem…',
              () => invoke('report_issue'));
 
+// Mods. Checkboxes are written on Apply rather than on each click, so a player
+// can turn several on and pay for one restart.
+let modState = {};
+
+async function refreshMods() {
+  let mods = [];
+  try { mods = await invoke('list_mods'); } catch (e) { /* stack may be down */ }
+  const box = $('mods-list');
+  if (!mods.length) {
+    box.textContent = 'No mods installed. Open the mods folder to add one.';
+    return;
+  }
+  modState = {};
+  box.innerHTML = '';
+  for (const m of mods) {
+    modState[m.name] = m.enabled;
+    const row = document.createElement('label');
+    row.style.cssText = 'display:flex; align-items:flex-start; gap:10px; padding:4px 0';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = m.enabled;
+    cb.style.cssText = 'accent-color: var(--accent); flex:none; margin-top:2px';
+    cb.onchange = () => { modState[m.name] = cb.checked; };
+    const text = document.createElement('span');
+    text.innerHTML = `<b>${m.name}</b>`
+      + (m.description ? `<br><span style="color:var(--dim)">${m.description}</span>` : '');
+    row.append(cb, text);
+    box.append(row);
+  }
+}
+
+$('mods-folder').onclick = async () => log('Mods folder: ' + await invoke('open_mods_folder'));
+
+$('mods-apply').onclick = () => withButton('mods-apply', 'Applying…', 'Apply', async () => {
+  for (const [name, enabled] of Object.entries(modState)) {
+    await invoke('set_mod_enabled', { name, enabled });
+  }
+  await invoke('stack_up');
+  await refreshMods();
+  return 'Mods applied. Restart the app for client-side changes.';
+});
+
 $('save').onclick = async () => {
   const settings = await invoke('get_settings');
   for (const k of RATES) settings[k] = Number($(k).value);
@@ -509,6 +562,7 @@ invoke('host_ram_mib').then(total => {
   refreshPopulation();
 }).catch(() => {});
 refresh();
+refreshMods();
 setInterval(refresh, 4000);
 </script>
 </body>

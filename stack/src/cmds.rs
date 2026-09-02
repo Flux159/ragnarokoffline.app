@@ -199,8 +199,11 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
             let _ = fs::write(&marker, &shipped);
         }
     }
-    // `nebula up` is a no-op when the engine is already healthy.
-    let _ = nebula(cfg, &["up"]);
+    // `nebula up` is a no-op when the engine is already healthy, so a failure
+    // here is a failure to start -- worth stopping for, and worth explaining.
+    if let Err(e) = nebula(cfg, &["up"]) {
+        return Err(engine_failure_help(&e));
+    }
     // Its own phase. Installing the image and waiting for the engine are
     // different steps with very different durations, and leaving the install
     // message up for the whole wait made a healthy engine that the client
@@ -213,18 +216,87 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
         }
         sleep(Duration::from_secs(2));
     }
-    Err("the nebula engine did not come up".into())
+    Err(engine_failure_help("the virtual machine did not come up"))
 }
 
 fn nebula(cfg: &Config, args: &[&str]) -> Result<(), String> {
-    let st = Command::new(&cfg.nebula)
+    // stderr captured rather than discarded: when the engine cannot start, what
+    // it says is the whole diagnosis, and throwing it away left the player with
+    // a stack that failed several steps later for no stated reason.
+    let out = Command::new(&cfg.nebula)
         .args(args)
         .env("NEBULA_HOME", &cfg.nebula_home)
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
+        .stderr(Stdio::piped())
+        .output()
         .map_err(|e| format!("running nebula: {e}"))?;
-    if st.success() { Ok(()) } else { Err(format!("nebula {} failed", args[0])) }
+    if out.status.success() {
+        return Ok(());
+    }
+    let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(if why.is_empty() {
+        format!("nebula {} failed", args[0])
+    } else {
+        format!("nebula {} failed: {why}", args[0])
+    })
+}
+
+/// Why the virtual machine will not start, in steps a player can act on.
+///
+/// The installer script checks this and prints exactly this advice, but a
+/// player never runs the installer -- nebula is embedded in the app -- so the
+/// check has to live here too. Without it the failure surfaces as a timeout
+/// several steps later with nothing to act on.
+fn engine_failure_help(reason: &str) -> String {
+    if !cfg!(windows) {
+        return format!(
+            "{reason}\n\n\
+             The virtual machine could not start. On Linux this usually means \
+             /dev/kvm is missing or not readable by you: check that \
+             virtualisation is enabled in your BIOS, and that you are in the \
+             `kvm` group."
+        );
+    }
+
+    // Ask Windows whether a hypervisor is running at all. Cheap, and it splits
+    // the two failures that look identical: firmware virtualisation off (fixed
+    // in the BIOS) versus the Windows feature off (fixed with a checkbox).
+    let present = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "(Get-CimInstance Win32_ComputerSystem).HypervisorPresent",
+        ])
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
+    if present {
+        format!(
+            "{reason}\n\n\
+             Windows reports a hypervisor is running, so virtualisation itself \
+             is fine and something else stopped the virtual machine. The \
+             Settings window has a Report a problem button that collects the \
+             logs needed to work out what."
+        )
+    } else {
+        format!(
+            "{reason}\n\n\
+             The virtual machine could not start: Windows reports no hypervisor \
+             running. Two things have to be on, and they are fixed differently.\n\n\
+             1. Virtualisation in your BIOS/UEFI. Open Task Manager \
+             (Ctrl+Shift+Esc), go to Performance then CPU, and look for \
+             \"Virtualization\". If it says Disabled, turn on Intel VT-x, AMD-V \
+             or SVM Mode in your BIOS. Windows cannot enable this for you.\n\n\
+             2. The Windows Hypervisor Platform. Press Windows+R, run \
+             \"optionalfeatures\", tick \"Windows Hypervisor Platform\", and \
+             restart. Or, in a Command Prompt opened as Administrator:\n\n\
+             \x20   dism.exe /Online /Enable-Feature /FeatureName:HypervisorPlatform /All\n\n\
+             Windows 11 Home is fine for this -- it is not the Hyper-V role, \
+             which is Pro only, but the same feature WSL2 and Docker Desktop use."
+        )
+    }
 }
 
 /// Load the bundled image tarball when the images are not already present.
