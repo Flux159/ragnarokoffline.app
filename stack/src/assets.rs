@@ -166,6 +166,10 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
     let web = cfg.root.join("vendor/roBrowserLegacy/dist/Web");
     if web.is_dir() {
         let _ = fs::copy(cfg.root.join("config/Config.local.js"), web.join("Config.local.js"));
+        // And the root of the server becomes the game rather than roBrowser's
+        // developer launcher, so the address a host copies out of Settings is a
+        // link that works pasted into a browser as well as into the app.
+        let _ = fs::copy(cfg.root.join("config/index.html"), web.join("index.html"));
     }
 
     let grfs = ini.lines().filter(|l| l.starts_with(char::is_numeric)).count();

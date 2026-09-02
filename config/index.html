@@ -1,0 +1,37 @@
+<!doctype html>
+<!--
+	The front door of a served client, copied into the roBrowser bundle by
+	`stack link` the same way Config.local.js is.
+
+	roBrowser ships a developer launcher here: seven buttons that window.open()
+	a popup for each viewer app. A popup blocker eats them, and none of them is
+	what a friend who was handed an address came for. Replacing it means the one
+	link a host copies out of Settings -- http://<their address>:3338/ -- opens
+	the game whether it is pasted into this app's join box or straight into a
+	browser's address bar, so there is one thing to send rather than two.
+
+	The viewers are still reachable at api.html?app=GRFVIEWER and friends.
+
+	replace() rather than a plain assignment, so Back leaves the game instead of
+	bouncing through the redirect again. The meta refresh covers a browser with
+	scripting disabled, and the link covers both.
+-->
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Ragnarok Offline</title>
+		<meta http-equiv="refresh" content="0; url=./api.html?app=ONLINE" />
+		<style>
+			html, body { margin: 0; height: 100%; background: #060810; }
+			p {
+				font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+				color: #8b93a7; text-align: center; padding-top: 40vh;
+			}
+			a { color: #e8b84b; }
+		</style>
+	</head>
+	<body>
+		<p>Opening the game… <a href="./api.html?app=ONLINE">continue</a></p>
+		<script>location.replace('./api.html?app=ONLINE');</script>
+	</body>
+</html>
