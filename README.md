@@ -46,6 +46,12 @@ assets, first launch — or follow the same three steps below.
 somewhere you can find again; unzipping a full client gives you a folder containing
 `data.grf`, `rdata.grf` and a `BGM` folder, which is what the app looks for.
 
+It has to be a **renewal** client. The server runs renewal, and a pre-renewal
+client will not work with it — pre-renewal support is [issue #3](../../issues/3).
+That also means a client with no `rdata.grf` will not work: renewal maps, sprites
+and effects live in that archive, and there is no way for the app to supply them.
+**kRO '23 is the most tested** — if you have a choice, use that one.
+
 If you only want to join a friend who is hosting a server, see
 [Hosting and playing with friends on your LAN](#hosting-and-playing-with-friends-on-your-lan)
 — you do not need the assets at all.
