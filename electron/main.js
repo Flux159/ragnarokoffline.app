@@ -890,6 +890,35 @@ function makeWindow(id, file, opts) {
 	// someone navigating away from a tab, and quitting runs the same teardown
 	// either way.
 	win.webContents.on('will-prevent-unload', e => e.preventDefault());
+	// Everything the game page logs, written to client.log.
+	//
+	// The client is where the failures we cannot see happen. A player reported
+	// that they could log in and create a character and then never reach the
+	// map; every server log was healthy and the asset server showed the client
+	// simply never opening a connection to the map server. The reason was in
+	// the renderer console, which went nowhere -- diagnostics collected
+	// client.log, but nothing had ever written it.
+	//
+	// Levels are Electron's: 0 verbose, 1 info, 2 warning, 3 error.
+	clientLogStart();
+	win.webContents.on('console-message', (...a) => {
+		// Electron 36 replaced (event, level, message, line, sourceId) with a
+		// single details object. Accept both so this does not go quiet on an
+		// upgrade -- silently logging nothing is the failure it exists to fix.
+		const d = a.length === 1 && typeof a[0] === 'object' ? a[0] : null;
+		const level = d ? d.level : a[1];
+		const text = d ? d.message : a[2];
+		const line = d ? d.lineNumber : a[3];
+		const src = d ? d.sourceId : a[4];
+		clientLog(level, text, line, src);
+	});
+	// A page that fails to load at all logs nothing, so it needs saying here.
+	win.webContents.on('did-fail-load', (_e, code, desc, url) => {
+		clientLog('error', `page failed to load: ${desc} (${code}) ${url || ''}`);
+	});
+	win.webContents.on('render-process-gone', (_e, details) => {
+		clientLog('error', `renderer gone: ${details && details.reason}`);
+	});
 	// `opts.url` wins over a bundled page: a joining player's game window is
 	// the host's own client, served over HTTP, not a local copy of it.
 	if (opts && opts.url) win.loadURL(opts.url);
@@ -1081,11 +1110,27 @@ const handlers = {
 				add(`${svc} server`, `could not read: ${e}`);
 			}
 		}
-		for (const f of ['app.log', 'client.log', 'assets.log']) {
+		for (const f of ['app.log', 'assets.log']) {
 			const p2 = path.join(stateDir(), f);
 			if (fs.existsSync(p2)) {
 				add(f, fs.readFileSync(p2, 'utf8').split('\n').slice(-200).join('\n'));
 			}
+		}
+
+		// client.log is mostly one line per file the client loads, so the last
+		// 200 lines of it are nearly always "Loading file" and never the part
+		// that matters. Lift every warning and error out first -- a failure
+		// here is usually a single line, thousands back.
+		const clog = path.join(stateDir(), 'client.log');
+		if (fs.existsSync(clog)) {
+			const all = fs.readFileSync(clog, 'utf8').split('\n');
+			const loud = all.filter(l => l.includes('[error]') || l.includes('[warning]'));
+			const shown = loud.slice(-80);
+			add('client.log (warnings and errors)', loud.length
+				? `${loud.length} total${loud.length > shown.length
+					? `, showing the last ${shown.length}` : ''}\n${shown.join('\n')}`
+				: 'none');
+			add('client.log (tail)', all.slice(-60).join('\n'));
 		}
 
 		// Which game files the player's Ragnarok folder does not have. Every
@@ -1412,6 +1457,44 @@ const handlers = {
 // launch that was slow looked identical, on a machine reachable only over SSH.
 // Several debugging rounds went into inferring from side effects what one line
 // of log would have said.
+// client.log is truncated per run: it is a record of this session's client,
+// and the interesting part is always the run the player is complaining about.
+let clientLogReady = false;
+function clientLogStart() {
+	if (clientLogReady) return;
+	clientLogReady = true;
+	try {
+		const dir = stateDir();
+		fs.mkdirSync(dir, { recursive: true });
+		fs.writeFileSync(path.join(dir, 'client.log'),
+			`${new Date().toISOString()} client log started\n`);
+	} catch {
+		/* logging must never be the thing that breaks the app */
+	}
+}
+
+const CLIENT_LOG_LEVELS = ['verbose', 'info', 'warning', 'error'];
+let clientLogBytes = 0;
+function clientLog(level, text, line, src) {
+	// roBrowser logs a line per file it loads, and the DB alone is hundreds.
+	// That volume is worth keeping -- comparing the loads that started against
+	// the ones that finished is exactly how a stalled database is spotted --
+	// but not without a ceiling.
+	if (clientLogBytes > 4 * 1024 * 1024) return;
+	try {
+		const name = typeof level === 'number'
+			? (CLIENT_LOG_LEVELS[level] || String(level))
+			: String(level);
+		const where = src ? ` (${String(src).split('/').pop()}:${line})` : '';
+		const entry = `${new Date().toISOString()} [${name}] ${text}${where}\n`;
+		clientLogBytes += entry.length;
+		clientLogStart();
+		fs.appendFileSync(path.join(stateDir(), 'client.log'), entry);
+	} catch {
+		/* as above */
+	}
+}
+
 function appLog(line) {
 	try {
 		const dir = stateDir();

@@ -196,4 +196,37 @@ elif s.count(old) == 1:
     print("patched CharEngine.js (database load failure message)")
 else:
     sys.exit("CharEngine.js: load failure message no longer matches; re-check the patch")
+# 0006 - loadHatEffectInfo must not return without calling onEnd.
+#
+# Same stall as 0004, reached a different way. The outer Client.loadFile does
+# pass onEnd as its error callback, so a *missing* hateffectids.lub is handled
+# -- and it is missing from the asset packs we tested, which is why this has
+# not bitten yet. But if the file is present and lua.doFile throws on it, the
+# catch returns without calling onEnd, DB.index never catches DB.count, and the
+# player is stranded at character select exactly as in 0004.
+p = rb / "src/DB/DBManager.js"
+s = p.read_text()
+old = """			} catch (e) {
+				console.error('[HatEffect] ID load error', e);
+				return;
+			} finally {
+				lua.unmountFile('hateffectids.lub');
+			}"""
+new = """			} catch (e) {
+				console.error('[HatEffect] ID load error', e);
+				// Returning without this leaves the database loading forever.
+				if (typeof onEnd === 'function') {
+					onEnd();
+				}
+				return;
+			} finally {
+				lua.unmountFile('hateffectids.lub');
+			}"""
+if "leaves the database loading forever" in s:
+    print("DBManager.js hat-effect already patched")
+elif s.count(old) == 1:
+    p.write_text(s.replace(old, new, 1))
+    print("patched DBManager.js (hat effect onEnd)")
+else:
+    sys.exit("DBManager.js: loadHatEffectInfo no longer matches; re-check the patch")
 PY
