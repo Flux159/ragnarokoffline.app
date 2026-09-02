@@ -1003,6 +1003,29 @@ const handlers = {
 		const lines = [];
 		const add = (title, body) => lines.push(`===== ${title} =====\n${body}\n`);
 
+		// Last N lines without reading the file. nebulad.log has been seen at
+		// 72 MB, and the destination for all of this is a comment box.
+		const tail = (file, wantLines) => {
+			try {
+				const size = fs.statSync(file).size;
+				const span = Math.min(size, 512 * 1024);
+				const buf = Buffer.alloc(span);
+				const fd = fs.openSync(file, 'r');
+				fs.readSync(fd, buf, 0, span, size - span);
+				fs.closeSync(fd);
+				const text = buf.toString('utf8');
+				const all = text.split('\n');
+				// Drop the first line when the window started mid-line.
+				if (span < size) all.shift();
+				const kept = all.slice(-wantLines).join('\n');
+				return size > span
+					? `(last ${wantLines} lines of ${Math.round(size / 1024)} KB)\n${kept}`
+					: kept;
+			} catch (e) {
+				return `could not read: ${e.message}`;
+			}
+		};
+
 		add('app', [
 			`version   ${readIfExists(path.join(projectRoot(), 'VERSION')) || 'unknown'}`,
 			`platform  ${process.platform} ${process.arch}`,
@@ -1034,6 +1057,22 @@ const handlers = {
 			if (fs.existsSync(p2)) {
 				add(f, fs.readFileSync(p2, 'utf8').split('\n').slice(-200).join('\n'));
 			}
+		}
+
+		// The engine's own logs. When the virtual machine will not start there
+		// are no server logs at all, and these are the only record of why --
+		// which is exactly the report that is hardest to get out of someone.
+		const nebulaLogs = path.join(path.join(dataRoot(), 'nebula'), 'logs');
+		for (const [file, want] of [['nebulad.log', 200], ['vessel-console.log', 100],
+		                            ['launchd.err.log', 60]]) {
+			const p2 = path.join(nebulaLogs, file);
+			if (fs.existsSync(p2)) {
+				add(`nebula/${file}`, tail(p2, want));
+			}
+		}
+		const cfgToml = path.join(path.join(dataRoot(), 'nebula'), 'config.toml');
+		if (fs.existsSync(cfgToml)) {
+			add('nebula/config.toml', fs.readFileSync(cfgToml, 'utf8'));
 		}
 		return lines.join('\n');
 	},
