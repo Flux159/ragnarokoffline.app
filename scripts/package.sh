@@ -109,7 +109,11 @@ fi
 if [ -n "${RAGNAROK_STACK_BIN:-}" ] && [ -e "$RAGNAROK_STACK_BIN" ]; then
     cp "$RAGNAROK_STACK_BIN" "$PAYLOAD/bin/ragnarok-stack$EXE"
 else
-    ( cd "$ROOT/stack" && cargo build --release --quiet )
+    # Tested before it is built: the crate has no dependencies and three
+    # tests, so this costs seconds, and what it guards is the one thing in
+    # there that depends on another program's wording -- see port_holders() in
+    # stack/src/cmds.rs.
+    ( cd "$ROOT/stack" && cargo test --quiet && cargo build --release --quiet )
     cp "$ROOT/stack/target/release/ragnarok-stack$EXE" "$PAYLOAD/bin/"
 fi
 # A hash of what was copied, recorded beside it.
