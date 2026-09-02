@@ -37,6 +37,13 @@ on:
       # bump has to rebuild. It over-triggers on unrelated bootstrap edits;
       # a stale image is the worse failure.
       - 'scripts/bootstrap.sh'
+      # What goes *into* the server. The population engine's sources, patches
+      # and spawn tables are compiled and copied into the image, and the script
+      # that applies them decides how -- so a change to either changes the
+      # image. Without these, three commits' worth of server changes sat
+      # unbuilt behind a workflow watching only the Dockerfile.
+      - 'third-party/**'
+      - 'scripts/apply-server-mods.sh'
   workflow_dispatch:
 
 permissions:
