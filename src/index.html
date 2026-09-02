@@ -40,6 +40,7 @@
     <div class="fail" id="fail" hidden></div>
     <button id="retry" hidden>Retry</button>
     <button id="repair" class="ghost" hidden>Repair…</button>
+    <button id="local" class="ghost" hidden>Play on this computer</button>
   </div>
 <script>
 const { invoke } = window.__TAURI__.core;
@@ -51,7 +52,24 @@ let lastPhase = 'Starting the server…';
 const fail = document.getElementById('fail');
 const retry = document.getElementById('retry');
 const repair = document.getElementById('repair');
+const local = document.getElementById('local');
 const mark = document.getElementById('mark');
+// Which failures make sense to offer a way out of. Read once per boot rather
+// than assumed: the two modes fail for entirely different reasons and have
+// entirely different remedies.
+let mode = 'host';
+
+// The message inside the message.
+//
+// Every failure here arrives through IPC, which wraps it: "Error: Error
+// invoking remote method 'invoke': Error: nebula up failed…". The wrapper says
+// nothing about what went wrong and pushes the part that does off the first
+// line, where a player stops reading.
+function plain(e) {
+  return String((e && e.message) || e)
+    .replace(/^Error invoking remote method '[^']*':\s*/, '')
+    .replace(/^(Error:\s*)+/, '');
+}
 
 // The stack takes ~30s from cold: MariaDB has to come up healthy before the
 // three rAthena servers will connect to each other.
@@ -63,7 +81,10 @@ const DEADLINE_MS = 180000;
 const ready = () => invoke('assets_ready');
 
 async function boot() {
-  fail.hidden = true; retry.hidden = true; repair.hidden = true; mark.hidden = false;
+  fail.hidden = true; retry.hidden = true; repair.hidden = true;
+  local.hidden = true; mark.hidden = false;
+
+  mode = (await invoke('get_mode').catch(() => ({}))).mode || 'host';
 
   // No client configured yet: hand off to the setup window and stop here.
   if (!(await invoke('client_ready'))) {
@@ -94,7 +115,7 @@ async function boot() {
     await invoke('start_stack');
   } catch (e) {
     ticking = false;
-    return giveUp(String(e));
+    return giveUp(plain(e));
   }
   // Deadline runs from when the stack finished starting, not from boot(). On a
   // first launch stack.sh itself can take several minutes — installing guest
@@ -128,7 +149,11 @@ function giveUp(message) {
   fail.style.maxWidth = instructions ? '620px' : '460px';
   fail.hidden = false;
   retry.hidden = false;
-  repair.hidden = false;
+  // Repair restarts the engine, and a joining player is running no engine --
+  // offering it there is a button that cannot help. What can help is the game
+  // they already own: the host may be offline, their own server never is.
+  repair.hidden = mode === 'join';
+  local.hidden = mode !== 'join';
 }
 
 retry.onclick = boot;
@@ -144,7 +169,22 @@ repair.onclick = async () => {
     boot();
   } catch (e) {
     repair.disabled = false;
-    giveUp(String(e));
+    giveUp(plain(e));
+  }
+};
+
+// Switching modes, not starting anything: boot() then does what it does on
+// every launch, which includes sending someone who has never picked their GRF
+// files to the setup window for them.
+local.onclick = async () => {
+  local.disabled = true;
+  try {
+    await invoke('set_mode', { mode: 'host' });
+    boot();
+  } catch (e) {
+    giveUp(plain(e));
+  } finally {
+    local.disabled = false;
   }
 };
 boot();
