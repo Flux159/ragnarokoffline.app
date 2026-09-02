@@ -331,6 +331,49 @@ Any one of these fixes it:
 macOS and Linux are unaffected. Tracked as [#5](../../issues/5); the long-term
 fix is to stop linking the GRFs at all.
 
+### Windows: the app cannot start its virtual machine
+
+The server runs in a small Linux virtual machine, which needs two separate
+things switched on. They fail the same way and are fixed differently, so check
+in this order.
+
+**1. Is virtualisation on in your firmware?**
+
+Open **Task Manager** (Ctrl+Shift+Esc) → **Performance** → **CPU**, and look for
+**Virtualization** on the right.
+
+- *Enabled* — good, go to step 2.
+- *Disabled* — turn it on in your BIOS/UEFI. It is usually called
+  **Intel VT-x**, **AMD-V** or **SVM Mode**, and the key to enter setup is shown
+  briefly when the machine starts. Nothing on Windows can enable this for you.
+- *You do not see the line at all* — a hypervisor is already running, which
+  means it is on. Go to step 2.
+
+**2. Is the Windows Hypervisor Platform switched on?**
+
+Press Windows+R, run **`optionalfeatures`**, and make sure **Windows Hypervisor
+Platform** is ticked. Reboot if you change it.
+
+Or, in a **Command Prompt opened as Administrator**:
+
+```
+dism.exe /Online /Enable-Feature /FeatureName:HypervisorPlatform /All
+```
+
+Then restart the machine.
+
+**Windows 11 Home is fine.** This is not the full Hyper-V role, which is
+Pro-only — it is the same feature WSL2 and Docker Desktop use, and it is
+available on Home.
+
+To check what Windows itself thinks, in PowerShell:
+
+```powershell
+(Get-CimInstance Win32_ComputerSystem).HypervisorPresent
+```
+
+`True` means a hypervisor is running and the app should work.
+
 ### `ragnarok` / `ragnarok` does not work on the very first login
 
 **Close the app and open it again**, then log in. This has fixed it for everyone
