@@ -8,8 +8,14 @@ api_port = 7462
 dns_port = 42062
 k8s_port = 6462
 
-# Ceilings, not reservations — ballooning hands idle RAM back to macOS, so a
-# generous ceiling costs nothing while rAthena loads its scripts.
+# A ceiling on macOS, where ballooning hands idle RAM back. NOT on Windows or
+# Linux: those run the krun backend, whose balloon support is missing and not
+# expected, so the guest holds this for as long as it runs. Which is why the app
+# overrides this per machine -- a quarter of the host, capped here -- rather than
+# giving every machine the same 4 GB. See defaultVmRamMib() in electron/main.js.
+#
+# This value is the floor the app starts from when it has been told nothing; the
+# supervisor passes --ram on every start, from client.json.
 max_ram_mib = 4096
 cpus = 4
 data_disk_gib = 16

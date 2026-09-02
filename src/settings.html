@@ -184,9 +184,7 @@
        the world keeps the shape it was authored with and only its crowding changes;
        <b>Limit</b> is a safety ceiling across every map at once, and in a solo game
        it never comes into play.</p>
-    <p class="note">Server memory is a ceiling, not a reservation — the virtual machine hands
-       idle memory back to your computer. Changing it restarts the virtual
-       machine, which takes a few seconds.</p>
+    <p class="note" id="ram-note"></p>
   </div>
 
   <h2>Rates</h2>
@@ -548,6 +546,19 @@ invoke('get_settings').then(s => {
   $('population_density').value = s.population_density;
   refreshPopulation();
 });
+
+// What that memory actually costs depends on the platform: macOS returns idle
+// guest memory to the host, Windows and Linux do not, so there it is held for
+// as long as the server runs.
+invoke('host_facts').then(f => {
+  $('ram-note').textContent = f.balloons
+    ? 'Server memory is a ceiling rather than a reservation: the virtual machine '
+      + 'hands back what it is not using. Changing it restarts the virtual machine.'
+    : `Your computer has ${Math.round(f.total_mib / 1024)} GB. The virtual machine `
+      + 'holds this much for as long as the server is running — it is not handed '
+      + 'back while idle on this platform, so leave room for everything else. '
+      + 'Changing it restarts the virtual machine.';
+}).catch(() => {});
 
 invoke('get_vm_ram_mib').then(mib => {
   $('vm_ram_mib').value = mib;

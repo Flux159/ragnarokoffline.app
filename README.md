@@ -282,9 +282,12 @@ friends are actually standing on, so leaving a map hands its inhabitants back
 rather than keeping thousands of them alive somewhere you cannot see. That is
 also why the world does not cost anything while you are not playing.
 
-**Server memory** is how much the virtual machine may use. It is a ceiling
-rather than a reservation — idle memory goes back to your computer — and
-changing it restarts the virtual machine, which takes a few seconds.
+**Server memory** is how much the virtual machine may use, and it defaults to a
+quarter of your computer's memory, up to 4 GB. On macOS it is a ceiling rather
+than a reservation — idle memory goes back to you. **On Windows and Linux the
+virtual machine holds it for as long as the server runs**, so on an 8 GB machine
+leave room for Windows and your browser. Changing it restarts the virtual
+machine, which takes a few seconds.
 
 Characters are levelled to the map they are on, taken from the monsters that
 live there, so a starting field holds beginners in plain gear and a late-game

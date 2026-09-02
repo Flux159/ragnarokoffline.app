@@ -530,21 +530,42 @@ function assetsStop() {
 const DEFAULT_CLIENT = {
 	mode: 'host', join_host: '', lan: false,
 	data_grf: '', rdata_grf: '', official_grf: '', bgm_dir: '',
-	// The VM's memory ceiling, not a reservation: nebula balloons idle memory
-	// back to the host, so this is the most it may take rather than what it
-	// holds. Here rather than in settings.json because it describes the machine
-	// the app is installed on, like the client paths and the LAN switch, not
-	// the world being played. 4096 is what the app shipped with before this
-	// was adjustable.
-	vm_ram_mib: 4096,
+	// vm_ram_mib is deliberately absent: its default depends on the machine,
+	// so it is computed in getClientPaths() when the file does not name one.
+	// Anything written there -- by the slider in Settings -- wins permanently.
 };
 
+/// How much memory to let the virtual machine have, on a machine nobody has
+/// told us about.
+///
+/// A quarter of the host, capped at 4 GB. The old fixed 4096 was fine on the
+/// 16 GB and larger machines it was written on, and poor on an 8 GB one: nebula
+/// only hands idle guest memory back where the backend supports ballooning,
+/// which on Windows and Linux it does not and is not expected to -- so there
+/// 4 GB behaves far more like a
+/// reservation, against a Windows that already wants 2-3 GB, plus this app and
+/// the browser rendering the game.
+///
+/// Floored at 2 GB because below that the server does not fit: rAthena's map
+/// server alone sits near 450 MB before a single AI character exists, and a
+/// guest that cannot start is worse than one that is tight.
+function defaultVmRamMib() {
+	const hostMib = Math.floor(os.totalmem() / (1024 * 1024));
+	return Math.max(2048, Math.min(4096, Math.floor(hostMib / 4)));
+}
+
 function getClientPaths() {
+	let saved = {};
 	try {
-		return { ...DEFAULT_CLIENT, ...JSON.parse(fs.readFileSync(clientConfigPath(), 'utf8')) };
-	} catch {
-		return { ...DEFAULT_CLIENT };
+		saved = JSON.parse(fs.readFileSync(clientConfigPath(), 'utf8'));
+	} catch { /* no config yet */ }
+	const out = { ...DEFAULT_CLIENT, ...saved };
+	// Only when nothing has been chosen. A value in the file is the player's,
+	// including one they set on a machine they have since upgraded.
+	if (!Number.isFinite(Number(out.vm_ram_mib)) || Number(out.vm_ram_mib) <= 0) {
+		out.vm_ram_mib = defaultVmRamMib();
 	}
+	return out;
 }
 
 // The address this host tells other machines to come back to.
@@ -1026,11 +1047,19 @@ const handlers = {
 			}
 		};
 
+		const totalMib = Math.floor(os.totalmem() / (1024 * 1024));
+		const freeMib = Math.floor(os.freemem() / (1024 * 1024));
 		add('app', [
 			`version   ${readIfExists(path.join(projectRoot(), 'VERSION')) || 'unknown'}`,
 			`platform  ${process.platform} ${process.arch}`,
 			`electron  ${process.versions.electron}`,
 			`data      ${dataRoot()}`,
+			// Host memory, because a virtual machine that will not boot on a
+			// small machine looks identical to one that will not boot at all,
+			// and two reports have now arrived without it.
+			`host ram  ${totalMib} MiB total, ${freeMib} MiB free`,
+			`vm ram    ${getClientPaths().vm_ram_mib} MiB (default here: ${defaultVmRamMib()})`,
+			`cpus      ${os.cpus().length}`,
 		].join('\n'));
 
 		// Paths only: a client folder name is not a secret, and knowing whether
@@ -1097,6 +1126,21 @@ const handlers = {
 			return `${what.padEnd(8)}${String(got ?? '-').padEnd(12)}${verdict}`;
 		});
 		add('guest images', images.join('\n'));
+
+		// Whether the guest can hand memory back. macOS can; the krun backend
+		// used on Windows and Linux logs a failure every cycle, which turns the
+		// ceiling into something much closer to a reservation.
+		const nlog = path.join(nebulaLogs, 'nebulad.log');
+		if (fs.existsSync(nlog)) {
+			const recent = tail(nlog, 400);
+			const failed = (recent.match(/balloon set failed/g) || []).length;
+			const ok = (recent.match(/balloon target updated/g) || []).length;
+			add('ballooning', failed > 0
+				? `NOT working: ${failed} failures in the last 400 log lines.\n`
+				  + 'Guest memory is not returned to the host on this backend.'
+				: ok > 0 ? `working (${ok} adjustments in the last 400 log lines)`
+				: 'no balloon activity in the last 400 log lines');
+		}
 
 		const cfgToml = path.join(path.join(dataRoot(), 'nebula'), 'config.toml');
 		if (fs.existsSync(cfgToml)) {
@@ -1263,6 +1307,14 @@ const handlers = {
 	scan_client_dir: ({ dir }) => scanClientDir(dir),
 	get_settings: () => getSettings(),
 	host_ram_mib: () => Math.floor(require('os').totalmem() / (1024 * 1024)),
+	// Whether idle guest memory comes back. vz (macOS) balloons; the krun
+	// backend behind Windows and Linux does not, and is not expected to, so on
+	// those the ceiling is in practice held for the life of the server.
+	host_facts: () => ({
+		total_mib: Math.floor(os.totalmem() / (1024 * 1024)),
+		default_mib: defaultVmRamMib(),
+		balloons: process.platform === 'darwin',
+	}),
 	get_vm_ram_mib: () => getClientPaths().vm_ram_mib,
 	// Write only. The caller follows with save_settings, which restarts the
 	// stack and so picks the new ceiling up -- doing it here as well would
