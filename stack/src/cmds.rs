@@ -208,6 +208,17 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
     }
     // `nebula up` is a no-op when the engine is already healthy, so a failure
     // here is a failure to start -- worth stopping for, and worth explaining.
+    // Smart App Control refuses unsigned binaries at load, and the refusal looks
+    // like a missing DLL -- so ask Windows what mode it is in rather than
+    // waiting to misread the failure. Only when our own binary is genuinely
+    // unsigned: once signing lands this goes quiet on its own.
+    #[cfg(windows)]
+    if sac_enforcing() && !pe_is_signed(&cfg.nebula) {
+        return Err(app_control_help(
+            "Smart App Control is enforcing, and this app is not signed yet",
+        ));
+    }
+
     // Before starting it: an image that was damaged on the way in produces a
     // guest that boots to nothing, and every later message blames the wrong
     // thing -- the hypervisor, the timeout, the engine.
@@ -346,8 +357,79 @@ fn check_guest_images(cfg: &Config) -> Result<(), String> {
 /// spirit but not in cause: nothing is wrong with the file except who signed it.
 #[cfg(windows)]
 fn is_app_control_block(msg: &str) -> bool {
+    // 4551 is what the API reports when it names the cause. 0xC0000135 is what
+    // a refused process exits with, and it also means a genuinely missing DLL,
+    // so it only counts as a block when Smart App Control is actually
+    // enforcing -- otherwise a broken install would be blamed on signing.
     msg.contains("os error 4551")
         || msg.contains("Application Control policy has blocked")
+        || ((msg.contains("0xC0000135")
+            || msg.contains("-1073741515")
+            || msg.contains("os error 126"))
+            && sac_enforcing())
+}
+
+/// Is Smart App Control enforcing right now?
+///
+/// Read rather than inferred from a failure. Under enforcement an unsigned
+/// binary is refused at load with 0xC0000135, which is indistinguishable from
+/// a genuinely missing DLL -- so the state has to be checked, not guessed from
+/// the corpse. Values: 0 off, 1 enforcement, 2 evaluation.
+#[cfg(windows)]
+fn sac_enforcing() -> bool {
+    let out = Command::new("reg")
+        .args([
+            "query",
+            r"HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy",
+            "/v",
+            "VerifiedAndReputablePolicyState",
+        ])
+        .output();
+    match out {
+        Ok(o) => {
+            let t = String::from_utf8_lossy(&o.stdout);
+            // "VerifiedAndReputablePolicyState    REG_DWORD    0x1"
+            t.split_whitespace()
+                .last()
+                .map(|v| v.eq_ignore_ascii_case("0x1"))
+                .unwrap_or(false)
+        }
+        Err(_) => false,
+    }
+}
+
+/// Does this PE carry an Authenticode signature?
+///
+/// The certificate table is data directory 4 in the optional header; a size of
+/// zero means nothing signed it. Parsed here rather than shelling out to
+/// PowerShell, because this runs on every start and a process spawn to answer
+/// "did we sign our own binary" is a poor trade.
+#[cfg(windows)]
+fn pe_is_signed(path: &Path) -> bool {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = fs::File::open(path) else { return false };
+    let mut buf = [0u8; 4];
+    // e_lfanew at 0x3C points at the PE header.
+    if f.seek(SeekFrom::Start(0x3C)).is_err() || f.read_exact(&mut buf).is_err() {
+        return false;
+    }
+    let pe = u32::from_le_bytes(buf) as u64;
+    let mut magic = [0u8; 2];
+    if f.seek(SeekFrom::Start(pe + 24)).is_err() || f.read_exact(&mut magic).is_err() {
+        return false;
+    }
+    // PE32 puts the data directories at +96, PE32+ at +112.
+    let dir_off = match u16::from_le_bytes(magic) {
+        0x10b => pe + 24 + 96,
+        0x20b => pe + 24 + 112,
+        _ => return false,
+    };
+    // Directory 4 is the certificate table: 8 bytes in, size is the second u32.
+    let mut entry = [0u8; 8];
+    if f.seek(SeekFrom::Start(dir_off + 4 * 8)).is_err() || f.read_exact(&mut entry).is_err() {
+        return false;
+    }
+    u32::from_le_bytes([entry[4], entry[5], entry[6], entry[7]]) != 0
 }
 
 #[cfg(windows)]
