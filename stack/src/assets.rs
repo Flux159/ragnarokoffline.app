@@ -158,6 +158,20 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
     // table itself, which defines the global roBrowser's loader iterates.
     let _ = link_file(&en.join("SystemEN/LuaFiles514/itemInfo.lua"), &merged.join("itemInfo.lua"));
     let _ = link_file(&en.join("SystemEN/OngoingQuests.lub"), &merged.join("OngoingQuestInfoList.lub"));
+    // Mods, laid over everything the client ships with.
+    //
+    // Order is the point. The asset server resolves loose files under its root
+    // before DATA_OVERRIDE_PATH and before the archives, so a sprite or a Lua
+    // table a mod puts here beats both the English translation and the client's
+    // own GRFs -- without repacking a 2.4 GB file. System/ is overlaid after
+    // the translation's links are in place, for the same reason: last writer
+    // wins, and a mod should be able to replace itemInfo.lua if it is adding
+    // items.
+    //
+    // Mods live in state/mods, not in the asset root, so rebuilding this tree
+    // on every link cannot destroy them.
+    let plugins = overlay_mods(cfg, &server_root, &merged);
+
     link_dir(&merged, &server_root.join("System"))?;
     // Several loaders fall back to a SystemEN/ path when the System/ one is absent.
     link_dir(&en.join("SystemEN"), &server_root.join("SystemEN"))?;
@@ -165,7 +179,7 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
     // roBrowser reads this over its baked-in defaults.
     let web = cfg.root.join("vendor/roBrowserLegacy/dist/Web");
     if web.is_dir() {
-        let _ = fs::copy(cfg.root.join("config/Config.local.js"), web.join("Config.local.js"));
+        write_client_config(cfg, &web, &plugins)?;
         // And the root of the server becomes the game rather than roBrowser's
         // developer launcher, so the address a host copies out of Settings is a
         // link that works pasted into a browser as well as into the app.
@@ -178,4 +192,90 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
         if bgm_src.is_some() { "yes" } else { "missing" }
     );
     Ok(())
+}
+
+/// Copy a mod's client files over the assembled asset root.
+///
+/// Returns the mods that ship a roBrowser plugin, in the order they are loaded.
+fn overlay_mods(cfg: &Config, server_root: &Path, merged: &Path) -> Vec<String> {
+    let root = cfg.state.join("mods");
+    let mut names: Vec<String> = match fs::read_dir(&root) {
+        Ok(rd) => rd
+            .flatten()
+            .filter(|e| e.path().is_dir())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| !n.starts_with('.'))
+            .collect(),
+        Err(_) => return Vec::new(),
+    };
+    // Name order, so two mods touching one file resolve predictably rather than
+    // by whatever order the filesystem happens to hand back.
+    names.sort();
+
+    let mut plugins = Vec::new();
+    for n in &names {
+        let m = root.join(n);
+        // Served ahead of the GRFs: sprites, .act/.spr, map geometry, Lua.
+        let _ = copy_over(&m.join("data"), &server_root.join("data"));
+        // Client tables -- itemInfo.lua and friends.
+        let _ = copy_over(&m.join("System"), merged);
+        // A roBrowser plugin: styling, UI, anything the client can be told to
+        // load. Served from the root, so the path in the config is
+        // server-relative -- which is the one thing that will confuse people.
+        let client = m.join("client");
+        if client.join("index.js").is_file() {
+            let _ = copy_over(&client, &server_root.join("plugins").join(n));
+            plugins.push(n.clone());
+        }
+    }
+    plugins
+}
+
+/// Copy every file under `src` into `dst`, creating directories as needed.
+/// Missing `src` is not an error: most mods use one or two of the layers.
+fn copy_over(src: &Path, dst: &Path) -> Result<(), String> {
+    if !src.is_dir() {
+        return Ok(());
+    }
+    fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    for e in fs::read_dir(src).map_err(|e| e.to_string())?.flatten() {
+        let from = e.path();
+        let to = dst.join(e.file_name());
+        if from.is_dir() {
+            copy_over(&from, &to)?;
+        } else {
+            // Remove first: the destination is often a symlink into the
+            // translation or the client, and writing through one would edit
+            // the file it points at rather than replacing the link.
+            let _ = fs::remove_file(&to);
+            let _ = fs::copy(&from, &to);
+        }
+    }
+    Ok(())
+}
+
+/// Write the client config, naming any plugins the mods provide.
+///
+/// Generated rather than copied so the plugin list can be part of it. roBrowser
+/// resolves these from the server root, which is where overlay_mods puts them.
+fn write_client_config(cfg: &Config, web: &Path, plugins: &[String]) -> Result<(), String> {
+    let src = cfg.root.join("config/Config.local.js");
+    let body = fs::read_to_string(&src).map_err(|e| format!("reading {}: {e}", src.display()))?;
+    let out = if plugins.is_empty() {
+        body
+    } else {
+        let entries: Vec<String> = plugins
+            .iter()
+            .map(|n| format!("\t\t'{n}': 'plugins/{n}/index'"))
+            .collect();
+        // Inserted before the closing brace of the config object rather than
+        // appended: this is the last thing in the file and has to stay inside it.
+        let plugin_map = format!("\tplugins: {{\n{}\n\t}},\n", entries.join(",\n"));
+        match body.rfind("\n};") {
+            Some(i) => format!("{},\n{}{}", &body[..i], plugin_map, &body[i + 1..]),
+            None => body,
+        }
+    };
+    fs::write(web.join("Config.local.js"), out)
+        .map_err(|e| format!("writing Config.local.js: {e}"))
 }

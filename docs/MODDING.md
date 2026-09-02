@@ -7,7 +7,10 @@ live — no rebuild, no compiler, no Docker.
 <app data>/state/mods/my-mod/
 ├── mod.json     name, version, author, description
 ├── db/          server tables: mob stats, item stats, drops, skills
-└── npc/         server scripts: NPCs, warps, monster spawns, custom maps
+├── npc/         server scripts: NPCs, warps, monster spawns, custom maps
+├── data/        client assets: sprites, .act/.spr, map geometry, Lua
+├── System/      client tables: itemInfo.lua and friends
+└── client/      a roBrowser plugin: styling, viewport, UI
 ```
 
 On macOS the mods directory is
@@ -63,19 +66,61 @@ any NPCs on it are scripts, and the map itself is registered by overriding
 `db/map_index.txt`. The map's own `.gat`/`.rsw`/`.gnd` files are client assets —
 see below.
 
-## What is not wired up yet
+## data/ — sprites, effects and map geometry
 
-Client-side layers are designed but not implemented:
+Anything under `data/` is served **ahead of the GRFs**, so a file here replaces
+the client's own copy without repacking a 2.4 GB archive. Sprites (`.spr`),
+animations (`.act`), textures, Lua tables, and the `.gat`/`.rsw`/`.gnd` geometry
+of a custom map all go here, in the same layout the GRF uses.
 
-- `data/` — sprites, `.act`/`.spr`, Lua, and custom map geometry. The asset
-  server already serves loose files ahead of the GRFs, so this needs exposing
-  rather than inventing, but `assets.rs` currently rebuilds its tree on every
-  client re-link and would delete anything a mod put there.
-- `System/` — `itemInfo.lua` and the other client tables. The English
-  translation currently claims that file outright.
-- `client/` — login screen, loading screens, UI styling.
+```
+my-mod/data/sprite/·¹½ºÅÍ/poring.spr
+my-mod/data/texture/유저인터페이스/login_interface/login_bg.bmp
+```
 
-Until those land, client-side changes still mean repacking a GRF.
+The paths are the client's own, mojibake and all — copy them out of a GRF
+viewer rather than typing them.
+
+## System/ — item names and descriptions
+
+`System/` is merged over the client's tables *after* the English translation, so
+a mod wins. This is where `itemInfo.lua` goes if your mod adds items and wants
+them named in the client.
+
+Your file replaces the translation's copy rather than editing it, so start from
+the translation's version and add to it.
+
+## client/ — restyling the client itself
+
+A `client/index.js` is loaded as a roBrowser plugin. It runs in the page, so it
+can restyle the interface, adjust the viewport, or hook the client's own UI.
+
+```js
+// my-mod/client/index.js
+define(function () {
+	return {
+		init: function () {
+			var css = document.createElement('style');
+			css.textContent = '#chat { font-size: 15px !important; }';
+			document.head.appendChild(css);
+		},
+	};
+});
+```
+
+Enabled mods are written into the `plugins` map of the generated
+`Config.local.js` automatically; there is nothing to register by hand. Files
+next to `index.js` are served from `plugins/<mod-name>/`, and paths inside the
+plugin resolve from the **server root**, not from the plugin folder.
+
+The shipped `mobile-ui` mod is a working example: it widens the viewport and
+enlarges touch targets on small screens, and does nothing at all on a desktop.
+
+## Applying changes
+
+`db/` and `npc/` take effect when the server restarts. `data/`, `System/` and
+`client/` are assembled when the app links your client assets, which happens on
+launch — so a client-side change needs the app restarted, not just the server.
 
 ## Checking your work
 
