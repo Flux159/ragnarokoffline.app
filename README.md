@@ -303,13 +303,6 @@ Fixed in the next release: the app now waits for the schema rather than just a
 connection, and refuses to start with an error if the account is not there,
 instead of leaving you at a login screen that cannot work.
 
-### The window is stuck on "Loading maps and NPCs"
-
-Give it a minute on first launch — the server loads about 24,000 NPCs, and a
-cold start also unpacks the container images once. If it sits there much longer
-than that, use **Repair…** in Settings, which rebuilds the stack from scratch
-without touching your characters.
-
 ### My characters are gone / I want to move them to another machine
 
 Settings → **Back up…** writes everything to a single file, and **Restore…**
