@@ -95,6 +95,7 @@ echo "==> building the database image"
 (cd "$ROOT/containers/mariadb" && "$NEBULA" docker build -t ragnarokmac/mariadb:11.4 .)
 
 echo "==> building rAthena (arm64, packetver $PACKETVER)"
+"$ROOT/scripts/apply-server-mods.sh" "$VENDOR/rathena"
 cp "$ROOT/containers/rathena/Dockerfile" "$VENDOR/rathena/Dockerfile.ragnarokmac"
 (cd "$VENDOR/rathena" && "$NEBULA" docker build -f Dockerfile.ragnarokmac \
     --build-arg "PACKETVER=$PACKETVER" -t "ragnarokmac/rathena:$PACKETVER" .)

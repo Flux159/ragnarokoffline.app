@@ -1,0 +1,470 @@
+# This file is a part of rAthena.
+#   Copyright(C) 2021 rAthena Development Team
+#   https://rathena.org - https://github.com/rathena
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+#
+###########################################################################
+# Population Engine Chat Database
+###########################################################################
+#
+# Map chat and whisper reply lines for population shells (UTF-8 or ASCII punctuation).
+# Lines are referenced via ChatProfile: keys defined in population_engine.yml.
+#
+###########################################################################
+# - ChatGlobal:                  Shared line categories available to all profiles.
+#     Categories:                Map of category name to list of chat strings.
+#       <name>: [ "line", ... ]  Each category holds one or more lines.
+# - ChatProfile: <key>           Named profile; reference via ChatProfile: in population_engine.yml.
+#     Categories: [ names ]      List of ChatGlobal category names to draw from (uniform random).
+#
+# Placeholders in lines: {name} {map} {job}
+# Lines matching population_names.yml Blocklist entries are skipped (substring, case-insensitive).
+###########################################################################
+
+Header:
+  Type: POPULATION_CHAT_DB
+  Version: 1
+
+Body:
+  - ChatGlobal:
+      Categories:
+        greet:
+          - "Hey there~"
+          - "Hi."
+          - "Hello!"
+          - "Yo!"
+          - "Sup?"
+          - "Morning~"
+          - "Evening."
+          - "Oh, hey."
+          - "Hiya."
+          - "Heya!"
+          - "Anyone around?"
+          - "Busy map today."
+          - "Slow day on {map}..."
+          - "Fancy seeing someone here."
+          - "Not lost, just wandering."
+          - "Taking a breather."
+          - "Hi hi~"
+          - "Oh - hi."
+          - "Hey, you good?"
+          - "What's good?"
+          - "Peace~"
+          - "o/"
+          - "\\o"
+        idle:
+          - "Nice weather today."
+          - "Hmm..."
+          - "..."
+          - "*stretches*"
+          - "So quiet."
+          - "I could use a sit."
+          - "Inventory full again..."
+          - "Forgot to buy fly wings."
+          - "Should I level or farm zeny?"
+          - "One more map and I log."
+          - "Lag? Or is it me."
+          - "Client froze for a sec."
+          - "Music slaps on this map."
+          - "Need coffee."
+          - "Need SP."
+          - "Need everything, honestly."
+          - "I'll fix my build later. Maybe."
+          - "Theorycrafting in my head..."
+          - "Too many quests, too little time."
+          - "I'll organize storage tomorrow. Sure."
+          - "Why do I have 40 red potions."
+          - "Why do I have zero blue potions."
+          - "Note to self: buy arrows."
+          - "Note to self: stop dying."
+          - "Standing here looking tactical."
+          - "Pretending I have a plan."
+          - "Just vibing on {map}."
+          - "This spot has good memories."
+          - "I miss the old spawn rates. Maybe."
+          - "RNG and I are not friends."
+          - "RNG blessed me once. Once."
+          - "I'll reroll stats in my dreams."
+          - "Fashion is endgame."
+          - "My dye combo is final. Probably."
+          - "Anyone selling cheap gear?"
+          - "Prices are wild lately."
+          - "I'll undercut the vending later."
+          - "Window shopping again..."
+          - "Browsing like I have zeny."
+          - "Zeny comes, zeny goes."
+          - "Saving for nothing in particular."
+        hunt:
+          - "Looking for porings."
+          - "Need to grind a bit."
+          - "Spawn faster..."
+          - "More mobs, please."
+          - "Where's the next cluster?"
+          - "Chain kills or go home."
+          - "EXP bar, move."
+          - "One level today. That's the deal."
+          - "Drop something good. Please."
+          - "Card when?"
+          - "Card never, I guess."
+          - "MVP later? If I survive."
+          - "Mini boss time? Nah, scared."
+          - "Pull small, I'm squishy."
+          - "I'll tank - psych, no I won't."
+          - "Heal me in spirit."
+          - "Potion chugging is a skill."
+          - "Kiting is an art."
+          - "Don't KS me - I say that every time."
+          - "KS happens. I cope."
+          - "Spot taken? I'll move."
+          - "Share the map, yeah?"
+          - "Rotation: clockwise. Obviously."
+          - "Mob density: acceptable."
+          - "Mob density: criminal."
+          - "This map prints EXP."
+          - "This map prints pain."
+          - "Respect the grind."
+          - "Grind respects no one."
+          - "Back to hunting."
+          - "Blood for the EXP bar."
+          - "Loot goblin mode."
+          - "Only trash drops. Classic."
+          - "That hurt more than it should."
+          - "I'm fine. Mostly."
+          - "Respawn is a lifestyle."
+        grind:
+          - "Same mobs, same song."
+          - "Looping this route forever."
+          - "Muscle memory map."
+          - "Autopilot engaged."
+          - "Brain off, skills on."
+          - "Another hour, another percent."
+          - "The grind never ends - it pauses."
+          - "Hydrate between pulls."
+          - "Stretch your wrists."
+          - "Eyes on the minimap."
+          - "Counting kills like sheep."
+          - "Spawn camp etiquette: be cool."
+          - "I'll rotate if someone needs the spot."
+          - "Music up, world muted."
+          - "Podcast + porings = peace."
+          - "Numbers go up. That's enough."
+          - "Efficiency is a personality trait."
+          - "I'll optimize the route later."
+          - "This is fine. This is fine."
+          - "Just five more minutes. Famous last words."
+        lost:
+          - "Where is the Kafra..."
+          - "Which warp was it again?"
+          - "I took a wrong turn three maps ago."
+          - "Is this the right floor?"
+          - "Dungeon looks the same everywhere."
+          - "Minimap who?"
+          - "I'll follow someone who looks confident."
+          - "NPC, talk to me."
+          - "Quest marker where?"
+          - "I should've brought more wings."
+          - "Out of fly wings. Of course."
+          - "Stuck between a rock and a portal."
+          - "Town portal when you need it - never."
+          - "I can smell the save point. Somewhere."
+        shop:
+          - "Kafra save my inventory."
+          - "Storage fee worth it."
+          - "Sell all junk... keep all junk."
+          - "Vendor search continues."
+          - "Anyone got red herbs?"
+          - "Butterfly wing stock: critical."
+          - "I need blue gems. Don't ask."
+          - "Overpriced but I'll buy it."
+          - "Haggle in my heart, pay full price."
+          - "One day I'll open a shop."
+          - "Window shopping is free."
+          - "Zeny sink simulator."
+        party:
+          - "Party LFP? Or solo life."
+          - "LF tank dream big."
+          - "LF healer same."
+          - "I'll join if the leader isn't toxic."
+          - "Split loot fair, yeah?"
+          - "Who pulled the whole room?"
+          - "Nice pull. Terrifying, but nice."
+          - "Regroup on me?"
+          - "Wait I buff first."
+          - "Buffs up, let's go."
+          - "I can support. Sort of."
+          - "DPS check: I'm the check."
+          - "Sorry, misclicked."
+          - "That was my bad."
+          - "Rez pls - kidding, I'm alive."
+          - "Good run everyone."
+          - "Same time tomorrow?"
+        reaction:
+          - "lol"
+          - "lmao"
+          - "Nice."
+          - "Nice one."
+          - "Oof."
+          - "Big oof."
+          - "Relatable."
+          - "Mood."
+          - "Same."
+          - "Fair."
+          - "Fair enough."
+          - "True."
+          - "Facts."
+          - "Based."
+          - "Wild."
+          - "That's rough."
+          - "F."
+          - "Rip."
+          - "Gg."
+          - "Ggs."
+          - "Clutch."
+          - "Clean."
+          - "Lucky!"
+          - "RNG gods smiled."
+          - "I'll pretend I saw that."
+          - "I saw nothing."
+          - "No comment."
+          - "Interesting choice."
+          - "Bold move."
+        question:
+          - "Anyone know the spawn timer?"
+          - "This quest bugged or am I dumb?"
+          - "Which job path is fun?"
+          - "Is this skill worth maxing?"
+          - "Dex or Agi first - age-old question."
+          - "Where do people level {job}?"
+          - "Best map for cards? Asking for me."
+          - "Does anyone even read map signs?"
+          - "Why is it always porings?"
+          - "Why is it never porings when you need them?"
+        banter:
+          - "I'm not lost, I'm exploring aggressively."
+          - "I'm not underleveled, the mobs are rude."
+          - "I'm not poor, I'm investing in potions."
+          - "My build is off-meta. Very off."
+          - "Meta is a suggestion."
+          - "I'll read the wiki later."
+          - "Wiki is down. I panic."
+          - "Patch notes? Never heard of them."
+          - "I play for the plot. The plot is zeny."
+          - "Roleplay in my heart only."
+          - "Hardcore mode: no, softcore life: yes."
+          - "Touch grass? This is grass. Pixel grass."
+          - "Don't talk to me before my buffs."
+          - "Talk to me after I loot."
+          - "If I stand still I'm not AFK, I'm thinking."
+          - "If I run in circles I'm strategizing."
+          - "Trust the process. The process is dying."
+          - "Skill issue? Maybe. Lag issue? Also maybe."
+          - "Ping high, spirits higher."
+          - "Low FPS, high hopes."
+        job_flavor:
+          - "{job} life chose me."
+          - "Proud {job}. Loud {job}."
+          - "Training {job} things."
+          - "My {job} mentor would cry."
+          - "Built different. Built squishy."
+          - "Glass cannon? More like glass pebble."
+          - "Tank mindset, paper body."
+          - "Heal others, forget yourself - same."
+          - "Buffs for you, nothing for me."
+          - "Stealth mode: failed loudly."
+        whisper_vibe:
+          - "Oh - hi. Didn't see the whisper."
+          - "You rang?"
+          - "What's up?"
+          - "Hey, need something?"
+          - "I'm here, kinda."
+          - "Typing slow, fighting mobs."
+          - "Sorry, was tabbed out. Kidding. Maybe."
+          - "That's me, {name}."
+          - "Yep, that's my name on the tin."
+          - "You found me on {map}."
+          - "Busy but I can chat a sec."
+          - "All good?"
+          - "lol hi"
+          - "o/ hey"
+        night_day:
+          - "Night grind hits different."
+          - "Morning crowd is chill."
+          - "Afternoon lag is real."
+          - "Evening maps feel cozy."
+          - "Is it too late to start dailies?"
+          - "Early bird gets the MVP. Allegedly."
+        pvp:
+          - "GG."
+          - "Nice fight."
+          - "Good game."
+          - "Come at me."
+          - "One more round?"
+          - "Close one."
+          - "That was clean."
+          - "Almost had you."
+          - "You got me."
+          - "Lucky hit."
+          - "Respect."
+          - "Not bad."
+          - "GG WP."
+          - "Rematch?"
+          - "Well played."
+          - "I'll be back."
+          - "Let's go."
+          - "Bring it."
+          - "No mercy."
+          - "Too slow."
+          - "Better luck next time."
+          - "Get rekt."
+          - "You're strong."
+          - "That damage though..."
+          - "Ouch."
+          - "My potions..."
+          - "Running low on supplies."
+          - "Need to rebuff."
+          - "Switching gear."
+          - "Watch out for that skill."
+          - "Who's next?"
+          - "Is this all you got?"
+          - "Warming up."
+          - "That combo hurt."
+          - "Can't touch me."
+          - "Focus the healer!"
+          - "Protect the priest!"
+          - "Tank harder!"
+          - "More DPS!"
+          - "Stay together."
+          - "Don't overextend."
+        pvp_kill:
+          - "GG, $victim. No re."
+          - "Stay down, $victim."
+          - "Too easy, $victim."
+          - "$victim, that one was for fun."
+          - "Catch me next time, $victim."
+          - "I barely broke a sweat. Sorry $victim."
+          - "One and done, $victim."
+          - "Better luck leveling, $victim."
+          - "Back to the save point, $victim."
+          - "Potions can't help you now, $victim."
+          - "Your gear couldn't save you, $victim."
+          - "Don't cry about it, $victim."
+          - "lol. bye $victim."
+          - "You fed me a kill, $victim. Thanks."
+          - "That's one for the record, $victim."
+          - "I respect the effort, $victim. Still dead though."
+          - "Next time bring backup, $victim."
+          - "Stay fresh on the respawn, $victim."
+          - "Git gud, $victim."
+          - "I'll be here when you're ready, $victim."
+        pvp_taunt:
+          - "Is that all you've got?"
+          - "Come closer, I won't bite. Much."
+          - "Your accuracy needs work."
+          - "Keep missing. I'll wait."
+          - "You're tickling me."
+          - "My grandma hits harder."
+          - "Nice try."
+          - "That's it?"
+          - "I've taken more from mobs."
+          - "You sure you have the right skill?"
+          - "Aim better."
+          - "I'll just stand here."
+          - "Warming up yet?"
+          - "Whenever you're ready."
+          - "Don't hold back on my account."
+          - "Ping lag or just bad?"
+          - "Potions are a crutch and I respect it."
+          - "Your build fear: zero."
+          - "Who taught you to fight? I'll wait."
+          - "Still alive. Thanks for checking."
+        party_invite_accept:
+          - "Yeah, sure! Let's party up."
+          - "I'm in. Invite me!"
+          - "Party time, let's go."
+          - "Count me in."
+          - "Send me the invite and we're good."
+          - "Cool, I'll join."
+          - "Works for me. Invite away."
+          - "Ready when you are."
+          - "Let's do this. Invite me!"
+          - "I'll need a formal invite, but I'm down."
+        party_invite_decline:
+          - "Sorry, not right now."
+          - "Maybe later, I'm mid-grind."
+          - "Pass for now."
+          - "Busy atm, sorry."
+          - "Not this time."
+          - "I'll stay solo for now."
+          - "No offence, not looking for a party."
+        vendor_call:
+          - "Selling consumables here!"
+          - "Fresh stock, low prices!"
+          - "Potions and wings - come take a look!"
+          - "Shop open! Check my items."
+          - "Best prices on {map}, probably."
+          - "Buying and selling - mostly selling."
+          - "Stop by, browse for free!"
+          - "Affordable gear solutions."
+          - "My cart doesn't bite."
+          - "Wing of Butterfly in stock!"
+          - "Potion up before the dungeon!"
+          - "Don't fight empty - buy here!"
+
+  - ChatProfile: default
+    Categories:
+      - greet
+      - idle
+      - lost
+      - shop
+      - party
+      - reaction
+      - question
+      - banter
+      - whisper_vibe
+      - night_day
+
+  - ChatProfile: hunter_field
+    Categories:
+      - greet
+      - hunt
+      - grind
+      - idle
+      - job_flavor
+      - reaction
+      - banter
+      - shop
+      - party
+
+  - ChatProfile: pvp
+    Categories:
+      - pvp
+      - pvp_taunt
+      - pvp_kill
+      - reaction
+      - banter
+      - job_flavor
+      - party
+      - greet
+      - hunt
+      - grind
+      - idle
+      - shop
+
+  - ChatProfile: vendor
+    Categories:
+      - vendor_call
+      - shop
+      - greet
+      - idle

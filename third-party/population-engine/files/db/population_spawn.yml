@@ -1,0 +1,711 @@
+# This file is a part of rAthena.
+#   Copyright(C) 2021 rAthena Development Team
+#   https://rathena.org - https://github.com/rathena
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+#
+###########################################################################
+# Population Engine Spawn Database
+###########################################################################
+#
+# Autosummon spawn map lists keyed by Profile name (matches a Profile:
+# defined in db/population_engine.yml). At spawn time the engine resolves
+# the profile to the list of jobs that inherit from it and randomly picks
+# one job per shell, so a single entry covers every job in the profile.
+#
+# Vendors are NOT spawned through this database; they use VendorPlacement
+# blocks in db/population_vendors.yml instead.
+###########################################################################
+# - Profile:                     Profile name (must be defined in population_engine.yml).
+#   Towns:                       Map name list for towns category.
+#   Fields:                      Map name list for fields category.
+#   Dungeons:                    Map name list for dungeons category.
+#   TownsPopulation:             Total target shell count across all Towns maps.
+#   TownsMaxPerMap:              Hard cap per individual town map (0 = no cap, default).
+#   FieldsPopulation:            Total target shell count across all Fields maps.
+#   FieldsMaxPerMap:             Hard cap per individual field map (0 = no cap, default).
+#   DungeonsPopulation:          Total target shell count across all Dungeons maps.
+#   DungeonsMaxPerMap:           Hard cap per individual dungeon map (0 = no cap, default).
+#     Each map gets floor(N/count) shells; first (N%count) maps get +1 to reach N exactly.
+#     MaxPerMap clamps the per-map target after distribution (useful when one map in a large
+#     list would otherwise absorb the entire remainder allocation).
+#     0 or omit disables that category.
+###########################################################################
+
+Header:
+  Type: POPULATION_SPAWN_DB
+  Version: 1
+
+Body:
+  - Profile: novice_default
+    Towns:
+      - new_1-1
+      - new_1-2
+      - new_1-3
+    TownsPopulation: 20
+
+  - Profile: combat_pve     # Swordsman, Mage, Archer, Acolyte, Thief, Priest,
+                            # Assassin, Rogue, Alchemist (1st/2nd PvE jobs)
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 60
+    Fields:
+      - gef_fild00
+      - gef_fild01
+      - gef_fild02
+      - gef_fild03
+      - gef_fild04
+      - gef_fild05
+      - gef_fild06
+      - gef_fild07
+      - gef_fild08
+      - gef_fild09
+      - gef_fild10
+      - gef_fild11
+      - gef_fild12
+      - gef_fild13
+      - gef_fild14
+      - moc_fild01
+      - moc_fild02
+      - moc_fild03
+      - moc_fild07
+      - moc_fild11
+      - moc_fild12
+      - moc_fild13
+      - moc_fild16
+      - moc_fild17
+      - moc_fild18
+      - moc_fild19
+      - pay_fild01
+      - pay_fild02
+      - pay_fild03
+      - pay_fild04
+      - pay_fild05
+      - pay_fild06
+      - pay_fild07
+      - pay_fild08
+      - pay_fild09
+      - pay_fild10
+      - pay_fild11
+      - prt_fild01
+      - prt_fild02
+      - prt_fild03
+      - prt_fild04
+      - prt_fild05
+      - prt_fild06
+      - prt_fild07
+      - prt_fild08
+      - prt_fild09
+      - prt_fild10
+      - prt_fild11
+    FieldsPopulation: 1440
+    Dungeons:
+      - prt_maze01
+      - prt_sewb1
+      - prt_sewb2
+      - prt_sewb3
+      - prt_sewb4
+      - iz_dun00
+      - iz_dun01
+      - iz_dun02
+      - gef_dun00
+      - gef_dun01
+      - gef_dun02
+      - gl_cas01
+      - gl_cas02
+      - gl_church
+      - gl_chyard
+      - gl_dun01
+      - gl_dun02
+      - gl_prison
+      - gl_prison1
+      - gl_sew01
+      - gl_sew02
+      - gl_sew03
+      - gl_sew04
+      - gl_step
+      - orcsdun01
+    DungeonsPopulation: 1000
+
+  - Profile: pve_knight     # Knight
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 20
+    Fields:
+      - prt_fild01
+      - prt_fild02
+      - prt_fild03
+      - prt_fild04
+      - prt_fild05
+      - prt_fild06
+      - prt_fild07
+      - prt_fild08
+      - prt_fild09
+      - prt_fild10
+      - prt_fild11
+    FieldsPopulation: 100
+    Dungeons:
+      - prt_maze01
+      - prt_maze02
+      - prt_maze03
+      - prt_sewb1
+      - prt_sewb2
+      - prt_sewb3
+      - prt_sewb4
+      - iz_dun00
+      - iz_dun01
+      - iz_dun02
+      - iz_dun03
+      - iz_dun04
+    DungeonsPopulation: 100
+
+  - Profile: pve_paladin    # Crusader
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 20
+    Fields:
+      - pay_fild01
+      - pay_fild02
+      - pay_fild03
+      - pay_fild04
+      - pay_fild05
+      - pay_fild06
+      - pay_fild07
+      - pay_fild08
+      - pay_fild09
+      - pay_fild10
+      - pay_fild11
+    FieldsPopulation: 100
+    Dungeons:
+      - prt_maze01
+      - prt_maze02
+      - prt_maze03
+      - prt_sewb1
+      - prt_sewb2
+      - prt_sewb3
+      - prt_sewb4
+      - iz_dun00
+      - iz_dun01
+      - iz_dun02
+      - iz_dun03
+      - iz_dun04
+    DungeonsPopulation: 100
+
+  - Profile: pve_caster     # Wizard, Sage
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 20
+    Fields:
+      - gef_fild00
+      - gef_fild01
+      - gef_fild02
+      - gef_fild03
+      - gef_fild04
+      - gef_fild05
+      - gef_fild06
+      - gef_fild07
+      - gef_fild08
+      - gef_fild09
+      - gef_fild10
+      - gef_fild11
+      - gef_fild12
+      - gef_fild13
+      - gef_fild14
+      - moc_fild01
+      - moc_fild02
+      - moc_fild03
+      - moc_fild07
+      - moc_fild11
+      - moc_fild12
+      - moc_fild13
+      - moc_fild16
+      - moc_fild17
+      - moc_fild18
+      - moc_fild19
+    FieldsPopulation: 100
+    Dungeons:
+      - gef_dun00
+      - gef_dun01
+      - gef_dun02
+      - gl_prison
+      - orcsdun01
+    DungeonsPopulation: 100
+
+  - Profile: pve_archer     # Hunter, Bard, Dancer
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 60
+    Fields:
+      - pay_fild01
+      - pay_fild02
+      - pay_fild03
+      - pay_fild04
+      - pay_fild05
+      - pay_fild06
+      - pay_fild07
+      - pay_fild08
+      - pay_fild09
+      - pay_fild10
+      - pay_fild11
+    FieldsPopulation: 100
+    Dungeons:
+      - gef_dun00
+      - gef_dun01
+      - gef_dun02
+      - gl_cas01
+      - gl_cas02
+      - gl_church
+      - gl_chyard
+      - gl_dun01
+      - gl_dun02
+      - gl_prison
+      - gl_prison1
+      - gl_sew01
+      - gl_sew02
+      - gl_sew03
+      - gl_sew04
+      - gl_step
+      - orcsdun01
+      - beach_dun
+      - beach_dun2
+      - beach_dun3
+    DungeonsPopulation: 100
+
+  - Profile: pve_monk       # Monk
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 20
+    Fields:
+      - yuno_fild01
+      - yuno_fild02
+      - yuno_fild03
+      - yuno_fild04
+      - gef_fild00
+      - gef_fild01
+      - gef_fild02
+      - gef_fild03
+      - gef_fild04
+      - gef_fild05
+      - gef_fild06
+      - gef_fild07
+      - gef_fild08
+      - gef_fild09
+      - gef_fild10
+      - gef_fild11
+      - gef_fild12
+      - gef_fild13
+      - gef_fild14
+      - moc_fild01
+      - moc_fild02
+      - moc_fild03
+      - moc_fild07
+      - moc_fild11
+      - moc_fild12
+      - moc_fild13
+      - moc_fild16
+      - moc_fild17
+      - moc_fild18
+      - moc_fild19
+    FieldsPopulation: 100
+    Dungeons:
+      - gefenia01
+      - gefenia02
+      - gefenia03
+      - gefenia04
+      - beach_dun
+      - beach_dun2
+      - beach_dun3
+    DungeonsPopulation: 100
+
+  - Profile: pve_assassin   # Assassin / Assassin Cross — katar build
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 20
+    Fields:
+      - moc_fild01
+      - moc_fild02
+      - moc_fild03
+      - moc_fild07
+      - moc_fild11
+      - moc_fild12
+      - moc_fild13
+      - moc_fild16
+      - moc_fild17
+      - moc_fild18
+      - moc_fild19
+      - pay_fild01
+      - pay_fild02
+      - pay_fild03
+      - pay_fild04
+      - pay_fild05
+      - pay_fild06
+      - pay_fild07
+      - pay_fild08
+      - pay_fild09
+      - pay_fild10
+      - pay_fild11
+    FieldsPopulation: 80
+    Dungeons:
+      - in_sphinx1
+      - in_sphinx2
+      - in_sphinx3
+      - in_sphinx4
+      - in_sphinx5
+      - tur_dun01
+      - tur_dun02
+      - tur_dun03
+      - tur_dun04
+      - prt_sewb1
+      - prt_sewb2
+      - prt_sewb3
+      - prt_sewb4
+    DungeonsPopulation: 100
+
+  - Profile: pve_rogue      # Rogue
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 15
+    Fields:
+      - pay_fild01
+      - pay_fild02
+      - pay_fild03
+      - pay_fild04
+      - pay_fild05
+      - pay_fild06
+      - pay_fild07
+      - pay_fild08
+      - pay_fild09
+      - pay_fild10
+      - pay_fild11
+      - gef_fild00
+      - gef_fild01
+      - gef_fild02
+      - gef_fild03
+      - gef_fild04
+      - gef_fild05
+    FieldsPopulation: 60
+    Dungeons:
+      - prt_sewb1
+      - prt_sewb2
+      - prt_sewb3
+      - prt_sewb4
+      - gl_sew01
+      - gl_sew02
+      - gl_sew03
+      - gl_sew04
+      - gl_dun01
+      - gl_dun02
+      - in_sphinx1
+      - in_sphinx2
+      - in_sphinx3
+      - in_sphinx4
+      - in_sphinx5
+    DungeonsPopulation: 80
+
+  - Profile: pve_merchant_cart  # Merchant / Blacksmith / Alchemist with cart
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 40
+    Fields:
+      - gef_fild00
+      - gef_fild01
+      - gef_fild02
+      - gef_fild03
+      - gef_fild04
+      - gef_fild05
+      - pay_fild01
+      - pay_fild02
+      - pay_fild03
+      - pay_fild04
+      - pay_fild05
+      - pay_fild06
+    FieldsPopulation: 30
+    Dungeons:
+      - iz_dun00
+      - iz_dun01
+      - iz_dun02
+      - tur_dun01
+      - tur_dun02
+    DungeonsPopulation: 30
+
+  - Profile: pve_taekwon    # Taekwon / Star Gladiator / Soul Linker
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 20
+    Fields:
+      - yuno_fild01
+      - yuno_fild02
+      - yuno_fild03
+      - yuno_fild04
+      - gef_fild00
+      - gef_fild01
+      - gef_fild02
+      - gef_fild03
+      - gef_fild04
+      - gef_fild05
+      - gef_fild06
+      - gef_fild07
+      - gef_fild08
+      - gef_fild09
+      - gef_fild10
+      - gef_fild11
+      - gef_fild12
+      - gef_fild13
+      - gef_fild14
+      - cmd_fild01
+      - cmd_fild02
+      - cmd_fild03
+      - cmd_fild04
+    FieldsPopulation: 80
+    Dungeons:
+      - beach_dun
+      - beach_dun2
+      - beach_dun3
+      - gefenia01
+      - gefenia02
+      - gefenia03
+      - gefenia04
+      - tur_dun01
+      - tur_dun02
+      - tur_dun03
+      - tur_dun04
+    DungeonsPopulation: 60
+
+  - Profile: pve_gunslinger  # Gunslinger
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 20
+    Fields:
+      - moc_fild01
+      - moc_fild02
+      - moc_fild03
+      - moc_fild07
+      - moc_fild11
+      - moc_fild12
+      - moc_fild13
+      - moc_fild16
+      - moc_fild17
+      - moc_fild18
+      - moc_fild19
+      - cmd_fild01
+      - cmd_fild02
+      - cmd_fild03
+      - cmd_fild04
+    FieldsPopulation: 60
+    Dungeons:
+      - tur_dun01
+      - tur_dun02
+      - tur_dun03
+      - tur_dun04
+      - beach_dun
+      - beach_dun2
+      - beach_dun3
+    DungeonsPopulation: 40
+
+  - Profile: pve_ninja       # Ninja
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 15
+    Fields:
+      - lou_fild01
+      - ama_fild01
+      - gef_fild00
+      - gef_fild01
+      - gef_fild02
+      - gef_fild03
+      - gef_fild04
+      - gef_fild05
+      - gef_fild06
+    FieldsPopulation: 50
+    Dungeons:
+      - ama_dun01
+      - ama_dun02
+      - ama_dun03
+      - lou_dun01
+      - lou_dun02
+      - lou_dun03
+      - in_sphinx1
+      - in_sphinx2
+      - in_sphinx3
+      - in_sphinx4
+      - in_sphinx5
+    DungeonsPopulation: 40

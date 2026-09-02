@@ -1,0 +1,326 @@
+# This file is a part of rAthena.
+#   Copyright(C) 2021 rAthena Development Team
+#   https://rathena.org - https://github.com/rathena
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+###########################################################################
+# Population Vendor Database                                              #
+###########################################################################
+#
+# Defines named vendor configurations for population shells.
+# Reference a config from db/population_engine.yml using:   VendorKey: "name"
+#
+# ---------------------------------------------------------------------------
+# VendorKey: "name"
+#   Unique identifier referenced by VendorKey: in population_engine.yml.
+#
+# Title: "text"
+#   Overhead shop title shown to nearby players (default: "Shop").
+#
+# Type: static | dynamic   (default: static)
+#   static  — sell the items listed in the Stock: block below.
+#   dynamic — derive the item list from the drop tables of mobs spawned on the
+#             same map at load time.  Stock: is ignored when Type is dynamic.
+#
+# MaxSlots: N   (1–12, default 12)
+#   Maximum number of distinct items in the vend (cap: MC_VENDING lv10 = 12).
+#
+# PriceMultiplier: N   (default 100)
+#   Used by dynamic vendors only.  Price = item sell value * N / 100.
+#   E.g. 150 = 150% of sell value.  Ignored for static vendors (use Price: per item).
+#
+# SourceMaps: [map1, map2, ...]   (dynamic vendors only)
+#   Explicit list of source maps to scan for mob drops.  Overrides SourceCategory.
+#   When omitted, the vendor falls back to SourceCategory or the spawn map.
+#
+# SourceCategory: dungeon | field | both   (dynamic vendors only)
+#   Auto-discover source maps from population_engine.yml spawn lists.
+#     dungeon — every map listed under any entry's dungeons:
+#     field   — every map listed under any entry's fields:
+#     both    — union of fields + dungeons
+#   Ignored when SourceMaps: is set.
+#
+# RandomizePerShell: true | false   (default false)
+#   When true, each spawned vendor shell picks ONE source map at random
+#   so multiple shells stock different items.  When false, drops from
+#   ALL source maps are merged into a single pool (top max_slots by rate).
+#
+# ItemFlags:                       (dynamic vendors only)
+#   AllowEquipment: true | false   (default false) — armor/weapons (item.equip != 0)
+#   AllowCards:     true | false   (default false) — IT_CARD
+#   AllowEtc:       true | false   (default true)  — IT_ETC (mats, junk loot)
+#   AllowUsable:    true | false   (default true)  — IT_HEALING / IT_USABLE / IT_DELAYCONSUME
+#
+# MaxAmount: [min, max]            (dynamic vendors only — default [30,30])
+#   Per-item stack-size randomization range. Each generated stockpile rolls
+#   a random integer in [min, max].  Equipment is always capped to 1.
+#   A single scalar (MaxAmount: 500) is treated as [1, 500].
+#   Hard-capped at 30000.
+#
+# Stock: (sequence — static vendors only)
+#   - Item: AegisName or numeric item_id   (required)
+#     Amount: N                             (default 1)
+#     Price: N                              (default 0 = use item buy price)
+#
+# VendorPlacement: (optional)
+#   Restricts where shells of this vendor stand. When ANY vendor entry has a
+#   VendorPlacement block, vendor-behavior shells are restricted to listed
+#   maps only (vendors won't spawn on towns/fields/dungeons that aren't in
+#   any VendorPlacement).
+#     Map:        Map name (required, e.g. prt_mk).
+#     MinSpacing: Minimum cells between two vendor shells (0 = off).
+#     MaxVendors: Hard cap on simultaneous vendor shells on this map (0 = no cap).
+#     Area:       Optional bounding box {X1, Y1, X2, Y2}. Y in map coords
+#                 (0 = bottom). Lower-left + upper-right; min/max auto-normalized.
+#                 Omit Area: to allow the whole map.
+#   Note: placements are merged per Map across the whole file. If two vendor
+#   entries declare the same Map, the last one parsed wins (warning logged).
+# ---------------------------------------------------------------------------
+
+Header:
+  Type: POPULATION_VENDORS_DB
+  Version: 1
+
+Body:
+  # ------------------------------------------------------------------
+  # Static vendor: general consumables (potions, fly/butter wings, misc)
+  # ------------------------------------------------------------------
+  - VendorKey: "potions"
+    Title: "[Potions]"
+    Type: Static
+    Stock:
+      - Item: Red_Potion
+        Amount: 500
+      - Item: Orange_Potion
+        Amount: 300
+      - Item: Yellow_Potion
+        Amount: 200
+      - Item: White_Potion
+        Amount: 100
+      - Item: Green_Potion
+        Amount: 300
+      - Item: Blue_Potion
+        Amount: 150
+      - Item: Wing_Of_Fly
+        Amount: 200
+      - Item: Wing_Of_Butterfly
+        Amount: 100
+      - Item: Anodyne
+        Amount: 200
+      - Item: Aloevera
+        Amount: 200
+      - Item: Center_Potion
+        Amount: 50
+      - Item: Awakening_Potion
+        Amount: 50
+    VendorPlacement:
+      Map: prt_mk
+      MinSpacing: 2
+      MaxVendors: 100
+      # Bounding box: Y is in map coordinates (0 = bottom).
+      # Use lower-left + upper-right; min/max are auto-normalized.
+      Area:
+        X1: 50
+        Y1: 46
+        X2: 149
+        Y2: 149
+  # ------------------------------------------------------------------
+  # Static vendor: buff potions (pre-cast potions for adventurers)
+  # ------------------------------------------------------------------
+  - VendorKey: "buff_shop"
+    Title: "[Buff Items]"
+    Type: Static
+    Stock:
+      - Item: Center_Potion
+        Amount: 80
+      - Item: Awakening_Potion
+        Amount: 80
+      - Item: Berserk_Potion
+        Amount: 50
+      - Item: Poison_Bottle
+        Amount: 30
+      - Item: Holy_Water
+        Amount: 200
+      - Item: Panacea
+        Amount: 100
+      - Item: Magnifier
+        Amount: 100
+    VendorPlacement:
+      Map: prt_mk
+      MinSpacing: 2
+      MaxVendors: 100
+      # Bounding box: Y is in map coordinates (0 = bottom).
+      # Use lower-left + upper-right; min/max are auto-normalized.
+      Area:
+        X1: 50
+        Y1: 46
+        X2: 149
+        Y2: 149
+  # ------------------------------------------------------------------
+  # Static vendor: arrows and ammunition
+  # ------------------------------------------------------------------
+  - VendorKey: "ammo_shop"
+    Title: "[Ammo & Arrows]"
+    Type: Static
+    Stock:
+      - Item: Arrow
+        Amount: 5000
+      - Item: Silver_Arrow
+        Amount: 3000
+      - Item: Fire_Arrow
+        Amount: 3000
+      - Item: Wind_Arrow_Container
+        Amount: 3000
+      - Item: Stone_Arrow
+        Amount: 3000
+      - Item: Shadow_Arrow_Container
+        Amount: 3000
+      - Item: Crystal_Arrow
+        Amount: 3000
+      - Item: Holy_Arrow
+        Amount: 3000
+      - Item: Steel_Arrow
+        Amount: 2000
+      - Item: Rusty_Arrow
+        Amount: 1000
+      - Item: Iron_Arrow
+        Amount: 2000
+      - Item: Iron_Arrow_Container
+        Amount: 1000
+    VendorPlacement:
+      Map: prt_mk
+      MinSpacing: 2
+      MaxVendors: 100
+      # Bounding box: Y is in map coordinates (0 = bottom).
+      # Use lower-left + upper-right; min/max are auto-normalized.
+      Area:
+        X1: 50
+        Y1: 46
+        X2: 149
+        Y2: 149
+  # ------------------------------------------------------------------
+  # Static vendor: equipment basics (weapons, armor for new players)
+  # ------------------------------------------------------------------
+  - VendorKey: "equip_shop"
+    Title: "[Equipment]"
+    Type: Static
+    MaxSlots: 12
+    Stock:
+      # Equipment is non-stackable — Amount is always capped to 1 per vend slot.
+      - Item: Knife
+        Amount: 1
+        Price: 500
+      - Item: Sword
+        Amount: 1
+        Price: 1200
+      - Item: Guard
+        Amount: 1
+        Price: 800
+      - Item: Buckler
+        Amount: 1
+        Price: 1500
+      - Item: Cotton_Shirt
+        Amount: 1
+        Price: 200
+      - Item: Sandals
+        Amount: 1
+        Price: 150
+      - Item: Hood
+        Amount: 1
+        Price: 300
+      # Apple is stackable — use a higher amount.
+      - Item: Apple
+        Amount: 200
+        Price: 10
+    VendorPlacement:
+      Map: prt_mk
+      MinSpacing: 2
+      MaxVendors: 100
+      # Bounding box: Y is in map coordinates (0 = bottom).
+      # Use lower-left + upper-right; min/max are auto-normalized.
+      Area:
+        X1: 50
+        Y1: 46
+        X2: 149
+        Y2: 149
+  # ------------------------------------------------------------------
+  # Dynamic vendor: sells items from FIELD mob drop tables across all
+  # maps that any spawn entry lists under fields:.  Each shell rolls
+  # one source map at spawn time so multiple field-drop vendors stock
+  # different items.  Equipment/cards excluded by default.
+  # ------------------------------------------------------------------
+  - VendorKey: "field_drops"
+    Title: "Field Loots"
+    Type: Dynamic
+    MaxSlots: 12
+    MaxAmount: [1, 30000]          # randomize stack size per item (equipment auto-capped to 1)
+    PriceMultiplier: 130
+    SourceCategory: field          # auto-discover all field maps from population_engine.yml
+    RandomizePerShell: true        # each shell picks ONE source map -> stock variety
+    ItemFlags:
+      AllowEquipment: false
+      AllowCards: false
+      AllowEtc: true
+      AllowUsable: true
+    VendorPlacement:
+      Map: prt_mk
+      MinSpacing: 2
+      MaxVendors: 100
+      # Bounding box: Y is in map coordinates (0 = bottom).
+      # Use lower-left + upper-right; min/max are auto-normalized.
+      Area:
+        X1: 50
+        Y1: 46
+        X2: 149
+        Y2: 149
+
+  # ------------------------------------------------------------------
+  # Dynamic vendor: dungeon drops at a higher markup.  Allows equipment
+  # so players can browse rare gear without farming.
+  # ------------------------------------------------------------------
+  - VendorKey: "dungeon_drops"
+    Title: "Dungeon Loots"
+    Type: Dynamic
+    MaxSlots: 12
+    MaxAmount: [1, 30000]          # randomize stack size per item (equipment auto-capped to 1)
+    PriceMultiplier: 160
+    SourceCategory: dungeon        # auto-discover all dungeon maps
+    RandomizePerShell: true
+    ItemFlags:
+      AllowEquipment: true         # let dungeon vendors stock gear
+      AllowCards: false            # cards stay rare/expensive elsewhere
+      AllowEtc: true
+      AllowUsable: true
+    VendorPlacement:
+      Map: prt_mk
+      MinSpacing: 2
+      MaxVendors: 100
+      # Bounding box: Y is in map coordinates (0 = bottom).
+      # Use lower-left + upper-right; min/max are auto-normalized.
+      Area:
+        X1: 50
+        Y1: 46
+        X2: 149
+        Y2: 149
+  # ------------------------------------------------------------------
+  # Example: explicit per-map dynamic vendor.
+  # Use SourceMaps: instead of SourceCategory: when you want a specific
+  # set of source maps (e.g. only Prontera Sewers + Geffen Dungeon).
+  # ------------------------------------------------------------------
+  # - VendorKey: "sewer_drops"
+  #   Title: "[Sewer Goods]"
+  #   Type: Dynamic
+  #   MaxSlots: 12
+  #   PriceMultiplier: 140
+  #   SourceMaps:
+  #     - prt_sewb1
+  #     - prt_sewb2
+  #     - prt_sewb3
+  #   RandomizePerShell: false     # merge drops from all listed maps
+  #   ItemFlags:
+  #     AllowEquipment: false
+  #     AllowCards: false

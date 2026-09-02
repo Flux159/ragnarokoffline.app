@@ -1,0 +1,69 @@
+# This file is a part of rAthena.
+#   Copyright(C) 2021 rAthena Development Team
+#   https://rathena.org - https://github.com/rathena
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+#
+###########################################################################
+# Population Engine Database — Vendor population
+###########################################################################
+#
+# Job entries for shells that act as overhead-message vendors.  Picked up by
+# the VendorPlacement-driven autosummon pass for maps that have entries in
+# db/population_vendors.yml (which configures the vendor inventory).
+#
+# Gear sets, profiles, and the arena job pool are defined in
+# db/population_gear_sets.yml and shared across all three files.
+#
+###########################################################################
+
+Header:
+  Type: POPULATION_ENGINE_DB
+  Version: 2
+
+Body:
+
+###########################################################################
+# Profile - vendor shells.
+###########################################################################
+
+  - Profile: vendor_field_drops
+    Jobs:
+      Merchant    : para_merchant
+      HighMerchant: para_merchant
+    NameProfile: default
+    Hair: [0, 42]
+    HairColor: [0, 131]
+    ClothesColor: [0, 699]
+    Flags:
+      - mortal
+    TownBehavior: vendor
+    VendorKey: "field_drops"
+    Script: |
+      setcart;
+
+  - Profile: vendor_dungeon_drops
+    Jobs:
+      Blacksmith: para_merchant
+      Whitesmith: para_merchant
+    NameProfile: default
+    Hair: [0, 42]
+    HairColor: [0, 131]
+    ClothesColor: [0, 699]
+    Flags:
+      - mortal
+    TownBehavior: vendor
+    VendorKey: "dungeon_drops"
+    Script: |
+      setcart;

@@ -20,7 +20,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process::exit;
 
-const USAGE: &str = "usage: ragnarok-stack up [--lan]|down|repair [--lan]|status|logs [service] [tail]\n\
+const USAGE: &str = "usage: ragnarok-stack up [--lan] [--ram MiB]|down|repair [--lan] [--ram MiB]|status|logs [service] [tail]\n\
                      \x20      backup <file>|restore <file>\n\
                      \x20      link-assets <data.grf> <rdata.grf> [official_data.grf] [bgm-dir]";
 
@@ -64,10 +64,19 @@ fn main() {
     // terminal stays loopback-only.
     let lan = args.iter().any(|a| a == "--lan");
 
+    // The VM's memory ceiling, passed the same way and for the same reason:
+    // the app owns the value, a plain `up` from a terminal keeps whatever
+    // config.toml already says.
+    let ram_mib = args
+        .iter()
+        .position(|a| a == "--ram")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse::<u32>().ok());
+
     let result = match verb {
-        "up" => cmds::up(&cfg, &dk, lan),
+        "up" => cmds::up(&cfg, &dk, lan, ram_mib),
         "down" => cmds::down(&cfg, &dk),
-        "repair" => cmds::repair(&cfg, &dk, lan),
+        "repair" => cmds::repair(&cfg, &dk, lan, ram_mib),
         "status" => {
             cmds::status(&dk);
             Ok(())

@@ -1,0 +1,472 @@
+# This file is a part of rAthena.
+#   Copyright(C) 2021 rAthena Development Team
+#   https://rathena.org - https://github.com/rathena
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+#
+###########################################################################
+# Population Engine — Shared Gear Sets Database
+###########################################################################
+#
+# Loaded by every population engine database (main, pvp, vendor).
+# Job entries reference these GearSets by name via:
+#     GearSet: <name>
+# so the same equipment pool can be shared across multiple jobs and files
+# without duplication.
+#
+# Contains ONLY GearSetName entries.  Profiles are defined per-source:
+#   - Pve profiles  → db/population_engine.yml
+#   - PvP profiles  → db/population_pvp.yml
+#   - Vendor profile → db/population_vendor_pop.yml
+# The arena job pool is auto-derived from the entries in db/population_pvp.yml.
+#
+###########################################################################
+
+Header:
+  Type: POPULATION_ENGINE_DB
+  Version: 2
+
+Body:
+
+  - GearSetName: novice_set
+    HeadTop:
+      - Novice_Egg_Cap
+    HeadMid: 0
+    HeadBottom:
+      - C_BeginnerMark
+    Armor:
+      - N_Adventurer's_Suit
+      - Novice_Plate
+    Weapon:
+      - N_Falchion
+      - N_Cutter
+      - N_Mace
+      - N_Main_Gauche
+      - Novice_Knife
+    Shield:
+      - Novice_Guard
+    Garment:
+      - Novice_Hood
+    Shoes:
+      - Novice_Boots
+    AccL:
+      - Novice_Figure
+    AccR:
+      - Novice_Figure
+
+  - GearSetName: para_swordsman
+    HeadTop:
+      - Helm_
+      - Para_Team_Hat
+      - Sahkkat
+    HeadMid: 0
+    HeadBottom:
+      - Centimental_Flower
+      - Centimental_Leaf
+      - Cigar
+    Armor:
+      - Para_Team_Uniform1
+      - Para_Team_Uniform2
+      - Para_Team_Uniform3
+    Weapon:
+      - P_Slayer1
+      - P_Slayer2
+    Shield: 0
+    Garment:
+      - Para_Team_Manteau
+    Shoes:
+      - Para_Team_Boots1
+      - Para_Team_Boots2
+      - Para_Team_Boots3
+    AccL:
+      - Swordman_Figure
+    AccR:
+      - Swordman_Figure
+
+  - GearSetName: para_knight_base
+    HeadTop:
+      - Bone_Helm_
+      - Goibne's_Helmet
+      - Helm_
+      - Para_Team_Hat
+      - Sahkkat
+    HeadMid:
+      - Fin_Helm
+      - Elven_Ears
+      - Ear_Of_Angel's_Wing
+      - Ear_Of_Devil's_Wing
+    HeadBottom:
+      - Centimental_Flower
+      - Centimental_Leaf
+      - Cigar
+    Armor:
+      - Para_Team_Uniform1
+      - Para_Team_Uniform2
+      - Para_Team_Uniform3
+    Weapon:
+      - P_Slayer1
+      - P_Slayer2
+    Shield: 0
+    Garment:
+      - Para_Team_Manteau
+    Shoes:
+      - Para_Team_Boots1
+      - Para_Team_Boots2
+      - Para_Team_Boots3
+    AccL:
+      - Ring_
+    AccR:
+      - Ring_
+
+  - GearSetName: para_crusader
+    HeadTop:
+      - Bone_Helm_
+      - Goibne's_Helmet
+      - Helm_
+      - Para_Team_Hat
+      - Dress_Hat
+      - Feather_Beret
+      - Beret
+      - J_Captain_Hat
+      - Ribbon_Of_Bride
+    HeadMid:
+      - Fin_Helm
+      - Elven_Ears
+      - Robo_Eye
+      - Angel_Spirit
+    HeadBottom:
+      - Centimental_Flower
+      - Centimental_Leaf
+      - Cigar
+      - Iron_Cane
+    Armor:
+      - Para_Team_Uniform1
+      - Para_Team_Uniform2
+      - Para_Team_Uniform3
+    Weapon:
+      - P_Sabre1
+      - P_Sabre2
+    Shield:
+      - Holy_Guard
+      - Mirror_Shield
+      - Mirror_Shield_
+      - Shield
+      - Shield_
+    Garment:
+      - Para_Team_Manteau
+    Shoes:
+      - Para_Team_Boots1
+      - Para_Team_Boots2
+      - Para_Team_Boots3
+    AccL:
+      - Necklace_
+    AccR:
+      - Necklace_
+
+  - GearSetName: para_mage
+    HeadTop:
+      - Para_Team_Hat
+      - Apple_Of_Archer
+      - Drooping_White_Kitty
+      - Big_Sis'_Ribbon
+    HeadMid:
+      - Luxury_Sunglasses
+      - Spinning_Eyes
+    HeadBottom:
+      - Centimental_Flower
+      - Centimental_Leaf
+      - Cigar
+      - Granpa_Beard
+    Armor:
+      - Para_Team_Uniform1
+      - Para_Team_Uniform2
+      - Para_Team_Uniform3
+    Weapon:
+      - P_Staff1
+      - P_Staff2
+    Shield:
+      - Guard
+      - Guard_
+    Garment:
+      - Para_Team_Manteau
+    Shoes:
+      - Para_Team_Boots1
+      - Para_Team_Boots2
+      - Para_Team_Boots3
+    AccL:
+      - Necklace
+    AccR:
+      - Necklace
+
+  - GearSetName: para_bow
+    HeadTop:
+      - Para_Team_Hat
+      - Apple_Of_Archer
+      - Drooping_White_Kitty
+      - Big_Sis'_Ribbon
+    HeadMid:
+      - Luxury_Sunglasses
+      - Spinning_Eyes
+      - Binoculars
+    HeadBottom:
+      - Centimental_Flower
+      - Centimental_Leaf
+      - Cigar
+      - Granpa_Beard
+    Armor:
+      - Para_Team_Uniform1
+      - Para_Team_Uniform2
+      - Para_Team_Uniform3
+    Weapon:
+      - P_Bow1
+      - P_Bow2
+    Shield: 0
+    Garment:
+      - Para_Team_Manteau
+    Shoes:
+      - Para_Team_Boots1
+      - Para_Team_Boots2
+      - Para_Team_Boots3
+    AccL:
+      - Glove
+    AccR:
+      - Glove
+
+  - GearSetName: bare_dagger
+    HeadTop: 0
+    HeadMid: 0
+    HeadBottom: 0
+    Armor: 0
+    Weapon: [1201]
+    Shield: 0
+    Garment: 0
+    Shoes: 0
+    AccL: 0
+    AccR: 0
+
+  - GearSetName: bare_axe
+    HeadTop: 0
+    HeadMid: 0
+    HeadBottom: 0
+    Armor: 0
+    Weapon: [1301]
+    Shield: 0
+    Garment: 0
+    Shoes: 0
+    AccL: 0
+    AccR: 0
+
+  - GearSetName: bare_gun
+    HeadTop: 0
+    HeadMid: 0
+    HeadBottom: 0
+    Armor: 0
+    Weapon: [13101]
+    Shield: 0
+    Garment: 0
+    Shoes: 0
+    AccL: 0
+    AccR: 0
+
+  - GearSetName: bare_kunai
+    HeadTop: 0
+    HeadMid: 0
+    HeadBottom: 0
+    Armor: 0
+    Weapon: [1951]
+    Shield: 0
+    Garment: 0
+    Shoes: 0
+    AccL: 0
+    AccR: 0
+
+  - GearSetName: para_monk
+    HeadTop:
+      - Para_Team_Hat
+    HeadMid: 0
+    HeadBottom: 0
+    Armor:
+      - Para_Team_Uniform1
+      - Para_Team_Uniform2
+      - Para_Team_Uniform3
+    Weapon:
+      - P_Mace1
+      - P_Mace2
+    Shield: 0
+    Garment:
+      - Para_Team_Manteau
+    Shoes:
+      - Para_Team_Boots1
+      - Para_Team_Boots2
+      - Para_Team_Boots3
+    AccL:
+      - Rosary
+    AccR:
+      - Rosary
+
+  - GearSetName: para_thief
+    HeadTop:
+      - Para_Team_Hat
+      - Sahkkat
+    HeadMid: 0
+    HeadBottom:
+      - Centimental_Flower
+      - Centimental_Leaf
+    Armor:
+      - Para_Team_Uniform1
+      - Para_Team_Uniform2
+      - Para_Team_Uniform3
+    Weapon:
+      - P_Dagger1
+      - P_Dagger2
+    Shield: 0
+    Garment:
+      - Para_Team_Manteau
+    Shoes:
+      - Para_Team_Boots1
+      - Para_Team_Boots2
+      - Para_Team_Boots3
+    AccL:
+      - Ring
+    AccR:
+      - Ring
+
+  - GearSetName: para_merchant
+    HeadTop:
+      - Para_Team_Hat
+      - Sahkkat
+    HeadMid: 0
+    HeadBottom:
+      - Centimental_Flower
+      - Centimental_Leaf
+      - Cigar
+    Armor:
+      - Para_Team_Uniform1
+      - Para_Team_Uniform2
+      - Para_Team_Uniform3
+    Weapon:
+      - P_Mace1
+      - P_Mace2
+    Shield: 0
+    Garment:
+      - Para_Team_Manteau
+    Shoes:
+      - Para_Team_Boots1
+      - Para_Team_Boots2
+      - Para_Team_Boots3
+    AccL:
+      - Ring
+    AccR:
+      - Ring
+
+  - GearSetName: para_taekwon
+    HeadTop:
+      - Para_Team_Hat
+    HeadMid: 0
+    HeadBottom: 0
+    Armor:
+      - Para_Team_Uniform1
+      - Para_Team_Uniform2
+      - Para_Team_Uniform3
+    Weapon: 0
+    Shield: 0
+    Garment:
+      - Para_Team_Manteau
+    Shoes:
+      - Para_Team_Boots1
+      - Para_Team_Boots2
+      - Para_Team_Boots3
+    AccL: 0
+    AccR: 0
+
+  - GearSetName: para_gun
+    HeadTop:
+      - Para_Team_Hat
+      - Sahkkat
+    HeadMid: 0
+    HeadBottom:
+      - Centimental_Flower
+      - Cigar
+    Armor:
+      - Para_Team_Uniform1
+      - Para_Team_Uniform2
+      - Para_Team_Uniform3
+    Weapon:
+      - P_Revolver1
+      - P_Revolver2
+    Shield: 0
+    Garment:
+      - Para_Team_Manteau
+    Shoes:
+      - Para_Team_Boots1
+      - Para_Team_Boots2
+      - Para_Team_Boots3
+    AccL:
+      - Ring
+    AccR:
+      - Ring
+
+  - GearSetName: para_ninja
+    HeadTop:
+      - Para_Team_Hat
+    HeadMid: 0
+    HeadBottom: 0
+    Armor:
+      - Para_Team_Uniform1
+      - Para_Team_Uniform2
+      - Para_Team_Uniform3
+    Weapon:
+      - P_Dagger1
+      - P_Dagger2
+    Shield: 0
+    Garment:
+      - Para_Team_Manteau
+    Shoes:
+      - Para_Team_Boots1
+      - Para_Team_Boots2
+      - Para_Team_Boots3
+    AccL:
+      - Ring
+    AccR:
+      - Ring
+
+  - GearSetName: para_assassin_katar   # Assassin / Assassin Cross — katar build
+    HeadTop:
+      - Para_Team_Hat
+      - Sahkkat
+    HeadMid:
+      - Luxury_Sunglasses
+    HeadBottom:
+      - Centimental_Flower
+      - Centimental_Leaf
+      - Cigar
+    Armor:
+      - Para_Team_Uniform1
+      - Para_Team_Uniform2
+      - Para_Team_Uniform3
+    Weapon:
+      - P_Katar1
+      - Katar_
+      - Jur_
+    Shield: 0
+    Garment:
+      - Para_Team_Manteau
+    Shoes:
+      - Para_Team_Boots1
+      - Para_Team_Boots2
+      - Para_Team_Boots3
+    AccL:
+      - Ring
+    AccR:
+      - Ring

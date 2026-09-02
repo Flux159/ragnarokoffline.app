@@ -1,0 +1,1394 @@
+diff --git a/npc/scripts_custom.conf b/npc/scripts_custom.conf
+index fb46627..2440aab 100644
+--- a/npc/scripts_custom.conf
++++ b/npc/scripts_custom.conf
+@@ -115,3 +115,7 @@
+ // -- Custom quests from official Umbalian Quests
+ //npc: npc/custom/quests/sphinx_mask.txt
+ //npc: npc/custom/quests/umbalian_language.txt
++
++// ----------------------- Population Engine -----------------------
++// -- Population Arena (stages 1v1/3v3/5v5 bot battles on a PvP map)
++npc: npc/custom/population/arena.txt
+diff --git a/src/common/mmo.hpp b/src/common/mmo.hpp
+index 121f2b5..699b436 100644
+--- a/src/common/mmo.hpp
++++ b/src/common/mmo.hpp
+@@ -177,6 +177,14 @@ const t_itemid WEDDING_RING_F = 2635;
+ #define END_ACCOUNT_NUM 100000000
+ #define START_CHAR_NUM 150000
+ 
++// Population engine account ID range (runtime-generated, not in database)
++#define POPULATION_ENGINE_ACCOUNT_ID_BASE 95000000
++#define POPULATION_ENGINE_ACCOUNT_ID_END 100000000
++#define POPULATION_ENGINE_CHAR_ID_BASE 95000000
++
++#define IS_POPULATION_ENGINE_ACCOUNT_ID(account_id) \
++	((account_id) >= POPULATION_ENGINE_ACCOUNT_ID_BASE && (account_id) < POPULATION_ENGINE_ACCOUNT_ID_END)
++
+ //Guilds
+ #define MAX_GUILDMES1 60
+ #define MAX_GUILDMES2 120
+diff --git a/src/custom/atcommand.inc b/src/custom/atcommand.inc
+index 9dd4a38..5baa8fb 100644
+--- a/src/custom/atcommand.inc
++++ b/src/custom/atcommand.inc
+@@ -17,3 +17,190 @@
+ //	clif_specialeffect(&sd->bl, EF_HEARTCASTING, AREA);
+ //	return 0;
+ //}
++
++
++/* @populate — population engine (runtime PC shells; alias @fakeplayers) */
++/**
++ * @reloadpopenginedb — Reload db/population_names.yml, db/population_engine.yml, db/population_chat.yml (does not despawn existing fake PCs).
++ */
++ACMD_FUNC(reloadpopenginedb)
++{
++	nullpo_retr(-1, sd);
++
++	uint32_t n = 0;
++	if (!population_engine_reload_equipment(&n)) {
++		clif_displaymessage(fd, "Population engine equipment reload failed (see map-server console).");
++		return -1;
++	}
++
++	char buf[128];
++	snprintf(buf, sizeof(buf), "Population engine equipment reloaded (%u job profiles).", static_cast<unsigned>(n));
++	clif_displaymessage(fd, buf);
++	return 0;
++}
++
++ACMD_FUNC(populate)
++{
++	nullpo_retr(-1, sd);
++
++	char cmd[50], param[256];
++
++	if (!message || !*message) {
++		clif_displaymessage(fd, "Usage: @populate <quantity> [map]");
++		clif_displaymessage(fd, "  Spawns population-engine PCs (visible shells, no autocombat).");
++		clif_displaymessage(fd, "  @populate stop | stats | status  (alias: @fakeplayers)");
++		clif_displaymessage(fd, "  @populate timing | timingreset  (wander tick profiler)");
++		return -1;
++	}
++
++	const char *msg_ptr = message;
++	while (*msg_ptr == ' ' || *msg_ptr == '\t')
++		msg_ptr++;
++	sscanf(msg_ptr, "%49s %255[^\n]", cmd, param);
++
++	if (strcmpi(cmd, "stop") == 0) {
++		if (!population_engine_is_running()) {
++			clif_displaymessage(fd, "Population engine is not running");
++			return -1;
++		}
++		population_engine_stop();
++		clif_displaymessage(fd, "Population engine stopped and cleaned up");
++	} else if (strcmpi(cmd, "stats") == 0) {
++		PopulationEngineStats stats = population_engine_get_stats();
++		const size_t live_count = population_engine_get_count();
++		char msg[256];
++		clif_displaymessage(fd, "=== Population engine stats ===");
++		snprintf(msg, sizeof(msg), "  Active / created / errors : %zu / %u / %u",
++			live_count, stats.total_created, stats.errors);
++		clif_displaymessage(fd, msg);
++		snprintf(msg, sizeof(msg), "  Chat lines emitted        : %u", stats.chat_lines_emitted);
++		clif_displaymessage(fd, msg);
++		snprintf(msg, sizeof(msg), "  Walk failures             : %u", stats.walk_failures);
++		clif_displaymessage(fd, msg);
++		snprintf(msg, sizeof(msg), "  Name blocklist retries    : %u", stats.name_retries);
++		clif_displaymessage(fd, msg);
++		// Memory estimate: each live bot holds one map_session_data allocation.
++		// sizeof is a compile-time constant so this is safe in a sprintf context.
++		const size_t est_kb = (live_count * sizeof(map_session_data) + 512) / 1024;
++		snprintf(msg, sizeof(msg), "  Est. heap (map_session_data x %zu) : ~%zu KB",
++			live_count, est_kb);
++		clif_displaymessage(fd, msg);
++		clif_displaymessage(fd, "================================");
++	} else if (strcmpi(cmd, "status") == 0) {
++		if (population_engine_is_running())
++			clif_displaymessage(fd, "Population engine is RUNNING");
++		else
++			clif_displaymessage(fd, "Population engine is NOT running");
++	} else if (strcmpi(cmd, "timing") == 0) {
++		const WanderTimingSnapshot ts = population_engine_path_get_timing_snapshot();
++		char msg[256];
++		clif_displaymessage(fd, "=== Population wander tick profile ===");
++		snprintf(msg, sizeof(msg), "  Ticks recorded / window      : %" PRIu64 " / %" PRIu64,
++			ts.ticks_recorded, ts.window_size);
++		clif_displaymessage(fd, msg);
++		if (ts.window_size == 0) {
++			clif_displaymessage(fd, "  (no samples yet \u2014 wait a few seconds)");
++		} else {
++			snprintf(msg, sizeof(msg), "  Avg total / tick             : %.1f \u00b5s   (%.2f ms)",
++				ts.avg_total_us, ts.avg_total_us / 1000.0);
++			clif_displaymessage(fd, msg);
++			snprintf(msg, sizeof(msg), "    avg map_search_freecell    : %.1f \u00b5s   (%.1f%%)",
++				ts.avg_freecell_us,
++				ts.avg_total_us > 0 ? 100.0 * ts.avg_freecell_us / ts.avg_total_us : 0.0);
++			clif_displaymessage(fd, msg);
++			snprintf(msg, sizeof(msg), "    avg fallback path_search   : %.1f \u00b5s   (%.1f%%)",
++				ts.avg_fallback_us,
++				ts.avg_total_us > 0 ? 100.0 * ts.avg_fallback_us / ts.avg_total_us : 0.0);
++			clif_displaymessage(fd, msg);
++			snprintf(msg, sizeof(msg), "    avg unit_walktoxy          : %.1f \u00b5s   (%.1f%%)",
++				ts.avg_unit_walktoxy_us,
++				ts.avg_total_us > 0 ? 100.0 * ts.avg_unit_walktoxy_us / ts.avg_total_us : 0.0);
++			clif_displaymessage(fd, msg);
++			snprintf(msg, sizeof(msg), "  Avg shells examined/walked   : %.1f / %.1f",
++				ts.avg_examined, ts.avg_processed);
++			clif_displaymessage(fd, msg);
++			snprintf(msg, sizeof(msg), "  Last tick total              : %" PRIu64 " \u00b5s  (proc %u, exam %u)",
++				ts.last_total_us, ts.last_processed, ts.last_examined);
++			clif_displaymessage(fd, msg);
++			snprintf(msg, sizeof(msg), "    last freecell/fallback/uw  : %" PRIu64 " / %" PRIu64 " / %" PRIu64 " \u00b5s",
++				ts.last_freecell_us, ts.last_fallback_us, ts.last_unit_walktoxy_us);
++			clif_displaymessage(fd, msg);
++			snprintf(msg, sizeof(msg), "  Worst tick total             : %" PRIu64 " \u00b5s  (proc %u)",
++				ts.worst_total_us, ts.worst_processed);
++			clif_displaymessage(fd, msg);
++			snprintf(msg, sizeof(msg), "  Calls (cumulative) fc/fb/uw  : %" PRIu64 " / %" PRIu64 " / %" PRIu64,
++				ts.freecell_calls, ts.fallback_calls, ts.unit_walktoxy_calls);
++			clif_displaymessage(fd, msg);
++		}
++		clif_displaymessage(fd, "=======================================");
++		// pe_perf generic section snapshot (chat/spawn/etc).
++		{
++			pe_perf::SectionStat sects[pe_perf::kMaxSections];
++			size_t n = 0;
++			pe_perf::snapshot(sects, n);
++			clif_displaymessage(fd, "=== Population perf sections ===");
++			if (n == 0) {
++				clif_displaymessage(fd, "  (no sections recorded yet)");
++			} else {
++				char hdr[256];
++				snprintf(hdr, sizeof(hdr), "  %-28s %10s %12s %10s %10s %10s",
++					"section", "calls", "total_us", "avg_us", "last_us", "worst_us");
++				clif_displaymessage(fd, hdr);
++				for (size_t i = 0; i < n; ++i) {
++					const auto &s = sects[i];
++					const double avg = s.calls > 0 ? double(s.total_us) / double(s.calls) : 0.0;
++					char row[256];
++					snprintf(row, sizeof(row), "  %-28s %10" PRIu64 " %12" PRIu64 " %10.1f %10" PRIu64 " %10" PRIu64,
++						s.name ? s.name : "?", s.calls, s.total_us, avg, s.last_us, s.worst_us);
++					clif_displaymessage(fd, row);
++				}
++			}
++			clif_displaymessage(fd, "================================");
++		}
++	} else if (strcmpi(cmd, "timingreset") == 0) {
++		population_engine_path_reset_timing();
++		pe_perf::reset();
++		clif_displaymessage(fd, "Population wander timing reset.");
++	} else {
++		uint32_t quantity = 0;
++		char map_name[32] = "";
++		int parsed = sscanf(msg_ptr, "%u %31s", &quantity, map_name);
++
++		if (parsed < 1 || quantity == 0) {
++			clif_displaymessage(fd, "Invalid quantity. Usage: @populate <quantity> [map]");
++			return -1;
++		}
++		if (population_engine_is_running()) {
++			clif_displaymessage(fd, "Population engine is already running. Stop with @populate stop");
++			return -1;
++		}
++		if (quantity > 5000) {
++			clif_displaymessage(fd, "Quantity too large (max 5000)");
++			return -1;
++		}
++		int16_t map_id = sd->m;
++		if (map_name[0]) {
++			map_id = map_mapname2mapid(map_name);
++			if (map_id < 0) {
++				clif_displaymessage(fd, "Invalid map name");
++				return -1;
++			}
++		}
++		PopulationEngineConfig config;
++		config.num_units = quantity;
++		config.map_id = map_id;
++		config.spread_units = true;
++		config.spawn_x = 0;
++		config.spawn_y = 0;
++		PopulationEngineStats stats;
++		if (population_engine_start(config, stats)) {
++			char msg[256];
++			sprintf(msg, "Population PCs spawned: %u on map %d", stats.total_created, map_id);
++			clif_displaymessage(fd, msg);
++		} else {
++			clif_displaymessage(fd, "Failed to spawn population PCs");
++			return -1;
++		}
++	}
++	return 0;
++}
+diff --git a/src/custom/atcommand_def.inc b/src/custom/atcommand_def.inc
+index 54d9e74..865d772 100644
+--- a/src/custom/atcommand_def.inc
++++ b/src/custom/atcommand_def.inc
+@@ -9,3 +9,5 @@
+  **/
+ 
+ //ACMD_DEF(newcommand),
++ACMD_DEF(populate),
++ACMD_DEF(reloadpopenginedb),
+diff --git a/src/custom/battle_config_init.inc b/src/custom/battle_config_init.inc
+index e47aca9..e1ef127 100644
+--- a/src/custom/battle_config_init.inc
++++ b/src/custom/battle_config_init.inc
+@@ -11,3 +11,43 @@
+  *	 { "name", &battle_config.<variable name>, <default value>, <minimum value>, <maximum value> },
+  **/
+ 
++
++{ "population_engine_max_count",&battle_config.population_engine_max_count,1000,1,30000,},
++{ "population_engine_equipment_strict_load",&battle_config.population_engine_equipment_strict_load,0,0,1,},
++{ "population_engine_chat_enable",&battle_config.population_engine_chat_enable,0,0,1,},
++{ "population_engine_chat_tick_ms",&battle_config.population_engine_chat_tick_ms,1500,500,600000,},
++{ "population_engine_chat_cooldown_ms",&battle_config.population_engine_chat_cooldown_ms,15000,1000,3600000,},
++{ "population_engine_chat_cooldown_jitter_ms",&battle_config.population_engine_chat_cooldown_jitter_ms,5000,0,600000,},
++{ "population_engine_chat_max_per_tick",&battle_config.population_engine_chat_max_per_tick,10,0,500,},
++{ "population_engine_chat_reply_enable",&battle_config.population_engine_chat_reply_enable,1,0,1,},
++{ "population_engine_wander_enable",&battle_config.population_engine_wander_enable,1,0,1,},
++{ "population_engine_wander_tick_ms",&battle_config.population_engine_wander_tick_ms,500,200,600000,},
++{ "population_engine_wander_radius",&battle_config.population_engine_wander_radius,12,1,50,},
++{ "population_engine_wander_cooldown_ms",&battle_config.population_engine_wander_cooldown_ms,2000,0,600000,},
++{ "population_engine_wander_cooldown_jitter_ms",&battle_config.population_engine_wander_cooldown_jitter_ms,1500,0,600000,},
++{ "population_engine_wander_max_per_tick",&battle_config.population_engine_wander_max_per_tick,50,1,500,},
++{ "population_engine_hat_effect",&battle_config.population_engine_hat_effect,0,0,INT_MAX,},
++{ "population_engine_shell_move_min",&battle_config.population_engine_shell_move_min,7,0,500,},
++{ "population_engine_shell_move_max",&battle_config.population_engine_shell_move_max,20,0,500,},
++{ "population_engine_shell_timer_ms",&battle_config.population_engine_shell_timer_ms,100,10,60000,},
++{ "population_engine_combat_budget_per_tick",&battle_config.population_engine_combat_budget_per_tick,60,1,5000,},
++{ "population_engine_shell_mobtracker_interval_ms",&battle_config.population_engine_shell_mobtracker_interval_ms,200,100,600000,},
++{ "population_engine_shell_mdetection_cells",&battle_config.population_engine_shell_mdetection_cells,30,1,100,},
++{ "population_engine_shell_detection_cache_ms",&battle_config.population_engine_shell_detection_cache_ms,300,0,600000,},
++{ "population_engine_shell_movement_owner_sm",&battle_config.population_engine_shell_movement_owner_sm,1,0,1,},
++{ "population_engine_shell_attack_skill_delay_ms",&battle_config.population_engine_shell_attack_skill_delay_ms,100,0,60000,},
++{ "population_engine_shell_attackskill",&battle_config.population_engine_shell_attackskill,1,0,1,},
++{ "population_engine_shell_basic_attack_chance",&battle_config.population_engine_shell_basic_attack_chance,30,0,100,},
++{ "population_engine_shell_skill_min_sp_pct",&battle_config.population_engine_shell_skill_min_sp_pct,15,0,99,},
++{ "population_engine_shell_sticky_target_ms",&battle_config.population_engine_shell_sticky_target_ms,2000,0,60000,},
++{ "population_engine_shell_skill_los_check",&battle_config.population_engine_shell_skill_los_check,1,0,1,},
++{ "population_engine_shell_skill_strict_gate",&battle_config.population_engine_shell_skill_strict_gate,1,0,1,},
++{ "population_engine_name_bot_fallback",&battle_config.population_engine_name_bot_fallback,0,0,1,},
++{ "population_engine_combat_max_budget",&battle_config.population_engine_combat_max_budget,200,1,5000,},
++{ "population_engine_shell_skill_interval_ms",&battle_config.population_engine_shell_skill_interval_ms,200,0,60000,},
++{ "population_engine_autosummon_batch_size",&battle_config.population_engine_autosummon_batch_size,50,0,5000,},
++{ "population_engine_ai",&battle_config.population_engine_ai,0x1FF,0x000,0x3FF,},
++{ "population_engine_daily_cycle",&battle_config.population_engine_daily_cycle,0,0,1,},
++{ "population_engine_vending_enable",&battle_config.population_engine_vending_enable,0,0,1,},
++{ "population_engine_arena_custom_pool",&battle_config.population_engine_arena_custom_pool,0,0,1,},
++{ "population_engine_path_attempts",&battle_config.population_engine_path_attempts,16,1,256,},
+diff --git a/src/custom/battle_config_struct.inc b/src/custom/battle_config_struct.inc
+index 017d99d..03e5b76 100644
+--- a/src/custom/battle_config_struct.inc
++++ b/src/custom/battle_config_struct.inc
+@@ -12,3 +12,83 @@
+  *	 <datatype> name;
+  **/
+ 
++
++int32 population_engine_max_count;
++/// 0 = warn and fix invalid YAML rows; 1 = discard entire equipment DB if any validation error
++int32 population_engine_equipment_strict_load;
++/// Phase 3 chat (db/population_chat.yml + ChatProfile on equipment rows)
++int32 population_engine_chat_enable;
++int32 population_engine_chat_tick_ms;
++int32 population_engine_chat_cooldown_ms;
++int32 population_engine_chat_cooldown_jitter_ms;
++int32 population_engine_chat_max_per_tick;
++/// 1 = population PCs reply when whispered or when a player says their name in map chat (same map)
++int32 population_engine_chat_reply_enable;
++/// Phase 4 wander: random walk on map timer (no autocombat)
++int32 population_engine_wander_enable;
++int32 population_engine_wander_tick_ms;
++int32 population_engine_wander_radius;
++int32 population_engine_wander_cooldown_ms;
++int32 population_engine_wander_cooldown_jitter_ms;
++int32 population_engine_wander_max_per_tick;
++/// ZC_EQUIPMENT_EFFECT hat id for population PC shells when starting autocombat (same idea as HatEffect in db/autocombat_config.yml). 0 = use autocombat HatEffect instead.
++int32 population_engine_hat_effect;
++/// SC_POPULATION_COMBAT shell (population_engine_combat.cpp): movement roam / tick / target scan -- independent of db/autocombat_config.yml
++int32 population_engine_shell_move_min;
++int32 population_engine_shell_move_max;
++/// Global combat timer interval (ms). All bots share one timer; budget_per_tick controls
++/// how many are processed per fire. Replaces per-bot SC_POPULATION_COMBAT reschedule.
++int32 population_engine_shell_timer_ms;
++/// Max bots processed per global combat timer tick. 60 bots/100ms = 600/s -> each of
++/// 300 bots ticks ~2x/s. Raise to process more bots per fire at the cost of larger spikes.
++int32 population_engine_combat_budget_per_tick;
++int32 population_engine_shell_mobtracker_interval_ms;
++int32 population_engine_shell_mdetection_cells;
++int32 population_engine_shell_detection_cache_ms;
++int32 population_engine_shell_movement_owner_sm;
++int32 population_engine_shell_attack_skill_delay_ms;
++int32 population_engine_shell_attackskill; // like autocombat_attackskill: 0 = melee only, 1 = use pop_shell attack list
++/// Per-tick chance (0-100) the shell uses a basic attack instead of evaluating the skill picker.
++/// 0 = always try a skill (legacy: lots of high-Rate skills monopolise every tick = no melee).
++/// 30 = ~30% of attack ticks are forced basic-attack regardless of skill rotation rates.
++/// Bypassed when PSF::SkillOnly is set on the shell.
++int32 population_engine_shell_basic_attack_chance;
++/// SP-reserve floor (percent of max SP, 0-99). Skill picker skips skills whose SP cost would
++/// drop the shell's SP below this percentage. 0 = no floor (legacy behavior -- can cast to 0 SP).
++int32 population_engine_shell_skill_min_sp_pct;
++/// Sticky-target commitment window in ms. After acquiring a target, the shell prefers it
++/// over equidistant alternatives until this many ms elapse, the target dies, or it leaves
++/// detection range. 0 = no stickiness (legacy: pure nearest-mob each tick).
++int32 population_engine_shell_sticky_target_ms;
++/// Pre-cast LOS gate: 0 = legacy (only check on emit), 1 = require path_search_long
++/// (no-wall line) from shell to target before picking a non-self skill in the rotation.
++/// Saves SP/cast attempts that would fail at unit_skilluse_id() against blocked targets.
++int32 population_engine_shell_skill_los_check;
++/// Strict skill-use gating: 0 = only skill_isNotOk() (legacy), 1 = also require
++/// status_check_skilluse() to pass before selecting a skill (covers silence/sleep/sit/etc.).
++int32 population_engine_shell_skill_strict_gate;
++/// 0 = never produce Bot_<id> names (deterministic syllable fallback); 1 = allow Bot_<id> when pool is exhausted
++int32 population_engine_name_bot_fallback;
++/// CPU ceiling: max bots processed per global combat timer tick. Dynamic budget = min(N, this value).
++/// At default 200, all bots tick every timer_ms up to N=200; above that, each bot ticks every (N/200)*timer_ms.
++int32 population_engine_combat_max_budget;
++/// Phase 3 two-tier timer: minimum ms between skill evaluation passes (0 = evaluate every tick).
++/// Movement happens every timer_ms. Skills evaluated every max(timer_ms, skill_interval_ms).
++/// Example: timer_ms=100, skill_interval_ms=500 -> movement 10x/s, skills 2x/s per bot.
++int32 population_engine_shell_skill_interval_ms;
++/// Max shells spawned per autosummon timer tick across all profiles and maps combined.
++/// 0 = unlimited (spawn all missing shells in one tick). Raise to spread load over multiple 10s ticks.
++int32 population_engine_autosummon_batch_size;
++/// AI behavior bitmask (like monster_ai). See conf/battle/population_engine.conf for flag docs.
++int32 population_engine_ai;
++/// Daily cycle: 0=off, 1=on. When enabled, town shells switch behavior by server hour:
++///   06:00-17:59 = configured behavior, 18:00-21:59 = Social, 22:00-05:59 = Sit.
++///   Field/dungeon shells always use their configured behavior.
++int32 population_engine_daily_cycle;
++/// Vending economy: 0=off, 1=on. Vendor-behavior shells open a vend with common items at Buy price.
++int32 population_engine_vending_enable;
++/// Arena PvP job pool: bitmask-encoded or count-based arbitrary pool is not supported in int32.
++/// Instead store the jobs as a packed array via the count field; actual IDs stored in a companion
++/// global in population_engine.cpp. This field signals that a custom pool was configured (1=yes,0=no).
++int32 population_engine_arena_custom_pool;
++int32 population_engine_path_attempts;
+diff --git a/src/custom/script.inc b/src/custom/script.inc
+index 839b990..d479e1e 100644
+--- a/src/custom/script.inc
++++ b/src/custom/script.inc
+@@ -17,3 +17,224 @@
+ //	script_pushint(st,1);
+ //	return 0;
+ //}
++
++/*==========================================
++ * Population / default ammo equip (skill require.ammo support)
++ *------------------------------------------*/
++
++/// Right-hand weapon subtype (mmo_charstatus.weapon may still be a stale item id on some spawn paths).
++static enum weapon_type script_handr_weapon_subtype(map_session_data *sd)
++{
++	nullpo_retr(W_FIST, sd);
++	pc_setinventorydata(*sd);
++	pc_calcweapontype(sd);
++	const int16 idx = sd->equip_index[EQI_HAND_R];
++	if (idx >= 0 && sd->inventory_data[idx] && sd->inventory_data[idx]->type == IT_WEAPON)
++		return (enum weapon_type)sd->inventory_data[idx]->subtype;
++	if (sd->weapontype1 != W_FIST)
++		return (enum weapon_type)sd->weapontype1;
++	return W_FIST;
++}
++
++static t_itemid script_find_first_ammo_item(enum e_ammo_type ammo_subtype)
++{
++	for (const auto& it : item_db) {
++		std::shared_ptr<item_data> id = it.second;
++		if (!id || id->nameid == UNKNOWN_ITEM_ID)
++			continue;
++		if (id->type == IT_AMMO && id->subtype == ammo_subtype && id->equip && (id->equip & EQP_AMMO))
++			return id->nameid;
++	}
++	return 0;
++}
++
++static bool script_give_equip_ammo(map_session_data *sd, const char *cmd, t_itemid ammo_id)
++{
++	nullpo_retr(false, sd);
++	nullpo_retr(false, cmd);
++	std::shared_ptr<item_data> aid = item_db.find(ammo_id);
++	if (!aid || !aid->equip) {
++		ShowWarning("%s: ammo item %u missing or has no equip flags (%s id=%d)\n",
++			cmd, (unsigned)ammo_id, sd->status.name, sd->id);
++		return false;
++	}
++	struct item tmp_item = {};
++	tmp_item.nameid = ammo_id;
++	tmp_item.amount = 500;
++	tmp_item.identify = 1;
++	tmp_item.equip = 0;
++	enum e_additem_result ares = pc_additem(sd, &tmp_item, 500, LOG_TYPE_NONE, false);
++	if (ares != ADDITEM_SUCCESS) {
++		ShowWarning("%s: pc_additem ammo %u failed result=%d (%s id=%d max_w=%d cur_w=%d slots=%d)\n",
++			cmd, (unsigned)ammo_id, (int)ares, sd->status.name, sd->id,
++			sd->max_weight, sd->weight, sd->status.inventory_slots);
++		return false;
++	}
++	for (int16 i = 0; i < MAX_INVENTORY; i++) {
++		if (sd->inventory.u.items_inventory[i].nameid == ammo_id && sd->inventory.u.items_inventory[i].amount > 0) {
++			if (!pc_equipitem(sd, i, aid->equip, false)) {
++				ShowWarning("%s: pc_equipitem failed inv=%d ammo=%u (%s id=%d)\n",
++					cmd, (int)i, (unsigned)ammo_id, sd->status.name, sd->id);
++				return false;
++			}
++			return true;
++		}
++	}
++	ShowWarning("%s: stack missing after additem ammo=%u (%s id=%d)\n", cmd, (unsigned)ammo_id, sd->status.name, sd->id);
++	return false;
++}
++
++/// Equips default ammunition for ranged / huuma jobs so combat skills can pass ammo checks.
++///
++/// Many weapon skills use skill_db `Ammo` + `AmmoAmount` (validated in
++/// skill_check_condition_castend: require.ammo vs EQI_AMMO item subtype and count).
++///
++/// setarrow {<char_id>};
++BUILDIN_FUNC(setarrow)
++{
++	TBL_PC* sd;
++
++	if (!script_charid2sd(2, sd))
++		return SCRIPT_CMD_FAILURE;
++
++	const enum weapon_type wt = script_handr_weapon_subtype(sd);
++
++	if (wt != W_BOW && wt != W_MUSICAL && wt != W_WHIP)
++		return SCRIPT_CMD_SUCCESS;
++
++	t_itemid arrow_id = script_find_first_ammo_item(AMMO_ARROW);
++	if (arrow_id == 0)
++		arrow_id = 1750; // Steel Arrow fallback
++
++	script_give_equip_ammo(sd, "setarrow", arrow_id);
++
++	return SCRIPT_CMD_SUCCESS;
++}
++
++/// setbullet {<char_id>};
++BUILDIN_FUNC(setbullet)
++{
++	TBL_PC* sd;
++
++	if (!script_charid2sd(2, sd))
++		return SCRIPT_CMD_FAILURE;
++
++	const enum weapon_type wt = script_handr_weapon_subtype(sd);
++
++	t_itemid ammo_id = 0;
++	switch (wt) {
++	case W_REVOLVER:
++	case W_RIFLE:
++	case W_GATLING:
++		ammo_id = script_find_first_ammo_item(AMMO_BULLET);
++		break;
++	case W_SHOTGUN:
++		ammo_id = script_find_first_ammo_item(AMMO_SHELL);
++		break;
++#ifdef RENEWAL
++	case W_GRENADE:
++		ammo_id = script_find_first_ammo_item(AMMO_GRENADE);
++		break;
++#endif
++	default:
++		return SCRIPT_CMD_SUCCESS;
++	}
++
++	if (ammo_id == 0) {
++		ShowWarning("setbullet: no ammo in item_db for weapon subtype %u (%s id=%d)\n", (unsigned)wt, sd->status.name, sd->id);
++		return SCRIPT_CMD_SUCCESS;
++	}
++
++	script_give_equip_ammo(sd, "setbullet", ammo_id);
++
++	return SCRIPT_CMD_SUCCESS;
++}
++
++/// setkunai {<char_id>};
++BUILDIN_FUNC(setkunai)
++{
++	TBL_PC* sd;
++
++	if (!script_charid2sd(2, sd))
++		return SCRIPT_CMD_FAILURE;
++
++	const enum weapon_type wt = script_handr_weapon_subtype(sd);
++
++	if (wt != W_HUUMA)
++		return SCRIPT_CMD_SUCCESS;
++
++	t_itemid kunai_id = script_find_first_ammo_item(AMMO_KUNAI);
++	if (kunai_id == 0) {
++		ShowWarning("setkunai: no AMMO_KUNAI with EQP_AMMO in item_db (%s id=%d)\n", sd->status.name, sd->id);
++		return SCRIPT_CMD_SUCCESS;
++	}
++
++	script_give_equip_ammo(sd, "setkunai", kunai_id);
++
++	return SCRIPT_CMD_SUCCESS;
++}
++
++/*==========================================
++ * Population Engine Arena Commands
++ * population_arena_start("<map>", <shell_count>{, <spawn_x>, <spawn_y>})
++ *   Spawns shell_count shells on <map> (must have PvP mode enabled).
++ *   Shells target real (non-shell) players so a player can fight/observe AI behaviour.
++ *   spawn_x/spawn_y = optional spawn center (0 = random spread).
++ *   Returns shells spawned or 0 on error.
++ * population_arena_stop("<map>")
++ *   Releases all arena shells on <map>.
++ *------------------------------------------*/
++
++BUILDIN_FUNC(population_arena_start)
++{
++	const char* map_name = script_getstr(st, 2);
++	const int shell_count = script_getnum(st, 3);
++
++	if (shell_count < 1 || shell_count > 25) {
++		ShowError("buildin_population_arena_start: shell_count %d out of range [1,25].\n", shell_count);
++		script_pushint(st, 0);
++		return SCRIPT_CMD_FAILURE;
++	}
++
++	const int sx = script_hasdata(st, 4) ? script_getnum(st, 4) : 0;
++	const int sy = script_hasdata(st, 5) ? script_getnum(st, 5) : 0;
++	const int job_arg = script_hasdata(st, 6) ? script_getnum(st, 6) : 0;
++	if (job_arg < 0 || job_arg > 0xFFFF) {
++		ShowError("buildin_population_arena_start: job_id %d out of range [0,65535].\n", job_arg);
++		script_pushint(st, 0);
++		return SCRIPT_CMD_FAILURE;
++	}
++	// team_id: 1 = enemy shells (target real players), 2 = allied shells (target team-1 shells).
++	const int team_arg = script_hasdata(st, 7) ? script_getnum(st, 7) : 1;
++
++	const int spawned = population_engine_arena_start(map_name, shell_count, sx, sy,
++		static_cast<uint16_t>(job_arg), team_arg);
++	script_pushint(st, spawned);
++	return SCRIPT_CMD_SUCCESS;
++}
++
++BUILDIN_FUNC(population_arena_stop)
++{
++	const char* map_name = script_getstr(st, 2);
++	population_engine_arena_stop(map_name);
++	return SCRIPT_CMD_SUCCESS;
++}
++
++/*==========================================
++ * population_arena_jobs()
++ *   Returns a CSV string of job IDs in the PvP arena pool
++ *   (auto-derived from db/population_pvp.yml). Empty string if no
++ *   pool is loaded. Use explode() + jobname() in script to render.
++ *------------------------------------------*/
++BUILDIN_FUNC(population_arena_jobs)
++{
++	const std::vector<uint16_t> pool = population_engine_arena_job_pool();
++	std::string csv;
++	csv.reserve(pool.size() * 6);
++	for (size_t i = 0; i < pool.size(); ++i) {
++		if (i != 0) csv.push_back(',');
++		csv.append(std::to_string(static_cast<unsigned>(pool[i])));
++	}
++	script_pushstrcopy(st, csv.c_str());
++	return SCRIPT_CMD_SUCCESS;
++}
+diff --git a/src/custom/script_def.inc b/src/custom/script_def.inc
+index 8863992..cb2e301 100644
+--- a/src/custom/script_def.inc
++++ b/src/custom/script_def.inc
+@@ -9,3 +9,13 @@
+  **/
+ 
+ //BUILDIN_DEF(example,""),
++
++// Population / default ammo (skill require.ammo); see custom script.inc
++BUILDIN_DEF(setarrow, "?"),
++BUILDIN_DEF(setbullet, "?"),
++BUILDIN_DEF(setkunai, "?"),
++
++// Population engine arena
++BUILDIN_DEF(population_arena_start, "si????"),
++BUILDIN_DEF(population_arena_stop,  "s"),
++BUILDIN_DEF(population_arena_jobs,  ""),
+diff --git a/src/map/CMakeLists.txt b/src/map/CMakeLists.txt
+index 45f17cb..5cac93a 100644
+--- a/src/map/CMakeLists.txt
++++ b/src/map/CMakeLists.txt
+@@ -11,8 +11,10 @@ if( BUILD_SERVERS )
+ message( STATUS "Creating target map-server" )
+ file(GLOB_RECURSE MAP_HEADERS ${MAP_SOURCE_DIR}/*.hpp)
+ list(FILTER MAP_HEADERS EXCLUDE REGEX ".*/skills/.*")
++list(FILTER MAP_HEADERS EXCLUDE REGEX ".*/population_engine/.*")
+ file(GLOB_RECURSE MAP_SOURCES ${MAP_SOURCE_DIR}/*.cpp)
+ list(FILTER MAP_SOURCES EXCLUDE REGEX ".*/skills/.*")
++list(FILTER MAP_SOURCES EXCLUDE REGEX ".*/population_engine/.*")
+ # Add skill factory/impl files as separate translation units per job category
+ # Individual skill files are NOT compiled directly - they are #included by their job factory TUs
+ file(GLOB SKILL_FACTORY_SOURCES ${MAP_SOURCE_DIR}/skills/skill_factory.cpp ${MAP_SOURCE_DIR}/skills/skill_impl.cpp)
+diff --git a/src/map/Makefile.in b/src/map/Makefile.in
+index 66bbd25..890366c 100644
+--- a/src/map/Makefile.in
++++ b/src/map/Makefile.in
+@@ -27,6 +27,7 @@ MAP_H = $(shell find ../ -type f -name "*.hpp") \
+ 
+ MAP_OBJ = $(shell find . -type f -name "*.cpp" \
+ 			-not -path "./skills/*" \
++			-not -path "./population_engine/*" \
+ 			| sed -e "s/\.cpp/\.o/g" -e "s/^\.\///")
+ # Add skill factory/impl files as separate translation units per job category
+ # Individual skill files are NOT compiled directly - they are #included by their job factory TUs
+diff --git a/src/map/atcommand.cpp b/src/map/atcommand.cpp
+index f367e9b..e964af6 100644
+--- a/src/map/atcommand.cpp
++++ b/src/map/atcommand.cpp
+@@ -5,6 +5,7 @@
+ 
+ #include <cmath>
+ #include <cstdlib>
++#include <cinttypes>
+ #include <set>
+ #include <unordered_map>
+ 
+@@ -49,6 +50,9 @@
+ #include "pc.hpp"
+ #include "pc_groups.hpp"
+ #include "pet.hpp"
++#include "population_engine.hpp"
++#include "population_engine/core/pe_perf.hpp"
++#include "population_engine/runtime/population_engine_path.hpp"
+ #include "quest.hpp"
+ #include "script.hpp"
+ #include "storage.hpp"
+diff --git a/src/map/battle.cpp b/src/map/battle.cpp
+index 5420fbd..9322f40 100644
+--- a/src/map/battle.cpp
++++ b/src/map/battle.cpp
+@@ -33,6 +33,7 @@
+ #include "pc.hpp"
+ #include "pc_groups.hpp"
+ #include "pet.hpp"
++#include "population_engine.hpp"
+ #include "./skills/skill_impl.hpp"
+ 
+ using namespace rathena;
+@@ -8140,6 +8141,26 @@ int32 battle_check_target( const block_list* src, const block_list* target, int3
+ 		return (flag&state)?1:-1;
+ 	}
+ 
++	// Population engine arena (population_arena_start) — team 1 fights team 2;
++	// real player on the arena map is implicitly team 2. The hook returns
++	// +1 for allies and -1 for enemies; 0 means "no opinion" so normal logic
++	// (party/guild/bg) runs. This must run BEFORE the party/guild rivalry
++	// block so it can override an unrelated party_id match (e.g. two team-1
++	// shells happen to share a fake party id) and so autosupport sees the
++	// real player as a valid friendly target for team-2 shells.
++	{
++		const int arena_rel = population_engine_arena_relation(s_bl, t_bl);
++		if (arena_rel > 0) {
++			state |= BCT_PARTY;
++			state &= ~BCT_ENEMY;
++			return (flag&state) ? 1 : -1;
++		} else if (arena_rel < 0) {
++			state |= BCT_ENEMY;
++			state &= ~(BCT_PARTY|BCT_GUILD);
++			return (flag&state) ? 1 : -1;
++		}
++	}
++
+ 	if( mapdata_flag_vs(mapdata) )
+ 	{ //Check rivalry settings.
+ 		int32 sbg_id = 0, tbg_id = 0;
+diff --git a/src/map/chrif.cpp b/src/map/chrif.cpp
+index 61fe034..3063575 100644
+--- a/src/map/chrif.cpp
++++ b/src/map/chrif.cpp
+@@ -281,6 +281,14 @@ int32 chrif_save(map_session_data *sd, int32 flag) {
+ 
+ 	pc_makesavestatus(sd);
+ 
++	// Population engine shells are transient fake PCs with reserved AID/CID and
++	// no backing row in the char DB.  Any chrif_save path here would push fake
++	// state into char_reg_num, skill, achievement, combat_assistant_profiles,
++	// support_assistant_profiles, mvp_ranking, etc.  Short-circuit before any
++	// of the per-subsystem save calls fire.
++	if (IS_POPULATION_ENGINE_ACCOUNT_ID(sd->status.account_id))
++		return 0;
++
+ 	if ( (flag&CSAVE_QUITTING) && sd->state.active) { //Store player data which is quitting
+ 		if (chrif_isconnected()) {
+ 			chrif_save_scdata(sd);
+diff --git a/src/map/clif.cpp b/src/map/clif.cpp
+index 8306054..28e5fff 100644
+--- a/src/map/clif.cpp
++++ b/src/map/clif.cpp
+@@ -51,6 +51,7 @@
+ #include "pc.hpp"
+ #include "pc_groups.hpp"
+ #include "pet.hpp"
++#include "population_engine.hpp"
+ #include "quest.hpp"
+ #include "script.hpp"
+ #include "skill.hpp"
+@@ -449,8 +450,9 @@ static int32 clif_send_sub(block_list *bl, va_list ap)
+ 	}
+ 
+ 	/* unless visible, hold it here */
+-	if (!battle_config.update_enemy_position && clif_ally_only && !sd->special_state.intravision &&
+-		!sd->sc.getSCE(SC_INTRAVISION) && battle_check_target(src_bl,sd,BCT_ENEMY) > 0)
++	if (!(src_bl->type == BL_PC && population_engine_is_population_pc(src_bl->id))
++		&& !battle_config.update_enemy_position && clif_ally_only && !sd->special_state.intravision &&
++		!sd->sc.getSCE(SC_INTRAVISION) && battle_check_target(src_bl,sd, BCT_ENEMY) > 0)
+ 		return 0;
+ 
+ 	WFIFOHEAD(fd, len);
+@@ -11449,6 +11451,8 @@ void clif_disconnect_ack(map_session_data* sd, int16 result)
+ ///     0 = quit
+ void clif_parse_QuitGame(int32 fd, map_session_data *sd)
+ {
++	population_engine_combat_shell_stop(sd);
++
+ 	/*	Rovert's prevent logout option fixed [Valaris]	*/
+ 	if( !sd->sc.getSCE(SC_CLOAKING) && !sd->sc.getSCE(SC_HIDING) && !sd->sc.getSCE(SC_CHASEWALK) && !sd->sc.getSCE(SC_CLOAKINGEXCEED) && !sd->sc.getSCE(SC_SUHIDE) && !sd->sc.getSCE(SC_NEWMOON) &&
+ 		(!battle_config.prevent_logout || sd->canlog_tick == 0 || DIFF_TICK(gettick(), sd->canlog_tick) > battle_config.prevent_logout) )
+@@ -11542,6 +11546,8 @@ void clif_parse_GlobalMessage(int32 fd, map_session_data* sd)
+ 	// Chat logging type 'O' / Global Chat
+ 	log_chat(LOG_CHAT_GLOBAL, 0, sd->status.char_id, sd->status.account_id, mapindex_id2name(sd->mapindex), sd->x, sd->y, nullptr, message);
+ 	//achievement_update_objective(sd, AG_CHAT, 1, sd->m); //! TODO: What's the official use of this achievement type?
++
++	population_engine_on_global_chat_mention(sd, message);
+ }
+ 
+ 
+@@ -11840,6 +11846,7 @@ void clif_parse_Restart(int32 fd, map_session_data *sd)
+ {
+ 	switch(RFIFOB(fd,packet_db[RFIFOW(fd,0)].pos[0])) {
+ 	case 0x00:
++		population_engine_combat_shell_stop(sd);
+ 		pc_respawn(sd,CLR_OUTSIGHT);
+ 		break;
+ 	case 0x01:
+@@ -11972,6 +11979,11 @@ void clif_parse_WisMessage(int32 fd, map_session_data* sd)
+ 	// notify sender of success
+ 	clif_wis_end( *sd, ACKWHISPER_SUCCESS );
+ 
++	if (population_engine_is_population_pc(dstsd->id)) {
++		population_engine_on_whisper_to_population_pc(sd, dstsd, message);
++		return;
++	}
++
+ 	// Normal message
+ 	clif_wis_message(dstsd, sd->status.name, message, strlen(message)+1, 0);
+ }
+diff --git a/src/map/intif.cpp b/src/map/intif.cpp
+index 931a56e..0f2f1b1 100644
+--- a/src/map/intif.cpp
++++ b/src/map/intif.cpp
+@@ -29,6 +29,7 @@
+ #include "pc.hpp"
+ #include "pc_groups.hpp"
+ #include "pet.hpp"
++#include "population_engine.hpp"
+ #include "quest.hpp"
+ #include "status.hpp"
+ #include "storage.hpp"
+@@ -401,6 +402,11 @@ int32 intif_saveregistry(map_session_data *sd)
+ 	int32 plen = 0;
+ 	size_t len;
+ 
++	if (sd && IS_POPULATION_ENGINE_ACCOUNT_ID(sd->status.account_id)) {
++		sd->vars_dirty = false;
++		return 0;
++	}
++
+ 	if (CheckForCharServer() || !sd->regs.vars)
+ 		return -1;
+ 
+@@ -2234,6 +2240,11 @@ void intif_parse_achievementsave(int32 fd)
+ 	if (!sd) // User not online anymore
+ 		return;
+ 
++	if (sd && IS_POPULATION_ENGINE_ACCOUNT_ID(sd->status.account_id)) {
++		sd->achievement_data.save = false;
++		return;
++	}
++
+ 	if (!RFIFOB(fd, 6))
+ 		ShowError("intif_parse_achievementsave: Failed to save achievement(s) for character %s (%d)!\n", sd->status.name, cid);
+ }
+@@ -3588,8 +3599,11 @@ static void intif_parse_StorageSaved(int32 fd)
+ 			default:
+ 				break;
+ 		}
+-	} else
+-		ShowError("Failed to save inventory/cart/storage data (AID: %d, type: %d).\n", RFIFOL(fd, 2), RFIFOB(fd, 7));
++	} else {
++		uint32 account_id = RFIFOL(fd, 2);
++		if (!IS_POPULATION_ENGINE_ACCOUNT_ID(account_id))
++			ShowError("Failed to save inventory/cart/storage data (AID: %d, type: %d).\n", account_id, RFIFOB(fd, 7));
++	}
+ }
+ 
+ /**
+diff --git a/src/map/map.cpp b/src/map/map.cpp
+index 37f58a6..dc83b91 100644
+--- a/src/map/map.cpp
++++ b/src/map/map.cpp
+@@ -49,6 +49,8 @@
+ #include "path.hpp"
+ #include "pc.hpp"
+ #include "pet.hpp"
++#include "population_engine.hpp"
++#include "population_engine/runtime/population_engine_combat.hpp"
+ #include "quest.hpp"
+ #include "storage.hpp"
+ #include "trade.hpp"
+@@ -2261,7 +2263,8 @@ int32 map_quit(map_session_data *sd) {
+ 
+ 	pc_itemcd_do(sd,false);
+ 
+-	npc_script_event( *sd, NPCE_LOGOUT );
++	if (!IS_POPULATION_ENGINE_ACCOUNT_ID(sd->status.account_id))
++		npc_script_event( *sd, NPCE_LOGOUT );
+ 
+ 	//Unit_free handles clearing the player related data,
+ 	//map_quit handles extra specific data which is related to quitting normally
+@@ -2326,7 +2329,8 @@ int32 map_quit(map_session_data *sd) {
+ 	pc_clean_skilltree(sd);
+ 	pc_crimson_marker_clear(sd);
+ 	pc_macro_detector_disconnect(*sd);
+-	chrif_save(sd, CSAVE_QUIT|CSAVE_INVENTORY|CSAVE_CART);
++	if (!IS_POPULATION_ENGINE_ACCOUNT_ID(sd->status.account_id))
++		chrif_save(sd, CSAVE_QUIT|CSAVE_INVENTORY|CSAVE_CART);
+ 	unit_free_pc(sd);
+ 	return 0;
+ }
+@@ -4523,9 +4527,12 @@ int32 cleanup_sub(block_list *bl, va_list ap)
+ 	nullpo_ret(bl);
+ 
+ 	switch(bl->type) {
+-		case BL_PC:
+-			map_quit((map_session_data *) bl);
++		case BL_PC: {
++			map_session_data *sd_bl = (map_session_data *)bl;
++			if (!IS_POPULATION_ENGINE_ACCOUNT_ID(sd_bl->status.account_id))
++				map_quit(sd_bl);
+ 			break;
++		}
+ 		case BL_NPC:
+ 			npc_unload((npc_data *)bl,false);
+ 			break;
+@@ -5011,9 +5018,14 @@ void MapServer::finalize(){
+ 	channel_config.closing = true;
+ 
+ 	//Ladies and babies first.
++	// Population shells are fake PCs managed by do_final_population_engine below;
++	// skip them here so only real connected players are cleaned up by map_quit.
+ 	struct s_mapiterator* iter = mapit_getallusers();
+-	for( map_session_data* sd = (TBL_PC*)mapit_first(iter); mapit_exists(iter); sd = (TBL_PC*)mapit_next(iter) )
++	for( map_session_data* sd = (TBL_PC*)mapit_first(iter); mapit_exists(iter); sd = (TBL_PC*)mapit_next(iter) ) {
++		if (IS_POPULATION_ENGINE_ACCOUNT_ID(sd->status.account_id))
++			continue;
+ 		map_quit(sd);
++	}
+ 	mapit_free(iter);
+ 
+ 	for (int32 i = 0; i < map_num; i++) {
+@@ -5039,6 +5051,9 @@ void MapServer::finalize(){
+ 	chrif_char_reset_offline();
+ 	chrif_flush_fifo();
+ 
++	do_final_population_engine();
++	do_final_population_engine_combat();
++
+ 	do_final_atcommand();
+ 	do_final_battle();
+ 	do_final_chrif();
+@@ -5318,8 +5333,11 @@ void MapServer::handle_shutdown(){
+ 
+ 	map_session_data* sd;
+ 	struct s_mapiterator* iter = mapit_getallusers();
+-	for( sd = (TBL_PC*)mapit_first(iter); mapit_exists(iter); sd = (TBL_PC*)mapit_next(iter) )
++	for( sd = (TBL_PC*)mapit_first(iter); mapit_exists(iter); sd = (TBL_PC*)mapit_next(iter) ) {
++		if (IS_POPULATION_ENGINE_ACCOUNT_ID(sd->status.account_id))
++			continue; // population shells have no real socket; cleaned up in do_final_population_engine
+ 		clif_GM_kick(nullptr, sd);
++	}
+ 	mapit_free(iter);
+ 	flush_fifos();
+ }
+@@ -5447,6 +5465,10 @@ bool MapServer::initialize( int32 argc, char *argv[] ){
+ 	do_init_vending();
+ 	do_init_buyingstore();
+ 
++	do_init_population_engine(); // register autosummon timer func; InitScript in equipment YAML uses parse_script after this
++	do_init_population_engine_combat();
++	do_init_population_engine_load_databases(); // after job_db + item_db: db/population_engine.yml validates Job and item IDs
++
+ 	npc_event_do_oninit();	// Init npcs (OnInit)
+ 
+ 	if (battle_config.pk_mode)
+diff --git a/src/map/npc.cpp b/src/map/npc.cpp
+index 2e83d77..d0df8bd 100644
+--- a/src/map/npc.cpp
++++ b/src/map/npc.cpp
+@@ -1744,6 +1744,11 @@ int32 npc_settimerevent_tick(npc_data* nd, int32 newtimer)
+ 
+ int32 npc_event_sub(map_session_data* sd, struct event_data* ev, const char* eventname)
+ {
++	// Population engine shells never run NPC scripts — skip silently to avoid
++	// filling the event queue with OnTouch/OnTouch_ events as shells roam past NPCs.
++	if (IS_POPULATION_ENGINE_ACCOUNT_ID(sd->status.account_id))
++		return 0;
++
+ 	if ( sd->npc_id != 0 )
+ 	{
+ 		//Enqueue the event trigger.
+@@ -5824,6 +5829,8 @@ int32 npc_parsesrcfile(const char* filepath)
+ size_t npc_script_event( map_session_data& sd, enum npce_event type ){
+ 	if (type == NPCE_MAX)
+ 		return 0;
++	if (IS_POPULATION_ENGINE_ACCOUNT_ID(sd.status.account_id))
++		return 0;
+ 
+ 	std::vector<struct script_event_s>& vector = script_event[type];
+ 
+diff --git a/src/map/pc.cpp b/src/map/pc.cpp
+index eceefa9..8aab342 100755
+--- a/src/map/pc.cpp
++++ b/src/map/pc.cpp
+@@ -55,6 +55,8 @@
+ #include "party.hpp" // party_search()
+ #include "pc_groups.hpp"
+ #include "pet.hpp" // pet_unlocktarget()
++#include "population_engine.hpp"
++#include "population_engine/runtime/population_engine_combat.hpp"
+ #include "quest.hpp"
+ #include "skill.hpp" // skill_isCopyable()
+ #include "script.hpp" // struct script_reg, struct script_regstr
+@@ -66,6 +68,10 @@
+ 
+ using namespace rathena;
+ 
++map_session_data::~map_session_data() {
++	population_engine_combat_cleanup_player(this);
++}
++
+ JobDatabase job_db;
+ 
+ CaptchaDatabase captcha_db;
+@@ -1895,9 +1901,10 @@ uint8 pc_isequip( const map_session_data* sd, int32 n )
+ 		return ITEM_EQUIP_ACK_FAIL;
+ 
+ 	if (item->equip&EQP_AMMO) {
++		const bool pop_pc = population_engine_is_population_pc(sd->id);
+ 		switch (item->subtype) {
+ 			case AMMO_ARROW:
+-				if (battle_config.ammo_check_weapon && sd->status.weapon != W_BOW && sd->status.weapon != W_MUSICAL && sd->status.weapon != W_WHIP) {
++				if (!pop_pc && battle_config.ammo_check_weapon && sd->status.weapon != W_BOW && sd->status.weapon != W_MUSICAL && sd->status.weapon != W_WHIP) {
+ 					clif_msg( *sd, MSI_FAIL_NEED_EQUIPPED_BOW );
+ 					return ITEM_EQUIP_ACK_FAIL;
+ 				}
+@@ -1908,7 +1915,7 @@ uint8 pc_isequip( const map_session_data* sd, int32 n )
+ 				break;
+ 			case AMMO_BULLET:
+ 			case AMMO_SHELL:
+-				if (battle_config.ammo_check_weapon && sd->status.weapon != W_REVOLVER && sd->status.weapon != W_RIFLE && sd->status.weapon != W_GATLING && sd->status.weapon != W_SHOTGUN
++				if (!pop_pc && battle_config.ammo_check_weapon && sd->status.weapon != W_REVOLVER && sd->status.weapon != W_RIFLE && sd->status.weapon != W_GATLING && sd->status.weapon != W_SHOTGUN
+ #ifdef RENEWAL
+ 					&& sd->status.weapon != W_GRENADE
+ #endif
+@@ -1919,18 +1926,18 @@ uint8 pc_isequip( const map_session_data* sd, int32 n )
+ 				break;
+ #ifndef RENEWAL
+ 			case AMMO_GRENADE:
+-				if (battle_config.ammo_check_weapon && sd->status.weapon != W_GRENADE) {
++				if (!pop_pc && battle_config.ammo_check_weapon && sd->status.weapon != W_GRENADE) {
+ 					clif_msg( *sd, MSI_WRONG_BULLET );
+ 					return ITEM_EQUIP_ACK_FAIL;
+ 				}
+ 				break;
+ #endif
+ 			case AMMO_CANNONBALL:
+-				if (!pc_ismadogear(sd) && (sd->status.class_ == JOB_MECHANIC_T || sd->status.class_ == JOB_MECHANIC)) {
++				if (!pop_pc && !pc_ismadogear(sd) && (sd->status.class_ == JOB_MECHANIC_T || sd->status.class_ == JOB_MECHANIC)) {
+ 					clif_msg( *sd, MSI_USESKILL_FAIL_MADOGEAR ); // Item can only be used when Mado Gear is mounted.
+ 					return ITEM_EQUIP_ACK_FAIL;
+ 				}
+-				if (sd->state.active && !pc_iscarton(sd) && //Check if sc data is already loaded
++				if (!pop_pc && sd->state.active && !pc_iscarton(sd) && //Check if sc data is already loaded
+ 					(sd->status.class_ == JOB_GENETIC_T || sd->status.class_ == JOB_GENETIC)) {
+ 					clif_msg( *sd, MSI_USESKILL_FAIL_CART ); // Only available when cart is mounted.
+ 					return ITEM_EQUIP_ACK_FAIL;
+@@ -9459,7 +9466,7 @@ int32 pc_resetskill(map_session_data* sd, int32 flag)
+ 		if( i&OPTION_CART && pc_checkskill(sd, MC_PUSHCART) )
+ 			i &= ~OPTION_CART;
+ #else
+-		if( sd->sc.getSCE(SC_PUSH_CART) )
++		if( sd->sc.getSCE(SC_PUSH_CART) && !population_engine_is_population_pc(sd->id) )
+ 			pc_setcart(sd, 0);
+ #endif
+ 		if( i != sd->sc.option )
+@@ -9705,6 +9712,11 @@ void pc_damage(map_session_data *sd,block_list *src,uint32 hp, uint32 sp, uint32
+ 
+ 	if(battle_config.prevent_logout_trigger&PLT_DAMAGE)
+ 		sd->canlog_tick = gettick();
++
++	// Population shell: record the hit so reactive conditions can detect non-mob attackers.
++	if (sd->state.population_combat)
++		sd->pop.last_damage_received = static_cast<int>(hp);
++	population_engine_on_shell_damaged(sd, src);
+ }
+ 
+ TIMER_FUNC(pc_close_npc_timer){
+@@ -9946,7 +9958,8 @@ int32 pc_dead(map_session_data *sd,block_list *src)
+ 	if (src && src->type == BL_PC) {
+ 		map_session_data *ssd = (map_session_data *)src;
+ 		pc_setparam(ssd, SP_KILLEDRID, sd->id);
+-		npc_script_event( *ssd, NPCE_KILLPC );
++		if (!IS_POPULATION_ENGINE_ACCOUNT_ID(ssd->status.account_id))
++			npc_script_event( *ssd, NPCE_KILLPC );
+ 
+ 		if (battle_config.pk_mode&2) {
+ 			ssd->status.manner -= 5;
+@@ -10118,6 +10131,8 @@ int32 pc_dead(map_session_data *sd,block_list *src)
+ 			map_session_data *ssd = (map_session_data *)src;
+ 			ssd->pvp_point++;
+ 			ssd->pvp_won++;
++			if (population_engine_is_population_pc(ssd->id) && !population_engine_is_population_pc(sd->id))
++				population_engine_on_shell_kills_player(ssd, sd);
+ 		}
+ 		if( sd->pvp_point < 0 ) {
+ 			sd->respawn_tid = add_timer(tick+1000, pc_respawn_timer,sd->id,0);
+@@ -10143,6 +10158,30 @@ int32 pc_dead(map_session_data *sd,block_list *src)
+ 	//Reset "can log out" tick.
+ 	if( battle_config.prevent_logout )
+ 		sd->canlog_tick = gettick() - battle_config.prevent_logout;
++
++	// Population shells with Flags: mortal respawn automatically.
++	if (population_engine_is_population_pc(sd->id))
++		population_engine_on_shell_death(sd);
++
++	// Population shell kill chat: fires on any map type (arenas, PvP, etc.)
++	if (!population_engine_is_population_pc(sd->id)) {
++		if (src && src->type == BL_PC) {
++			map_session_data *killer = (map_session_data*)src;
++			if (population_engine_is_population_pc(killer->id))
++				population_engine_on_shell_kills_player(killer, sd);
++		} else if (src && src->type == BL_SKILL) {
++			const struct skill_unit *su = (const struct skill_unit*)src;
++			if (su->group) {
++				block_list *owner_bl = map_id2bl(su->group->src_id);
++				if (owner_bl && owner_bl->type == BL_PC) {
++					map_session_data *killer = (map_session_data*)owner_bl;
++					if (population_engine_is_population_pc(killer->id))
++						population_engine_on_shell_kills_player(killer, sd);
++				}
++			}
++		}
++	}
++
+ 	return 1;
+ }
+ 
+@@ -11267,7 +11306,7 @@ bool pc_setcart(map_session_data *sd,int32 type) {
+ 	if( type < 0 || type > MAX_CARTS )
+ 		return false;// Never trust the values sent by the client! [Skotlex]
+ 
+-	if( pc_checkskill(sd,MC_PUSHCART) <= 0 && type != 0 )
++	if( pc_checkskill(sd,MC_PUSHCART) <= 0 && type != 0 && !population_engine_is_population_pc(sd->id) )
+ 		return false;// Push cart is required
+ 
+ #ifdef NEW_CARTS
+@@ -11308,7 +11347,7 @@ bool pc_setcart(map_session_data *sd,int32 type) {
+ void pc_setfalcon(map_session_data* sd, int32 flag)
+ {
+ 	if( flag ){
+-		if( pc_checkskill(sd,HT_FALCON)>0 )	// add falcon if he have the skill
++		if( pc_checkskill(sd,HT_FALCON)>0 || population_engine_is_population_pc(sd->id) )	// add falcon if he have the skill
+ 			pc_setoption(sd,sd->sc.option|OPTION_FALCON);
+ 	} else if( pc_isfalcon(sd) ){
+ 		pc_setoption(sd,sd->sc.option&~OPTION_FALCON); // remove falcon
+@@ -11324,7 +11363,7 @@ void pc_setriding(map_session_data* sd, int32 flag)
+ 		return;
+ 
+ 	if( flag ){
+-		if( pc_checkskill(sd,KN_RIDING) > 0 ) // add peco
++		if( pc_checkskill(sd,KN_RIDING) > 0 || population_engine_is_population_pc(sd->id) ) // add peco
+ 			pc_setoption(sd, sd->sc.option|OPTION_RIDING);
+ 	} else if( pc_isriding(sd) ){
+ 			pc_setoption(sd, sd->sc.option&~OPTION_RIDING);
+diff --git a/src/map/pc.hpp b/src/map/pc.hpp
+index 4cb5e93..d712bf3 100644
+--- a/src/map/pc.hpp
++++ b/src/map/pc.hpp
+@@ -15,6 +15,7 @@
+ #include <common/timer.hpp>
+ 
+ #include "battleground.hpp"
++#include "population_engine/core/population_shell_state.hpp"
+ #include "buyingstore.hpp" // struct s_buyingstore
+ #include "clif.hpp" //e_wip_block
+ #include "itemdb.hpp" // MAX_ITEMGROUP
+@@ -380,15 +381,18 @@ struct s_qi_display {
+ 
+ class map_session_data : public block_list {
+ public:
++	~map_session_data();
+ 	struct unit_data ud;
+ 	struct view_data vd;
+ 	struct status_data base_status, battle_status;
+ 	status_change sc;
+ 	struct regen_data regen;
+ 	struct regen_data_sub sregen, ssregen;
++	struct s_population pop;
+ 	//NOTE: When deciding to add a flag to state or special_state, take into consideration that state is preserved in
+ 	//status_calc_pc, while special_state is recalculated in each call. [Skotlex]
+ 	struct s_state {
++		uint32 population_combat : 1;
+ 		uint32 active : 1; //Marks active player (not active is logging in/out, or changing map servers)
+ 		uint32 menu_or_input : 1;// if a script is waiting for feedback from the player
+ 		uint32 dead_sit : 2;
+@@ -1401,6 +1405,7 @@ uint8 pc_isequip( const map_session_data* sd, int32 n );
+ int32 pc_equippoint( const map_session_data* sd, int32 n );
+ int32 pc_equippoint_sub( const map_session_data* sd, const item_data* id );
+ void pc_setinventorydata( map_session_data& sd );
++void pc_calcweapontype( map_session_data* sd );
+ 
+ int32 pc_get_skillcooldown( const map_session_data* sd, uint16 skill_id, uint16 skill_lv );
+ uint8 pc_checkskill( const map_session_data* sd,uint16 skill_id );
+diff --git a/src/map/script.cpp b/src/map/script.cpp
+index c05f24b..3e5e42b 100644
+--- a/src/map/script.cpp
++++ b/src/map/script.cpp
+@@ -60,6 +60,7 @@
+ #include "pc.hpp"
+ #include "pc_groups.hpp"
+ #include "pet.hpp"
++#include "population_engine.hpp"
+ #include "quest.hpp"
+ #include "storage.hpp"
+ 
+@@ -27859,7 +27860,7 @@ BUILDIN_FUNC(mesemotion){
+ 	// Validates emotion range
+ 	if (id < ET_SURPRISE || id >= ET_MAX) {
+ 		ShowError("buildin_mesemotion: Emotion ID %d is invalid.\n", id);
+-		st->state = END;
++		st->state = END;
+ 		return SCRIPT_CMD_FAILURE;
+ 	}
+ 
+@@ -27870,8 +27871,8 @@ BUILDIN_FUNC(mesemotion){
+ 	return SCRIPT_CMD_SUCCESS;
+ #else
+ 	ShowError( "buildin_mesemotion: This command requires PACKETVER 2023-03-02 or newer.\n" );
+-	st->state = END;
+-	return SCRIPT_CMD_FAILURE;
++	st->state = END;
++	return SCRIPT_CMD_FAILURE;
+ #endif
+ }
+ 
+diff --git a/src/map/skill.cpp b/src/map/skill.cpp
+index 27c9e23..d2dfb7c 100755
+--- a/src/map/skill.cpp
++++ b/src/map/skill.cpp
+@@ -42,6 +42,7 @@
+ #include "pc.hpp"
+ #include "pc_groups.hpp"
+ #include "pet.hpp"
++#include "population_engine.hpp"
+ #include "script.hpp"
+ #include "status.hpp"
+ #include "unit.hpp"
+@@ -9839,6 +9840,10 @@ struct s_skill_condition skill_get_requirement(map_session_data* sd, uint16 skil
+ 	req.spiritball = skill->require.spiritball[skill_lv-1];
+ 	req.state = skill->require.state;
+ 
++	// Runtime population PCs have no client; relax weapon/ammo/item requirements (see pc_isequip for equip).
++	if (population_engine_is_population_pc(sd->id))
++		return req;
++
+ 	req.mhp = skill->require.mhp[skill_lv-1];
+ 	req.weapon = skill->require.weapon;
+ 	req.ammo_qty = skill->require.ammo_qty[skill_lv-1];
+@@ -12266,7 +12271,8 @@ static int32 skill_unit_timer_sub(DBKey key, DBData *data, va_list ap)
+ 			case UNT_ICEBOUNDTRAP:
+ 			{
+ 				block_list* src;
+-				if( unit->val1 > 0 && (src = map_id2bl(group->src_id)) != nullptr && src->type == BL_PC )
++				if( unit->val1 > 0 && (src = map_id2bl(group->src_id)) != nullptr && src->type == BL_PC
++					&& !population_engine_is_population_pc(src->id) )
+ 				{ // revert unit back into a trap
+ 					struct item item_tmp;
+ 					memset(&item_tmp,0,sizeof(item_tmp));
+diff --git a/src/map/status.cpp b/src/map/status.cpp
+index 87e0d41..eabbed2 100644
+--- a/src/map/status.cpp
++++ b/src/map/status.cpp
+@@ -32,6 +32,8 @@
+ #include "npc.hpp"
+ #include "path.hpp"
+ #include "pc.hpp"
++#include "population_engine.hpp"
++#include "population_engine/runtime/population_engine_combat.hpp"
+ #include "pc_groups.hpp"
+ #include "pet.hpp"
+ #include "script.hpp"
+@@ -1498,6 +1500,15 @@ int32 status_damage(block_list *src,block_list *target,int64 dhp, int64 dsp, int
+ 
+ 	nullpo_ret(target);
+ 
++	// Population shells are immortal by default; only shells with PSF::Mortal (Flags: mortal) take damage.
++	if (target->type == BL_PC) {
++		map_session_data *pop_sd = BL_CAST(BL_PC, target);
++		if (pop_sd != nullptr && population_engine_is_population_pc(pop_sd->id)
++		    && !population_engine_shell_is_mortal(pop_sd)
++		    && (hp > 0 || sp > 0 || ap > 0))
++			return 0;
++	}
++
+ 	if(sp && !(target->type&BL_CONSUME))
+ 		sp = 0; // Not a valid SP target.
+ 
+@@ -1783,7 +1794,8 @@ int32 status_damage(block_list *src,block_list *target,int64 dhp, int64 dsp, int
+ 				npc_event(sd, bg->die_event.c_str(), 0);
+ 		}
+ 
+-		npc_script_event( *sd, NPCE_DIE );
++		if (!IS_POPULATION_ENGINE_ACCOUNT_ID(sd->status.account_id))
++			npc_script_event( *sd, NPCE_DIE );
+ 	}
+ 
+ 	return (int32)(hp+sp+ap);
+@@ -13081,7 +13093,7 @@ static bool status_change_start_post_delay(block_list* src, block_list* bl, sc_t
+ 				break;
+ 		}
+ 
+-	if (sd && current_equip_combo_pos > 0 && tick == INFINITE_TICK) {
++	if (sd && current_equip_combo_pos > 0 && tick == INFINITE_TICK && !population_engine_is_population_pc(bl->id)) {
+ 		ShowWarning("sc_start: Item combo of item #%u contains an INFINITE_TICK duration. Skipping bonus.\n", sd->inventory_data[pc_checkequip(sd, current_equip_combo_pos)]->nameid);
+ 		return false;
+ 	}
+diff --git a/src/map/unit.cpp b/src/map/unit.cpp
+index 1d0b84b..f375591 100644
+--- a/src/map/unit.cpp
++++ b/src/map/unit.cpp
+@@ -35,6 +35,7 @@
+ #include "path.hpp"
+ #include "pc.hpp"
+ #include "pet.hpp"
++#include "population_engine.hpp"
+ #include "storage.hpp"
+ #include "trade.hpp"
+ 
+@@ -2007,6 +2008,9 @@ int32 unit_set_walkdelay(block_list *bl, t_tick tick, t_tick delay, int32 type,
+ 	if (delay <= 0 || !ud)
+ 		return 0;
+ 
++	if (bl->type == BL_PC && population_engine_is_population_pc(bl->id) && type == 1)
++		delay = 50;
++
+ 	if (type) {
+ 		//Bosses can ignore skill induced walkdelay (but not damage induced)
+ 		if(bl->type == BL_MOB && status_has_mode(status_get_status_data(*bl),MD_STATUSIMMUNE))
+diff --git a/src/map/vending.cpp b/src/map/vending.cpp
+index 8513255..04281cb 100755
+--- a/src/map/vending.cpp
++++ b/src/map/vending.cpp
+@@ -60,9 +60,11 @@ void vending_closevending(map_session_data* sd)
+ 	nullpo_retv(sd);
+ 
+ 	if( sd->state.vending ) {
+-		if( Sql_Query( mmysql_handle, "DELETE FROM `%s` WHERE vending_id = %d;", vending_items_table, sd->vender_id ) != SQL_SUCCESS ||
+-			Sql_Query( mmysql_handle, "DELETE FROM `%s` WHERE `id` = %d;", vendings_table, sd->vender_id ) != SQL_SUCCESS ) {
+-				Sql_ShowDebug(mmysql_handle);
++		if( !IS_POPULATION_ENGINE_ACCOUNT_ID(sd->status.account_id) ) {
++			if( Sql_Query( mmysql_handle, "DELETE FROM `%s` WHERE vending_id = %d;", vending_items_table, sd->vender_id ) != SQL_SUCCESS ||
++				Sql_Query( mmysql_handle, "DELETE FROM `%s` WHERE `id` = %d;", vendings_table, sd->vender_id ) != SQL_SUCCESS ) {
++					Sql_ShowDebug(mmysql_handle);
++			}
+ 		}
+ 
+ 		sd->state.vending = false;
+@@ -229,16 +231,17 @@ void vending_purchasereq(map_session_data* sd, int32 aid, int32 uid, const uint8
+ 		vsd->vending[vend_list[i]].amount -= amount;
+ 		z += ((double)vsd->vending[vend_list[i]].value * (double)amount);
+ 
+-		if( vsd->vending[vend_list[i]].amount ) {
+-			if( Sql_Query( mmysql_handle, "UPDATE `%s` SET `amount` = %d WHERE `vending_id` = %d and `cartinventory_id` = %d", vending_items_table, vsd->vending[vend_list[i]].amount, vsd->vender_id, vsd->cart.u.items_cart[idx].id ) != SQL_SUCCESS ) {
+-				Sql_ShowDebug( mmysql_handle );
+-			}
+-		} else {
+-			if( Sql_Query( mmysql_handle, "DELETE FROM `%s` WHERE `vending_id` = %d and `cartinventory_id` = %d", vending_items_table, vsd->vender_id, vsd->cart.u.items_cart[idx].id ) != SQL_SUCCESS ) {
+-				Sql_ShowDebug( mmysql_handle );
++			if( !IS_POPULATION_ENGINE_ACCOUNT_ID(vsd->status.account_id) ) {
++			if( vsd->vending[vend_list[i]].amount ) {
++				if( Sql_Query( mmysql_handle, "UPDATE `%s` SET `amount` = %d WHERE `vending_id` = %d and `cartinventory_id` = %d", vending_items_table, vsd->vending[vend_list[i]].amount, vsd->vender_id, vsd->cart.u.items_cart[idx].id ) != SQL_SUCCESS ) {
++					Sql_ShowDebug( mmysql_handle );
++				}
++			} else {
++				if( Sql_Query( mmysql_handle, "DELETE FROM `%s` WHERE `vending_id` = %d and `cartinventory_id` = %d", vending_items_table, vsd->vender_id, vsd->cart.u.items_cart[idx].id ) != SQL_SUCCESS ) {
++					Sql_ShowDebug( mmysql_handle );
++				}
+ 			}
+ 		}
+-
+ 		pc_cart_delitem(vsd, idx, amount, 0, LOG_TYPE_VENDING);
+ 		z = vending_calc_tax(sd, z);
+ 		clif_vendingreport( *vsd, idx, amount, sd->status.char_id, (int32)z );
+@@ -391,23 +394,25 @@ int8 vending_openvending( map_session_data& sd, const char* message, const uint8
+ 	sd.vend_num = i;
+ 	safestrncpy(sd.message, message, MESSAGE_SIZE);
+ 	
+-	Sql_EscapeString( mmysql_handle, message_sql, sd.message );
++	if( !IS_POPULATION_ENGINE_ACCOUNT_ID(sd.status.account_id) ) {
++		Sql_EscapeString( mmysql_handle, message_sql, sd.message );
+ 
+-	if( Sql_Query( mmysql_handle, "INSERT INTO `%s`(`id`, `account_id`, `char_id`, `sex`, `map`, `x`, `y`, `title`, `autotrade`, `body_direction`, `head_direction`, `sit`) "
+-		"VALUES( %d, %d, %d, '%c', '%s', %d, %d, '%s', %d, '%d', '%d', '%d' );",
+-		vendings_table, sd.vender_id, sd.status.account_id, sd.status.char_id, sd.status.sex == SEX_FEMALE ? 'F' : 'M', map_getmapdata(sd.m)->name, sd.x, sd.y, message_sql, sd.state.autotrade, at ? at->dir : sd.ud.dir, at ? at->head_dir : sd.head_dir, at ? at->sit : pc_issit(&sd) ) != SQL_SUCCESS ) {
+-		Sql_ShowDebug(mmysql_handle);
+-	}
++		if( Sql_Query( mmysql_handle, "INSERT INTO `%s`(`id`, `account_id`, `char_id`, `sex`, `map`, `x`, `y`, `title`, `autotrade`, `body_direction`, `head_direction`, `sit`) "
++			"VALUES( %d, %d, %d, '%c', '%s', %d, %d, '%s', %d, '%d', '%d', '%d' );",
++			vendings_table, sd.vender_id, sd.status.account_id, sd.status.char_id, sd.status.sex == SEX_FEMALE ? 'F' : 'M', map_getmapdata(sd.m)->name, sd.x, sd.y, message_sql, sd.state.autotrade, at ? at->dir : sd.ud.dir, at ? at->head_dir : sd.head_dir, at ? at->sit : pc_issit(&sd) ) != SQL_SUCCESS ) {
++			Sql_ShowDebug(mmysql_handle);
++		}
+ 
+-	StringBuf_Init(&buf);
+-	StringBuf_Printf(&buf, "INSERT INTO `%s`(`vending_id`,`index`,`cartinventory_id`,`amount`,`price`) VALUES", vending_items_table);
+-	for (j = 0; j < i; j++) {
+-		StringBuf_Printf(&buf, "(%d,%d,%d,%d,%d)", sd.vender_id, j, sd.cart.u.items_cart[sd.vending[j].index].id, sd.vending[j].amount, sd.vending[j].value);
+-		if (j < i-1)
+-			StringBuf_AppendStr(&buf, ",");
++		StringBuf_Init(&buf);
++		StringBuf_Printf(&buf, "INSERT INTO `%s`(`vending_id`,`index`,`cartinventory_id`,`amount`,`price`) VALUES", vending_items_table);
++		for (j = 0; j < i; j++) {
++			StringBuf_Printf(&buf, "(%d,%d,%d,%d,%d)", sd.vender_id, j, sd.cart.u.items_cart[sd.vending[j].index].id, sd.vending[j].amount, sd.vending[j].value);
++			if (j < i-1)
++				StringBuf_AppendStr(&buf, ",");
++		}
++		if (SQL_ERROR == Sql_QueryStr(mmysql_handle, StringBuf_Value(&buf)))
++			Sql_ShowDebug(mmysql_handle);
+ 	}
+-	if (SQL_ERROR == Sql_QueryStr(mmysql_handle, StringBuf_Value(&buf)))
+-		Sql_ShowDebug(mmysql_handle);
+ 
+ 	clif_openvending( sd );
+ 	clif_showvendingboard( sd );
+@@ -737,6 +742,8 @@ static int32 vending_autotrader_free(DBKey key, DBData *data, va_list ap) {
+ */
+ void vending_update(map_session_data &sd)
+ {
++	if (IS_POPULATION_ENGINE_ACCOUNT_ID(sd.status.account_id))
++		return;
+ 	if (Sql_Query(mmysql_handle, "UPDATE `%s` SET `map` = '%s', `x` = '%d', `y` = '%d', `body_direction` = '%d', `head_direction` = '%d', `sit` = '%d', `autotrade` = '%d' WHERE `id` = '%d'",
+ 		vendings_table, map_getmapdata(sd.m)->name, sd.x, sd.y, sd.ud.dir, sd.head_dir, pc_issit(&sd), sd.state.autotrade,
+ 		sd.vender_id

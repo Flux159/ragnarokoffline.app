@@ -1,0 +1,284 @@
+# This file is a part of rAthena.
+#   Copyright(C) 2021 rAthena Development Team
+#   https://rathena.org - https://github.com/rathena
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+#
+###########################################################################
+# Population Engine Database — PvP (arenas only)
+###########################################################################
+#
+# Job entries for transcendent and expanded jobs spawned by the PvP arena
+# system (population_engine_arena_start). These shells are not used for
+# town / field / dungeon population.
+#
+# Gear sets, profiles, and the arena job pool are defined in
+# db/population_gear_sets.yml and shared across all three files.
+#
+###########################################################################
+# PROFILE FIELD REFERENCE
+###########################################################################
+#
+# Profile:       Unique profile name referenced by spawn entries.
+# Jobs:          Map of JobName: GearSet.  GearSet keys come from
+#                db/population_gear_sets.yml.  A job not listed here falls
+#                back to the engine's built-in class default.
+# NameProfile:   Name distribution profile (default = "default").
+# ChatProfile:   Chat profile for ambient dialogue.
+# Hair:          [min, max] range of hair style IDs.
+# HairColor:     [min, max] range of hair colour IDs.
+# ClothesColor:  [min, max] range of clothes colour IDs.
+#
+# Phase 2 — combat identity (omit to use engine defaults)
+# ---------------------------------------------------------
+# BaseLevel:     [min, max] base-level range assigned at spawn.
+# JobLevel:      [min, max] job-level range assigned at spawn.
+# Str/Agi/Vit/Int/Dex/Luk:  [min, max] raw stat ranges at spawn.
+#                            All stats are clamped to [1, 99].
+#
+# Behaviour / movement
+# ---------------------
+# TownBehavior:    wander | guard | combat | idle
+#   wander  — random walk within spawn radius
+#   guard   — patrol near spawn, switch to combat on aggro
+#   combat  — always seek targets; never wander
+#   idle    — stand still; only attack if attacked first
+# FieldBehavior:   same values as TownBehavior.
+# DungeonBehavior: same values as TownBehavior.
+#
+# Movetype controls locomotion within a combat state:
+#   -1  — stationary turret; never moves.
+#    0  — melee brawler; closes to touch range.
+#    1  — ranged; maintains preferred distance (skill range – 1).
+#    3  — hybrid; advances if no target in detection radius, then
+#          chooses melee or ranged based on equipped weapon type.
+#
+# Role (AI priority hint):
+#   none      — generic attacker with no priority override.
+#   tank      — prefers aggressive melee; taunts and body-blocks.
+#   support   — prioritises heals, buffs, and resurrection skills.
+#   attacker  — maximises offensive skill use.
+#
+# Flags (bitmask list; combine as a YAML sequence):
+#   immortal    — shell cannot receive damage (default).
+#   mortal      — takes damage and can die; respawn timer activates.
+#   attack_only — auto-attack only; skill rotation bypassed.
+#   skill_only  — skills only; never auto-attacks.
+#
+# Script:  Inline NPC script executed once at shell spawn:
+#            Script: |
+#              setriding;
+#              setarrow;
+#
+###########################################################################
+
+Header:
+  Type: POPULATION_ENGINE_DB
+  Version: 2
+
+Body:
+
+###########################################################################
+# Profiles - PvP arena defaults.  Scoped to this file so they
+# can be tuned independently from the PvE profiles in population_engine.yml.
+###########################################################################
+
+  - Profile: novice_default
+    Jobs:
+      HighNovice: novice_set
+    NameProfile: default
+    ChatProfile: default
+    Hair: [0, 42]
+    HairColor: [0, 131]
+    ClothesColor: [0, 699]
+    Flags:
+      - mortal
+    TownBehavior: wander
+    FieldBehavior: combat
+
+  - Profile: combat_pvp           # generic transcendent PvP defaults
+    Jobs:
+      Gunslinger        : para_gun
+      Ninja             : para_ninja
+      HighSwordsman     : para_swordsman
+      HighMage          : para_mage
+      HighArcher        : para_bow
+      HighAcolyte       : para_mage
+      HighPriest        : para_mage
+      Creator           : para_merchant
+      Taekwon           : para_taekwon
+      StarGladiator     : para_taekwon
+      SoulLinker        : para_mage
+    NameProfile: default
+    ChatProfile: pvp
+    Hair: [0, 42]
+    HairColor: [0, 131]
+    ClothesColor: [0, 699]
+    Flags:
+      - mortal
+    TownBehavior: wander
+    FieldBehavior: combat
+    DungeonBehavior: combat
+
+  - Profile: pvp_knight           # Str/Vit melee tank: Knight, Lord Knight
+    Jobs:
+      LordKnight: para_knight_base
+    NameProfile: default
+    ChatProfile: pvp
+    Hair: [0, 42]
+    HairColor: [0, 131]
+    ClothesColor: [0, 699]
+    BaseLevel: [90, 99]
+    JobLevel: [40, 50]
+    Str: [80, 99]
+    Agi: [80, 99]
+    Vit: [80, 99]
+    Int: [1, 20]
+    Dex: [80, 99]
+    Luk: [80, 99]
+    Flags:
+      - mortal
+    TownBehavior: social
+    FieldBehavior: combat
+    DungeonBehavior: combat
+    Script: |
+      setriding;
+      bonus bCastrate,-90;
+      bonus bDelayRate,-90;
+
+  - Profile: pvp_paladin          # Vit/Int hybrid: Crusader, Paladin
+    Jobs:
+      Paladin: para_crusader
+    NameProfile: default
+    ChatProfile: pvp
+    Hair: [0, 42]
+    HairColor: [0, 131]
+    ClothesColor: [0, 699]
+    BaseLevel: [90, 99]
+    JobLevel: [40, 50]
+    Str: [50, 80]
+    Agi: [1, 50]
+    Vit: [50, 80]
+    Int: [50, 80]
+    Dex: [50, 80]
+    Luk: [1, 10]
+    Flags:
+      - mortal
+    TownBehavior: social
+    FieldBehavior: combat
+    DungeonBehavior: combat
+    Script: |
+      setriding;
+      bonus bCastrate,-90;
+      bonus bDelayRate,-90;
+
+  - Profile: pvp_caster           # Int/Dex skill-only: Wizard, HighWiz, Sage, Professor
+    Jobs:
+      HighWizard: para_mage
+      Professor : para_mage
+    NameProfile: default
+    ChatProfile: pvp
+    Hair: [0, 42]
+    HairColor: [0, 131]
+    ClothesColor: [0, 699]
+    BaseLevel: [90, 99]
+    JobLevel: [40, 50]
+    Str: [1, 10]
+    Agi: [1, 10]
+    Vit: [30, 50]
+    Int: [90, 99]
+    Dex: [90, 99]
+    Luk: [1, 10]
+    Flags:
+      - mortal
+      - skill_only
+    TownBehavior: social
+    FieldBehavior: combat
+    DungeonBehavior: combat
+    Script: |
+      bonus bCastrate,-90;
+      bonus bDelayRate,-90;
+
+  - Profile: pvp_archer           # Agi/Dex bow: Hunter, Sniper, Bard, Clown, Dancer, Gypsy
+    Jobs:
+      Sniper: para_bow
+      Clown : para_bow
+      Gypsy : para_bow
+    NameProfile: default
+    ChatProfile: pvp
+    Hair: [0, 42]
+    HairColor: [0, 131]
+    ClothesColor: [0, 699]
+    BaseLevel: [90, 99]
+    JobLevel: [40, 50]
+    Str: [1, 10]
+    Agi: [90, 99]
+    Vit: [1, 10]
+    Int: [1, 10]
+    Dex: [90, 99]
+    Luk: [90, 99]
+    Flags:
+      - mortal
+    TownBehavior: wander
+    FieldBehavior: combat
+    DungeonBehavior: combat
+    Script: |
+      setarrow;
+
+  - Profile: pvp_monk             # Str/Vit/Dex puncher: Monk, Champion
+    Jobs:
+      Champion: para_monk
+    NameProfile: default
+    ChatProfile: pvp_kill
+    Hair: [0, 42]
+    HairColor: [0, 131]
+    ClothesColor: [0, 699]
+    BaseLevel: [90, 99]
+    JobLevel: [40, 50]
+    Str: [90, 99]
+    Agi: [1, 10]
+    Vit: [90, 99]
+    Int: [1, 10]
+    Dex: [90, 99]
+    Luk: [1, 10]
+    Flags:
+      - mortal
+    TownBehavior: wander
+    FieldBehavior: combat
+    DungeonBehavior: combat
+    Script: |
+      bonus bCastrate,-90;
+      bonus bDelayRate,-90;
+
+  - Profile: pvp_thief_high       # Endgame Agi/Dex stats: HighThief, AssassinX, Stalker
+    Jobs:
+      HighThief    : para_thief
+      AssassinCross: para_thief
+      Stalker      : para_thief
+    NameProfile: default
+    ChatProfile: pvp
+    Hair: [0, 42]
+    HairColor: [0, 131]
+    ClothesColor: [0, 699]
+    Str: [35, 60]
+    Agi: [75, 99]
+    Vit: [35, 60]
+    Int: [16, 38]
+    Dex: [68, 95]
+    Luk: [48, 85]
+    Flags:
+      - mortal
+    TownBehavior: wander
+    FieldBehavior: combat
+    DungeonBehavior: combat

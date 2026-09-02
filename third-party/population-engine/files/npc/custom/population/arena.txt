@@ -1,0 +1,131 @@
+//===== Banquet of Heroes Script =====================================
+//= Population Arena Manager
+//===== Description ==================================================
+//= NPC that lets a player (or GM) enter a PvP map and fight against
+//= population engine shells to observe and study AI behaviour.
+//= population_arena_start / population_arena_stop script commands
+//= are used to spawn and remove the shells.
+//===== Configuration ================================================
+//= Edit .arena_map$, .sx/.sy (shell spawn center), and .return_map$
+//= plus .return_x/.return_y in the OnInit block below.
+//= The arena map must already have PvP mode enabled in map_flag
+//= configuration, OR set .enable_pvp_flag 1 to toggle it dynamically.
+//====================================================================
+
+// ── Arena Manager NPC ─────────────────────────────────────────────
+morocc,144,101,4	script	Arena Manager	4_M_GUNSLINGER,{
+
+	// ── Main menu: opponent count ──────────────────────────────────
+	mes "^336699[Arena Manager]^000000";
+	mes "Enter ^FF6600" + .arena_map$ + "^000000 and fight population shells.";
+	next;
+
+	switch(select(
+		"1v1 - 1 opponent (solo)",
+		"3v3 - 3 opponents + 2 allies",
+		"5v5 - 5 opponents + 4 allies",
+		"Stop arena",
+		"Cancel"
+	)) {
+	case 1: @shell_count = 1; break;
+	case 2: @shell_count = 3; break;
+	case 3: @shell_count = 5; break;
+	case 4: callsub S_Stop; end;
+	case 5: close;
+	}
+
+	// ── Build job menu once ────────────────────────────────────────
+	.@csv$ = population_arena_jobs();
+	explode(.@ids$, .@csv$, ",");
+	.@nj = getarraysize(.@ids$);
+	if (.@nj == 1 && .@ids$[0] == "") .@nj = 0;
+
+	.@menu$ = "Random Mix";
+	for (.@i = 0; .@i < .@nj; ++.@i)
+		.@menu$ = .@menu$ + ":" + jobname(atoi(.@ids$[.@i]));
+	.@menu$ = .@menu$ + ":Cancel";
+
+	// ── Stop previous arena, enable PvP flag ──────────────────────
+	population_arena_stop(.arena_map$);
+	if (.enable_pvp_flag) setmapflag .arena_map$, mf_pvp;
+	.@total_spawned = 0;
+
+	// ── Spawn enemies (1 per slot, each with its own job choice) ───
+	for (.@slot = 1; .@slot <= @shell_count; ++.@slot) {
+		mes "^336699[Arena Manager]^000000";
+		mes "Choose job for ^FF6600opponent " + .@slot + " of " + @shell_count + "^000000:";
+		next;
+		.@pick = select(.@menu$);
+		if (.@pick == .@nj + 2) {
+			if (.@total_spawned > 0) population_arena_stop(.arena_map$);
+			close;
+		}
+		.@job_id = 0;
+		if (.@pick > 1) .@job_id = atoi(.@ids$[.@pick - 2]);
+		// Spread spawn X by 5 cells per slot so shells don't stack on the same tile.
+		.@spawned = population_arena_start(.arena_map$, 1, .sx + (.@slot - 1) * 5, .sy, .@job_id, 1);
+		.@total_spawned += .@spawned;
+	}
+
+	// ── Spawn allies: (shell_count - 1) to make it even-sided ─────
+	// 1v1 = 0 allies; 3v3 = 2 allies; 5v5 = 4 allies (player counts as 1).
+	.@ally_count = @shell_count - 1;
+	for (.@slot = 1; .@slot <= .@ally_count; ++.@slot) {
+		mes "^336699[Arena Manager]^000000";
+		mes "Choose job for ^22AA22ally " + .@slot + " of " + .@ally_count + "^000000:";
+		next;
+		.@pick = select(.@menu$);
+		if (.@pick == .@nj + 2) break;  // Cancel ally selection, keep enemies
+		.@job_id = 0;
+		if (.@pick > 1) .@job_id = atoi(.@ids$[.@pick - 2]);
+		// Spawn allied shell near player start point, spread by 5 cells.
+		.@spawned = population_arena_start(.arena_map$, 1, .ax + (.@slot - 1) * 5, .ay, .@job_id, 2);
+		.@total_spawned += .@spawned;
+	}
+
+	mes "^336699[Arena Manager]^000000";
+	if (.@total_spawned <= 0) {
+		mes "^FF0000Failed to spawn any shells^000000. Check the server log.";
+		close;
+	}
+	mes "^22AA22" + .@total_spawned + " shell(s) spawned^000000 on ^FF6600" + .arena_map$ + "^000000.";
+	mes "You will be warped there now.";
+	close2;
+	warp .arena_map$, .px, .py;
+	end;
+
+// ── Stop: remove shells, remove PvP flag, warp player back ─────────
+S_Stop:
+	population_arena_stop(.arena_map$);
+	if (.enable_pvp_flag) removemapflag .arena_map$, mf_pvp;
+	mes "^336699[Arena Manager]^000000";
+	mes "Arena stopped. Warping back to ^FF6600" + .return_map$ + "^000000.";
+	close2;
+	warp .return_map$, .return_x, .return_y;
+	end;
+
+OnInit:
+	// ── Configuration ────────────────────────────────────────────
+	.arena_map$ = "pvp_y_1-2";
+
+	// Enemy spawn center.
+	.sx = 86;
+	.sy = 161;
+
+	// Allied shell spawn center (player's side).
+	.ax = 169;
+	.ay = 161;
+
+	// Player warp-in point.
+	.px = 169;
+	.py = 161;
+
+	.return_map$ = "morocc";
+	.return_x    = 156;
+	.return_y    = 93;
+
+	// Set 1 to toggle PvP mapflag automatically.
+	.enable_pvp_flag = 0;
+	// ─────────────────────────────────────────────────────────────
+	end;
+}

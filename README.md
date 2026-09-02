@@ -57,10 +57,11 @@ applies it. Off by default, the server listens only on your own machine.
 
 <img src="docs/assets/hostingsettings.png" alt="Multiplayer settings in host mode, with 'Let other machines connect' ticked" width="640">
 
-**2. Copy the address next to *Your address* and send it to your friends.** It is
-the one they type in, and it only works for people who can already reach your
-computer on the network. The first time you turn this on, your machine will
-likely ask you to approve local network access — say yes, or nobody can connect.
+**2. Copy the link next to *Your link* and send it to your friends.** One link
+covers both ways of joining — pasted into the app, or opened in a browser — and
+it only works for people who can already reach your computer on the network. The
+first time you turn this on, your machine will likely ask you to approve local
+network access — say yes, or nobody can connect.
 
 **3. Keep the app running.** You are the server: when you quit, everyone's session
 ends. Characters live on your machine too, so they stay with you rather than with
@@ -69,7 +70,7 @@ their owners.
 ### If you are joining
 
 Joining a friend's server does not require you to download assets. On the setup
-screen, just click **Join a friend** and enter the address that your friend sent.
+screen, just click **Join a friend** and paste the link that your friend sent.
 
 <img src="docs/assets/joinafriend.png" alt="First-run setup screen on the Join a friend tab, asking for the host's server address" width="640">
 
@@ -77,6 +78,25 @@ The host serves the client and the artwork, so joining starts in seconds instead
 of the few minutes a first run takes. You make your own character on their
 server: on the login screen, add `_M` or `_F` to the end of a new username and
 that account is created as you log in.
+
+### Joining from a browser, with nothing installed
+
+The client is roBrowserLegacy, and the host is already serving it over HTTP — so
+the same link opens the game in a normal browser. **Paste it into the address
+bar and play. No download, no app, no game files.**
+
+```
+http://192.168.1.20:3338/
+```
+
+That is the whole of it. The app is the more comfortable way to play — it is one
+window with no browser chrome, and it does not ask "Leave site?" when you close
+it — but nothing about the game needs it. Anything on the wifi with a browser
+that does WebGL will do, which includes a Windows or Linux machine with no build
+of this app on it. Chrome and Firefox are the tested ones.
+
+The host still has to be hosting: the link is only live while their app is
+running with *Let other machines connect* on.
 
 ### Switching between the two
 
@@ -104,11 +124,20 @@ Under the hood it stitches together three existing projects:
 | game server | [**rAthena**](https://github.com/rathena/rathena) | The open-source RO server emulator (login / char / map) + MariaDB |
 | game client | [**roBrowserLegacy**](https://github.com/MrAntares/roBrowserLegacy) + [**RemoteClient**](https://github.com/Flux159/roBrowserLegacy-RemoteClient-Rust) | WebGL RO client, GRF asset server, and TCP↔WebSocket proxy |
 
-The short version: **rAthena and roBrowserLegacy run unmodified, inside Linux
-containers, inside a microVM the app carries with it.** Nothing is ported. The hard
+The short version: **rAthena and roBrowserLegacy run inside Linux containers,
+inside a microVM the app carries with it.** Nothing is ported. The hard
 part of running an RO server on a Mac is not the server — it is that the server was
 never meant to run on one. So we do not port it; we bring Linux. The same holds for
 Windows, which is how one codebase covers three platforms.
+
+Both are close to stock. roBrowserLegacy carries three small client patches in
+`patches/`. rAthena is built from a clean upstream clone with one optional
+server modification compiled in — the [Population
+Engine](https://github.com/YlenXWalker/Population-Engine), which fills a solo
+world with AI characters and is **off unless you turn it on** in Settings. It is
+GPL-3.0 like rAthena itself, and everything we add lives in
+`third-party/population-engine/` rather than in a fork, so what has been changed
+is one directory rather than a diff against a moving target.
 
 The shell is **Electron**, so the same Chromium renders the client everywhere and
 there is one renderer to test against rather than three.
@@ -200,7 +229,8 @@ change between macOS, Windows and Linux; only the host-side VM integration does.
 
 | Piece | Origin | Role here |
 |---|---|---|
-| [rAthena](https://github.com/rathena/rathena) | upstream, GPL-3.0 | the server. Unmodified; built arch-native at image build time |
+| [rAthena](https://github.com/rathena/rathena) | upstream, GPL-3.0 | the server. Built arch-native at image build time from a clean clone, plus the optional population engine below |
+| [Population Engine](https://github.com/YlenXWalker/Population-Engine) | upstream, GPL-3.0 | server-side AI characters, compiled in but off by default. Vendored in `third-party/`, see its README |
 | [roBrowserLegacy](https://github.com/MrAntares/roBrowserLegacy) | upstream, GPL-3.0 | the client. Built from source with a few patches in `patches/` |
 | [RemoteClient](https://github.com/Flux159/roBrowserLegacy-RemoteClient-Rust) | GPL-3.0 | Rust rewrite of roBrowserLegacy's Node asset server |
 
@@ -234,6 +264,7 @@ platform, how much disk it uses, and how to reset an install to a fresh state:
 |---|---|
 | Ragnarok Offline | GPL-3.0 |
 | [rAthena](https://github.com/rathena/rathena) | GPL-3.0 |
+| [Population Engine](https://github.com/YlenXWalker/Population-Engine) | GPL-3.0 |
 | [roBrowserLegacy](https://github.com/MrAntares/roBrowserLegacy) | GPL-3.0 |
 | [ROenglishRE](https://github.com/llchrisll/ROenglishRE) | free to distribute, use and modify (see its headers) |
 | [RemoteClient-Rust](https://github.com/Flux159/roBrowserLegacy-RemoteClient-Rust) | GPL-3.0 |

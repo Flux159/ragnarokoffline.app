@@ -1,0 +1,67 @@
+diff --git a/src/custom/atcommand.inc b/src/custom/atcommand.inc
+index 5baa8fb..6a4264e 100644
+--- a/src/custom/atcommand.inc
++++ b/src/custom/atcommand.inc
+@@ -27,6 +27,12 @@ ACMD_FUNC(reloadpopenginedb)
+ {
+ 	nullpo_retr(-1, sd);
+ 
++	if (!battle_config.population_engine_enable) {
++		clif_displaymessage(fd, "The population engine is disabled. Turn it on in the app's settings.");
++		return -1;
++	}
++
++
+ 	uint32_t n = 0;
+ 	if (!population_engine_reload_equipment(&n)) {
+ 		clif_displaymessage(fd, "Population engine equipment reload failed (see map-server console).");
+@@ -43,6 +49,12 @@ ACMD_FUNC(populate)
+ {
+ 	nullpo_retr(-1, sd);
+ 
++	if (!battle_config.population_engine_enable) {
++		clif_displaymessage(fd, "The population engine is disabled. Turn it on in the app's settings.");
++		return -1;
++	}
++
++
+ 	char cmd[50], param[256];
+ 
+ 	if (!message || !*message) {
+diff --git a/src/custom/battle_config_init.inc b/src/custom/battle_config_init.inc
+index e1ef127..a188b52 100644
+--- a/src/custom/battle_config_init.inc
++++ b/src/custom/battle_config_init.inc
+@@ -12,6 +12,10 @@
+  **/
+ 
+ 
++{ "population_engine_enable",&battle_config.population_engine_enable,0,0,1,},
++{ "population_engine_demand_spawn",&battle_config.population_engine_demand_spawn,1,0,1,},
++{ "population_engine_demand_grace_ms",&battle_config.population_engine_demand_grace_ms,300000,0,3600000,},
++{ "population_engine_density_pct",&battle_config.population_engine_density_pct,100,10,500,},
+ { "population_engine_max_count",&battle_config.population_engine_max_count,1000,1,30000,},
+ { "population_engine_equipment_strict_load",&battle_config.population_engine_equipment_strict_load,0,0,1,},
+ { "population_engine_chat_enable",&battle_config.population_engine_chat_enable,0,0,1,},
+diff --git a/src/custom/battle_config_struct.inc b/src/custom/battle_config_struct.inc
+index 03e5b76..c381259 100644
+--- a/src/custom/battle_config_struct.inc
++++ b/src/custom/battle_config_struct.inc
+@@ -13,6 +13,17 @@
+  **/
+ 
+ 
++/// Master switch. Off by default: a solo world with no shells in it is a
++/// legitimate thing to want, and the engine costs ~0.4 MB of RAM per shell.
++int32 population_engine_enable;
++/// Fill only the maps real players are on, rather than every map named in
++/// population_spawn.yml. See the RAGNAROKMAC block in population_engine.cpp.
++int32 population_engine_demand_spawn;
++/// How long a map keeps its shells after the last real player leaves.
++int32 population_engine_demand_grace_ms;
++/// Percentage applied to every spawn-table population before it is
++/// distributed across a map list. 100 = exactly what the YAML asks for.
++int32 population_engine_density_pct;
+ int32 population_engine_max_count;
+ /// 0 = warn and fix invalid YAML rows; 1 = discard entire equipment DB if any validation error
+ int32 population_engine_equipment_strict_load;

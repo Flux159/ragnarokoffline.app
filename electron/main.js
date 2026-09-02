@@ -346,7 +346,22 @@ function migrateDataRoot() {
 // The stack supervisor
 // ---------------------------------------------------------------------------
 
-function runStack(args) {
+// Both flags the supervisor takes per invocation come from client.json, and
+// both only mean anything to the verbs that boot the guest. Appended here
+// rather than at each call site because there are seven of them and a missed
+// one is a setting that silently does nothing.
+function withEngineFlags(args) {
+	if (args[0] !== 'up' && args[0] !== 'repair') return args;
+	const client = getClientPaths();
+	const out = [...args];
+	if (client.lan && !out.includes('--lan')) out.push('--lan');
+	const ram = Number(client.vm_ram_mib);
+	if (Number.isFinite(ram) && ram > 0) out.push('--ram', String(ram));
+	return out;
+}
+
+function runStack(rawArgs) {
+	const args = withEngineFlags(rawArgs);
 	return new Promise((resolve, reject) => {
 		const root = projectRoot();
 		// spawn, and settle on the process exiting -- not on its streams
@@ -461,8 +476,9 @@ async function assetsStart() {
 			// The proxy refuses anything not listed, so a LAN host must allow
 			// its own routable address as well as loopback -- a joining client
 			// asks the proxy to reach the address the char-server handed it,
-			// which is the LAN one.
-			WS_ALLOWED_TARGETS: [...new Set(['127.0.0.1', advertiseHost()])]
+			// which is the LAN one, and the login address the page it loaded
+			// was served from, which is whatever they typed.
+			WS_ALLOWED_TARGETS: localHostnames()
 				.flatMap(h => [`${h}:6900`, `${h}:6121`, `${h}:5121`])
 				.join(','),
 			DATA_OVERRIDE_PATH: path.join(root, 'vendor/ROenglishRE/Translation/Renewal/data'),
@@ -514,6 +530,13 @@ function assetsStop() {
 const DEFAULT_CLIENT = {
 	mode: 'host', join_host: '', lan: false,
 	data_grf: '', rdata_grf: '', official_grf: '', bgm_dir: '',
+	// The VM's memory ceiling, not a reservation: nebula balloons idle memory
+	// back to the host, so this is the most it may take rather than what it
+	// holds. Here rather than in settings.json because it describes the machine
+	// the app is installed on, like the client paths and the LAN switch, not
+	// the world being played. 4096 is what the app shipped with before this
+	// was adjustable.
+	vm_ram_mib: 4096,
 };
 
 function getClientPaths() {
@@ -542,6 +565,41 @@ function advertiseHost() {
 	return '127.0.0.1';
 }
 
+// Every name by which a browser could have reached this machine.
+//
+// The proxy matches its allow-list against the literal "host:port" the client
+// asks for, and Config.local.js derives that host from location.hostname --
+// whatever the player typed in the address bar. Loopback plus the advertised
+// address is not enough: a machine on wifi and ethernet at once has two
+// addresses on the same subnet, lan_ip() advertises only the one the routing
+// table prefers, and a browser pointed at the other one is refused with
+// "failed to connect to server" and the reason only in assets.log. Same for
+// "localhost" and for the mDNS name, both of which are the obvious things to
+// type at a machine that is sitting in front of you.
+//
+// This does not widen what the proxy can reach -- every entry is an address
+// this machine already answers on, and only the three game ports are listed --
+// it stops the allow-list disagreeing with the way the player got here.
+function localHostnames() {
+	const names = new Set(['127.0.0.1', 'localhost', '::1', advertiseHost()]);
+	for (const addrs of Object.values(os.networkInterfaces())) {
+		for (const a of addrs || []) {
+			// Node 18 reports family as a string, older ones as a number.
+			if (a.family === 'IPv4' || a.family === 4) names.add(a.address);
+		}
+	}
+	// Browsers lowercase the hostname; macOS does not have to. os.hostname()
+	// answers whatever the DHCP domain made it ("host.lan"), so the mDNS name
+	// is built from the first label rather than by appending to the whole
+	// thing, which would produce host.lan.local.
+	const h = (os.hostname() || '').toLowerCase();
+	if (h) {
+		names.add(h);
+		names.add(`${h.split('.')[0]}.local`);
+	}
+	return [...names].filter(Boolean);
+}
+
 // Confirm a host is actually serving before a window is pointed at it, so an
 // address typo or an offline friend produces a sentence rather than a blank
 // window that never loads.
@@ -563,19 +621,45 @@ function probeHost(url) {
 	});
 }
 
-// The client's entry point on an asset server. Not the root: the root serves
-// roBrowser's own default page, which loads but is not this game -- joining
-// would have appeared to work and shown the wrong thing. Defined once so the
-// local and remote paths cannot drift.
+// The client's entry point on an asset server. The root redirects here (see
+// config/index.html), but the windows we open ourselves go straight to it
+// rather than through the hop. Defined once so the local and remote paths
+// cannot drift.
 const GAME_PATH = '/api.html?app=ONLINE';
 
-// `host:port`, defaulted to the asset server's port so a player can paste just
-// an address. Returned as a base URL: callers append GAME_PATH when they want
-// the game, and probe the base when they only want to know it is up.
+// The one address a host gives out. A whole URL, because it has to survive
+// being pasted into a browser as well as into the join box, and because
+// "http://host:3338/" reads as a link where "host:3338" reads as a riddle.
+function serveUrl(host) {
+	return `http://${host}:3338/`;
+}
+
+// Whatever a player pastes, reduced to a base URL.
+//
+// The host copies a link, but what arrives in the box is anything: the bare
+// address, an address:port, the link itself, or the full game URL with
+// /api.html?app=ONLINE still on the end -- which callers would then append
+// GAME_PATH to a second time. Parsing and keeping only the authority means all
+// of those are the same input. Returned as a base URL: callers append
+// GAME_PATH when they want the game, and probe the base when they only want to
+// know it is up.
 function joinUrl(hostSpec) {
-	const spec = String(hostSpec || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
-	if (!spec) return '';
-	return `http://${spec.includes(':') ? spec : spec + ':3338'}`;
+	const raw = String(hostSpec || '').trim();
+	if (!raw) return '';
+	// URL wants a scheme, and reads a bare "host:3338" as one -- the port
+	// becomes the protocol -- so anything without one is given http.
+	let u;
+	try {
+		u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`);
+	} catch {
+		return '';
+	}
+	if (!u.hostname) return '';
+	// u.port is empty for a URL that named no port *and* for one that named the
+	// scheme's default, but a player who typed :80 meant :80, so the raw string
+	// decides rather than the parse.
+	const port = u.port || (/:\d+(?:\/|$|\?)/.test(raw) ? '80' : '3338');
+	return `http://${u.hostname}:${port}`;
 }
 
 function clientComplete(p) {
@@ -639,6 +723,16 @@ const SETTINGS_DEFAULTS = {
 	item_rate_card: 100,
 	zeny_from_mobs: false,
 	free_kafra_warp: true,
+	population_enable: false,
+	// A ceiling, not a target. Demand-driven spawning builds only the maps
+	// somebody is on, and a map holds 20-40 by the spawn tables, so this binds
+	// only if a group fans out across dozens of maps at once. 1500 is
+	// deliberately "never in a solo game".
+	population_max: 1500,
+	// How crowded a single map feels, as a percentage of what the server's
+	// spawn tables ask for. This is the dial players actually want; the limit
+	// above is only a safety net.
+	population_density: 100,
 };
 
 function getSettings() {
@@ -669,7 +763,13 @@ function toBattleConf(s) {
 		`item_rate_use: ${s.item_rate_common}\n` +
 		`item_rate_mvp: ${s.item_rate_common}\n` +
 		`item_rate_treasure: ${s.item_rate_common}\n` +
-		`zeny_from_mobs: ${s.zeny_from_mobs ? 'yes' : 'no'}\n`
+		`zeny_from_mobs: ${s.zeny_from_mobs ? 'yes' : 'no'}\n` +
+		// The count is always written, even when the engine is off: rAthena
+		// clamps this one to 1..30000 and refuses a 0, so "none" is expressed by
+		// the enable flag alone.
+		`population_engine_enable: ${s.population_enable ? 1 : 0}\n` +
+		`population_engine_max_count: ${Math.max(1, Number(s.population_max) || 1)}\n` +
+		`population_engine_density_pct: ${Math.min(500, Math.max(10, Number(s.population_density) || 100))}\n`
 	);
 }
 
@@ -687,7 +787,8 @@ async function saveSettings(settings) {
 	if (settings.free_kafra_warp) fs.writeFileSync(marker, '');
 	else fs.rmSync(marker, { force: true });
 
-	return runStack(getClientPaths().lan ? ['up', '--lan'] : ['up']);
+
+	return runStack(['up']);
 }
 
 // Fill in a whole client from one folder. A full-client archive unzips to
@@ -894,7 +995,7 @@ const handlers = {
 			await linkClient(saved);
 		}
 		appLog('start_stack: running the supervisor');
-		const out = await runStack(getClientPaths().lan ? ['up', '--lan'] : ['up']);
+		const out = await runStack(['up']);
 		appLog('start_stack: supervisor finished, starting the asset server');
 		// The asset server starts here, not in launch_game: the boot page polls
 		// assets_ready() before it will navigate, so nothing would ever start it.
@@ -958,7 +1059,7 @@ const handlers = {
 			mode: c.mode, lan: !!c.lan, join_host: c.join_host,
 			// Only meaningful once the stack has run; before that there is no
 			// endpoint.json and no address to give out.
-			join_address: c.mode === 'host' && c.lan ? `${advertiseHost()}:3338` : '',
+			join_address: c.mode === 'host' && c.lan ? serveUrl(advertiseHost()) : '',
 		};
 	},
 	set_mode: async ({ mode, lan, join_host }) => {
@@ -994,6 +1095,16 @@ const handlers = {
 	},
 	scan_client_dir: ({ dir }) => scanClientDir(dir),
 	get_settings: () => getSettings(),
+	host_ram_mib: () => Math.floor(require('os').totalmem() / (1024 * 1024)),
+	get_vm_ram_mib: () => getClientPaths().vm_ram_mib,
+	// Write only. The caller follows with save_settings, which restarts the
+	// stack and so picks the new ceiling up -- doing it here as well would
+	// restart the VM twice for one press of Apply.
+	set_vm_ram_mib: ({ mib }) => {
+		const next = { ...getClientPaths(), vm_ram_mib: Number(mib) };
+		fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
+		return next.vm_ram_mib;
+	},
 	save_settings: ({ settings }) => saveSettings(settings),
 
 	copy_text: ({ text }) => clipboard.writeText(String(text || '')),

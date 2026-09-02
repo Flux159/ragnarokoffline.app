@@ -1,0 +1,110 @@
+# This file is a part of rAthena.
+#   Copyright(C) 2021 rAthena Development Team
+#   https://rathena.org - https://github.com/rathena
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+#
+###########################################################################
+# Population Engine Names Database
+###########################################################################
+#
+# Fake PC name generation profiles for population shells.
+# Loaded at map-server startup and with @reloadpopengine.
+# Referenced from population_engine.yml via NameProfile: <key>.
+#
+###########################################################################
+# - GlobalLists:                 Shared word pools used by all name generation strategies.
+#     Prefixes:                  [ list ] — short prefix syllables.
+#     SyllablesStart/Mid/End:    [ list ] — syllable parts for the syllables strategy.
+#     Adjectives / Nouns:        [ list ] — word pools for the adjective_noun strategy.
+#     Blocklist:                 [ list ] — substrings to reject (case-insensitive).
+# - Profile: <key>               Named profile; reference via NameProfile: in population_engine.yml.
+#     Strategy: <value>          Name generation method:
+#       syllables      — concatenate Start + Mid + End syllable parts.
+#       adjective_noun — combine a random Adjective + Noun.
+#       adj_noun       — alias for adjective_noun.
+#       pick_one       — pick a full name directly from a Names list.
+#       bot_index      — Bot_<index> (fallback / debug).
+#       prefix_number  — <prefix><number>.
+###########################################################################
+
+Header:
+  Type: POPULATION_NAMES_DB
+  Version: 1
+
+Body:
+  - GlobalLists:
+      Prefixes: [ "Kim", "Lee", "Rin", "Milo", "Ara", "Bex", "Cal", "Dov", "Eli", "Fae",
+                  "Gal", "Hex", "Iro", "Jex", "Kas", "Lex", "Mev", "Nox", "Ora", "Pax" ]
+      # 22 start × 22 mid × 22 end = 10 648 unique syllable combinations
+      SyllablesStart: [ "Ka", "Ve", "To", "Mi", "Lu", "Ra", "Se", "No", "Di", "Fy",
+                        "Xe", "Ja", "Hi", "Wu", "Bl", "Cr", "Dr", "Fr", "Gl", "Pr", "St", "Vy" ]
+      SyllablesMid:   [ "ra", "ni", "ko", "ta", "li", "de", "fe", "ga", "hu", "im",
+                        "ja", "ke", "lo", "mu", "na", "ov", "pe", "ri", "so", "tu", "ul", "vi" ]
+      SyllablesEnd:   [ "ko", "mi", "ya", "ro", "ne", "an", "el", "is", "os", "ur",
+                        "ax", "by", "ce", "da", "en", "fi", "gu", "he", "ix", "jo", "ky", "lo" ]
+      # 100 adjectives × 100 nouns = 10 000 adjective_noun combinations
+      Adjectives: [ "Swift", "Quiet", "Lucky", "Keen", "Brave", "Bold", "Dark", "Fair",
+                    "Grim", "Wild", "Cold", "Warm", "Free", "True", "Lost", "Wise",
+                    "Sharp", "Soft", "Hard", "High", "Low", "Deep", "Fast", "Slow",
+                    "Bright", "Pale", "Iron", "Stone", "Ash", "Frost",
+                    "Storm", "Void", "Dawn", "Dusk", "Ember", "Amber", "Crimson", "Azure",
+                    "Silver", "Golden", "Shadow", "Silent", "Ancient", "Hollow", "Radiant",
+                    "Cursed", "Sacred", "Fallen", "Risen", "Hidden", "Broken", "Mended",
+                    "Wandering", "Restless", "Fearless", "Relentless", "Tireless",
+                    "Veiled", "Masked", "Sworn", "Sealed", "Bound", "Unbound", "Reborn",
+                    "Scarred", "Marked", "Blessed", "Exiled", "Forgotten", "Forsaken",
+                    "Burning", "Frozen", "Shattered", "Forged", "Tempered", "Woven",
+                    "Gilded", "Runed", "Crowned", "Warded", "Tainted", "Purified",
+                    "Midnight", "Sunlit", "Starlit", "Moonlit", "Tideworn", "Seafoam",
+                    "Earthen", "Skyborn", "Stormborn", "Windswept", "Dusty", "Mossy",
+                    "Gleaming", "Fading", "Rising", "Sinking", "Drifting", "Roaming" ]
+      Nouns: [ "Hunter", "Scout", "Archer", "Rogue", "Knight", "Guard", "Blade", "Mage",
+               "Sage", "Monk", "Cleric", "Drake", "Ranger", "Reaper", "Herald", "Warden",
+               "Seeker", "Stalker", "Drifter", "Pilgrim", "Scholar", "Striker", "Brawler",
+               "Wanderer", "Crusader", "Paladin", "Shaman", "Augur", "Seer", "Oracle",
+               "Shadow", "Specter", "Phantom", "Wraith", "Revenant", "Sentinel", "Vanguard",
+               "Champion", "Gladiator", "Duelist", "Marksman", "Bowman", "Lancer", "Spearman",
+               "Swordsman", "Axeman", "Hammer", "Shield", "Buckler", "Paragon",
+               "Inquisitor", "Templar", "Zealot", "Prophet", "Acolyte", "Initiate",
+               "Trickster", "Deceiver", "Infiltrator", "Saboteur", "Assassin", "Vigilante",
+               "Corsair", "Privateer", "Marauder", "Raider", "Pillager", "Plunderer",
+               "Conjurer", "Invoker", "Arcanist", "Elementalist", "Ritualist", "Summoner",
+               "Alchemist", "Artificer", "Tinkerer", "Scribe", "Cartographer", "Navigator",
+               "Pathfinder", "Trailblazer", "Explorer", "Wayfarer", "Wanderer", "Nomad",
+               "Outcast", "Exile", "Fugitive", "Survivor", "Veteran", "Mercenary",
+               "Berserker", "Ravager", "Warlord", "Commander", "Harbinger", "Arbiter" ]
+      Blocklist: [ "gm", "admin", "staff", "mod", "hack", "cheat", "bot" ]
+
+  - Profile: default
+    Strategy: syllables
+    MinLen: 2
+    MaxLen: 22
+
+  - Profile: hunter_rp
+    Strategy: adjective_noun
+    Adjectives: [ Swift, Keen, Wild ]
+    Nouns: [ Hunter, Tracker, Scout ]
+    MinLen: 4
+    MaxLen: 22
+
+  - Profile: simple_npc
+    Strategy: pick_one
+    MinLen: 2
+    MaxLen: 22
+    Pool:
+      - "Milo"
+      - "Jara"
+      - "Beni"
+      - "Kira"

@@ -86,6 +86,12 @@ fn guest_fingerprint(paths: &[&Path]) -> String {
 /// ignored as a top-level setting. The file we ship has no tables today, which
 /// is exactly the kind of assumption that stops being true quietly.
 fn set_engine_flag(path: &Path, key: &str, value: bool) -> Result<bool, String> {
+    set_engine_value(path, key, &value.to_string())
+}
+
+/// The same, for a value that is not a boolean. TOML wants bare numbers and
+/// bare `true`/`false` alike, so the caller hands us the rendered literal.
+fn set_engine_value(path: &Path, key: &str, value: &str) -> Result<bool, String> {
     let line = format!("{key} = {value}");
     let existing = fs::read_to_string(path).unwrap_or_default();
     if existing.lines().any(|l| l.trim() == line) {
@@ -114,7 +120,7 @@ fn set_engine_flag(path: &Path, key: &str, value: bool) -> Result<bool, String> 
 
 /// A fresh machine has no guest kernel or rootfs and no running engine. Both
 /// ship with the app, so neither needs the network.
-fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool) -> Result<(), String> {
+fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<(), String> {
     let _ = fs::create_dir_all(&cfg.nebula_home);
     // Must be in place before the first `up`: nebula reads it when it creates
     // the instance, and the ports in it are what keep this engine from
@@ -136,9 +142,24 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool) -> Result<(), String> {
     // nebulad reads it once, at startup. Changing it under a running engine
     // does nothing, and the symptom is a LAN switch that appears to work and
     // silently does not, so a change restarts the engine.
-    let changed = set_engine_flag(&cfg_toml, "allow_public_publish", lan)?;
+    let mut changed = set_engine_flag(&cfg_toml, "allow_public_publish", lan)?;
+
+    // How much memory the VM may use. None means "whatever config.toml already
+    // says", so a plain `up` from a terminal, and an install whose client.json
+    // predates this setting, both keep the shipped default.
+    //
+    // Read at guest boot like allow_public_publish, so a change here restarts
+    // the engine too -- otherwise the slider moves and nothing happens.
+    if let Some(mib) = ram_mib {
+        // Floor rather than trust: rAthena's map server alone sits around
+        // 435 MiB before a single shell exists, and a guest that cannot start
+        // is a worse outcome than ignoring a silly number.
+        let mib = mib.clamp(2048, 65536);
+        changed |= set_engine_value(&cfg_toml, "max_ram_mib", &mib.to_string())?;
+    }
+
     if changed && dk.quiet(["ps"]) {
-        phase(cfg, "Restarting the virtual machine for the network change…");
+        phase(cfg, "Restarting the virtual machine to apply the change…");
         let _ = nebula(cfg, &["down"]);
         sleep(Duration::from_secs(2));
     }
@@ -429,7 +450,7 @@ fn run_server(cfg: &Config, dk: &Docker, name: &str, port: u16, binary: &str, la
         .map_err(|e| format!("starting {name}: {e}"))
 }
 
-pub fn up(cfg: &Config, dk: &Docker, lan: bool) -> Result<(), String> {
+pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<(), String> {
     let conf = cfg.state.join("conf");
     for d in ["conf", "sql", "backups"] {
         fs::create_dir_all(cfg.state.join(d)).map_err(|e| format!("creating {d}: {e}"))?;
@@ -440,7 +461,7 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool) -> Result<(), String> {
     phase(cfg, "Starting…");
     let _lock = Lock::acquire(cfg)?;
     phase(cfg, "Starting the virtual machine…");
-    ensure_engine(cfg, dk, lan)?;
+    ensure_engine(cfg, dk, lan, ram_mib)?;
 
     // A failed single-file bind leaves a directory behind at the source path.
     // Clear anything in conf/ that is not a regular file so a stale one cannot
@@ -516,6 +537,20 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool) -> Result<(), String> {
         "INSERT INTO login (userid, user_pass, sex, email, group_id)
          SELECT 'ragnarok', 'ragnarok', 'M', 'ragnarok@localhost', 99 FROM DUAL
           WHERE NOT EXISTS (SELECT 1 FROM login WHERE userid = 'ragnarok');",
+    );
+
+    // The population engine writes its live shell count here on every autosummon
+    // tick. Created here rather than in sql/ for the same reason as the account
+    // above: initdb.d runs once, and an install predating the engine would log a
+    // failed INSERT every ten seconds instead.
+    let _ = dk.exec_sql(
+        "CREATE TABLE IF NOT EXISTS `cp_population_stats` (
+           `id`           INT UNSIGNED NOT NULL DEFAULT 1,
+           `active_count` INT UNSIGNED NOT NULL DEFAULT 0,
+           `last_updated` TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+                          ON UPDATE CURRENT_TIMESTAMP,
+           PRIMARY KEY (`id`)
+         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
     );
 
     // Every client arrives through the WebSocket proxy, so every connection has
@@ -597,7 +632,7 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool) -> Result<(), String> {
     // The one string a host pastes to a friend. Printed rather than only
     // written, so it is visible from a terminal too.
     if lan {
-        println!("join address: {advertise}:3338");
+        println!("join address: http://{advertise}:3338/");
     }
     Ok(())
 }
@@ -711,7 +746,7 @@ pub fn restore(cfg: &Config, dk: &Docker, src: &str) -> Result<(), String> {
 /// cannot reach: an engine that is itself wedged, where nothing
 /// container-level can be cleaned because the daemon is not answering.
 /// Player data is untouched — characters live in the ragnarokmac-db volume.
-pub fn repair(cfg: &Config, dk: &Docker, lan: bool) -> Result<(), String> {
+pub fn repair(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<(), String> {
     phase(cfg, "Repairing…");
     // Break the lock rather than wait: the usual reason to reach for repair is
     // a previous run that died holding one.
@@ -719,7 +754,7 @@ pub fn repair(cfg: &Config, dk: &Docker, lan: bool) -> Result<(), String> {
     let _ = nebula(cfg, &["down"]);
     sleep(Duration::from_secs(2));
     let _ = nebula(cfg, &["up"]);
-    up(cfg, dk, lan)
+    up(cfg, dk, lan, ram_mib)
 }
 
 pub fn logs(dk: &Docker, service: &str, tail: &str) {

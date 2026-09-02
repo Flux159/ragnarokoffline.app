@@ -94,13 +94,16 @@
         <input type="checkbox" id="mp-lan" />
       </div>
       <div class="row">
-        <span class="name">Your address</span>
+        <span class="name">Your link</span>
         <span class="state" id="mp-addr">—</span>
         <button id="mp-copy" class="ghost" style="margin-left:10px">Copy</button>
       </div>
       <div class="row actions" style="padding-top:10px">
         <button id="mp-restart" class="ghost">Restart server</button>
       </div>
+      <p class="note">Send that link to your friends. They can paste it into
+         this app's <em>Join a friend</em> box, or open it in a browser and play
+         there without installing anything.</p>
       <p class="note">Off by default: the server listens only on this machine.
          Turning this on makes it reachable by anyone who can reach your computer
          on the network. The engine reads this setting when it starts, so use
@@ -110,14 +113,15 @@
     <div id="mp-join" style="display:none">
       <div class="row">
         <span class="name">Server address</span>
-        <input type="text" id="mp-host-addr" placeholder="192.168.1.20:3338"
+        <input type="text" id="mp-host-addr" placeholder="http://192.168.1.20:3338/"
                autocapitalize="off" autocorrect="off" spellcheck="false" />
       </div>
       <div class="row actions" style="padding-top:10px">
         <button id="mp-connect" class="ghost">Connect…</button>
         <button id="mp-golocal" class="ghost">Play on my own server</button>
       </div>
-      <p class="note">Joining runs nothing locally — no server, no virtual
+      <p class="note">Paste whatever your friend sent — the whole link or just
+         the address. Joining runs nothing locally — no server, no virtual
          machine, no game files. Everything comes from the host, so this starts
          in seconds. Register on their login screen by adding <code>_M</code> or
          <code>_F</code> to a new username.</p>
@@ -132,6 +136,43 @@
       <button id="restore" class="ghost">Restore…</button>
     </div>
     <div class="note" id="db-note">Everything you have played is inside that disk image; it is not a folder you can open.</div>
+  </div>
+
+  <h2>Population</h2>
+  <div class="panel">
+    <label>
+      <span>Fake players</span>
+      <input type="checkbox" id="population_enable" style="accent-color: var(--accent); flex: none" />
+      <span class="val" style="width:auto; color: var(--dim)">fills the world with AI characters</span>
+    </label>
+    <label style="margin-top:6px">
+      <span>How busy</span>
+      <input type="range" id="population_density" min="25" max="300" step="25">
+      <span class="val" id="v-population_density"></span>
+    </label>
+    <label style="margin-top:6px">
+      <span>Limit</span>
+      <input type="range" id="population_max" min="50" max="2000" step="50">
+      <span class="val" id="v-population_max"></span>
+    </label>
+    <label style="margin-top:6px">
+      <span>Server memory</span>
+      <input type="range" id="vm_ram_mib" min="2048" max="16384" step="1024">
+      <span class="val" id="v-vm_ram_mib"></span>
+    </label>
+    <p class="note" id="population-note"></p>
+    <div class="actions" style="margin-top:10px">
+      <button id="save-population" class="ghost">Apply</button>
+    </div>
+    <p class="note">They walk, fight, sit and open vending stalls, and they never touch your
+       characters or your save. They appear only on the maps you and your friends are
+       actually standing on. <b>How busy</b> scales the server's own spawn tables, so
+       the world keeps the shape it was authored with and only its crowding changes;
+       <b>Limit</b> is a safety ceiling across every map at once, and in a solo game
+       it never comes into play.</p>
+    <p class="note">Server memory is a ceiling, not a reservation — the virtual machine hands
+       idle memory back to your computer. Changing it restarts the virtual
+       machine, which takes a few seconds.</p>
   </div>
 
   <h2>Rates</h2>
@@ -336,6 +377,80 @@ $('restore').onclick = async () => {
   }
 };
 
+// 0.4 MB per shell, measured rather than taken from upstream's ~80 KB: that
+// figure is the size of the struct, and the resident cost with allocator
+// overhead, inventory and skill arrays is roughly five times it. Measured on
+// Alpine/arm64 at 184 shells: 439 MiB with the engine off, 509 MiB with it on.
+// The number that matters to a player is how much of their machine this is
+// about to use, not the shell count.
+const MB_PER_SHELL = 0.4;
+// What the stack occupies before a single shell exists: map server ~450,
+// database ~110, the other two servers and the asset server the rest.
+const STACK_BASE_MIB = 700;
+// Measured on prt_fild08: 30 from the combat_pve spawn table plus 9 knights.
+// Towns land in the same range.
+const TYPICAL_PER_MAP = 40;
+
+function refreshPopulation() {
+  const on = $('population_enable').checked;
+  const n = Number($('population_max').value);
+  const density = Number($('population_density').value);
+  const ram = Number($('vm_ram_mib').value);
+  const perMap = Math.round(TYPICAL_PER_MAP * density / 100);
+  $('population_max').disabled = !on;
+  $('population_density').disabled = !on;
+  $('v-population_max').textContent = on ? String(n) : '—';
+  $('v-population_density').textContent = on ? `~${perMap} per map` : '—';
+  $('v-vm_ram_mib').textContent = (ram / 1024) + ' GB';
+
+  const note = $('population-note');
+  if (!on) {
+    note.textContent = 'Off. Nothing is loaded and nothing is spawned.';
+    note.style.color = '';
+    return;
+  }
+  // The honest number is not n. Characters exist only on maps somebody is
+  // standing on, and a map holds 20-40 of them, so a solo game sits near the
+  // bottom of this range no matter where the slider is. Quoting the ceiling's
+  // memory cost would warn about a gigabyte nobody will ever allocate.
+  const worst = STACK_BASE_MIB + Math.round(n * MB_PER_SHELL);
+  const typical = STACK_BASE_MIB + Math.round(perMap * MB_PER_SHELL);
+  if (worst > ram * 0.8) {
+    // 80% rather than 100%: some maps are heavier than others, and a guest
+    // that runs out of memory takes the server down with it.
+    note.textContent = `At most ${n} at once. Playing alone that is about `
+      + `${typical} MB, but a large group spread across many maps could reach `
+      + `${worst} MB — tight for a ${ram / 1024} GB server.`;
+    note.style.color = 'var(--warn, #d98)';
+  } else {
+    note.textContent = `At most ${n} at once, across every map in use. Playing `
+      + `alone you will see about ${perMap} on your own map, costing `
+      + `roughly ${typical} MB of the ${ram / 1024} GB server.`;
+    note.style.color = '';
+  }
+}
+
+$('population_enable').addEventListener('change', refreshPopulation);
+$('population_max').addEventListener('input', refreshPopulation);
+$('population_density').addEventListener('input', refreshPopulation);
+$('vm_ram_mib').addEventListener('input', refreshPopulation);
+
+$('save-population').onclick = async () => {
+  const settings = await invoke('get_settings');
+  settings.population_enable = $('population_enable').checked;
+  settings.population_max = Number($('population_max').value);
+  settings.population_density = Number($('population_density').value);
+  // Machine-level, so it lives in client.json beside the client paths and the
+  // LAN switch rather than in settings.json. Written first: save_settings
+  // restarts the stack, which is what makes the new ceiling take effect.
+  await invoke('set_vm_ram_mib', { mib: Number($('vm_ram_mib').value) });
+  $('save-population').disabled = true;
+  try { log(await invoke('save_settings', { settings })); }
+  catch (e) { log('error: ' + e); }
+  $('save-population').disabled = false;
+  refresh();
+};
+
 $('save').onclick = async () => {
   const settings = await invoke('get_settings');
   for (const k of RATES) settings[k] = Number($(k).value);
@@ -355,7 +470,24 @@ invoke('get_settings').then(s => {
   for (const k of RATES) { $(k).value = s[k]; $('v-' + k).textContent = (s[k] / 100) + 'x'; }
   $('free_kafra_warp').checked = !!s.free_kafra_warp;
   $('zeny_from_mobs').checked = !!s.zeny_from_mobs;
+  $('population_enable').checked = !!s.population_enable;
+  $('population_max').value = s.population_max;
+  $('population_density').value = s.population_density;
+  refreshPopulation();
 });
+
+invoke('get_vm_ram_mib').then(mib => {
+  $('vm_ram_mib').value = mib;
+  refreshPopulation();
+});
+
+// Never offer more than half the machine: the host still has to run the client,
+// the browser process and everything the player had open already.
+invoke('host_ram_mib').then(total => {
+  const cap = Math.max(2048, Math.floor(total / 2 / 1024) * 1024);
+  $('vm_ram_mib').max = String(Math.min(16384, cap));
+  refreshPopulation();
+}).catch(() => {});
 refresh();
 setInterval(refresh, 4000);
 </script>
