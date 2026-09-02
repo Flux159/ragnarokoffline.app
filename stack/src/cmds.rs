@@ -204,6 +204,19 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
     // Before starting it: an image that was damaged on the way in produces a
     // guest that boots to nothing, and every later message blames the wrong
     // thing -- the hypervisor, the timeout, the engine.
+    //
+    // Damage is usually a scanner that took the file mid-write, and writing it
+    // again usually works -- so do that once rather than telling someone to
+    // press Repair for a fault they did not cause. Once, not in a loop: if the
+    // second write is damaged too, something is deleting it on purpose and
+    // retrying forever would only hide that.
+    if check_guest_images(cfg).is_err() && k.exists() && r.exists() {
+        phase(cfg, "Repairing the virtual machine image…");
+        let _ = nebula(cfg, &["install-image",
+            "--kernel", &k.display().to_string(),
+            "--rootfs", &r.display().to_string()]);
+        let _ = fs::write(cfg.nebula_home.join(".guest-images"), guest_fingerprint(&[&k, &r]));
+    }
     check_guest_images(cfg)?;
 
     if let Err(e) = nebula(cfg, &["up"]) {
