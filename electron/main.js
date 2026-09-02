@@ -974,6 +974,84 @@ const handlers = {
 	stack_up: () => runStack(['up']),
 	stack_down: () => runStack(['down']),
 	stack_status: () => runStack(['status']),
+
+	// One file a player can attach to a bug report.
+	//
+	// Reading a server log otherwise means knowing the app's private
+	// NEBULA_HOME, the path to a bundled nebula binary and a docker subcommand
+	// -- which is not a reasonable thing to ask of anyone, and was not
+	// reasonable to ask of the maintainer either. Every report so far has
+	// arrived without the one thing that would have explained it.
+	collect_diagnostics: async () => {
+		const lines = [];
+		const add = (title, body) => lines.push(`===== ${title} =====\n${body}\n`);
+
+		add('app', [
+			`version   ${readIfExists(path.join(projectRoot(), 'VERSION')) || 'unknown'}`,
+			`platform  ${process.platform} ${process.arch}`,
+			`electron  ${process.versions.electron}`,
+			`data      ${dataRoot()}`,
+		].join('\n'));
+
+		// Paths only: a client folder name is not a secret, and knowing whether
+		// the GRFs were found is most of triage.
+		const c = getClientPaths();
+		add('client', Object.entries(c)
+			.map(([k, v]) => `${k.padEnd(14)}${v === '' ? '(unset)' : v}`).join('\n'));
+		add('settings', JSON.stringify(getSettings(), null, 2));
+
+		try {
+			add('engine', await runStack(['status']));
+		} catch (e) {
+			add('engine', `could not read: ${e}`);
+		}
+		for (const svc of ['login', 'char', 'map', 'db']) {
+			try {
+				add(`${svc} server`, await runStack(['logs', svc, '200']));
+			} catch (e) {
+				add(`${svc} server`, `could not read: ${e}`);
+			}
+		}
+		for (const f of ['app.log', 'client.log', 'assets.log']) {
+			const p2 = path.join(stateDir(), f);
+			if (fs.existsSync(p2)) {
+				add(f, fs.readFileSync(p2, 'utf8').split('\n').slice(-200).join('\n'));
+			}
+		}
+		return lines.join('\n');
+	},
+
+	// Straight to the clipboard, because the destination is a text box on
+	// GitHub or Reddit, not a folder.
+	copy_diagnostics: async () => {
+		const text = await handlers.collect_diagnostics();
+		clipboard.writeText(text);
+		return `Copied ${Math.round(text.length / 1024)} KB — paste it into the issue.`;
+	},
+
+	save_diagnostics: async ({ path: dest }) => {
+		fs.writeFileSync(dest, await handlers.collect_diagnostics());
+		return `Saved to ${dest}`;
+	},
+
+	// A prefilled issue, with the diagnostics already on the clipboard. GitHub
+	// caps a prefilled body in the URL at a few KB, and a real log blows
+	// through that, so the body is a placeholder telling them to paste.
+	report_issue: async () => {
+		const text = await handlers.collect_diagnostics();
+		clipboard.writeText(text);
+		const body = [
+			'**What happened?**', '', '(describe it here)', '',
+			'**What did you expect?**', '', '', '---', '',
+			'Diagnostics are on your clipboard — paste them below this line',
+			'(they contain your file paths and server logs, no passwords).',
+			'', '',
+		].join('\n');
+		await shell.openExternal(
+			'https://github.com/Flux159/ragnarokoffline.app/issues/new'
+			+ `?title=${encodeURIComponent('')}&body=${encodeURIComponent(body)}`);
+		return 'Diagnostics copied. Paste them into the issue that just opened.';
+	},
 	stack_repair: () => runStack(['repair']),
 	db_backup: ({ path: p }) => runStack(['backup', p]),
 	db_restore: ({ path: p }) => runStack(['restore', p]),

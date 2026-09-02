@@ -165,9 +165,13 @@ echo "==> container images"
 # symptom is that the change under test is missing. Three separate build
 # failures hid behind this in one afternoon.
 if command -v "${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}" >/dev/null 2>&1; then
-    IMG_EPOCH=$("${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}" docker image inspect \
-        "ragnarokmac/rathena:${PACKETVER:-20221005}" --format '{{.Created}}' 2>/dev/null \
-        | cut -c1-19 | tr 'T' ' ')
+    # `|| true` inside the substitution, not after it: with `set -o pipefail` a
+    # stopped engine makes the pipeline fail, and a failed assignment under
+    # `set -e` takes the whole script with it. Not being able to check for
+    # staleness is not a reason to refuse to package.
+    IMG_EPOCH=$({ "${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}" \
+        docker image inspect "ragnarokmac/rathena:${PACKETVER:-20221005}" \
+        --format '{{.Created}}' 2>/dev/null || true; } | cut -c1-19 | tr 'T' ' ')
     if [ -n "$IMG_EPOCH" ]; then
         # docker reports UTC; -u on both sides or every image looks hours newer
         # than the bundle that contains it, west of Greenwich.

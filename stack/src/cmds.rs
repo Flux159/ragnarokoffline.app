@@ -338,12 +338,19 @@ fn zero_numbers(line: &str) -> String {
 /// rather than a container healthcheck.
 fn wait_for_db(dk: &Docker) -> Result<(), String> {
     for _ in 0..90 {
-        if dk.exec_sql("SELECT 1").is_ok() {
+        // Not `SELECT 1`. mariadb's entrypoint starts a temporary server on the
+        // same socket we exec against, and only then imports the schema from
+        // docker-entrypoint-initdb.d -- so a bare connection succeeds long
+        // before `login` exists. The account insert that follows was landing on
+        // a missing table, its error discarded, and the player was left with a
+        // server that had no ragnarok/ragnarok account until the next launch
+        // ran the insert again. Waiting for the table, not the socket.
+        if dk.exec_sql("SELECT 1 FROM login LIMIT 1").is_ok() {
             return Ok(());
         }
         sleep(Duration::from_secs(2));
     }
-    Err("timed out waiting for the database".into())
+    Err("timed out waiting for the database schema".into())
 }
 
 /// The map-server listens on 5121 long before it is usable: it then reads its
@@ -551,11 +558,22 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     // NOT EXISTS rather than INSERT IGNORE: userid carries a plain KEY, not a
     // UNIQUE one, so IGNORE suppresses nothing and adds a duplicate account on
     // every start.
-    let _ = dk.exec_sql(
+    // Checked, not discarded: this is the only account a player has, and a
+    // silent failure here is indistinguishable from the game being broken.
+    if let Err(e) = dk.exec_sql(
         "INSERT INTO login (userid, user_pass, sex, email, group_id)
          SELECT 'ragnarok', 'ragnarok', 'M', 'ragnarok@localhost', 99 FROM DUAL
           WHERE NOT EXISTS (SELECT 1 FROM login WHERE userid = 'ragnarok');",
-    );
+    ) {
+        return Err(format!("could not create the ragnarok account: {e}"));
+    }
+    // And confirm it is actually there. The insert can succeed against a schema
+    // that is still being replaced underneath it.
+    match dk.exec_sql("SELECT COUNT(*) FROM login WHERE userid = 'ragnarok';") {
+        Ok(out) if out.contains('1') => {}
+        Ok(_) => return Err("the ragnarok account was not created; try Repair".into()),
+        Err(e) => return Err(format!("could not verify the ragnarok account: {e}")),
+    }
 
     // The population engine writes its live shell count here on every autosummon
     // tick. Created here rather than in sql/ for the same reason as the account

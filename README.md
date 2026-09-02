@@ -130,14 +130,21 @@ part of running an RO server on a Mac is not the server — it is that the serve
 never meant to run on one. So we do not port it; we bring Linux. The same holds for
 Windows, which is how one codebase covers three platforms.
 
-Both are close to stock. roBrowserLegacy carries three small client patches in
-`patches/`. rAthena is built from a clean upstream clone with one optional
-server modification compiled in — the [Population
-Engine](https://github.com/YlenXWalker/Population-Engine), which fills a solo
-world with AI characters and is **off unless you turn it on** in Settings. It is
-GPL-3.0 like rAthena itself, and everything we add lives in
-`third-party/population-engine/` rather than in a fork, so what has been changed
-is one directory rather than a diff against a moving target.
+roBrowserLegacy carries three small client patches in `patches/`. rAthena is
+built from a clean upstream clone with one optional server modification compiled
+in: the [Population Engine](https://github.com/YlenXWalker/Population-Engine),
+which fills a solo world with AI characters and is **off unless you turn it on**
+in Settings.
+
+**We ship a modified copy of it.** It is GPL-3.0, like rAthena, and our changes
+live in `third-party/population-engine/` — the engine's own sources with our
+edits marked `RAGNAROKMAC`, plus patches for the files rAthena owns. We added a
+master switch (upstream has none), made population follow the players rather
+than filling all 124 maps at once, stopped the movement tick running for
+characters nobody can see, made crowding a setting instead of a rebuild, and
+took character levels from the monsters on each map. The spawn tables and gear
+sets are edited too. That directory's README lists all of it, and the full
+modified source is here in the repository as the licence requires.
 
 The shell is **Electron**, so the same Chromium renders the client everywhere and
 there is one renderer to test against rather than three.

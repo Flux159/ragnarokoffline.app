@@ -65,6 +65,8 @@
       <button id="stop" class="ghost">Stop</button>
       <button id="play" class="ghost">Open game</button>
       <button id="repair" class="ghost">Repair…</button>
+      <button id="report" class="ghost">Report a problem…</button>
+      <button id="diagnostics" class="ghost">Copy diagnostics</button>
     </div>
   </div>
 
@@ -450,6 +452,24 @@ $('save-population').onclick = async () => {
   $('save-population').disabled = false;
   refresh();
 };
+
+// Everything a maintainer would otherwise have to talk someone through
+// finding, on the clipboard, because the destination is a text box on GitHub
+// or Reddit rather than a folder.
+async function withButton(id, busy, idle, fn) {
+  const b = $(id); const was = b.textContent;
+  b.disabled = true; b.textContent = busy;
+  try { log(await fn()); } catch (e) { log('error: ' + e); }
+  b.disabled = false; b.textContent = idle || was;
+}
+
+$('diagnostics').onclick = () =>
+  withButton('diagnostics', 'Collecting…', 'Copy diagnostics',
+             () => invoke('copy_diagnostics'));
+
+$('report').onclick = () =>
+  withButton('report', 'Collecting…', 'Report a problem…',
+             () => invoke('report_issue'));
 
 $('save').onclick = async () => {
   const settings = await invoke('get_settings');
