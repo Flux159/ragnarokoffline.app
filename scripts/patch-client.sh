@@ -229,4 +229,38 @@ elif s.count(old) == 1:
     print("patched DBManager.js (hat effect onEnd)")
 else:
     sys.exit("DBManager.js: loadHatEffectInfo no longer matches; re-check the patch")
+# 0007 - Say how far the database got while the map connection waits on it.
+#
+# onReceiveMapInfo will not connect to the map server until DB.isLoaded, and
+# DB.isLoaded is DB.index === DB.count. When a load never calls its onEnd the
+# counter never balances and the player waits at character select for a minute
+# and is then told to restart, with nothing anywhere saying which load is
+# outstanding -- the failure is an absence, so it logs nothing at all.
+#
+# 0004 and 0006 fixed the two routes we found. This makes the next one report
+# itself: the console goes to client.log, which the diagnostics bundle
+# collects, so a report arrives reading "stalled at 47 of 48" instead of "it
+# just will not connect".
+p = rb / "src/Engine/CharEngine.js"
+s = p.read_text()
+old = """		retryCount++;
+		if (retryCount > 600) {"""
+new = """		retryCount++;
+		// Every five seconds, not every hundred milliseconds: this is a
+		// breadcrumb for a bug report, not a progress bar.
+		if (retryCount % 50 === 0) {
+			console.warn(
+				'waiting for the client database: ' + DB.index + ' of ' + DB.count +
+				' loaded after ' + (retryCount / 10) + 's. If this does not move, a ' +
+				'file the database asked for never came back.'
+			);
+		}
+		if (retryCount > 600) {"""
+if "waiting for the client database" in s:
+    print("CharEngine.js stall log already patched")
+elif s.count(old) == 1:
+    p.write_text(s.replace(old, new, 1))
+    print("patched CharEngine.js (database stall breadcrumb)")
+else:
+    sys.exit("CharEngine.js: onReceiveMapInfo retry no longer matches; re-check the patch")
 PY
