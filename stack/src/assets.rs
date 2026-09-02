@@ -44,6 +44,22 @@ fn link_dir(src: &Path, dst: &Path) -> Result<(), String> {
 /// Link a file. On Windows a hard link needs no privilege but requires the same
 /// volume; falling back to a copy would duplicate gigabytes, so a failure here
 /// is reported rather than papered over.
+/// The drive a path lives on, on Windows. `None` anywhere else, and for a UNC
+/// path, where "same drive" is not the question being asked.
+#[cfg(windows)]
+fn drive_of(p: &Path) -> Option<String> {
+    use std::path::{Component, Prefix};
+    match p.components().next() {
+        Some(Component::Prefix(pre)) => match pre.kind() {
+            Prefix::Disk(d) | Prefix::VerbatimDisk(d) => {
+                Some((d as char).to_ascii_uppercase().to_string())
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn link_file(src: &Path, dst: &Path) -> Result<(), String> {
     let _ = fs::remove_file(dst);
     #[cfg(not(windows))]
@@ -52,16 +68,39 @@ fn link_file(src: &Path, dst: &Path) -> Result<(), String> {
     }
     #[cfg(windows)]
     {
+        // A hard link cannot cross volumes and a symlink needs Developer Mode,
+        // so a client folder on a second drive can have neither.
         if fs::hard_link(src, dst).is_ok() {
             return Ok(());
         }
         if std::os::windows::fs::symlink_file(src, dst).is_ok() {
             return Ok(());
         }
+
+        // Not a copy. The GRFs are gigabytes, and quietly duplicating them onto
+        // a drive the player did not choose is a worse surprise than an error
+        // -- it can fill the disk, and it doubles what they are storing without
+        // asking. Say which drive is which and let them decide.
+        let (from, to) = (drive_of(src), drive_of(dst));
+        if let (Some(from), Some(to)) = (&from, &to) {
+            if from != to {
+                return Err(format!(
+                    "Your game client is on the {from}: drive and this app keeps its \
+                     data on {to}:, and Windows cannot link files between drives.\n\n\
+                     Move or copy the client folder to the {to}: drive, then choose it \
+                     again:\n\n\x20   {}\n\n\
+                     Alternatively, turn on Developer Mode (Settings, System, For \
+                     developers) and choose the folder again -- that lets Windows \
+                     link across drives without moving anything.",
+                    src.display()
+                ));
+            }
+        }
+
         Err(format!(
-            "could not link {} into the asset root. On Windows this needs the \
-             client and the app data directory on the same drive, or Developer \
-             Mode enabled for symlinks.",
+            "could not link {} into the asset root. Turn on Developer Mode \
+             (Settings, System, For developers) and choose the client folder \
+             again, or move it beside the app's data directory.",
             src.display()
         ))
     }
