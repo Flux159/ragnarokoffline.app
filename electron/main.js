@@ -769,7 +769,12 @@ function toBattleConf(s) {
 		// the enable flag alone.
 		`population_engine_enable: ${s.population_enable ? 1 : 0}\n` +
 		`population_engine_max_count: ${Math.max(1, Number(s.population_max) || 1)}\n` +
-		`population_engine_density_pct: ${Math.min(500, Math.max(10, Number(s.population_density) || 100))}\n`
+		`population_engine_density_pct: ${Math.min(500, Math.max(10, Number(s.population_density) || 100))}\n` +
+		// Off in the compiled defaults. Upstream turns it on in a conf file we
+		// deliberately do not import, so without this line no shell ever opens
+		// a stall -- and a town of people with nothing to sell is most of what
+		// makes one feel dead.
+		`population_engine_vending_enable: ${s.population_enable ? 1 : 0}\n`
 	);
 }
 

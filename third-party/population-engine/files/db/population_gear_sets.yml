@@ -481,8 +481,7 @@ Body:
 # actually fights.
 ###########################################################################
   - GearSetName: low_melee
-    HeadTop:
-      - Hood
+    HeadTop: 0
     HeadMid: 0
     HeadBottom: 0
     Armor:
@@ -492,15 +491,15 @@ Body:
       - Knife
       - Main_Gauche
     Shield: 0
-    Garment: 0
+    Garment:
+      - Hood
     Shoes:
       - Sandals
     AccL: 0
     AccR: 0
 
   - GearSetName: low_rod
-    HeadTop:
-      - Hood
+    HeadTop: 0
     HeadMid: 0
     HeadBottom: 0
     Armor:
@@ -508,15 +507,15 @@ Body:
     Weapon:
       - Rod
     Shield: 0
-    Garment: 0
+    Garment:
+      - Hood
     Shoes:
       - Sandals
     AccL: 0
     AccR: 0
 
   - GearSetName: low_bow
-    HeadTop:
-      - Hood
+    HeadTop: 0
     HeadMid: 0
     HeadBottom: 0
     Armor:
@@ -524,15 +523,15 @@ Body:
     Weapon:
       - Bow
     Shield: 0
-    Garment: 0
+    Garment:
+      - Hood
     Shoes:
       - Sandals
     AccL: 0
     AccR: 0
 
   - GearSetName: low_blunt
-    HeadTop:
-      - Hood
+    HeadTop: 0
     HeadMid: 0
     HeadBottom: 0
     Armor:
@@ -541,7 +540,8 @@ Body:
       - Club
       - Waghnakh
     Shield: 0
-    Garment: 0
+    Garment:
+      - Hood
     Shoes:
       - Sandals
     AccL: 0

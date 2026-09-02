@@ -434,6 +434,24 @@ fn run_server(cfg: &Config, dk: &Docker, name: &str, port: u16, binary: &str, la
             ro: true,
         });
     }
+    // Mods, assembled by mods::assemble before the servers start. Tables go to
+    // every server that reads them; scripts only mean anything to the map
+    // server, which is the only one that runs them.
+    let modbuild = cfg.state.join("modbuild");
+    if modbuild.join("db").is_dir() {
+        mounts.push(Mount::Bind {
+            host: modbuild.join("db"),
+            container: "/rathena/db/import".into(),
+            ro: true,
+        });
+    }
+    if name == "ragnarok-map" && modbuild.join("npc").is_dir() {
+        mounts.push(Mount::Bind {
+            host: modbuild.join("npc"),
+            container: "/rathena/npc/mods".into(),
+            ro: true,
+        });
+    }
     // -t because rAthena writes with printf(3), which block-buffers when
     // stdout is not a tty; without it errors never reach `docker logs`.
     // Loopback by default: an offline single-player server has no business
@@ -606,8 +624,16 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
         else { "Ragnarok" };
     write_conf(&conf, "motd.txt",
         &format!("Welcome to {product} Offline! Please report any bugs on Github\n"))?;
+    // Mods are assembled here, before the map server is started and before
+    // map_conf names their scripts: the mount and the config have to agree, and
+    // both are derived from the same pass over state/mods.
+    let mods = crate::mods::assemble(cfg)?;
+    if !mods.names.is_empty() {
+        println!("mods: {}", mods.names.join(", "));
+    }
     write_conf(&conf, "map_conf.txt",
-        &format!("char_ip: ragnarok-char\nmap_ip: {advertise}\nmotd_txt: conf/import/motd.txt\n"))?;
+        &format!("char_ip: ragnarok-char\nmap_ip: {advertise}\nmotd_txt: conf/import/motd.txt\n{}",
+                 mods.npc_lines))?;
 
     let endpoint = format!(
         "{{\"host\":\"{advertise}\",\"login\":6900,\"char\":6121,\"map\":5121}}\n");

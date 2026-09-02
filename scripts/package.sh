@@ -41,6 +41,29 @@ echo "==> binaries"
 # kubectl-slim/helm-slim are in the kit too and deliberately left out: this
 # app has no Kubernetes in it.
 [ -d "$EMBED" ] || { echo "no slim embed kit at $EMBED (build it in the nebula repo, or set NEBULA_EMBED_KIT)" >&2; exit 1; }
+
+# Refuse a kit older than the one the app expects.
+#
+# The default path is a developer's own build directory, which goes stale the
+# moment they stop rebuilding it -- and a stale kit is not a build error, it is
+# a silent guest downgrade: the app replaces a newer kernel and agent with an
+# older pair, pays a minute-long "updating the virtual machine image" on next
+# start, and ships without the licences newer kits carry. Ask the kit what it
+# is rather than trusting where it came from.
+KIT_NEBULA=$("$EMBED/bin/nebula$EXE" --version 2>/dev/null | awk '{print $NF}')
+MIN_NEBULA=$(cat "$ROOT/config/NEBULA_MIN_VERSION" 2>/dev/null || echo 0.1.8)
+if [ -z "$KIT_NEBULA" ]; then
+    echo "cannot read a version from the embed kit at $EMBED" >&2; exit 1
+fi
+# Sort the two and see which comes first: no version-compare in POSIX sh.
+if [ "$KIT_NEBULA" != "$MIN_NEBULA" ] && \
+   [ "$(printf '%s\n%s\n' "$KIT_NEBULA" "$MIN_NEBULA" | sort -t. -k1,1n -k2,2n -k3,3n | head -1)" = "$KIT_NEBULA" ]; then
+    echo "embed kit at $EMBED is nebula $KIT_NEBULA, but this app needs $MIN_NEBULA or newer." >&2
+    echo "Rebuild it (nebula/scripts/embed-kit.sh) or point NEBULA_EMBED_KIT at a released kit:" >&2
+    echo "  gh release download v$MIN_NEBULA --repo Flux159/nebula --pattern 'nebula-slim-embed-*'" >&2
+    exit 1
+fi
+echo "    embed kit: nebula $KIT_NEBULA"
 # Copy the kit's bin/ wholesale and drop what this app has no use for, rather
 # than naming each binary: the kit's contents vary by platform. The macOS kit
 # is assembled by nebula's embed-kit.sh and carries the slim CLIs; the Linux
@@ -136,6 +159,30 @@ fi
 
 echo "==> container images"
 [ -f "$ROOT/dist/images.tar.gz" ] || "$ROOT/scripts/precache.sh" save
+# A bundle older than the server image it is supposed to contain means a
+# rebuild failed somewhere upstream and left the last good tarball in place.
+# That is invisible otherwise: packaging succeeds, the app starts, and the only
+# symptom is that the change under test is missing. Three separate build
+# failures hid behind this in one afternoon.
+if command -v "${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}" >/dev/null 2>&1; then
+    IMG_EPOCH=$("${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}" docker image inspect \
+        "ragnarokmac/rathena:${PACKETVER:-20221005}" --format '{{.Created}}' 2>/dev/null \
+        | cut -c1-19 | tr 'T' ' ')
+    if [ -n "$IMG_EPOCH" ]; then
+        # docker reports UTC; -u on both sides or every image looks hours newer
+        # than the bundle that contains it, west of Greenwich.
+        img_s=$(date -j -u -f '%Y-%m-%d %H:%M:%S' "$IMG_EPOCH" +%s 2>/dev/null \
+             || date -u -d "$IMG_EPOCH UTC" +%s 2>/dev/null || echo 0)
+        bun_s=$(stat -f %m "$ROOT/dist/images.tar.gz" 2>/dev/null \
+             || stat -c %Y "$ROOT/dist/images.tar.gz" 2>/dev/null || echo 0)
+        # A minute of slack: `precache.sh save` finishes writing the tarball a
+        # little after the image it read, and that is not staleness.
+        if [ "$img_s" -gt "$((bun_s + 60))" ] 2>/dev/null; then
+            echo "dist/images.tar.gz is older than ragnarokmac/rathena -- run scripts/precache.sh save" >&2
+            exit 1
+        fi
+    fi
+fi
 cp "$ROOT/dist/images.tar.gz" "$PAYLOAD/dist/"
 
 echo "==> client runtime"
@@ -148,6 +195,18 @@ cp -R "$ROOT/vendor/roBrowserLegacy/dist/Web" "$PAYLOAD/vendor/roBrowserLegacy/d
 (cd "$PAYLOAD/vendor/roBrowserLegacy/dist/Web" && rm -f \
     GrfViewer.js MapViewer.js ModelViewer.js StrViewer.js EffectViewer.js \
     GrannyModelViewer.js screenshotwide.png screenshotnarrow.png)
+
+# rAthena's db/import stubs, so a mod that overrides one table does not hide the
+# other fifty-nine. Staged here rather than lifted out of the image at runtime:
+# the slim docker client cannot copy out of a created container, and fails at it
+# silently.
+echo "==> db import stubs"
+if [ -d "$ROOT/vendor/rathena/db/import-tmpl" ]; then
+    mkdir -p "$PAYLOAD/db-import"
+    cp "$ROOT"/vendor/rathena/db/import-tmpl/* "$PAYLOAD/db-import/"
+else
+    echo "warning: no vendor/rathena/db/import-tmpl -- mods overriding a db table will warn" >&2
+fi
 
 echo "==> english translation"
 EN="$PAYLOAD/vendor/ROenglishRE/Translation/Renewal"

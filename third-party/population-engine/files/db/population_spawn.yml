@@ -53,9 +53,26 @@ Body:
       - new_1-1
       - new_1-2
       - new_1-3
-    TownsPopulation: 20
+    TownsPopulation: 60
 
   - Profile: combat_pve_low
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 270
     Fields:
       - gef_fild00
       - gef_fild01
@@ -90,19 +107,25 @@ Body:
       - umbala
       - niflheim
       - louyang
-    TownsPopulation: 60
+    TownsPopulation: 180
     Fields:
       - gef_fild02
       - gef_fild03
       - gef_fild05
+      - gef_fild06
+      - gef_fild08
       - gef_fild09
       - gef_fild10
+      - gef_fild11
       - gef_fild12
       - gef_fild13
       - gef_fild14
       - moc_fild01
       - moc_fild02
       - moc_fild03
+      - moc_fild13
+      - moc_fild16
+      - moc_fild17
       - moc_fild19
       - pay_fild02
       - pay_fild04
@@ -111,38 +134,18 @@ Body:
       - pay_fild07
       - pay_fild08
       - pay_fild09
+      - pay_fild10
       - pay_fild11
       - prt_fild02
       - prt_fild03
       - prt_fild04
       - prt_fild05
-      - prt_fild10
-    FieldsPopulation: 750
-    Dungeons:
-      - prt_maze01
-      - prt_sewb1
-      - prt_sewb2
-      - prt_sewb3
-      - prt_sewb4
-      - iz_dun00
-      - iz_dun01
-      - gef_dun00
-    DungeonsPopulation: 192
-
-  - Profile: combat_pve_high
-    Fields:
-      - gef_fild06
-      - gef_fild08
-      - gef_fild11
-      - moc_fild13
-      - moc_fild16
-      - moc_fild17
-      - pay_fild10
       - prt_fild09
+      - prt_fild10
       - prt_fild11
-    FieldsPopulation: 270
+    FieldsPopulation: 1020
     Dungeons:
-      - iz_dun02
+      - gef_dun00
       - gef_dun01
       - gef_dun02
       - gl_cas01
@@ -158,8 +161,16 @@ Body:
       - gl_sew03
       - gl_sew04
       - gl_step
+      - iz_dun00
+      - iz_dun01
+      - iz_dun02
       - orcsdun01
-    DungeonsPopulation: 408
+      - prt_maze01
+      - prt_sewb1
+      - prt_sewb2
+      - prt_sewb3
+      - prt_sewb4
+    DungeonsPopulation: 600
 
   - Profile: pve_knight     # Knight
     Towns:
@@ -178,7 +189,7 @@ Body:
       - umbala
       - niflheim
       - louyang
-    TownsPopulation: 20
+    TownsPopulation: 60
     Fields:
       - prt_fild02
       - prt_fild03
@@ -220,7 +231,7 @@ Body:
       - umbala
       - niflheim
       - louyang
-    TownsPopulation: 20
+    TownsPopulation: 60
     Fields:
       - pay_fild02
       - pay_fild04
@@ -264,7 +275,7 @@ Body:
       - umbala
       - niflheim
       - louyang
-    TownsPopulation: 20
+    TownsPopulation: 60
     Fields:
       - gef_fild02
       - gef_fild03
@@ -310,7 +321,7 @@ Body:
       - umbala
       - niflheim
       - louyang
-    TownsPopulation: 60
+    TownsPopulation: 180
     Fields:
       - pay_fild02
       - pay_fild04
@@ -362,7 +373,7 @@ Body:
       - umbala
       - niflheim
       - louyang
-    TownsPopulation: 20
+    TownsPopulation: 60
     Fields:
       - yuno_fild01
       - yuno_fild02
@@ -414,7 +425,7 @@ Body:
       - umbala
       - niflheim
       - louyang
-    TownsPopulation: 20
+    TownsPopulation: 60
     Fields:
       - moc_fild01
       - moc_fild02
@@ -466,7 +477,7 @@ Body:
       - umbala
       - niflheim
       - louyang
-    TownsPopulation: 15
+    TownsPopulation: 45
     Fields:
       - pay_fild02
       - pay_fild04
@@ -516,7 +527,7 @@ Body:
       - umbala
       - niflheim
       - louyang
-    TownsPopulation: 40
+    TownsPopulation: 60
     Fields:
       - gef_fild02
       - gef_fild03
@@ -551,7 +562,7 @@ Body:
       - umbala
       - niflheim
       - louyang
-    TownsPopulation: 20
+    TownsPopulation: 60
     Fields:
       - yuno_fild01
       - yuno_fild02
@@ -604,7 +615,7 @@ Body:
       - umbala
       - niflheim
       - louyang
-    TownsPopulation: 20
+    TownsPopulation: 60
     Fields:
       - moc_fild01
       - moc_fild02
@@ -645,7 +656,7 @@ Body:
       - umbala
       - niflheim
       - louyang
-    TownsPopulation: 15
+    TownsPopulation: 45
     Fields:
       - lou_fild01
       - ama_fild01

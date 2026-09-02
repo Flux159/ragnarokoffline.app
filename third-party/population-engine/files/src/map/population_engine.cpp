@@ -1134,11 +1134,25 @@ TIMER_FUNC(population_engine_autosummon_timer)
 	// cannot starve the map the player is actually standing on.
 	if (battle_config.population_engine_demand_spawn) {
 		pop_occupancy_refresh();
+
+		// The grace window keeps a map's shells for a while after its last
+		// player leaves, so walking out and back does not rebuild the crowd.
+		// But shells held for maps nobody is on still count against the global
+		// cap, and fill_category gives up the moment that cap is reached -- so
+		// a player hopping between maps could spend the entire budget on places
+		// they had left, and arrive somewhere genuinely empty. Under pressure,
+		// the map someone is standing on wins and grace is abandoned.
+		const size_t cap = static_cast<size_t>(max_global);
+		const bool under_pressure = g_population_engine_count.load() >= (cap - cap / 5);
+
 		std::vector<map_session_data*> abandoned;
 		for (map_session_data *sd : g_population_engine_pcs) {
 			if (sd == nullptr || !sd->state.active || sd->prev == nullptr)
 				continue;
-			if (!pop_map_is_live(sd->m))
+			const bool keep = under_pressure
+				? g_pop_occupied_maps.count(sd->m) != 0
+				: pop_map_is_live(sd->m);
+			if (!keep)
 				abandoned.push_back(sd);
 		}
 		for (map_session_data *sd : abandoned)

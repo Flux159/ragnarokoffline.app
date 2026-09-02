@@ -118,16 +118,16 @@ Body:
       - Item: Awakening_Potion
         Amount: 50
     VendorPlacement:
-      Map: prt_mk
-      MinSpacing: 2
-      MaxVendors: 100
+      Map: prontera
+      MinSpacing: 3
+      MaxVendors: 7
       # Bounding box: Y is in map coordinates (0 = bottom).
       # Use lower-left + upper-right; min/max are auto-normalized.
       Area:
-        X1: 50
-        Y1: 46
-        X2: 149
-        Y2: 149
+        X1: 130
+        Y1: 120
+        X2: 190
+        Y2: 230
   # ------------------------------------------------------------------
   # Static vendor: buff potions (pre-cast potions for adventurers)
   # ------------------------------------------------------------------
@@ -192,16 +192,16 @@ Body:
       - Item: Iron_Arrow_Container
         Amount: 1000
     VendorPlacement:
-      Map: prt_mk
-      MinSpacing: 2
-      MaxVendors: 100
+      Map: prontera
+      MinSpacing: 3
+      MaxVendors: 7
       # Bounding box: Y is in map coordinates (0 = bottom).
       # Use lower-left + upper-right; min/max are auto-normalized.
       Area:
-        X1: 50
-        Y1: 46
-        X2: 149
-        Y2: 149
+        X1: 130
+        Y1: 120
+        X2: 190
+        Y2: 230
   # ------------------------------------------------------------------
   # Static vendor: equipment basics (weapons, armor for new players)
   # ------------------------------------------------------------------
@@ -267,16 +267,16 @@ Body:
       AllowEtc: true
       AllowUsable: true
     VendorPlacement:
-      Map: prt_mk
-      MinSpacing: 2
-      MaxVendors: 100
+      Map: prontera
+      MinSpacing: 3
+      MaxVendors: 7
       # Bounding box: Y is in map coordinates (0 = bottom).
       # Use lower-left + upper-right; min/max are auto-normalized.
       Area:
-        X1: 50
-        Y1: 46
-        X2: 149
-        Y2: 149
+        X1: 130
+        Y1: 120
+        X2: 190
+        Y2: 230
 
   # ------------------------------------------------------------------
   # Dynamic vendor: dungeon drops at a higher markup.  Allows equipment

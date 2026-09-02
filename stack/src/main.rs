@@ -13,6 +13,7 @@ mod assets;
 mod cmds;
 mod config;
 mod docker;
+mod mods;
 
 use config::Config;
 use docker::Docker;
