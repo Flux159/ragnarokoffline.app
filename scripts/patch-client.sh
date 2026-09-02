@@ -109,4 +109,89 @@ if "KeyboardMove" not in s:
     print("patched MapEngine.js (keyboard movement)")
 else:
     print("MapEngine.js already patched")
+# 0004 - A missing .lub must not strand the player at character select.
+#
+# loadLuaValue() calls Client.loadFile(file, onload) with no error callback.
+# MemoryManager.get only registers an 'error' listener when one is passed, so a
+# file the player's game data does not contain fails into nothing: onEnd never
+# runs, DB.index never reaches DB.count, and DB.isLoaded stays false for the
+# life of the session.
+#
+# CharEngine.onReceiveMapInfo gates the map-server connection on DB.isLoaded, so
+# the client logs in, creates a character, selects it -- and then never opens a
+# connection to the map server at all. Every server is healthy, the asset server
+# is serving, and the player is simply stuck. It gets reported as "I can't
+# connect", with nothing in any server log to say otherwise.
+#
+# Eight files reach this path, six of them the navigation tables that trimmed
+# and older asset packs routinely omit:
+#   <lua>/skillinfoz/skillid.lub
+#   <lua>/navigation/navi_{map,mob,npc,link,linkdistance,npcdistance}_krpri.lub
+#   System/achievement_list.lub
+#
+# loadTable and loadCSV already pass onEnd as their error callback, and
+# loadLuaTable calls onEnd from an outer finally; loadLuaValue is the only one
+# of the four that can hang. On error we hand the callback null, which is what
+# the function's own inner catch already does, so callers see nothing new.
+p = rb / "src/DB/DBManager.js"
+s = p.read_text()
+old = """			} finally {
+				if (onEnd) {
+					onEnd.call();
+				}
+			}
+		});
+	} catch (e) {
+		console.error('error: ', e);
+		if (onEnd) {
+			onEnd.call();
+		}
+	}
+}"""
+new = """			} finally {
+				if (onEnd) {
+					onEnd.call();
+				}
+			}
+		},
+		// Without this the failure is dropped, onEnd never runs, and the whole
+		// database stays "loading" forever -- stranding the player at character
+		// select with no way to reach the map server.
+		function () {
+			console.error(`(${file_path}) could not be read; skipping`);
+			callback.call(null, null);
+			if (onEnd) {
+				onEnd.call();
+			}
+		});
+	} catch (e) {
+		console.error('error: ', e);
+		if (onEnd) {
+			onEnd.call();
+		}
+	}
+}"""
+if "could not be read; skipping" in s:
+    print("DBManager.js already patched")
+elif s.count(old) == 1:
+    p.write_text(s.replace(old, new, 1))
+    print("patched DBManager.js (loadLuaValue error callback)")
+else:
+    sys.exit("DBManager.js: loadLuaValue no longer matches (%d hits); re-check the patch" % s.count(old))
+
+# 0005 - Say what actually went wrong when the databases never finish loading.
+# Restarting cannot help: the file is missing from the player's game data and it
+# will still be missing on the next run.
+p = rb / "src/Engine/CharEngine.js"
+s = p.read_text()
+old = "'Failed loading databases, please restart the game'"
+new = ("'Some of your game data could not be read, so the game cannot start. "
+       "Your Ragnarok folder is probably missing files.'")
+if "Your Ragnarok folder is probably missing files" in s:
+    print("CharEngine.js already patched")
+elif s.count(old) == 1:
+    p.write_text(s.replace(old, new, 1))
+    print("patched CharEngine.js (database load failure message)")
+else:
+    sys.exit("CharEngine.js: load failure message no longer matches; re-check the patch")
 PY
