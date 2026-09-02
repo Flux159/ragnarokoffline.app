@@ -218,6 +218,14 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
             "Smart App Control is enforcing, and this app is not signed yet",
         ));
     }
+    // Same reasoning: check the condition rather than read it back out of a
+    // failure that cannot be told apart from three other causes.
+    #[cfg(windows)]
+    if vc_runtime_missing() {
+        return Err(vc_runtime_help(
+            "The Microsoft Visual C++ runtime is missing",
+        ));
+    }
 
     // Before starting it: an image that was damaged on the way in produces a
     // guest that boots to nothing, and every later message blames the wrong
@@ -369,6 +377,55 @@ fn is_app_control_block(msg: &str) -> bool {
             && sac_enforcing())
 }
 
+/// Is the Microsoft Visual C++ runtime present?
+///
+/// Every binary we ship in payload/bin -- ragnarok-stack, nebula, nebulad,
+/// docker-slim, robrowser-remoteclient -- imports VCRUNTIME140.dll. The
+/// Electron shell does not, so the app opens perfectly and then fails the
+/// instant it runs any of them. Windows refuses the load with 0xC0000135,
+/// which is the same code Smart App Control produces, and without this check
+/// the failure falls through to the hypervisor advice -- sending someone into
+/// their BIOS over a missing DLL.
+///
+/// The api-ms-win-crt-* imports resolve from the UCRT that ships with Windows
+/// 10 and later; VCRUNTIME140.dll is the one that needs the redistributable.
+#[cfg(windows)]
+fn vc_runtime_missing() -> bool {
+    let root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into());
+    // System32 is the 64-bit system directory for a 64-bit process. A copy
+    // beside the executable satisfies the loader too, so accept either.
+    let system32 = Path::new(&root).join("System32").join("VCRUNTIME140.dll");
+    if system32.exists() {
+        return false;
+    }
+    !std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|d| d.join("VCRUNTIME140.dll").exists()))
+        .unwrap_or(false)
+}
+
+/// A load failure that means a DLL could not be found.
+#[cfg(windows)]
+fn is_dll_not_found(msg: &str) -> bool {
+    msg.contains("0xC0000135") || msg.contains("-1073741515") || msg.contains("os error 126")
+}
+
+#[cfg(windows)]
+fn vc_runtime_help(reason: &str) -> String {
+    format!(
+        "{reason}\n\n\
+         This app needs the Microsoft Visual C++ Redistributable (x64), and it \
+         is not installed on this machine. It is a Microsoft component that a \
+         lot of software relies on, so most Windows machines already have it -- \
+         yours does not yet.\n\n\
+         Install it, then start Ragnarok Offline again:\n\n\
+         \x20   https://aka.ms/vs/17/release/vc_redist.x64.exe\n\n\
+         Nothing is wrong with your computer or your install. The app window \
+         opens without it because only the parts that run the game servers need \
+         it, which is why the failure shows up a few seconds in."
+    )
+}
+
 /// Is Smart App Control enforcing right now?
 ///
 /// Read rather than inferred from a failure. Under enforcement an unsigned
@@ -462,7 +519,30 @@ fn app_control_help(reason: &str) -> String {
 /// player never runs the installer -- nebula is embedded in the app -- so the
 /// check has to live here too. Without it the failure surfaces as a timeout
 /// several steps later with nothing to act on.
+/// Has nebula already said what went wrong?
+///
+/// It explains a port collision itself now, naming the ports, the process
+/// holding them and three ways out. Appending "check /dev/kvm and your BIOS" to
+/// that is worse than saying nothing: it contradicts a correct diagnosis the
+/// player is looking straight at, and sends them to reboot into firmware for a
+/// problem that is a config line.
+fn nebula_explained_itself(reason: &str) -> bool {
+    reason.contains("already in use")
+        || reason.contains("port_conflict")
+        || reason.contains("Either:")
+        || reason.contains("cannot share a port")
+}
+
 fn engine_failure_help(reason: &str) -> String {
+    if nebula_explained_itself(reason) {
+        return reason.to_string();
+    }
+    // A missing DLL is not a virtualisation fault, and the hypervisor advice
+    // below would send someone into their BIOS for one.
+    #[cfg(windows)]
+    if is_dll_not_found(reason) && vc_runtime_missing() {
+        return vc_runtime_help(reason);
+    }
     if !cfg!(windows) {
         return format!(
             "{reason}\n\n\
