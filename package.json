@@ -25,7 +25,9 @@
     "files": [
       "electron/**/*",
       "src/**/*",
-      "!**/node_modules/**"
+      "!**/node_modules/**",
+      "!electron/vc_redist.x64.exe",
+      "!electron/installer.nsh"
     ],
     "extraResources": [
       {
@@ -96,7 +98,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "include": "electron/installer.nsh"
     },
     "afterPack": "electron/afterPack.js"
   }

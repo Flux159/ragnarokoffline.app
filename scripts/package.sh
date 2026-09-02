@@ -235,6 +235,48 @@ mkdir -p "$EN"
 tar -cf "$EN/data.tar" -C "$ROOT/vendor/ROenglishRE/Translation/Renewal" data
 cp -R "$ROOT/vendor/ROenglishRE/Translation/Renewal/SystemEN" "$EN/SystemEN"
 
+# The Visual C++ runtime, for the Windows installer to hand to Windows.
+#
+# Every binary in payload/bin imports VCRUNTIME140.dll; the Electron shell does
+# not. So on a machine without the redistributable the app opens and then dies
+# the moment it starts a server, with 0xC0000135 -- which is also what Smart
+# App Control produces, and what a genuinely missing DLL produces. A player hit
+# this and worked it out alone. electron/installer.nsh installs it during setup
+# when Windows does not already have it.
+#
+# Fetched rather than committed: it is 25 MB of Microsoft's binary, and the URL
+# is their evergreen one. Only on Windows, because that is the only packaging
+# run that builds an NSIS installer.
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        VCREDIST="$ROOT/electron/vc_redist.x64.exe"
+        VCREDIST_URL="https://aka.ms/vs/17/release/vc_redist.x64.exe"
+        if [ ! -s "$VCREDIST" ]; then
+            echo "fetching the Visual C++ redistributable"
+            curl -fsSL --retry 3 -o "$VCREDIST.part" "$VCREDIST_URL"
+            mv "$VCREDIST.part" "$VCREDIST"
+        fi
+        # No pinned hash -- Microsoft revises the file behind that URL, and a
+        # pin would fail every release until someone updated it. Check instead
+        # that what arrived is a Windows executable of a plausible size: the
+        # failure this guards against is a truncated download or an error page
+        # saved as a .exe, both of which would produce an installer that ships
+        # a broken redistributable and fails only on a user's machine.
+        vcsize=$(wc -c < "$VCREDIST")
+        if [ "$vcsize" -lt 10000000 ]; then
+            echo "vc_redist.x64.exe is only $vcsize bytes; refusing to ship it" >&2
+            rm -f "$VCREDIST"
+            exit 1
+        fi
+        if [ "$(head -c 2 "$VCREDIST")" != "MZ" ]; then
+            echo "vc_redist.x64.exe is not a Windows executable; refusing to ship it" >&2
+            rm -f "$VCREDIST"
+            exit 1
+        fi
+        echo "vc_redist.x64.exe ready ($((vcsize / 1048576)) MB)"
+        ;;
+esac
+
 # A marker the app compares against, so a new build refreshes the copy it
 # materialises into Application Support.
 git -C "$ROOT" rev-parse --short HEAD 2>/dev/null > "$PAYLOAD/VERSION" || echo dev > "$PAYLOAD/VERSION"

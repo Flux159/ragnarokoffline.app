@@ -57,3 +57,6 @@ data.ini
 
 # The supervisor crate build output.
 stack/target/
+
+# Fetched by scripts/package.sh for the Windows installer (25 MB, Microsoft's binary)
+/electron/vc_redist.x64.exe
