@@ -123,11 +123,13 @@ else:
 # is serving, and the player is simply stuck. It gets reported as "I can't
 # connect", with nothing in any server log to say otherwise.
 #
-# Eight files reach this path, six of them the navigation tables that trimmed
-# and older asset packs routinely omit:
+# Seven files reach this path today, all of them inside the player's GRFs
+# under data/luafiles514/lua files/ -- which is the tree an older or trimmed
+# asset pack is most likely to be missing entirely:
 #   <lua>/skillinfoz/skillid.lub
 #   <lua>/navigation/navi_{map,mob,npc,link,linkdistance,npcdistance}_krpri.lub
-#   System/achievement_list.lub
+# System/achievement_list.lub goes through the same call but is gated on
+# Configs.get('enableAchievements'), which nothing sets, so it never loads.
 #
 # loadTable and loadCSV already pass onEnd as their error callback, and
 # loadLuaTable calls onEnd from an outer finally; loadLuaValue is the only one
