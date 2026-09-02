@@ -597,6 +597,15 @@ function getClientPaths() {
 	return out;
 }
 
+// Stop joining and run the server here instead.
+//
+// Only the mode changes: join_host stays, so going back needs no retyping, and
+// the GRFs -- which a player who has only ever joined has never picked -- are
+// asked for by the boot page, which already knows how to ask.
+function switchToHost() {
+	fs.writeFileSync(clientConfigPath(), JSON.stringify({ ...getClientPaths(), mode: 'host' }, null, 2));
+}
+
 // The address this host tells other machines to come back to.
 //
 // Read from the endpoint.json the supervisor just wrote rather than computed
@@ -650,6 +659,43 @@ function localHostnames() {
 	return [...names].filter(Boolean);
 }
 
+// Why a host could not be reached, in words rather than in a code.
+//
+// Node reports these as "connect ECONNREFUSED 192.168.1.20:3338", and a player
+// who has been handed an address by a friend cannot do anything with that.
+// Each of these is a different problem with a different fix, which is why they
+// are told apart here instead of being flattened into one "could not connect".
+function whyUnreachable(e) {
+	switch (e.code) {
+		case 'ECONNREFUSED':
+			return 'nothing is listening there. The host has to start their server, ' +
+				'with "Let friends join" switched on, before anyone can connect.';
+		case 'ENOTFOUND':
+		case 'EAI_AGAIN':
+			return 'that name could not be looked up. Check the address for a typo.';
+		case 'EHOSTUNREACH':
+		case 'ENETUNREACH':
+			return 'that machine cannot be reached from this network. Joining works ' +
+				'over a network you are both on.';
+		case 'ECONNRESET':
+			return 'the connection was closed before an answer came back. Something ' +
+				'is listening on that port, but it is not a Ragnarok Offline host.';
+		case 'ETIMEDOUT':
+			return 'it did not answer. Check the address, and that the host is running.';
+		default:
+			return e.message;
+	}
+}
+
+// The reason is kept beside the sentence as well as in it: a dialog that has
+// already named the host in its headline wants the reason alone, and a page
+// with one line to spend wants the whole thing.
+function unreachable(url, reason) {
+	const e = new Error(`Could not connect to ${url}: ${reason}`);
+	e.reason = reason;
+	return e;
+}
+
 // Confirm a host is actually serving before a window is pointed at it, so an
 // address typo or an offline friend produces a sentence rather than a blank
 // window that never loads.
@@ -663,11 +709,11 @@ function probeHost(url) {
 		});
 		req.on('timeout', () => {
 			req.destroy();
-			reject(new Error(`${url} did not answer within 8 seconds. Is the host running, and are you on the same network?`));
+			reject(unreachable(url,
+				'it did not answer within 8 seconds. Check that the host is running, ' +
+				'and that you are both on the same network.'));
 		});
-		req.on('error', e => {
-			reject(new Error(`Could not reach ${url}: ${e.message}`));
-		});
+		req.on('error', e => reject(unreachable(url, whyUnreachable(e))));
 	});
 }
 
@@ -1555,13 +1601,25 @@ app.whenReady().then(() => {
 			.catch(err => {
 				dialog.showMessageBox({
 					type: 'warning',
-					message: `Could not reach ${c.join_host}`,
-					detail: `${err.message}\n\nCheck the address, and that the host has started their server.`,
-					buttons: ['Change address…', 'Try anyway'],
-					defaultId: 0,
+					message: `Could not connect to ${c.join_host}`,
+					// Every button here is something to do about it. The old
+					// dialog offered a settings window and a retry, so a player
+					// whose friend was simply not online had nothing to press
+					// -- while a whole offline game they own sat one setting
+					// away.
+					detail: `${err.reason || err.message}\n\n` +
+						'You can wait for the host and try again, or play on this computer ' +
+						'instead — your own server runs entirely offline.',
+					buttons: ['Change address…', 'Play on this computer', 'Try anyway'],
+					defaultId: 1,
+					cancelId: 2,
 				}).then(({ response }) => {
 					if (response === 0) openSettings();
-					else openGame();
+					// The boot page asks for the GRFs when there are none, so
+					// a player who has only ever joined lands in setup rather
+					// than on a host mode that cannot start.
+					else if (response === 1) switchToHost();
+					if (response !== 0) openGame();
 				});
 			});
 	} else {
