@@ -43,6 +43,11 @@ First launch takes a few minutes: it unpacks the runtime, boots the microVM, loa
 the container images and initialises the database. The window names each step as it
 goes, so you can see where it is. Every launch after that is seconds.
 
+**4. Optional: fill the world with people.** A private server is empty by
+default. Settings → **Population** puts AI characters on the map with you —
+hunting in the fields, standing around town, running vending stalls you can
+actually buy from. See [Filling the world](#filling-the-world) below.
+
 ---
 
 ## Hosting and playing with friends on your LAN
@@ -244,6 +249,43 @@ change between macOS, Windows and Linux; only the host-side VM integration does.
 | [Population Engine](https://github.com/YlenXWalker/Population-Engine) | upstream, GPL-3.0 | server-side AI characters, compiled in but off by default. Vendored in `third-party/`, see its README |
 | [roBrowserLegacy](https://github.com/MrAntares/roBrowserLegacy) | upstream, GPL-3.0 | the client. Built from source with a few patches in `patches/` |
 | [RemoteClient](https://github.com/Flux159/roBrowserLegacy-RemoteClient-Rust) | GPL-3.0 | Rust rewrite of roBrowserLegacy's Node asset server |
+
+---
+
+## Filling the world
+
+A server of your own is a quiet place. Turn on **Fake players** in Settings and
+the world gets inhabitants: they walk, fight monsters, sit around town, and open
+real vending stalls you can buy from. They never touch your characters or your
+save.
+
+<p align="center">
+<img src="docs/assets/population.png" alt="The Population section of Settings: a Fake players checkbox, sliders for How busy (reading ~40 per map), Limit (1500) and Server memory (4 GB), and a line estimating what that costs" width="640">
+</p>
+
+**How busy** is the one to reach for. It scales how crowded each map feels — the
+readout tells you roughly how many characters you will see around you, and the
+line underneath estimates the memory that costs. Start at 100% and move it if a
+town feels too sleepy or too packed.
+
+**Limit** is a safety ceiling across every map at once, not a headcount. Playing
+alone you will never reach it: characters only exist on the maps you and your
+friends are actually standing on, so leaving a map hands its inhabitants back
+rather than keeping thousands of them alive somewhere you cannot see. That is
+also why the world does not cost anything while you are not playing.
+
+**Server memory** is how much the virtual machine may use. It is a ceiling
+rather than a reservation — idle memory goes back to your computer — and
+changing it restarts the virtual machine, which takes a few seconds.
+
+Characters are levelled to the map they are on, taken from the monsters that
+live there, so a starting field holds beginners in plain gear and a late-game
+map does not. Applying any of this restarts the server, so log back in
+afterwards.
+
+If your machine gets hot, this is the setting to turn down: the AI characters
+are the only part of the server that costs meaningful CPU. The game itself runs
+on very little.
 
 ---
 
