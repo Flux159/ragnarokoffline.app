@@ -16,6 +16,14 @@ requests are welcome as [issues](../../issues).
 
 ---
 
+> [!IMPORTANT]
+> **Windows: close kernel-level anti-cheat before starting.** Riot Vanguard
+> (Valorant, League of Legends) and similar always-on anti-cheat drivers load at
+> boot and take exclusive control of the hypervisor. Running one alongside this
+> app has put at least one machine into a **reboot loop**. Fully exit the game
+> and its anti-cheat service — or reboot without it — before launching. Faceit,
+> ESEA and EasyAntiCheat's kernel mode are likely to behave the same way.
+
 ## Getting started
 
 **[Watch the setup walkthrough](https://youtu.be/1Ib_KqHDCLA)** — download,
@@ -331,6 +339,25 @@ Any one of these fixes it:
 macOS and Linux are unaffected. Tracked as [#5](../../issues/5); the long-term
 fix is to stop linking the GRFs at all.
 
+### Windows: a reboot loop, or the machine restarts on launch
+
+Kernel-level anti-cheat and this app cannot both drive the hypervisor. **Riot
+Vanguard** (Valorant, League of Legends) loads at boot as a kernel driver and
+claims virtualisation exclusively; starting the virtual machine alongside it has
+put at least one machine into a reboot loop.
+
+If you are in one: boot into Safe Mode, disable or uninstall the anti-cheat
+service, and reboot normally.
+
+To avoid it, fully quit the game **and** its anti-cheat service before launching
+— for Vanguard that means the tray icon, `Exit Vanguard`, and often a restart,
+since it starts with Windows. EasyAntiCheat in kernel mode, Faceit and ESEA are
+likely to behave the same way. Anti-cheat that runs only while a game is open is
+generally fine.
+
+This is not something the app can work around: both want exclusive use of the
+same hardware feature.
+
 ### Windows: the app cannot start its virtual machine
 
 The server runs in a small Linux virtual machine, which needs two separate
@@ -349,7 +376,10 @@ Open **Task Manager** (Ctrl+Shift+Esc) → **Performance** → **CPU**, and look
 - *You do not see the line at all* — a hypervisor is already running, which
   means it is on. Go to step 2.
 
-**2. Is the Windows Hypervisor Platform switched on?**
+**2. Is kernel-level anti-cheat running?** See the section above — Riot Vanguard
+and similar drivers take the hypervisor exclusively.
+
+**3. Is the Windows Hypervisor Platform switched on?**
 
 Press Windows+R, run **`optionalfeatures`**, and make sure **Windows Hypervisor
 Platform** is ticked. Reboot if you change it.
@@ -373,6 +403,22 @@ To check what Windows itself thinks, in PowerShell:
 ```
 
 `True` means a hypervisor is running and the app should work.
+
+### Windows: it starts, then hangs with nothing happening
+
+If the app reports that the virtual machine did not come up, and repairing does
+not help, the guest image may have been damaged as it was written. Installing it
+writes over a gigabyte, and antivirus software inspects every byte — a file
+quarantined or truncated mid-write leaves a virtual machine that starts and then
+does nothing at all.
+
+Version 1.0.2 and later check for this on startup and say so. On earlier
+versions, **Repair…** in Settings reinstalls the image. If it recurs, allow this
+folder in your antivirus and repair once more:
+
+```
+%APPDATA%\Ragnarok Offline\nebula
+```
 
 ### `ragnarok` / `ragnarok` does not work on the very first login
 

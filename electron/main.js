@@ -1070,6 +1070,34 @@ const handlers = {
 				add(`nebula/${file}`, tail(p2, want));
 			}
 		}
+		// Guest image sizes against what the shipped archives say they should
+		// be. The report that led to this check could not distinguish a
+		// hypervisor problem from a rootfs that antivirus had truncated.
+		const gzSize = (f) => {
+			try {
+				const size = fs.statSync(f).size;
+				const b = Buffer.alloc(4);
+				const fd = fs.openSync(f, 'r');
+				fs.readSync(fd, b, 0, 4, size - 4);
+				fs.closeSync(fd);
+				return b.readUInt32LE(0);
+			} catch { return null; }
+		};
+		const nh = path.join(dataRoot(), 'nebula');
+		const images = [
+			['kernel', path.join(projectRoot(), 'guest/Image.gz'), path.join(nh, 'kernel/Image')],
+			['rootfs', path.join(projectRoot(), 'guest/rootfs.img.gz'),
+			 path.join(nh, 'images/rootfs-pristine.img')],
+		].map(([what, src, dst]) => {
+			const want = gzSize(src);
+			const got = fs.existsSync(dst) ? fs.statSync(dst).size : null;
+			const verdict = got === null ? 'not installed'
+				: want === null ? 'cannot check'
+				: got === want ? 'ok' : `DAMAGED (expected ${want})`;
+			return `${what.padEnd(8)}${String(got ?? '-').padEnd(12)}${verdict}`;
+		});
+		add('guest images', images.join('\n'));
+
 		const cfgToml = path.join(path.join(dataRoot(), 'nebula'), 'config.toml');
 		if (fs.existsSync(cfgToml)) {
 			add('nebula/config.toml', fs.readFileSync(cfgToml, 'utf8'));

@@ -201,6 +201,11 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
     }
     // `nebula up` is a no-op when the engine is already healthy, so a failure
     // here is a failure to start -- worth stopping for, and worth explaining.
+    // Before starting it: an image that was damaged on the way in produces a
+    // guest that boots to nothing, and every later message blames the wrong
+    // thing -- the hypervisor, the timeout, the engine.
+    check_guest_images(cfg)?;
+
     if let Err(e) = nebula(cfg, &["up"]) {
         return Err(engine_failure_help(&e));
     }
@@ -216,6 +221,9 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
         }
         sleep(Duration::from_secs(2));
     }
+    // The guest is the likelier suspect than the hypervisor when the partition
+    // started and then went quiet, so say so before offering BIOS advice.
+    check_guest_images(cfg)?;
     Err(engine_failure_help("the virtual machine did not come up"))
 }
 
@@ -239,6 +247,62 @@ fn nebula(cfg: &Config, args: &[&str]) -> Result<(), String> {
     } else {
         format!("nebula {} failed: {why}", args[0])
     })
+}
+
+/// The uncompressed size a gzip file claims, from its ISIZE trailer.
+///
+/// The last four bytes of a gzip stream are the uncompressed length. Reading
+/// them costs one seek, so an installed image can be checked against what it
+/// should be without decompressing a gigabyte to find out.
+fn gzip_uncompressed_size(path: &Path) -> Option<u64> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = fs::File::open(path).ok()?;
+    let len = f.metadata().ok()?.len();
+    if len < 18 {
+        return None;
+    }
+    f.seek(SeekFrom::Start(len - 4)).ok()?;
+    let mut b = [0u8; 4];
+    f.read_exact(&mut b).ok()?;
+    Some(u32::from_le_bytes(b) as u64)
+}
+
+/// Check that the installed guest images are the size they should be.
+///
+/// A virtual machine whose partition starts and whose console stays completely
+/// empty has almost always been handed a kernel or rootfs that is not what we
+/// wrote. On Windows the usual cause is the antivirus: installing these means
+/// writing about 3.2 GB, every byte of which Defender inspects, and a file it
+/// quarantines or truncates mid-write leaves a guest that cannot boot and
+/// cannot say so.
+///
+/// Sizes rather than hashes: the check runs on every start, and hashing a
+/// gigabyte to find out is a cost paid by everyone to catch a rare fault.
+fn check_guest_images(cfg: &Config) -> Result<(), String> {
+    let pairs = [
+        (cfg.root.join("guest/Image.gz"), cfg.nebula_home.join("kernel/Image"), "kernel"),
+        (cfg.root.join("guest/rootfs.img.gz"),
+         cfg.nebula_home.join("images/rootfs-pristine.img"), "root filesystem"),
+    ];
+    for (src, installed, what) in pairs {
+        let (Some(want), Ok(meta)) = (gzip_uncompressed_size(&src), fs::metadata(&installed)) else {
+            continue; // Nothing shipped, or nothing installed yet: not our business here.
+        };
+        let got = meta.len();
+        if got != want {
+            return Err(format!(
+                "The virtual machine's {what} is damaged: it should be {want} bytes and is {got}.\n\n\
+                 This usually means antivirus software altered or quarantined it \
+                 while it was being written -- installing it writes over a \
+                 gigabyte, and security software inspects every byte.\n\n\
+                 Use Repair in Settings to install it again. If it keeps \
+                 happening, allow the folder below in your antivirus and repair \
+                 once more:\n\n\x20   {}",
+                cfg.nebula_home.display()
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Why the virtual machine will not start, in steps a player can act on.
