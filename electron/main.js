@@ -286,44 +286,73 @@ function findTool(name) {
 	return null;
 }
 
-// Data written under the old identifier-named folder moves once. Skipped when
-// the new location exists, so it cannot clobber a live install. The engine is
-// stopped first: `nebula up` registers a launchd label derived from
-// NEBULA_HOME, and moving the directory under a running instance leaves it
-// writing to a path that is gone.
+// Every macOS home this app has had, newest first: com.ragnarokmac.app was the
+// Tauri bundle id, RagnarokMac the readable folder that replaced it, and
+// dataRoot() is the rename to the product's real name. An install can be
+// sitting on either of the old two, so both are always considered rather than
+// assuming a single hop. Keep in step with our_engine_homes() in
+// stack/src/cmds.rs.
+function oldDataRoots() {
+	const support = path.join(os.homedir(), 'Library/Application Support');
+	return [path.join(support, 'RagnarokMac'), path.join(support, 'com.ragnarokmac.app')];
+}
+
+// Leave no engine running out of a home this app has abandoned.
+//
+// An upgrade renames the old folder rather than stopping what is running
+// inside it, and a nebulad whose NEBULA_HOME has been renamed away goes on
+// holding the app's three ports forever -- with a home that no longer exists,
+// so nothing on the machine explains the port conflict the next start fails
+// with. This is the cheap half of the fix, run before anything can collide;
+// the supervisor clears whatever survives it (clear_stale_engines in
+// stack/src/cmds.rs).
+function stopOldEngines() {
+	// Every one of them, not just the one being migrated: an install can have
+	// been through both renames, and a leftover from the older era holds the
+	// ports just as well as a leftover from the newer one.
+	for (const old of oldDataRoots()) {
+		const oldNebula = path.join(old, 'nebula');
+		if (!fs.existsSync(oldNebula)) continue;
+		// Its own engine binary first -- an instance is best stopped by the
+		// version that started it -- and ours when that install no longer has
+		// one, which is the usual state of a home an upgrade left behind.
+		const nebula = [path.join(old, 'runtime/bin/nebula'), path.join(projectRoot(), `bin/nebula${EXE}`)]
+			.find(p => fs.existsSync(p));
+		if (!nebula) continue;
+		try {
+			require('child_process').execFileSync(nebula, ['down'], {
+				env: { ...process.env, NEBULA_HOME: oldNebula },
+				stdio: 'ignore',
+				timeout: 30000,
+			});
+		} catch {
+			/* the engine may already be down */
+		}
+	}
+}
+
+// Data written under an old home moves once. Skipped when the new location
+// exists, so it cannot clobber a live install. The engine is stopped first:
+// `nebula up` registers a launchd label derived from NEBULA_HOME, and moving
+// the directory under a running instance leaves it writing to a path that is
+// gone.
 function migrateDataRoot() {
 	const dest = dataRoot();
+	// Before the early return below, not after: an install that migrated long
+	// ago can still have an engine running out of an old home, and it is that
+	// engine, not the data, that stops the app from starting.
+	stopOldEngines();
 	// Not "does the directory exist": anything that creates it -- a stray run
 	// of the supervisor with NEBULA_HOME pointed here, a half-finished copy --
 	// disables this one-shot migration permanently, and the owner silently
 	// starts over with an empty database while their characters sit in the old
 	// home. What marks a *real* install is a client.json, so that is the test.
 	if (fs.existsSync(path.join(dest, 'client.json'))) return;
-	// Two previous homes, oldest last: com.ragnarokmac.app was the Tauri bundle
-	// id, RagnarokMac was the readable folder that replaced it, and this is the
-	// rename to the product's real name. An install can be sitting on either, so
-	// take the first that exists rather than assuming a single hop.
-	const support = path.join(os.homedir(), 'Library/Application Support');
-	// Likewise, an old home only counts if it holds a configured install.
-	const old = [path.join(support, 'RagnarokMac'), path.join(support, 'com.ragnarokmac.app')]
-		.find(p => fs.existsSync(path.join(p, 'client.json')));
+	// Likewise, an old home only counts if it holds a configured install; the
+	// newest that does is the one to move.
+	const old = oldDataRoots().find(p => fs.existsSync(path.join(p, 'client.json')));
 	if (!old) return;
 
-	const oldNebula = path.join(old, 'nebula');
-	if (fs.existsSync(oldNebula)) {
-		const nebula = path.join(old, 'runtime/bin/nebula');
-		if (fs.existsSync(nebula)) {
-			try {
-				require('child_process').execFileSync(nebula, ['down'], {
-					env: { ...process.env, NEBULA_HOME: oldNebula },
-					stdio: 'ignore',
-					timeout: 30000,
-				});
-			} catch {
-				/* the engine may already be down */
-			}
-		}
-	}
 	// rename() onto an existing non-empty directory fails, so anything already
 	// sitting at the destination is moved aside rather than merged or removed.
 	// It is never deleted: whatever it is, it is not ours to throw away, and

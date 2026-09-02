@@ -1,6 +1,6 @@
 //! The stack commands themselves.
 
-use crate::config::{lan_ip, Config, DB_CONTAINER, NET, SERVERS};
+use crate::config::{data_root, home, lan_ip, Config, DB_CONTAINER, NET, SERVERS};
 use crate::docker::{older_than, Docker, Mount};
 use std::fs;
 use std::io::Write;
@@ -249,7 +249,18 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
         if is_app_control_block(&e) {
             return Err(app_control_help(&e));
         }
-        return Err(engine_failure_help(&e));
+        // Two engines cannot share a port, and an upgrade leaves one behind:
+        // the old install's folder is renamed out from under a running
+        // nebulad, which goes on holding all three ports with a NEBULA_HOME
+        // that no longer exists. Nothing on the machine explains that to the
+        // person looking at it, and the only cure was to find the pid and end
+        // it by hand. Stop ours and try once more instead; a second failure is
+        // reported exactly as the first one used to be.
+        if !clear_stale_engines(cfg, &e) {
+            return Err(engine_failure_help(&e));
+        }
+        phase(cfg, "Starting the virtual machine…");
+        nebula(cfg, &["up"]).map_err(|e| engine_failure_help(&e))?;
     }
     // Its own phase. Installing the image and waiting for the engine are
     // different steps with very different durations, and leaving the install
@@ -289,6 +300,206 @@ fn nebula(cfg: &Config, args: &[&str]) -> Result<(), String> {
     } else {
         format!("nebula {} failed: {why}", args[0])
     })
+}
+
+/// An engine already holding a port this one needs, as nebula's failure names
+/// it.
+struct Holder {
+    pid: u32,
+    home: PathBuf,
+}
+
+/// Pull `... by nebulad pid 48746 (NEBULA_HOME=/…/nebula)` out of a failed
+/// `up`.
+///
+/// Reading another program's prose is a poor way to learn anything, and it is
+/// still the cheapest way to learn this: the alternative is enumerating
+/// listening sockets on three platforms to rediscover what nebula has already
+/// told us, in a binary that deliberately has no dependencies. A line that does
+/// not parse yields nothing and the failure is reported as it always was, so a
+/// reworded message costs this repair and not correctness.
+fn port_holders(err: &str) -> Vec<Holder> {
+    const BY: &str = "by nebulad pid ";
+    const HOME: &str = "(NEBULA_HOME=";
+    let mut out: Vec<Holder> = Vec::new();
+    for line in err.lines() {
+        let Some((_, rest)) = line.split_once(BY) else { continue };
+        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let Ok(pid) = digits.parse::<u32>() else { continue };
+        let Some((_, tail)) = rest.split_once(HOME) else { continue };
+        // A path may hold anything, so end at the last `)` on the line rather
+        // than the first -- "Ragnarok Offline (old)/nebula" is a real folder
+        // someone could have.
+        let Some(end) = tail.rfind(')') else { continue };
+        if out.iter().any(|h| h.pid == pid) {
+            continue;
+        }
+        out.push(Holder { pid, home: PathBuf::from(&tail[..end]) });
+    }
+    out
+}
+
+/// Every NEBULA_HOME this app has ever started an engine from.
+///
+/// A leftover engine is ours to stop only if it is running out of one of
+/// these. Anything else on those ports belongs to somebody else -- a
+/// standalone nebula, another embedder -- and ending someone else's virtual
+/// machine to make room for ours would be a worse bug than the one being
+/// fixed here.
+fn our_engine_homes(cfg: &Config) -> Vec<PathBuf> {
+    let mut homes = vec![cfg.nebula_home.clone()];
+    let root = data_root();
+    // The macOS app has been renamed twice and each rename moved the data
+    // root: com.ragnarokmac.app was the Tauri bundle id, RagnarokMac the
+    // readable folder that replaced it, and both can still have an engine
+    // running. Keep in step with migrateDataRoot() in electron/main.js.
+    if cfg!(target_os = "macos") {
+        let support = home().join("Library/Application Support");
+        homes.push(support.join("com.ragnarokmac.app/nebula"));
+        homes.push(support.join("RagnarokMac/nebula"));
+    }
+    // That migration parks an unconfigured data root beside the real one
+    // instead of deleting it, and an engine can still be running out of what
+    // it parked.
+    let parked = root.file_name().and_then(|n| n.to_str()).map(|n| format!("{n}.orphaned-"));
+    if let (Some(dir), Some(prefix)) = (root.parent(), parked) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for e in entries.flatten() {
+                if e.file_name().to_str().is_some_and(|n| n.starts_with(&prefix)) {
+                    homes.push(e.path().join("nebula"));
+                }
+            }
+        }
+    }
+    homes
+}
+
+/// Stop the engines of ours that are squatting on our ports, turning a start
+/// that cannot work into one that can.
+///
+/// Reports whether anything was actually stopped: the caller retries only when
+/// something changed, so a conflict with a stranger's engine still fails, and
+/// says why.
+fn clear_stale_engines(cfg: &Config, err: &str) -> bool {
+    let ours = our_engine_homes(cfg);
+    let mut stopped = false;
+    for h in port_holders(err) {
+        if !ours.iter().any(|p| *p == h.home) {
+            continue;
+        }
+        phase(cfg, "Stopping a leftover engine that is holding the ports…");
+        stopped |= stop_engine(cfg, &h);
+    }
+    stopped
+}
+
+/// Stop one leftover engine: by asking, when it can still hear us, and
+/// directly when it cannot.
+fn stop_engine(cfg: &Config, h: &Holder) -> bool {
+    // `down` is the right way to do this -- it stops the guest cleanly and
+    // deregisters the service label, so the engine does not simply come back
+    // at the next login -- and it needs the home to still be there to read.
+    if h.home.is_dir() {
+        let _ = Command::new(&cfg.nebula)
+            .arg("down")
+            .env("NEBULA_HOME", &h.home)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        if wait_gone(h.pid) {
+            return true;
+        }
+    }
+    // Its home was renamed out from under it by an upgrade, so there is no
+    // state left for `down` to read and the process can only be ended
+    // directly. Confirm what it is first: pids are reused, and by now the
+    // number nebula printed may name something else entirely.
+    if !is_nebulad(h.pid) {
+        return false;
+    }
+    end_process(h.pid, false);
+    if wait_gone(h.pid) {
+        return true;
+    }
+    end_process(h.pid, true);
+    wait_gone(h.pid)
+}
+
+/// Wait out a stop. Ten seconds: an engine with a guest still running takes a
+/// few to put it down, and reporting failure while it is on its way out would
+/// send the caller to end it the hard way for no reason.
+fn wait_gone(pid: u32) -> bool {
+    for _ in 0..20 {
+        if !alive(pid) {
+            return true;
+        }
+        sleep(Duration::from_millis(500));
+    }
+    false
+}
+
+#[cfg(not(windows))]
+fn alive(pid: u32) -> bool {
+    // Signal 0 asks whether the process is there without touching it.
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[cfg(not(windows))]
+fn is_nebulad(pid: u32) -> bool {
+    Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("nebulad"))
+        .unwrap_or(false)
+}
+
+#[cfg(not(windows))]
+fn end_process(pid: u32, hard: bool) {
+    let _ = Command::new("kill")
+        .args([if hard { "-KILL" } else { "-TERM" }, &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+/// One `tasklist` row for a pid, lowercased, or nothing when there is no such
+/// process -- the filter matching nothing still exits 0, so the row itself is
+/// the answer rather than the exit status.
+#[cfg(windows)]
+fn task_row(pid: u32) -> String {
+    Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_lowercase())
+        .unwrap_or_default()
+}
+
+#[cfg(windows)]
+fn alive(pid: u32) -> bool {
+    task_row(pid).contains(&format!("\"{pid}\""))
+}
+
+#[cfg(windows)]
+fn is_nebulad(pid: u32) -> bool {
+    task_row(pid).contains("nebulad")
+}
+
+#[cfg(windows)]
+fn end_process(pid: u32, hard: bool) {
+    // /T because the engine owns the guest process; without it the child keeps
+    // the ports the parent was killed to release.
+    let mut c = Command::new("taskkill");
+    c.args(["/PID", &pid.to_string(), "/T"]);
+    if hard {
+        c.arg("/F");
+    }
+    let _ = c.stdout(Stdio::null()).stderr(Stdio::null()).status();
 }
 
 /// The uncompressed size a gzip file claims, from its ISIZE trailer.
@@ -463,6 +674,30 @@ fn app_control_help(reason: &str) -> String {
 /// check has to live here too. Without it the failure surfaces as a timeout
 /// several steps later with nothing to act on.
 fn engine_failure_help(reason: &str) -> String {
+    // A port conflict is not a virtualisation problem, and the diagnosis is
+    // already in the message. Sending someone to their BIOS over a busy socket
+    // wastes an evening on the wrong machine setting. Only reached once the
+    // engine holding the port has turned out not to be ours -- ours are
+    // stopped and the start retried before anyone sees this.
+    if reason.contains("already in use") {
+        return format!(
+            "{reason}\n\n\
+             Another Nebula engine is already using the ports this one needs, \
+             and it is not one this app started. Stop it and try again — or, \
+             if you meant to run both, give one of them its own ports."
+        );
+    }
+
+    if cfg!(target_os = "macos") {
+        return format!(
+            "{reason}\n\n\
+             The virtual machine could not start. This needs macOS 13 or \
+             later on Apple silicon; if that is what you have, the Settings \
+             window has a Report a problem button that collects the logs \
+             needed to work out what stopped it."
+        );
+    }
+
     if !cfg!(windows) {
         return format!(
             "{reason}\n\n\
@@ -1102,4 +1337,51 @@ fn human(bytes: u64) -> String {
         i += 1;
     }
     if i == 0 { format!("{} {}", bytes, U[0]) } else { format!("{v:.1} {}", U[i]) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The one contract this file has with another program's prose.
+    ///
+    /// Pinned because a reworded nebula message turns the automatic recovery
+    /// off silently, and the symptom is the thing it exists to prevent: an
+    /// upgrade that will not start until someone finds a pid by hand.
+    #[test]
+    fn reads_a_port_conflict() {
+        let err = "nebulad failed to start:\n\n\
+            tcp 7462 (api_port) is already in use by nebulad pid 48746 (NEBULA_HOME=/Users/p/Library/Application Support/com.ragnarokmac.app/nebula)\n\
+            udp 42062 (dns_port) is already in use by nebulad pid 48746 (NEBULA_HOME=/Users/p/Library/Application Support/com.ragnarokmac.app/nebula)\n\
+            tcp 6462 (k8s_port) is already in use by nebulad pid 48746 (NEBULA_HOME=/Users/p/Library/Application Support/com.ragnarokmac.app/nebula)\n";
+        let held = port_holders(err);
+        // One process, not three: the same engine holds all three ports, and
+        // stopping it twice more would be two pointless kills.
+        assert_eq!(held.len(), 1);
+        assert_eq!(held[0].pid, 48746);
+        assert_eq!(
+            held[0].home,
+            PathBuf::from("/Users/p/Library/Application Support/com.ragnarokmac.app/nebula"),
+        );
+    }
+
+    /// A path may contain a bracket, so the home ends at the last one on the
+    /// line rather than the first.
+    #[test]
+    fn reads_a_home_with_brackets_in_it() {
+        let err = "tcp 7462 (api_port) is already in use by nebulad pid 91 \
+                   (NEBULA_HOME=/Users/p/Ragnarok Offline (old)/nebula)";
+        assert_eq!(
+            port_holders(err)[0].home,
+            PathBuf::from("/Users/p/Ragnarok Offline (old)/nebula"),
+        );
+    }
+
+    /// Every other failure yields nothing, so the caller reports it as it
+    /// always did instead of retrying a start that cannot work.
+    #[test]
+    fn ignores_a_failure_that_names_no_holder() {
+        assert!(port_holders("nebula up failed: the virtual machine did not come up").is_empty());
+        assert!(port_holders("tcp 7462 is already in use by nebulad pid (NEBULA_HOME=/x)").is_empty());
+    }
 }
