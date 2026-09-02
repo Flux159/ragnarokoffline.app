@@ -17,7 +17,17 @@ requests are welcome as [issues](../../issues).
 ---
 
 > [!IMPORTANT]
-> **Windows: close kernel-level anti-cheat before starting.** Riot Vanguard
+> **Two things to know on Windows.**
+>
+> **1. Windows may block the app from starting.** Our files are not code-signed
+> yet, so on a newer Windows 11 install Smart App Control refuses to run them —
+> from 1.0.2 the app says so directly, with the error *"An Application Control
+> policy has blocked this file"*. If you hit it, read
+> [this troubleshooting section](https://github.com/Flux159/ragnarokoffline.app/tree/main#windows-an-application-control-policy-has-blocked-this-file)
+> before changing anything. Signing is in progress ([#8](../../issues/8)) and
+> will need nothing from you.
+>
+> **2. Close kernel-level anti-cheat before starting.** Riot Vanguard
 > (Valorant, League of Legends) and similar always-on anti-cheat drivers load at
 > boot and take exclusive control of the hypervisor. Running one alongside this
 > app has put at least one machine into a **reboot loop**. Fully exit the game
@@ -372,16 +382,23 @@ It affects newer Windows 11 installs, because Smart App Control is on by default
 there and turns itself off on machines that have been in use for a while. That
 is why it works for some people and not others.
 
-To play now:
+> [!NOTE]
+> Unless you know what you are doing, it is not recommended to do this. Please
+> wait for [#8](../../issues/8) to be completed to have a seamless experience,
+> or try the app on Mac or Linux.
+
+If you understand the trade and want to play now:
 
 ```
 Windows Security -> App & browser control -> Smart App Control settings -> Off
 ```
 
 **Turning it off is permanent** — Windows will not let it be switched back on
-without reinstalling. If you would rather not, a signed release needs no change
-on your side; it is in progress and tracked in
-[#8](../../issues/8). The certificate authority has to verify our identity
+without reinstalling Windows. You would be disabling a security feature for
+every program on that machine, not just this one, and you cannot undo it.
+
+A signed release needs no change on your side. It is in progress and tracked in
+[#8](../../issues/8); the certificate authority has to verify our identity
 first, which takes weeks.
 
 ### Windows: the app cannot start its virtual machine
