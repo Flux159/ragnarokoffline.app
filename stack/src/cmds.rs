@@ -1154,6 +1154,18 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     ensure_images(cfg, dk)?;
     dk.quiet(["network", "create", NET]);
 
+    // The era decides which volume holds the characters, and a running database
+    // is otherwise left alone -- so without this, switching era keeps the
+    // database that is already up and the player stays on the wrong save with
+    // nothing to say why. Recorded rather than inspected: the container may not
+    // exist yet, and the answer has to survive a restart.
+    let want_volume = db_volume(cfg);
+    let volume_marker = cfg.state.join(".db-volume");
+    let had_volume = fs::read_to_string(&volume_marker).ok().map(|s| s.trim().to_string());
+    if had_volume.as_deref() != Some(want_volume.as_str()) {
+        dk.remove_container(DB_CONTAINER);
+    }
+
     if !dk.is_running(DB_CONTAINER) {
         dk.remove_container(DB_CONTAINER);
         let mounts = vec![
@@ -1170,7 +1182,7 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
             } else {
                 Mount::Bind { host: cfg.state.join("backups"), container: "/backups".into(), ro: false }
             },
-            Mount::Volume { name: db_volume(cfg), container: "/var/lib/mysql".into() },
+            Mount::Volume { name: want_volume.clone(), container: "/var/lib/mysql".into() },
         ];
         let opts: Vec<String> = [
             "--network", NET,
@@ -1182,6 +1194,9 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
         dk.run_container(DB_CONTAINER, &cfg.db_image, &[], &mounts, &opts)
             .map_err(|e| format!("starting the database: {e}"))?;
     }
+    // After a successful start, so a failed one does not record a database
+    // that is not running.
+    let _ = fs::write(&volume_marker, &want_volume);
     phase(cfg, "Starting the database…");
     wait_for_db(dk)?;
 
