@@ -191,6 +191,25 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
             } else {
                 "Updating the virtual machine image…"
             });
+            // Stop the engine first: nebula refuses to install an image while
+            // it is running, and nebulad deliberately outlives the app so the
+            // next launch is quick. Those two together mean an upgrade that
+            // ships a new kernel or rootfs fails on the very machines that
+            // have run the app before -- "Updating the virtual machine
+            // image..." and then "the engine is running - stop it first",
+            // which no amount of restarting the app can clear because the app
+            // is what leaves it running.
+            //
+            // Only on the path that is about to install. A start that has
+            // nothing to update leaves a healthy engine alone, which is the
+            // whole point of it outliving us.
+            let _ = nebula(cfg, &["down"]);
+            for _ in 0..20 {
+                if !engine_running(cfg) {
+                    break;
+                }
+                sleep(Duration::from_millis(500));
+            }
             nebula(cfg, &["install-image",
                 "--kernel", &k.display().to_string(),
                 "--rootfs", &r.display().to_string()])
@@ -285,20 +304,38 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
 }
 
 fn nebula(cfg: &Config, args: &[&str]) -> Result<(), String> {
-    // stderr captured rather than discarded: when the engine cannot start, what
-    // it says is the whole diagnosis, and throwing it away left the player with
-    // a stack that failed several steps later for no stated reason.
-    let out = Command::new(&cfg.nebula)
+    // stderr to a file, not a pipe.
+    //
+    // It has to be captured at all because when the engine cannot start, what
+    // it says is the whole diagnosis, and discarding it left players with a
+    // stack that failed several steps later for no stated reason.
+    //
+    // But it must not be a pipe. `nebula up` spawns nebulad as a daemon that
+    // deliberately outlives the command, and on Windows the daemon inherits
+    // the pipe's write handle. Reading such a pipe to EOF -- which is exactly
+    // what Command::output() does -- therefore blocks until *nebulad* exits,
+    // not until nebula exits. The observable failure is the app sitting on
+    // "Installing the virtual machine image..." forever while the images are
+    // already complete on disk and the nebula process has long since gone:
+    // the first Windows bug report was fifteen minutes of that before the
+    // supervisor's own timeout killed it.
+    //
+    // A file has no EOF to wait for. Same diagnosis, no deadlock.
+    let log = std::env::temp_dir().join(format!("nebula-{}-{}.err", args[0], std::process::id()));
+    let sink = fs::File::create(&log).map_err(|e| format!("running nebula: {e}"))?;
+    let status = Command::new(&cfg.nebula)
         .args(args)
         .env("NEBULA_HOME", &cfg.nebula_home)
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()
+        .stderr(Stdio::from(sink))
+        .status()
         .map_err(|e| format!("running nebula: {e}"))?;
-    if out.status.success() {
+    let captured = fs::read_to_string(&log).unwrap_or_default();
+    let _ = fs::remove_file(&log);
+    if status.success() {
         return Ok(());
     }
-    let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    let why = captured.trim().to_string();
     Err(if why.is_empty() {
         format!("nebula {} failed", args[0])
     } else {
@@ -540,6 +577,21 @@ pub fn is_prerenewal(cfg: &Config) -> bool {
 /// first start in a new mode creates a fresh account and character.
 fn db_volume(cfg: &Config) -> String {
     if is_prerenewal(cfg) { "ragnarokmac-db-prere".into() } else { "ragnarokmac-db".into() }
+}
+
+/// Is the engine up right now?
+///
+/// Asked by running `nebula status`, so the answer is the engine's own rather
+/// than one inferred from a pid file that an unclean exit may have left behind.
+fn engine_running(cfg: &Config) -> bool {
+    Command::new(&cfg.nebula)
+        .arg("status")
+        .env("NEBULA_HOME", &cfg.nebula_home)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("nebula: running"))
+        .unwrap_or(false)
 }
 
 /// The uncompressed size a gzip file claims, from its ISIZE trailer.
