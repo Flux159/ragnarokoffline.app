@@ -168,8 +168,9 @@ function render() {
     el.textContent = paths[k] || 'Not selected';
     el.classList.toggle('set', !!paths[k]);
   }
-  // Each mode has its own idea of "enough to continue": a host needs the two
-  // required GRFs, a guest needs only an address.
+  // Each mode has its own idea of "enough to continue": a host needs data.grf
+  // -- everything else on this screen is optional -- a guest needs only an
+  // address.
   $('save').disabled = mode === 'join'
     ? !$('join_host').value.trim()
     : !paths.data_grf;
