@@ -77,9 +77,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 24, not 22, and only in this job. roBrowserLegacy ships no lockfile,
+      # so `npm install` re-resolves its whole tree from the registry on every
+      # run -- and npm 10, which is what Node 22 bundles, crashes resolving the
+      # tree it now gets:
+      #
+      #     npm error Cannot read properties of null (reading 'edgesOut')
+      #
+      # Nothing changed on our side or theirs: v1.0.4 built from this same
+      # unpinned clone and their last package.json edit was weeks earlier. A
+      # dependency published upstream in between, and npm 10 cannot handle the
+      # result. npm 11 (Node 24) installs and builds it fine.
+      #
+      # The app job stays on 22 deliberately: it installs from our own
+      # committed package-lock.json, so it is not exposed to this.
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Fetch roBrowserLegacy and ROenglishRE
         run: |
