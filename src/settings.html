@@ -33,6 +33,13 @@
   }
   button.ghost:hover:not(:disabled) { border-color: var(--accent-dim); color: var(--text); }
   button:disabled { opacity: .4; cursor: default; }
+  .spinner {
+    width: 12px; height: 12px; border: 2px solid var(--line);
+    border-top-color: var(--accent); border-radius: 50%;
+    display: inline-block; vertical-align: -2px; margin-right: 8px;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .seg { display: flex; gap: 0; margin-left: auto; }
   .seg button {
     background: transparent; color: var(--dim); border: 1px solid var(--line);
@@ -74,6 +81,7 @@
         <button id="era-pre" aria-pressed="false">Pre-renewal</button>
       </div>
     </div>
+    <p class="note" id="era-status" hidden style="margin:0 0 8px; color: var(--text)"></p>
     <p class="note" style="margin:0">Each era keeps its own characters. Switching does not
        convert them &mdash; your other era's characters stay where they are and come back when
        you switch back. They cannot be shared: pre-renewal stops at level 99 and has no third
@@ -350,17 +358,35 @@ function setEra(pre) {
 // characters are kept.
 async function chooseEra(pre) {
   if (pre === eraIsPre) return;
+  const label = pre ? 'pre-renewal' : 'renewal';
   setEra(pre);
   $('era-re').disabled = $('era-pre').disabled = true;
-  log(pre ? 'Switching to pre-renewal…' : 'Switching to renewal…');
+
+  // A switch restarts the servers and can take about a minute. Disabled
+  // buttons and no other sign of life read as a hang, so count the seconds
+  // out loud: a number that keeps moving is the difference between waiting
+  // and wondering whether it broke.
+  const started = Date.now();
+  const status = $('era-status');
+  const elapsed = () => Math.round((Date.now() - started) / 1000);
+  const show = html => { status.hidden = false; status.innerHTML = html; };
+  show(`<span class="spinner"></span>Switching to ${label}… this usually takes about a minute.`);
+  const ticking = setInterval(
+    () => show(`<span class="spinner"></span>Switching to ${label}… ${elapsed()}s`), 1000);
+
   try {
     const s = await invoke('get_settings');
     await invoke('save_settings', { settings: { ...s, prerenewal: pre } });
-    log(pre ? 'Pre-renewal. Log in again.' : 'Renewal. Log in again.');
+    clearInterval(ticking);
+    show(`Switched to ${label} in ${elapsed()}s. Log in again — your character list is the ${label} one.`);
+    log(`${label} ready`);
   } catch (e) {
+    clearInterval(ticking);
     setEra(!pre);
+    show(`Could not switch to ${label}: ${String(e)}`);
     log(String(e));
   } finally {
+    clearInterval(ticking);
     $('era-re').disabled = $('era-pre').disabled = false;
     refresh();
   }
