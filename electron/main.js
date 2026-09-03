@@ -922,19 +922,35 @@ async function saveSettings(settings) {
 	if (settings.prerenewal) fs.writeFileSync(era, '');
 	else fs.rmSync(era, { force: true });
 
+	// Cycle the asset server around the supervisor, not after it.
+	//
+	// Two reasons, and the order matters for the second. It resolves the
+	// era's translation tree once, when it spawns, and assetsStart() returns
+	// early while one is already answering -- so without this the servers
+	// restart and the player is still served the previous era's maps, which
+	// for pre-renewal is a different Prontera, not different wording.
+	//
+	// And it has to stop *before* the supervisor runs: the supervisor rebuilds
+	// the merged tree by deleting state/translation and relinking it, while
+	// the asset server is serving files straight out of that directory.
+	// Deleting a tree another process holds open is a sharing violation on
+	// Windows, and where the delete does succeed the server spends the rebuild
+	// serving a half-built tree.
+	//
+	// Only when the era actually changed, and only if one is running: a
+	// joining player has no asset server and should not be given one.
+	const cycleAssets = eraChanged && !!assetsChild;
+	if (cycleAssets) {
+		appLog('era changed: stopping the asset server before the rebuild');
+		assetsStop();
+	}
+
 	const out = await runStack(['up']);
 
-	// The asset server resolves the era's translation tree once, when it
-	// spawns, and assetsStart() returns early while one is already answering.
-	// So switching era restarts the servers but would leave the player being
-	// served the previous era's maps -- pre-renewal Prontera is a different
-	// model, not different wording. Cycle it, but only if one is actually
-	// running: a joining player has none and does not want one started.
-	if (eraChanged && assetsChild) {
-		appLog('era changed: restarting the asset server');
-		assetsStop();
+	if (cycleAssets) {
 		try {
 			await assetsStart();
+			appLog('era changed: asset server restarted');
 		} catch (e) {
 			appLog(`could not restart the asset server after an era change: ${e.message}`);
 		}
