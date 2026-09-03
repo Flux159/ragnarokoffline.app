@@ -24,8 +24,7 @@ requests are welcome as [issues](../../issues).
 > from 1.0.2 the app says so directly, with the error *"An Application Control
 > policy has blocked this file"*. If you hit it, read
 > [this troubleshooting section](https://github.com/Flux159/ragnarokoffline.app/tree/main#windows-an-application-control-policy-has-blocked-this-file)
-> before changing anything. Signing is in progress ([#8](../../issues/8)) and
-> will need nothing from you.
+> before changing anything. Signing is in process ([#8](../../issues/8)).
 >
 > **2. Close kernel-level anti-cheat before starting.** Riot Vanguard
 > (Valorant, League of Legends) and similar always-on anti-cheat drivers load at
@@ -46,9 +45,9 @@ assets, first launch — or follow the same three steps below.
 somewhere you can find again; unzipping a full client gives you a folder containing
 `data.grf`, `rdata.grf` and a `BGM` folder, which is what the app looks for.
 
-It has to be a **renewal** client. The server runs renewal, and a pre-renewal
-client will not work with it — pre-renewal support is [issue #3](../../issues/3).
-**kRO '23 is the most tested** — if you have a choice, use that one.
+Renewal or pre-renewal is a setting, not a client: you supply one client either
+way and pick the era in Settings → Game era, which keeps a separate set of
+characters for each. **kRO '23 and a current 2026 client are both tested.**
 
 `rdata.grf` is optional. Older clients split renewal content into it; newer ones
 ship a single `data.grf` with everything merged in, and either is fine.
@@ -117,7 +116,7 @@ that account is created as you log in.
 
 The client is roBrowserLegacy, and the host is already serving it over HTTP — so
 the same link opens the game in a normal browser. **Paste it into the address
-bar and play. No download, no app, no game files.**
+bar and play.**
 
 ```
 http://192.168.1.20:3338/
