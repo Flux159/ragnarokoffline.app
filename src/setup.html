@@ -96,7 +96,7 @@
   </div>
 
   <div class="field">
-    <div class="label"><span class="name">rdata.grf</span><span class="tag">required — renewal overrides</span></div>
+    <div class="label"><span class="name">rdata.grf</span><span class="tag">optional — newer clients merge it into data.grf</span></div>
     <div class="picker">
       <div class="path" id="p-rdata_grf">Not selected</div>
       <button data-pick="rdata_grf" class="ghost">Choose…</button>
@@ -172,7 +172,7 @@ function render() {
   // required GRFs, a guest needs only an address.
   $('save').disabled = mode === 'join'
     ? !$('join_host').value.trim()
-    : !(paths.data_grf && paths.rdata_grf);
+    : !paths.data_grf;
   $('save').textContent = mode === 'join' ? 'Connect' : 'Continue';
 }
 
@@ -203,7 +203,7 @@ $('pick-folder').onclick = async () => {
   // Say what was and was not found: the English overlay is a separate download,
   // so a folder that yields three of four is the normal case, not a failure.
   const missing = KEYS.filter(k => !paths[k]);
-  $('msg').className = 'msg' + (paths.data_grf && paths.rdata_grf ? '' : ' bad');
+  $('msg').className = 'msg' + (paths.data_grf ? '' : ' bad');
   $('msg').textContent = n === 0
     ? 'No .grf files in that folder — is it the folder you unzipped the client into?'
     : missing.length

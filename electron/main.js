@@ -729,13 +729,13 @@ function joinUrl(hostSpec) {
 	return `http://${u.hostname}:${port}`;
 }
 
+// rdata.grf is not required. It was a renewal overlay on an older base client,
+// and clients have not been packaged that way for years -- a 2026 client from
+// the rAthena forums is renewal, has fourth jobs, and ships one data.grf with
+// everything merged in. Demanding a second file turned those players away from
+// a client that would have worked.
 function clientComplete(p) {
-	return (
-		!!p.data_grf &&
-		!!p.rdata_grf &&
-		fs.existsSync(p.data_grf) &&
-		fs.existsSync(p.rdata_grf)
-	);
+	return !!p.data_grf && fs.existsSync(p.data_grf);
 }
 
 function linkClient(paths) {
@@ -764,7 +764,9 @@ function linkClient(paths) {
 			);
 		}
 	}
-	const args = ['link-assets', paths.data_grf, paths.rdata_grf];
+	// Positional: an empty string keeps rdata's slot so official and bgm still
+	// land in theirs.
+	const args = ['link-assets', paths.data_grf, paths.rdata_grf || ''];
 	if (paths.official_grf || paths.bgm_dir) args.push(paths.official_grf || '');
 	if (paths.bgm_dir) args.push(paths.bgm_dir);
 	return new Promise((resolve, reject) => {
@@ -1374,7 +1376,10 @@ const handlers = {
 			return 'joined';
 		}
 		if (!fs.existsSync(next.data_grf)) throw new Error('data.grf is not a file');
-		if (!fs.existsSync(next.rdata_grf)) throw new Error('rdata.grf is not a file');
+		// Only when one was given: absent is allowed, wrong is not.
+		if (next.rdata_grf && !fs.existsSync(next.rdata_grf)) {
+			throw new Error('rdata.grf is not a file');
+		}
 		fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
 		return linkClient(next);
 	},

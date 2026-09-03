@@ -23,7 +23,7 @@ use std::process::exit;
 
 const USAGE: &str = "usage: ragnarok-stack mods|mod-enable NAME|mod-disable NAME|up [--lan] [--ram MiB]|down|repair [--lan] [--ram MiB]|status|logs [service] [tail]\n\
                      \x20      backup <file>|restore <file>\n\
-                     \x20      link-assets <data.grf> <rdata.grf> [official_data.grf] [bgm-dir]";
+                     \x20      link-assets <data.grf> [rdata.grf] [official_data.grf] [bgm-dir]";
 
 /// The runtime tree, which is the directory containing bin/ and scripts/.
 ///

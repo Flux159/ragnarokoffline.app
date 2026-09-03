@@ -113,13 +113,30 @@ fn first_dir(cands: &[PathBuf]) -> Option<PathBuf> {
 
 pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
     let data = args.first().ok_or("data.grf path required")?;
-    let rdata = args.get(1).ok_or("rdata.grf path required")?;
+    // Optional, like official_data.grf.
+    //
+    // rdata.grf was a renewal overlay on an older base client, and clients have
+    // not been packaged that way for years: recent ones ship a single data.grf
+    // with everything merged in. Players downloading a 2026 client from the
+    // rAthena forums -- renewal, fourth jobs and all -- have no rdata.grf to
+    // give us, and requiring one turned them away from a client that would
+    // have worked.
+    //
+    // What it uniquely carried, measured against a client that has both, is
+    // 3,540 files: 2,751 garment sprites, 713 textures, 56 job sprites and six
+    // maps. Everything else it holds is already in data.grf. So its absence
+    // costs garments on a client old enough to have needed it, and costs
+    // nothing at all on one new enough not to.
+    let rdata = args.get(1).filter(|s| !s.is_empty());
     let official = args.get(2).filter(|s| !s.is_empty());
     let bgm = args.get(3).filter(|s| !s.is_empty());
 
-    for f in [data, rdata] {
-        if !Path::new(f).is_file() {
-            return Err(format!("not a file: {f}"));
+    if !Path::new(data).is_file() {
+        return Err(format!("not a file: {data}"));
+    }
+    if let Some(r) = rdata {
+        if !Path::new(r).is_file() {
+            return Err(format!("not a file: {r}"));
         }
     }
 
@@ -140,9 +157,11 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
             i += 1;
         }
     }
-    link_file(Path::new(rdata), &res.join("rdata.grf"))?;
-    ini.push_str(&format!("{i}=rdata.grf\n"));
-    i += 1;
+    if let Some(r) = rdata {
+        link_file(Path::new(r), &res.join("rdata.grf"))?;
+        ini.push_str(&format!("{i}=rdata.grf\n"));
+        i += 1;
+    }
     link_file(Path::new(data), &res.join("data.grf"))?;
     ini.push_str(&format!("{i}=data.grf\n"));
     fs::write(res.join("DATA.INI"), &ini).map_err(|e| e.to_string())?;
