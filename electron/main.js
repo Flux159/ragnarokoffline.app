@@ -159,17 +159,21 @@ const TRANSLATION_ERAS = ['Renewal', 'Pre-Renewal'];
 
 // The translation tree for the era currently selected.
 //
-// Pre-Renewal is not a wording variant -- it carries its own prontera,
-// alberta, izlude and morocc geometry -- so this decides which towns the
-// player actually walks around in, not just how items are worded. Falls back
-// to Renewal if a payload was built before both eras were packaged.
+// Pre-Renewal is an overlay on Renewal, not a replacement -- upstream
+// "supports pre-renewal by overwriting the content of the Renewal folder with
+// the Pre-Renewal one", and the trees show it: 613 files against 67. Serving
+// Pre-Renewal on its own would lose most of the translation and leave the
+// player with untranslated item and quest text.
+//
+// The supervisor does that merge, into the state directory, on every start --
+// one implementation rather than two that can disagree. Renewal needs no merge
+// and comes from the payload. If the merge has not happened yet, Renewal is
+// the safe answer: wrong-era towns, but readable text.
 function translationRoot(root, prerenewal) {
-	const dir = path.join(
-		root,
-		'vendor/ROenglishRE/Translation',
-		prerenewal ? 'Pre-Renewal' : 'Renewal',
-	);
-	if (fs.existsSync(dir)) return dir;
+	if (prerenewal) {
+		const merged = path.join(stateDir(), 'translation');
+		if (fs.existsSync(path.join(merged, 'data'))) return merged;
+	}
 	return path.join(root, 'vendor/ROenglishRE/Translation/Renewal');
 }
 

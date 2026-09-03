@@ -312,22 +312,69 @@ fn copy_over(src: &Path, dst: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// The English translation tree for the era we are starting.
+/// Link every file under `src` into `dst`, recursing into subdirectories.
 ///
-/// Pre-Renewal is not a wording variant of Renewal: it ships its own prontera,
-/// alberta, izlude and morocc geometry and the worldmap textures, so this
-/// chooses which towns the player walks around in. Falls back to Renewal when
-/// the payload predates both eras being packaged, which keeps an older
-/// installation working rather than serving nothing.
-fn translation_root(cfg: &Config) -> PathBuf {
-    let base = cfg.root.join("vendor/ROenglishRE/Translation");
-    if crate::cmds::is_prerenewal(cfg) {
-        let pre = base.join("Pre-Renewal");
-        if pre.is_dir() {
-            return pre;
+/// Directories are recursed rather than linked whole, because the point is to
+/// let a second call land on top of a first: linking a directory would make
+/// the whole subtree a single entry and the later layer could only replace it,
+/// not overlay into it.
+fn overlay_tree(src: &Path, dst: &Path) -> Result<(), String> {
+    if !src.is_dir() {
+        return Ok(());
+    }
+    fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    let rd = match fs::read_dir(src) {
+        Ok(rd) => rd,
+        Err(_) => return Ok(()),
+    };
+    for e in rd.flatten() {
+        let from = e.path();
+        let to = dst.join(e.file_name());
+        if from.is_dir() {
+            overlay_tree(&from, &to)?;
+        } else {
+            let _ = fs::remove_file(&to);
+            let _ = link_file(&from, &to);
         }
     }
-    base.join("Renewal")
+    Ok(())
+}
+
+/// The English translation tree for the era we are starting.
+///
+/// Pre-Renewal is an *overlay* on Renewal, not a replacement. Upstream says so
+/// -- "supports pre-renewal by overwriting the content of the Renewal folder
+/// with the Pre-Renewal one" -- and the trees bear it out: Renewal carries 613
+/// files of item, quest and interface text, Pre-Renewal 67. Serving
+/// Pre-Renewal alone would drop the other 546 and leave the player with
+/// untranslated text.
+///
+/// What it does carry is era-specific geometry: prontera, izlude, morocc,
+/// alberta, prt_in, prt_church and prt_fild05/08 as .gat/.gnd/.rsw, plus the
+/// worldmap textures. Those are the towns Renewal redrew, which is why they
+/// are the ones shipped.
+///
+/// So for pre-renewal the two are merged into the state directory, Renewal
+/// first and Pre-Renewal over the top. Renewal alone needs no merge and is
+/// used from the payload directly. Falls back to Renewal if a payload predates
+/// both eras being packaged.
+fn translation_root(cfg: &Config) -> PathBuf {
+    let base = cfg.root.join("vendor/ROenglishRE/Translation");
+    let renewal = base.join("Renewal");
+    if !crate::cmds::is_prerenewal(cfg) {
+        return renewal;
+    }
+    let pre = base.join("Pre-Renewal");
+    if !pre.is_dir() {
+        return renewal;
+    }
+    let merged = cfg.state.join("translation");
+    let _ = fs::remove_dir_all(&merged);
+    for sub in ["data", "SystemEN"] {
+        let _ = overlay_tree(&renewal.join(sub), &merged.join(sub));
+        let _ = overlay_tree(&pre.join(sub), &merged.join(sub));
+    }
+    merged
 }
 
 /// Write the client config, naming any plugins the mods provide.
@@ -363,4 +410,51 @@ fn write_client_config(cfg: &Config, web: &Path, plugins: &[String]) -> Result<(
     };
     fs::write(web.join("Config.local.js"), out)
         .map_err(|e| format!("writing Config.local.js: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write(p: &Path, body: &str) {
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, body).unwrap();
+    }
+
+    /// The property the era merge depends on.
+    ///
+    /// Pre-Renewal is an overlay: it replaces the files it carries and leaves
+    /// the rest of Renewal standing. Linking a directory whole would satisfy
+    /// neither half -- the base would vanish under the overlay -- so this
+    /// pins that a second layer overwrites into subdirectories rather than
+    /// over them.
+    #[test]
+    fn a_later_layer_overwrites_and_leaves_the_rest() {
+        let tmp = std::env::temp_dir().join(format!("ro-overlay-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let (base, over, dst) = (tmp.join("base"), tmp.join("over"), tmp.join("dst"));
+
+        write(&base.join("shared.txt"), "renewal");
+        write(&base.join("only-base.txt"), "kept");
+        write(&base.join("sub/deep.txt"), "renewal-deep");
+        write(&base.join("sub/only-base-deep.txt"), "kept-deep");
+        write(&over.join("shared.txt"), "prerenewal");
+        write(&over.join("sub/deep.txt"), "prerenewal-deep");
+        write(&over.join("only-over.txt"), "added");
+
+        overlay_tree(&base, &dst).unwrap();
+        overlay_tree(&over, &dst).unwrap();
+
+        let read = |r: &str| fs::read_to_string(dst.join(r)).unwrap();
+        // The overlay wins, at the top level and inside a subdirectory.
+        assert_eq!(read("shared.txt"), "prerenewal");
+        assert_eq!(read("sub/deep.txt"), "prerenewal-deep");
+        // And everything it does not carry survives -- the 546 files of
+        // translation that a straight swap would have dropped.
+        assert_eq!(read("only-base.txt"), "kept");
+        assert_eq!(read("sub/only-base-deep.txt"), "kept-deep");
+        assert_eq!(read("only-over.txt"), "added");
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
 }
