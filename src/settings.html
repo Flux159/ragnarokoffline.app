@@ -65,19 +65,23 @@
 </style>
 </head>
 <body>
-  <h2>Server</h2>
+  <h2>Game era</h2>
   <div class="panel">
-    <div class="row">
-      <span class="name">Game era</span>
+    <div class="row" style="border-bottom:0; padding-bottom:14px">
+      <span class="name">Which rules the server runs</span>
       <div class="seg">
         <button id="era-re" aria-pressed="true">Renewal</button>
         <button id="era-pre" aria-pressed="false">Pre-renewal</button>
       </div>
     </div>
-    <p class="note" style="margin:0 0 4px">Each era keeps its own characters. Switching does
-       not convert them &mdash; your other era's characters stay where they are and come back
-       when you switch back. They cannot be shared: pre-renewal stops at level 99 and has no
-       third or fourth jobs. Switching restarts the server.</p>
+    <p class="note" style="margin:0">Each era keeps its own characters. Switching does not
+       convert them &mdash; your other era's characters stay where they are and come back when
+       you switch back. They cannot be shared: pre-renewal stops at level 99 and has no third
+       or fourth jobs. Switching restarts the server.</p>
+  </div>
+
+  <h2>Server</h2>
+  <div class="panel">
     <div class="row"><span class="name">Assets &amp; client (:3338)</span><span class="state" id="s-assets">—</span></div>
     <div class="row"><span class="name">Database</span><span class="state" id="s-db">—</span></div>
     <div class="row"><span class="name">Login / Char / Map</span><span class="state" id="s-servers">—</span></div>

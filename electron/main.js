@@ -852,13 +852,28 @@ function toBattleConf(s) {
 	);
 }
 
+// Everything settings.json implies, written out.
+//
+// Split from saveSettings so a start can run it too. battle_conf.txt and the
+// marker files used to be written only when Apply was pressed, so anything
+// that changed settings.json by another route left the server running one
+// configuration while the window showed another, with nothing in either to
+// say they disagreed. Regenerating on every start makes settings.json the
+// single source of truth.
+function writeSettingsFiles(settings) {
+	const state = stateDir();
+	fs.mkdirSync(path.join(state, 'conf'), { recursive: true });
+	fs.writeFileSync(path.join(state, 'conf/battle_conf.txt'), toBattleConf(settings));
+
+}
+
 async function saveSettings(settings) {
 	// stateDir(), not projectRoot(): the runtime tree is replaced on update and
 	// settings written there would be silently lost.
 	const state = stateDir();
 	fs.mkdirSync(path.join(state, 'conf'), { recursive: true });
 	fs.writeFileSync(path.join(state, 'settings.json'), JSON.stringify(settings, null, 2));
-	fs.writeFileSync(path.join(state, 'conf/battle_conf.txt'), toBattleConf(settings));
+	writeSettingsFiles(settings);
 
 	// A marker rather than a value: stack.sh regenerates the Kafra scripts from
 	// a pristine copy on every start and only needs to know which way.
@@ -1335,6 +1350,9 @@ const handlers = {
 			fs.writeFileSync(path.join(stateDir(), 'phase'), 'Indexing your client…\n');
 			await linkClient(saved);
 		}
+		// Before the supervisor reads any of it, so a start always serves what
+		// settings.json says rather than whatever was last written.
+		writeSettingsFiles(getSettings());
 		appLog('start_stack: running the supervisor');
 		const out = await runStack(['up']);
 		appLog('start_stack: supervisor finished, starting the asset server');
