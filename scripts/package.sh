@@ -220,7 +220,20 @@ else
 fi
 
 echo "==> english translation"
-EN="$PAYLOAD/vendor/ROenglishRE/Translation/Renewal"
+# Both eras, not just renewal.
+#
+# Pre-Renewal is not a wording variant of Renewal: it carries its own map
+# geometry -- prontera/alberta/izlude/morocc .gnd/.gat/.rsw and prt_fild05/08,
+# plus the worldmap textures -- so a pre-renewal player served the renewal tree
+# walks around renewal-era towns. 7.7 MB and 12.6 MB compressed respectively,
+# on a ~200 MB installer, which is not a trade worth deliberating.
+for ERA in Renewal Pre-Renewal; do
+SRC="$ROOT/vendor/ROenglishRE/Translation/$ERA"
+if [ ! -d "$SRC" ]; then
+    echo "warning: no translation tree at $SRC -- that era will fall back" >&2
+    continue
+fi
+EN="$PAYLOAD/vendor/ROenglishRE/Translation/$ERA"
 mkdir -p "$EN"
 # As a tar, not a directory tree.
 #
@@ -236,8 +249,9 @@ mkdir -p "$EN"
 # unpacked at runtime is never code-signed. Nothing else in the bundle has a
 # name that changes under normalisation -- this one subtree is the whole
 # problem.
-tar -cf "$EN/data.tar" -C "$ROOT/vendor/ROenglishRE/Translation/Renewal" data
-cp -R "$ROOT/vendor/ROenglishRE/Translation/Renewal/SystemEN" "$EN/SystemEN"
+tar -cf "$EN/data.tar" -C "$SRC" data
+cp -R "$SRC/SystemEN" "$EN/SystemEN"
+done
 
 # The Visual C++ runtime, for the Windows installer to hand to Windows.
 #

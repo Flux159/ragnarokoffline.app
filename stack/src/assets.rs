@@ -141,7 +141,7 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
     }
 
     let server_root = cfg.state.join("assets");
-    let en = cfg.root.join("vendor/ROenglishRE/Translation/Renewal");
+    let en = translation_root(cfg);
     let _ = fs::remove_dir_all(&server_root);
     fs::create_dir_all(server_root.join("resources")).map_err(|e| e.to_string())?;
     fs::create_dir_all(server_root.join("data")).map_err(|e| e.to_string())?;
@@ -310,6 +310,24 @@ fn copy_over(src: &Path, dst: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// The English translation tree for the era we are starting.
+///
+/// Pre-Renewal is not a wording variant of Renewal: it ships its own prontera,
+/// alberta, izlude and morocc geometry and the worldmap textures, so this
+/// chooses which towns the player walks around in. Falls back to Renewal when
+/// the payload predates both eras being packaged, which keeps an older
+/// installation working rather than serving nothing.
+fn translation_root(cfg: &Config) -> PathBuf {
+    let base = cfg.root.join("vendor/ROenglishRE/Translation");
+    if crate::cmds::is_prerenewal(cfg) {
+        let pre = base.join("Pre-Renewal");
+        if pre.is_dir() {
+            return pre;
+        }
+    }
+    base.join("Renewal")
 }
 
 /// Write the client config, naming any plugins the mods provide.

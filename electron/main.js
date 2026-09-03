@@ -134,15 +134,43 @@ function projectRoot() {
 // System tar, because every platform we ship to has one: macOS and Linux
 // always, and Windows since 1803 ships bsdtar as tar.exe.
 function unpackTranslationData(root) {
-	const dir = path.join(root, 'vendor/ROenglishRE/Translation/Renewal');
-	const archive = path.join(dir, 'data.tar');
-	if (!fs.existsSync(archive)) return; // already unpacked, or an older payload
-	try {
-		extractTarLatin1(archive, dir);
-		fs.rmSync(archive, { force: true });
-	} catch (e) {
-		appLog(`could not unpack the translation textures: ${e.message}`);
+	// Both eras, here, once -- not lazily when an era is first chosen.
+	//
+	// This runs when the payload is installed or updated, which is the only
+	// moment the tars exist: unpacking deletes them. Doing it per era on
+	// demand would mean the second switch finds no tar and no unpacked tree,
+	// and silently serves the wrong era's maps.
+	for (const era of TRANSLATION_ERAS) {
+		const dir = path.join(root, 'vendor/ROenglishRE/Translation', era);
+		const archive = path.join(dir, 'data.tar');
+		if (!fs.existsSync(archive)) continue; // already unpacked, or an older payload
+		try {
+			extractTarLatin1(archive, dir);
+			fs.rmSync(archive, { force: true });
+		} catch (e) {
+			appLog(`could not unpack the ${era} translation textures: ${e.message}`);
+		}
 	}
+}
+
+// Renewal first: it is the default era, and the fallback when a payload
+// predates pre-renewal being packaged.
+const TRANSLATION_ERAS = ['Renewal', 'Pre-Renewal'];
+
+// The translation tree for the era currently selected.
+//
+// Pre-Renewal is not a wording variant -- it carries its own prontera,
+// alberta, izlude and morocc geometry -- so this decides which towns the
+// player actually walks around in, not just how items are worded. Falls back
+// to Renewal if a payload was built before both eras were packaged.
+function translationRoot(root, prerenewal) {
+	const dir = path.join(
+		root,
+		'vendor/ROenglishRE/Translation',
+		prerenewal ? 'Pre-Renewal' : 'Renewal',
+	);
+	if (fs.existsSync(dir)) return dir;
+	return path.join(root, 'vendor/ROenglishRE/Translation/Renewal');
 }
 
 // A tar reader that decodes member names as UTF-8, on every platform.
@@ -481,7 +509,10 @@ async function assetsStart() {
 			WS_ALLOWED_TARGETS: localHostnames()
 				.flatMap(h => [`${h}:6900`, `${h}:6121`, `${h}:5121`])
 				.join(','),
-			DATA_OVERRIDE_PATH: path.join(root, 'vendor/ROenglishRE/Translation/Renewal/data'),
+			DATA_OVERRIDE_PATH: path.join(
+				translationRoot(root, getSettings().prerenewal),
+				'data',
+			),
 		},
 		stdio: ['ignore', log, log],
 		detached: false,
@@ -883,11 +914,28 @@ async function saveSettings(settings) {
 
 	// Same shape: the supervisor only needs to know which era to start.
 	const era = path.join(state, 'prerenewal');
+	const eraChanged = fs.existsSync(era) !== !!settings.prerenewal;
 	if (settings.prerenewal) fs.writeFileSync(era, '');
 	else fs.rmSync(era, { force: true });
 
+	const out = await runStack(['up']);
 
-	return runStack(['up']);
+	// The asset server resolves the era's translation tree once, when it
+	// spawns, and assetsStart() returns early while one is already answering.
+	// So switching era restarts the servers but would leave the player being
+	// served the previous era's maps -- pre-renewal Prontera is a different
+	// model, not different wording. Cycle it, but only if one is actually
+	// running: a joining player has none and does not want one started.
+	if (eraChanged && assetsChild) {
+		appLog('era changed: restarting the asset server');
+		assetsStop();
+		try {
+			await assetsStart();
+		} catch (e) {
+			appLog(`could not restart the asset server after an era change: ${e.message}`);
+		}
+	}
+	return out;
 }
 
 // Fill in a whole client from one folder. A full-client archive unzips to
