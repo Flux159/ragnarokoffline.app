@@ -312,10 +312,16 @@ $('mp-connect').onclick = async () => {
 async function refresh() {
   await refreshMode();
   const client = await invoke('get_client_paths');
-  const named = n => (n ? n.split('/').pop() : null);
-  const parts = [named(client.data_grf), named(client.rdata_grf)].filter(Boolean);
-  paint($('s-client'), parts.length === 2,
-        parts.length === 2
+  // Split on both separators: a Windows path has no forward slashes, so the
+  // POSIX-only version showed the whole of C:\Ragnarok\... in a one-line field.
+  const named = n => (n ? n.split(/[\\/]/).pop() : null);
+  // data.grf is the only required one. rdata.grf is optional -- newer clients
+  // merge it in -- so listing whatever is actually configured beats demanding
+  // a fixed pair and calling a working setup "not configured".
+  const parts = [named(client.data_grf), named(client.rdata_grf), named(client.official_grf)]
+    .filter(Boolean);
+  paint($('s-client'), !!client.data_grf,
+        client.data_grf
           ? parts.join(' + ') + (client.bgm_dir || '' ? ' + BGM' : ' (no BGM)')
           : 'not configured');
 
