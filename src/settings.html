@@ -205,6 +205,16 @@
       <input type="checkbox" id="free_kafra_warp" style="accent-color: var(--accent); flex: none" />
       <span class="val" style="width:auto; color: var(--dim)">warps and storage at no cost</span>
     </label>
+    <label style="margin-top:6px">
+      <span>Pre-renewal</span>
+      <input type="checkbox" id="prerenewal" style="accent-color: var(--accent); flex: none" />
+      <span class="val" style="width:auto; color: var(--dim)">classic formulas, no third jobs</span>
+    </label>
+    <p class="note" id="prerenewal-note" hidden>Each era keeps its own characters.
+       Switching does not convert them &mdash; your renewal characters stay where
+       they are and come back when you switch back, and pre-renewal starts with a
+       fresh account. They cannot be shared: pre-renewal stops at level 99 and has
+       no third or fourth jobs, so a renewal character has no valid meaning there.</p>
     <div class="actions" style="margin-top:10px">
       <button id="save" class="ghost">Apply</button>
     </div>
@@ -532,6 +542,7 @@ $('save').onclick = async () => {
   const settings = await invoke('get_settings');
   for (const k of RATES) settings[k] = Number($(k).value);
   settings.free_kafra_warp = $('free_kafra_warp').checked;
+  settings.prerenewal = $('prerenewal').checked;
   settings.zeny_from_mobs = $('zeny_from_mobs').checked;
   $('save').disabled = true;
   try { log(await invoke('save_settings', { settings })); }
@@ -546,6 +557,13 @@ for (const k of RATES) {
 invoke('get_settings').then(s => {
   for (const k of RATES) { $(k).value = s[k]; $('v-' + k).textContent = (s[k] / 100) + 'x'; }
   $('free_kafra_warp').checked = !!s.free_kafra_warp;
+  $('prerenewal').checked = !!s.prerenewal;
+  // Shown only once it is being changed, so the warning appears when it
+  // is relevant rather than sitting there as permanent noise.
+  const eraWas = !!s.prerenewal;
+  $('prerenewal').onchange = () => {
+    $('prerenewal-note').hidden = $('prerenewal').checked === eraWas;
+  };
   $('zeny_from_mobs').checked = !!s.zeny_from_mobs;
   $('population_enable').checked = !!s.population_enable;
   $('population_max').value = s.population_max;

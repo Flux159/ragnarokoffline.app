@@ -499,6 +499,42 @@ fn end_process(pid: u32, hard: bool) {
     let _ = c.stdout(Stdio::null()).stderr(Stdio::null()).status();
 }
 
+/// Is the server running pre-renewal?
+///
+/// A marker file rather than a parsed setting, matching free_kafra_warp: the
+/// supervisor only needs to know which way, and the app owns the setting.
+///
+/// This decides which binaries run, which start point new characters get, and
+/// which database they are saved in -- all three have to agree, so they are
+/// all derived from this one answer.
+pub fn is_prerenewal(cfg: &Config) -> bool {
+    cfg.state.join("prerenewal").exists()
+}
+
+/// Where a mode's characters live.
+///
+/// Separate volumes, not a shared database, and not a second schema inside
+/// one. rAthena ships a single set of sql-files with no era variants, so the
+/// schema is identical and a renewal character loads into a pre-renewal server
+/// without complaint -- which is exactly the problem. The data means different
+/// things either side of the flag:
+///
+///   - pre-renewal exp tables stop at level 99; renewal reaches 275
+///   - third and fourth job classes do not exist pre-renewal
+///   - MAX_WEAPON_LEVEL is 5 vs 4, MAX_ARMOR_LEVEL 2 vs 1, and enchant grades
+///     only exist on one side (src/common/mmo.hpp)
+///   - MAX_GUILDSKILL is 20 vs 15
+///   - a character saved on a renewal-only map has nowhere to log in to
+///
+/// None of that is a schema error, so nothing would refuse it. A level 150
+/// fourth-job character in a pre-renewal server is off the end of every table
+/// that describes them. Giving each mode its own volume means switching is
+/// reversible and neither save can corrupt the other; the cost is that the
+/// first start in a new mode creates a fresh account and character.
+fn db_volume(cfg: &Config) -> String {
+    if is_prerenewal(cfg) { "ragnarokmac-db-prere".into() } else { "ragnarokmac-db".into() }
+}
+
 /// The uncompressed size a gzip file claims, from its ISIZE trailer.
 ///
 /// The last four bytes of a gzip stream are the uncompressed length. Reading
@@ -1134,7 +1170,7 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
             } else {
                 Mount::Bind { host: cfg.state.join("backups"), container: "/backups".into(), ro: false }
             },
-            Mount::Volume { name: "ragnarokmac-db".into(), container: "/var/lib/mysql".into() },
+            Mount::Volume { name: db_volume(cfg), container: "/var/lib/mysql".into() },
         ];
         let opts: Vec<String> = [
             "--network", NET,
@@ -1229,9 +1265,18 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     // Those duplicates exist to spread load across a live server's population.
     // This is a handful of friends, so the split costs everything and buys
     // nothing.
+    // iz_int is a renewal map and MAP_NOVICE is "new_1-1" pre-renewal
+    // (src/common/mapindex.hpp). A pre-renewal char-server reads
+    // start_point_pre and ignores start_point entirely, so writing the wrong
+    // key leaves new characters with no start point at all.
+    let start_point = if is_prerenewal(cfg) {
+        "start_point_pre: new_1-1,53,111"
+    } else {
+        "start_point: iz_int,18,26"
+    };
     write_conf(&conf, "char_conf.txt",
         &format!("login_ip: ragnarok-login\nchar_ip: {advertise}\npincode_enabled: no\n\
-                  start_point: iz_int,18,26\n"))?;
+                  {start_point}\n"))?;
 
     let product = if cfg!(target_os = "macos") { "RagnarokMac" }
         else if cfg!(windows) { "RagnarokWindows" }
@@ -1263,9 +1308,14 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
 
     prepare_kafra_scripts(cfg, dk);
     phase(cfg, "Starting the login, character and map servers…");
+    // login and web are era-independent -- neither src/login nor src/web
+    // mentions RENEWAL -- so only char and map come in two builds. They must
+    // match each other: src/common/mmo.hpp changes shape under RENEWAL and the
+    // two talk over those structures.
+    let era = if is_prerenewal(cfg) { "/rathena/pre-re" } else { "/rathena" };
     run_server(cfg, dk, "ragnarok-login", 6900, "/rathena/login-server", lan)?;
-    run_server(cfg, dk, "ragnarok-char", 6121, "/rathena/char-server", lan)?;
-    run_server(cfg, dk, "ragnarok-map", 5121, "/rathena/map-server", lan)?;
+    run_server(cfg, dk, "ragnarok-char", 6121, &format!("{era}/char-server"), lan)?;
+    run_server(cfg, dk, "ragnarok-map", 5121, &format!("{era}/map-server"), lan)?;
     phase(cfg, "Loading maps and NPCs…");
     wait_for_maps(dk)?;
     phase(cfg, "Ready");

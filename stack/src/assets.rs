@@ -319,6 +319,15 @@ fn copy_over(src: &Path, dst: &Path) -> Result<(), String> {
 fn write_client_config(cfg: &Config, web: &Path, plugins: &[String]) -> Result<(), String> {
     let src = cfg.root.join("config/Config.local.js");
     let body = fs::read_to_string(&src).map_err(|e| format!("reading {}: {e}", src.display()))?;
+    // The client's own renewal flag has to follow the server's era: it selects
+    // renewal formulas and UI on the browser side, and a renewal client against
+    // a pre-renewal server disagrees about damage and stat display while both
+    // believe they are right.
+    let body = if crate::cmds::is_prerenewal(cfg) {
+        body.replace("renewal: true,", "renewal: false,")
+    } else {
+        body
+    };
     let out = if plugins.is_empty() {
         body
     } else {

@@ -802,6 +802,11 @@ const SETTINGS_DEFAULTS = {
 	// spawn tables ask for. This is the dial players actually want; the limit
 	// above is only a safety net.
 	population_density: 100,
+	// Pre-renewal is a different rAthena build, not a runtime option, so this
+	// selects which of the two the supervisor starts. Each mode keeps its own
+	// characters -- see db_volume() in stack/src/cmds.rs for why sharing them
+	// is not safe.
+	prerenewal: false,
 };
 
 function getSettings() {
@@ -860,6 +865,11 @@ async function saveSettings(settings) {
 	const marker = path.join(state, 'free_kafra_warp');
 	if (settings.free_kafra_warp) fs.writeFileSync(marker, '');
 	else fs.rmSync(marker, { force: true });
+
+	// Same shape: the supervisor only needs to know which era to start.
+	const era = path.join(state, 'prerenewal');
+	if (settings.prerenewal) fs.writeFileSync(era, '');
+	else fs.rmSync(era, { force: true });
 
 
 	return runStack(['up']);
