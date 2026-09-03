@@ -1237,7 +1237,17 @@ const handlers = {
 		// are no server logs at all, and these are the only record of why --
 		// which is exactly the report that is hardest to get out of someone.
 		const nebulaLogs = path.join(path.join(dataRoot(), 'nebula'), 'logs');
+		// vessel-console.worker-stderr.log is the one that answers "the guest
+		// never booted". The krun backend runs the VMM in a separate worker
+		// process and writes its stderr there precisely because a detached
+		// spawn severs the usual inherit chain -- so when the worker dies at
+		// startup, nebulad only sees a health probe that never answers and
+		// reports a 20-second timeout, while the actual reason (a WHP
+		// partition that could not be created, a hypervisor that is not
+		// available) sits in that file. A report arrived with an empty console
+		// log, a generic timeout, and this never collected.
 		for (const [file, want] of [['nebulad.log', 200], ['vessel-console.log', 100],
+		                            ['vessel-console.worker-stderr.log', 100],
 		                            ['launchd.err.log', 60]]) {
 			const p2 = path.join(nebulaLogs, file);
 			if (fs.existsSync(p2)) {

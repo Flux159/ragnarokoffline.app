@@ -834,12 +834,22 @@ fn engine_failure_help(reason: &str) -> String {
         .unwrap_or(false);
 
     if present {
+        // Deliberately not "virtualisation is fine". HypervisorPresent only
+        // says some hypervisor is running -- Hyper-V for Credential Guard or
+        // Memory Integrity sets it too -- and it says nothing about whether
+        // the Windows Hypervisor Platform, which is what actually runs this
+        // virtual machine, is available. Claiming the machine is fine sent a
+        // player looking everywhere except the one switch that was off.
         format!(
             "{reason}\n\n\
-             Windows reports a hypervisor is running, so virtualisation itself \
-             is fine and something else stopped the virtual machine. The \
-             Settings window has a Report a problem button that collects the \
-             logs needed to work out what."
+             Windows reports a hypervisor is running, so this is not your \
+             BIOS. The other thing that has to be on is the Windows \
+             Hypervisor Platform, which is separate and off by default:\n\n\
+             \x20   Press Windows+R, run `optionalfeatures`, tick \
+             \"Windows Hypervisor Platform\", then restart.\n\n\
+             If it is already ticked, Settings has a Report a problem button. \
+             The logs it collects now include the virtual machine's own \
+             startup error, which says what stopped it."
         )
     } else {
         format!(
