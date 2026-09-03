@@ -70,9 +70,17 @@ RUN apk add --no-cache mariadb-connector-c zlib libstdc++ libgcc bash tzdata \
 WORKDIR /rathena
 COPY --from=build /out/re/login-server /out/re/char-server \
                   /out/re/map-server /out/re/web-server /rathena/
-# The pre-renewal pair sits beside them. The supervisor picks which to run;
-# db/pre-re and npc/pre-re are already in the image below, copied wholesale.
-COPY --from=build /out/pre-re/char-server /out/pre-re/map-server /rathena/pre-re/
+# The pre-renewal pair sits beside them under its own names, in the same
+# directory rather than a subdirectory.
+#
+# rAthena chdirs to the directory of argv[0] at startup (src/common/core.cpp),
+# then reads conf/, db/ and npc/ relative to that. A binary in /rathena/pre-re/
+# therefore looks for /rathena/pre-re/conf and dies with "File not found:
+# conf/inter_athena.conf". Same directory, different name, and every relative
+# path keeps working -- the era comes from how the binary was compiled, not
+# from where it sits.
+COPY --from=build /out/pre-re/char-server /rathena/char-server-prere
+COPY --from=build /out/pre-re/map-server  /rathena/map-server-prere
 COPY --from=build /rathena/conf       /rathena/conf
 COPY --from=build /rathena/db         /rathena/db
 COPY --from=build /rathena/npc        /rathena/npc

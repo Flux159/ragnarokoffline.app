@@ -1312,10 +1312,13 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     // mentions RENEWAL -- so only char and map come in two builds. They must
     // match each other: src/common/mmo.hpp changes shape under RENEWAL and the
     // two talk over those structures.
-    let era = if is_prerenewal(cfg) { "/rathena/pre-re" } else { "/rathena" };
+    // A suffix, not a subdirectory: rAthena chdirs to the directory of argv[0]
+    // and then reads conf/, db/ and npc/ relative to it, so both eras have to
+    // live in /rathena itself.
+    let era = if is_prerenewal(cfg) { "-prere" } else { "" };
     run_server(cfg, dk, "ragnarok-login", 6900, "/rathena/login-server", lan)?;
-    run_server(cfg, dk, "ragnarok-char", 6121, &format!("{era}/char-server"), lan)?;
-    run_server(cfg, dk, "ragnarok-map", 5121, &format!("{era}/map-server"), lan)?;
+    run_server(cfg, dk, "ragnarok-char", 6121, &format!("/rathena/char-server{era}"), lan)?;
+    run_server(cfg, dk, "ragnarok-map", 5121, &format!("/rathena/map-server{era}"), lan)?;
     phase(cfg, "Loading maps and NPCs…");
     wait_for_maps(dk)?;
     phase(cfg, "Ready");
