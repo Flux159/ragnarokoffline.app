@@ -33,6 +33,16 @@
   }
   button.ghost:hover:not(:disabled) { border-color: var(--accent-dim); color: var(--text); }
   button:disabled { opacity: .4; cursor: default; }
+  .seg { display: flex; gap: 0; margin-left: auto; }
+  .seg button {
+    background: transparent; color: var(--dim); border: 1px solid var(--line);
+    border-radius: 0; padding: 7px 18px; font-weight: 600;
+  }
+  .seg button:first-child { border-radius: 6px 0 0 6px; }
+  .seg button:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #0d0f15; border-color: var(--accent); }
+  .seg button[aria-pressed="true"]:hover { background: var(--accent-hi); }
+  .seg button[aria-pressed="false"]:hover { color: var(--text); border-color: var(--accent-dim); }
   label { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
   label > span:first-child { color: var(--dim); width: 128px; flex: none; }
   input[type=range] { flex: 1; accent-color: var(--accent); }
@@ -57,6 +67,17 @@
 <body>
   <h2>Server</h2>
   <div class="panel">
+    <div class="row">
+      <span class="name">Game era</span>
+      <div class="seg">
+        <button id="era-re" aria-pressed="true">Renewal</button>
+        <button id="era-pre" aria-pressed="false">Pre-renewal</button>
+      </div>
+    </div>
+    <p class="note" style="margin:0 0 4px">Each era keeps its own characters. Switching does
+       not convert them &mdash; your other era's characters stay where they are and come back
+       when you switch back. They cannot be shared: pre-renewal stops at level 99 and has no
+       third or fourth jobs. Switching restarts the server.</p>
     <div class="row"><span class="name">Assets &amp; client (:3338)</span><span class="state" id="s-assets">—</span></div>
     <div class="row"><span class="name">Database</span><span class="state" id="s-db">—</span></div>
     <div class="row"><span class="name">Login / Char / Map</span><span class="state" id="s-servers">—</span></div>
@@ -205,16 +226,6 @@
       <input type="checkbox" id="free_kafra_warp" style="accent-color: var(--accent); flex: none" />
       <span class="val" style="width:auto; color: var(--dim)">warps and storage at no cost</span>
     </label>
-    <label style="margin-top:6px">
-      <span>Pre-renewal</span>
-      <input type="checkbox" id="prerenewal" style="accent-color: var(--accent); flex: none" />
-      <span class="val" style="width:auto; color: var(--dim)">classic formulas, no third jobs</span>
-    </label>
-    <p class="note" id="prerenewal-note" hidden>Each era keeps its own characters.
-       Switching does not convert them &mdash; your renewal characters stay where
-       they are and come back when you switch back, and pre-renewal starts with a
-       fresh account. They cannot be shared: pre-renewal stops at level 99 and has
-       no third or fourth jobs, so a renewal character has no valid meaning there.</p>
     <div class="actions" style="margin-top:10px">
       <button id="save" class="ghost">Apply</button>
     </div>
@@ -318,6 +329,40 @@ $('mp-connect').onclick = async () => {
     log('error: ' + e);
   }
 };
+
+// Which era the buttons are showing. Held here rather than read back out of
+// the DOM so the save path has one source of truth.
+let eraIsPre = false;
+
+function setEra(pre) {
+  eraIsPre = !!pre;
+  $('era-re').setAttribute('aria-pressed', String(!eraIsPre));
+  $('era-pre').setAttribute('aria-pressed', String(eraIsPre));
+}
+
+// Switching applies immediately. It restarts the server and changes which save
+// is loaded, which is too big a thing to leave sitting behind an Apply button
+// three sections down -- and it is not destructive, because the other era's
+// characters are kept.
+async function chooseEra(pre) {
+  if (pre === eraIsPre) return;
+  setEra(pre);
+  $('era-re').disabled = $('era-pre').disabled = true;
+  log(pre ? 'Switching to pre-renewal…' : 'Switching to renewal…');
+  try {
+    const s = await invoke('get_settings');
+    await invoke('save_settings', { settings: { ...s, prerenewal: pre } });
+    log(pre ? 'Pre-renewal. Log in again.' : 'Renewal. Log in again.');
+  } catch (e) {
+    setEra(!pre);
+    log(String(e));
+  } finally {
+    $('era-re').disabled = $('era-pre').disabled = false;
+    refresh();
+  }
+}
+$('era-re').onclick = () => chooseEra(false);
+$('era-pre').onclick = () => chooseEra(true);
 
 async function refresh() {
   await refreshMode();
@@ -542,7 +587,7 @@ $('save').onclick = async () => {
   const settings = await invoke('get_settings');
   for (const k of RATES) settings[k] = Number($(k).value);
   settings.free_kafra_warp = $('free_kafra_warp').checked;
-  settings.prerenewal = $('prerenewal').checked;
+  settings.prerenewal = eraIsPre;
   settings.zeny_from_mobs = $('zeny_from_mobs').checked;
   $('save').disabled = true;
   try { log(await invoke('save_settings', { settings })); }
@@ -557,13 +602,7 @@ for (const k of RATES) {
 invoke('get_settings').then(s => {
   for (const k of RATES) { $(k).value = s[k]; $('v-' + k).textContent = (s[k] / 100) + 'x'; }
   $('free_kafra_warp').checked = !!s.free_kafra_warp;
-  $('prerenewal').checked = !!s.prerenewal;
-  // Shown only once it is being changed, so the warning appears when it
-  // is relevant rather than sitting there as permanent noise.
-  const eraWas = !!s.prerenewal;
-  $('prerenewal').onchange = () => {
-    $('prerenewal-note').hidden = $('prerenewal').checked === eraWas;
-  };
+  setEra(!!s.prerenewal);
   $('zeny_from_mobs').checked = !!s.zeny_from_mobs;
   $('population_enable').checked = !!s.population_enable;
   $('population_max').value = s.population_max;
