@@ -15,6 +15,19 @@ from pathlib import Path
 
 root, rb = Path(sys.argv[1]), Path(sys.argv[2])
 
+# 0000 - A lockfile upstream does not have.
+#
+# roBrowserLegacy ships package.json with no lock of any kind, so `npm install`
+# re-resolves ~430 packages from the registry on every build. That is not
+# theoretical: it broke the first v1.0.5 build hours after the identical inputs
+# had built v1.0.4, when a transitive dependency published a version npm 10
+# could not resolve. Since config/VENDOR_PINS fixes the commit, package.json is
+# fixed too, so the resolution can be settled once and kept here. Callers use
+# `npm ci` against it. Regenerate with `npm install --package-lock-only` in a
+# checkout of the pinned commit whenever the pin moves.
+shutil.copyfile(root / "patches/package-lock.json", rb / "package-lock.json")
+print("installed package-lock.json (pinned dependency tree)")
+
 # 0001 - Renderer.render(fn) must be idempotent. Components register on every
 # show/tab-change; without this a window opened N times renders N times per
 # frame, interleaving clearRect with async sprite draws (flicker, ghost heads).

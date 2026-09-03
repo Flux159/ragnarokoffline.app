@@ -32,7 +32,7 @@ echo "==> building the web client"
 # It has to be the full build: api.html and api.js are only written on --all,
 # and the online client is launched with ROBrowser.TYPE.FRAME, which loads
 # api.html in an iframe. Skipping build targets yields a blank window.
-(cd "$VENDOR/roBrowserLegacy" && npm install --no-audit --no-fund && npm run build:all)
+(cd "$VENDOR/roBrowserLegacy" && npm ci --no-audit --no-fund && npm run build:all)
 (cd "$VENDOR/roBrowserLegacy/dist/Web" && rm -f \
     GrfViewer.js MapViewer.js ModelViewer.js StrViewer.js EffectViewer.js \
     GrannyModelViewer.js screenshotwide.png screenshotnarrow.png)

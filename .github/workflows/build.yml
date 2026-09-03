@@ -77,23 +77,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 24, not 22, and only in this job. roBrowserLegacy ships no lockfile,
-      # so `npm install` re-resolves its whole tree from the registry on every
-      # run -- and npm 10, which is what Node 22 bundles, crashes resolving the
-      # tree it now gets:
-      #
-      #     npm error Cannot read properties of null (reading 'edgesOut')
-      #
-      # Nothing changed on our side or theirs: v1.0.4 built from this same
-      # unpinned clone and their last package.json edit was weeks earlier. A
-      # dependency published upstream in between, and npm 10 cannot handle the
-      # result. npm 11 (Node 24) installs and builds it fine.
-      #
-      # The app job stays on 22 deliberately: it installs from our own
-      # committed package-lock.json, so it is not exposed to this.
+      # 22 here and in the app job. The client used to need 24: with no
+      # lockfile upstream, `npm install` re-resolved the whole tree and npm 10
+      # crashed doing it. patch-client.sh now installs a lockfile and this job
+      # runs `npm ci`, so there is no resolution step left to crash -- verified
+      # on npm 10.9.8, which installs and builds the pinned tree cleanly.
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
 
       # Pinned in config/VENDOR_PINS, not cloned from a branch: what a tag
       # shipped has to stay knowable after upstream moves on.
@@ -109,7 +100,7 @@ jobs:
       - name: Build the client
         working-directory: vendor/roBrowserLegacy
         run: |
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm run build:all
 
       # build:all emits seven ~12 MB bundles and the game loads one. package.sh
