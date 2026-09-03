@@ -226,6 +226,13 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
             "The Microsoft Visual C++ runtime is missing",
         ));
     }
+    // Same again: ask the condition rather than read it out of a failure that
+    // arrives twenty seconds later as "agent did not become healthy", with the
+    // real reason logged by libkrun and thrown away.
+    #[cfg(windows)]
+    if whp_available() == Some(false) {
+        return Err(whp_help());
+    }
 
     // Before starting it: an image that was damaged on the way in produces a
     // guest that boots to nothing, and every later message blames the wrong
@@ -660,6 +667,73 @@ fn vc_runtime_help(reason: &str) -> String {
          opens without it because only the parts that run the game servers need \
          it, which is why the failure shows up a few seconds in."
     )
+}
+
+/// Is the Windows Hypervisor Platform actually usable?
+///
+/// `Some(false)` means the feature is off; `None` means we could not tell and
+/// the caller should say nothing.
+///
+/// This asks the same question libkrun asks, in the same way, rather than
+/// inferring it. Win32_ComputerSystem.HypervisorPresent is not the same thing:
+/// it is true whenever any hypervisor is running -- Hyper-V for Credential
+/// Guard or Memory Integrity sets it -- and we told a player their
+/// virtualisation was fine on that basis while WHP was off and the guest could
+/// not boot. Get-WindowsOptionalFeature would answer correctly but needs
+/// elevation, and WinHvPlatform.dll is present either way, so its existence
+/// proves nothing (checked on Windows 10 19045 and Windows 11 26200: present
+/// with the feature both enabled and disabled).
+///
+/// Loaded dynamically. Linking WinHvPlatform.dll at load time would mean a
+/// Windows without it could not start this binary at all -- 0xC0000135, the
+/// failure we spent an evening on already.
+#[cfg(windows)]
+fn whp_available() -> Option<bool> {
+    use std::ffi::c_void;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn LoadLibraryA(name: *const u8) -> *mut c_void;
+        fn GetProcAddress(module: *mut c_void, name: *const u8) -> *mut c_void;
+    }
+    // WHvCapabilityCodeHypervisorPresent
+    const HYPERVISOR_PRESENT: u32 = 0x0000_0000;
+    unsafe {
+        let module = LoadLibraryA(b"WinHvPlatform.dll\0".as_ptr());
+        if module.is_null() {
+            return None;
+        }
+        let proc = GetProcAddress(module, b"WHvGetCapability\0".as_ptr());
+        if proc.is_null() {
+            return None;
+        }
+        let get_capability: unsafe extern "system" fn(u32, *mut c_void, u32, *mut u32) -> i32 =
+            std::mem::transmute(proc);
+        let mut present: u32 = 0;
+        let mut written: u32 = 0;
+        let hr = get_capability(
+            HYPERVISOR_PRESENT,
+            &mut present as *mut u32 as *mut c_void,
+            4,
+            &mut written,
+        );
+        if hr != 0 || written != 4 {
+            return None;
+        }
+        Some(present != 0)
+    }
+}
+
+#[cfg(windows)]
+fn whp_help() -> String {
+    "The Windows Hypervisor Platform is switched off, and this app needs it to \
+     run its virtual machine.\n\n\
+     Turn it on:\n\n\
+     \x20   Press Windows+R, run `optionalfeatures`, tick \"Windows Hypervisor \
+     Platform\", then restart the computer.\n\n\
+     This is not your BIOS and it is not your antivirus. It is a Windows \
+     feature that is off by default, and nothing else will start the virtual \
+     machine until it is on."
+        .to_string()
 }
 
 /// Is Smart App Control enforcing right now?
