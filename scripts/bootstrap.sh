@@ -19,10 +19,10 @@ clone() {
 }
 
 mkdir -p "$VENDOR"
-clone https://github.com/MrAntares/roBrowserLegacy.git                        roBrowserLegacy
+"$ROOT/scripts/vendor-fetch.sh" roBrowserLegacy "$VENDOR/roBrowserLegacy"
 clone https://github.com/FranciscoWallison/roBrowserLegacy-RemoteClient-JS.git roBrowserLegacy-RemoteClient-JS
 clone https://github.com/rathena/rathena.git                                  rathena
-clone https://github.com/llchrisll/ROenglishRE.git                            ROenglishRE
+"$ROOT/scripts/vendor-fetch.sh" ROenglishRE "$VENDOR/ROenglishRE"
 
 echo "==> applying client patches"
 "$ROOT/scripts/patch-client.sh"

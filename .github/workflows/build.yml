@@ -95,11 +95,13 @@ jobs:
         with:
           node-version: 24
 
+      # Pinned in config/VENDOR_PINS, not cloned from a branch: what a tag
+      # shipped has to stay knowable after upstream moves on.
       - name: Fetch roBrowserLegacy and ROenglishRE
         run: |
           mkdir -p vendor
-          git clone --depth 1 https://github.com/MrAntares/roBrowserLegacy.git vendor/roBrowserLegacy
-          git clone --depth 1 https://github.com/llchrisll/ROenglishRE.git vendor/ROenglishRE
+          scripts/vendor-fetch.sh roBrowserLegacy vendor/roBrowserLegacy
+          scripts/vendor-fetch.sh ROenglishRE vendor/ROenglishRE
 
       - name: Apply our patches
         run: scripts/patch-client.sh
