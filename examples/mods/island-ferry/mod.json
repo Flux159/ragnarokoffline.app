@@ -1,0 +1,7 @@
+{
+  "name": "island-ferry",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "A ferryman in Prontera who takes you to the island. Needs the custom-map mod.",
+  "requires": { "app": ">=1.0.6", "era": "any" }
+}

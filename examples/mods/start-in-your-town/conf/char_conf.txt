@@ -1,0 +1,15 @@
+// Where a new character wakes up.
+//
+// Both keys, because the server reads only one of them and which one depends
+// on how it was compiled: a pre-renewal char-server reads start_point_pre and
+// ignores start_point entirely, and a renewal one does the opposite. Setting
+// only the key for the era you happen to be running gives new characters no
+// start point at all on the other one.
+//
+// Format is <map>,<x>,<y>. The map must exist -- see the README.
+
+start_point: ro_isle,40,44
+start_point_pre: ro_isle,40,44
+
+// Two thousand zeny to start with, so there is something to do on arrival.
+start_zeny: 2000

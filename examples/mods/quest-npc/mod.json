@@ -1,0 +1,7 @@
+{
+  "name": "quest-npc",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "A herbalist in Prontera with a real quest: a menu, a character variable that survives a relog, and a reward.",
+  "requires": { "app": ">=1.0.6", "era": "any" }
+}

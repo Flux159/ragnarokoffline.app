@@ -1,0 +1,7 @@
+{
+  "name": "loading-screens",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "Ten of your own loading screens, drawn at random on every map change.",
+  "requires": { "app": ">=1.0.6", "era": "any" }
+}
