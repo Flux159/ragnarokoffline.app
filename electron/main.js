@@ -482,6 +482,37 @@ function assetsReady() {
 // Windows only: the drive letter a path sits on, against the one the app keeps
 // its data on, when they differ. Null everywhere else, for a UNC path, and when
 // they match -- "same drive" is not a question worth asking then.
+// The operating system as a person would name it, plus the number an engineer
+// needs. Windows reports 10.0.x for both 10 and 11, so the build is the only
+// thing that separates them and 22000 is where 11 begins.
+function osDescription() {
+	const rel = os.release();
+	if (process.platform === 'win32') {
+		const build = Number(rel.split('.')[2]) || 0;
+		const name = build >= 22000 ? 'Windows 11' : 'Windows 10';
+		return `${name} (build ${build || '?'}, ${rel})`;
+	}
+	if (process.platform === 'darwin') {
+		// getSystemVersion is the marketing version (15.1); os.release() is the
+		// Darwin kernel (24.1.0). Both, because bug reports quote the first and
+		// anything technical is written against the second.
+		return `macOS ${process.getSystemVersion()} (darwin ${rel})`;
+	}
+	const line = (readIfExists('/etc/os-release') || '')
+		.split('\n')
+		.find(l => l.startsWith('PRETTY_NAME='));
+	const distro = line ? line.slice('PRETTY_NAME='.length).replace(/^"|"$/g, '') : 'Linux';
+	return `${distro} (kernel ${rel})`;
+}
+
+// The model string, because the vendor is in it: AuthenticAMD and GenuineIntel
+// take different paths through the hypervisor, and Apple silicon is a third.
+function cpuDescription() {
+	const cpus = os.cpus();
+	const model = ((cpus[0] && cpus[0].model) || 'unknown').replace(/\s+/g, ' ').trim();
+	return `${model} (${cpus.length} logical, ${process.arch})`;
+}
+
 function otherDrive(p) {
 	if (process.platform !== 'win32') return null;
 	const of = q => (/^([A-Za-z]):[\\/]/.exec(q || '') || [])[1];
@@ -1434,6 +1465,13 @@ const handlers = {
 			// learn something the tag would have said outright.
 			`version   ${app.getVersion()} (build ${readIfExists(path.join(projectRoot(), 'VERSION')) || 'unknown'})`,
 			`platform  ${process.platform} ${process.arch}`,
+			// Which Windows, and whose silicon. "win32 x64" and a core count
+			// cost a whole diagnosis once: a player's guest would not boot,
+			// the cause was AMD-specific timer emulation, and nothing in the
+			// bundle said AMD -- they had to mention their processor in prose,
+			// and only after several wrong answers.
+			`os        ${osDescription()}`,
+			`cpu       ${cpuDescription()}`,
 			`electron  ${process.versions.electron}`,
 			`data      ${dataRoot()}`,
 			// Host memory, because a virtual machine that will not boot on a
@@ -1441,7 +1479,7 @@ const handlers = {
 			// and two reports have now arrived without it.
 			`host ram  ${totalMib} MiB total, ${freeMib} MiB free`,
 			`vm ram    ${getClientPaths().vm_ram_mib} MiB (default here: ${defaultVmRamMib()})`,
-			`cpus      ${os.cpus().length}`,
+
 		].join('\n'));
 
 		// Paths only: a client folder name is not a secret, and knowing whether
