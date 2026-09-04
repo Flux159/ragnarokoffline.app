@@ -1,0 +1,30 @@
+// Two ways onto the island, because they are different mechanisms and both are
+// worth having in front of you.
+
+// 1. A warp. Four fields after the name: the width and height of the trigger
+//    area, then the destination map and coordinates. Nobody has to click it;
+//    walking into the square is enough.
+//
+//    <map>,<x>,<y>,<facing>%TAB%warp%TAB%<name>%TAB%<xs>,<ys>,<dest>,<dx>,<dy>
+prontera,159,178,0	warp	Isle Jetty#ferry	2,2,ro_isle,40,40
+
+// 2. An NPC that warps you, which is the same trip with a conversation in
+//    front of it -- and unlike a warp square it can charge, check a level, or
+//    refuse.
+prontera,155,178,4	script	Ferryman Osric#ferry	4_M_SEAMAN,{
+	mes "[Ferryman Osric]";
+	mes "Boat leaves for the island whenever you like. No charge.";
+	next;
+	if (select("Take me across:Maybe later") == 2) {
+		mes "[Ferryman Osric]";
+		mes "She'll be here.";
+		close;
+	}
+	mes "[Ferryman Osric]";
+	mes "Mind the Porings.";
+	close2;
+	// warp is the scripted version of the square above. close2 first, so the
+	// dialogue box is gone before the map changes.
+	warp "ro_isle", 40, 40;
+	end;
+}

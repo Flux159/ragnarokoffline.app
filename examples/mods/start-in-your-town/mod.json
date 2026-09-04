@@ -1,0 +1,7 @@
+{
+  "name": "start-in-your-town",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "New characters wake up on your island instead of the tutorial. Needs the custom-map mod.",
+  "requires": { "app": ">=1.0.6", "era": "any" }
+}

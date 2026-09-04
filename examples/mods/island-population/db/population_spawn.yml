@@ -1,0 +1,26 @@
+# Put AI characters on the custom island from the custom-map mod.
+#
+# ---------------------------------------------------------------------------
+# THIS DOES NOT WORK YET. See README.md. The file is here because it is the
+# file that *would* work, and because the shape of it is worth having.
+# ---------------------------------------------------------------------------
+#
+# The Population Engine spawns by profile, not by job: a Profile named here
+# resolves to every job that inherits from it in db/population_engine.yml, and
+# one job is picked at random per shell.
+#
+# This is a complete file, not an addition: whatever mechanism eventually reads
+# it will either replace the shipped table or merge over it, and a partial file
+# under a merge would leave every other map unpopulated. Start from
+# third-party/population-engine/files/db/population_spawn.yml and edit.
+
+Header:
+  Type: POPULATION_SPAWN_DB
+  Version: 1
+
+Body:
+  - Profile: combat_pve_low
+    Fields:
+      - ro_isle
+    FieldsPopulation: 12
+    FieldsMaxPerMap: 12

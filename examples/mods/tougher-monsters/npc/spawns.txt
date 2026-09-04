@@ -1,0 +1,25 @@
+// Different monsters on an existing map.
+//
+// The other half of "change the monsters": db/ changes what a monster is, a
+// spawn script changes which ones are standing where. Neither needs the other.
+//
+// Format:
+//   <map>,<x>,<y>,<xs>,<ys>%TAB%monster%TAB%<name>%TAB%<id>,<amount>,<delay1>,<delay2>,<event>
+//
+// x,y,xs,ys all zero means "anywhere on the map". delay1 is the respawn time
+// in milliseconds; 5000 is fast enough to notice while you are testing.
+//
+// Prontera South Field, which is where a new character goes to hunt.
+
+prt_fild08,0,0,0,0	monster	Poring	1002,40,5000,0,0
+prt_fild08,0,0,0,0	monster	Lunatic	1063,20,5000,0,0
+prt_fild08,0,0,0,0	monster	Fabre	1007,20,5000,0,0
+
+// And one thing that has no business being there, to make the change
+// unmistakable from thirty seconds of walking around.
+prt_fild08,0,0,0,0	monster	Poporing	1031,5,300000,0,0
+
+// Removing the map's own spawns is a separate thing and this mod does not do
+// it: the stock spawn scripts are loaded from npc/pre-re/mobs/fields/ and a
+// mod cannot unload them. What a mod can do is add. If you want a quiet map,
+// build a custom one -- see the custom-map example.

@@ -43,7 +43,7 @@
     <button id="local" class="ghost" hidden>Play on this computer</button>
   </div>
 <script>
-const { invoke } = window.__TAURI__.core;
+const { invoke } = window.__ELECTRON__.core;
 
 const status = document.getElementById('status');
 // Remembered so a failure can name the step it died on, which is the one thing
@@ -75,9 +75,9 @@ function plain(e) {
 // three rAthena servers will connect to each other.
 const DEADLINE_MS = 180000;
 
-// Asked through Rust rather than fetch(): this page is served from
-// tauri://localhost, a secure origin, so a plain-http request from here is
-// blocked as mixed content and fails silently forever.
+// Asked through the main process rather than fetch(): this page is loaded
+// from file://, so a plain-http request to the asset server is blocked as a
+// cross-origin/mixed-content request and fails silently forever.
 const ready = () => invoke('assets_ready');
 
 async function boot() {

@@ -1,0 +1,8 @@
+{
+  "name": "common-npcs",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "The private-server standards: a job changer, a warper, a healer and a stylist, in every major town. Off until you turn it on.",
+  "default": "off",
+  "requires": { "app": ">=1.0.6", "era": "any" }
+}

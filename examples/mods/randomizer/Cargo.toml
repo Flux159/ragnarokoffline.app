@@ -1,0 +1,20 @@
+[package]
+name = "ro-randomizer"
+version = "1.0.0"
+edition = "2021"
+description = "Generate a seeded Ragnarok Offline randomizer mod"
+
+# No dependencies, for the same reason stack/ has none: this ships as a binary
+# inside a signed app bundle, the build has to stay under a minute on every
+# runner, and there is no dependency tree to audit. std covers all of it --
+# including, deliberately, the small amount of YAML this has to understand.
+[dependencies]
+
+[[bin]]
+name = "ro-randomizer"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true

@@ -543,6 +543,113 @@ fn end_process(pid: u32, hard: bool) {
     let _ = c.stdout(Stdio::null()).stderr(Stdio::null()).status();
 }
 
+/// Move characters off maps a mod used to provide and no longer does.
+///
+/// This is the one way a mod can lock a player out of their own save. A
+/// character's position is stored as a map *name*: uninstall the mod that
+/// provided `ro_isle` and everyone standing on it has nowhere to log in to.
+/// rAthena does offer a list of major cities when that happens, but roBrowser
+/// discards it and shows an untranslated error, so in this app the character
+/// simply cannot be selected.
+///
+/// Rather than try to know every valid map -- the stock list lives inside the
+/// container and is 1,265 long -- this remembers only what *mods* provided last
+/// time. A map in the previous list and not the current one is a map a mod took
+/// away, which is precisely the case worth acting on and cannot misfire on a
+/// stock map.
+///
+/// `save_map` matters as much as `last_map`: it is where death returns you, and
+/// a start-point mod sets it on every character it creates.
+fn rescue_stranded_characters(cfg: &Config, dk: &Docker, current: &[String]) {
+    let marker = cfg.state.join("modmaps.txt");
+    let previous: Vec<String> = fs::read_to_string(&marker)
+        .map(|b| b.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect())
+        .unwrap_or_default();
+    let _ = fs::write(&marker, current.join("\n"));
+
+    let gone: Vec<&String> = previous.iter().filter(|m| !current.contains(m)).collect();
+    if gone.is_empty() {
+        return;
+    }
+
+    // Prontera, because it exists in both eras and is where rAthena's own
+    // fallback list starts. The coordinates are its default spawn.
+    let list = gone
+        .iter()
+        .map(|m| format!("'{}'", m.replace('\'', "")))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "UPDATE `char` SET last_map='prontera', last_x=156, last_y=191 WHERE last_map IN ({list}); \
+         UPDATE `char` SET save_map='prontera', save_x=156, save_y=191 WHERE save_map IN ({list}); \
+         SELECT ROW_COUNT();"
+    );
+    match dk.exec_sql(&sql) {
+        Ok(_) => eprintln!(
+            "mods: no mod provides {} any more -- any character standing there \
+             has been moved to Prontera",
+            gone.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+        ),
+        // Not fatal. A character on a removed map is a problem; failing to
+        // start the server over it is a bigger one.
+        Err(e) => eprintln!("mods: could not move characters off {list}: {e}"),
+    }
+}
+
+/// Write the conf files mods supply whole, into the directory the server
+/// imports.
+///
+/// `state/conf` is bound at `/rathena/conf/import`, and rAthena's own
+/// `conf/groups.yml` ends with `Footer: Imports: conf/import/groups.yml` -- so
+/// dropping the file here is the whole mechanism.
+///
+/// Files no mod provides are **removed**, for the same reason `modbuild` is
+/// rebuilt from scratch: a stale `groups.yml` left behind by a mod that has
+/// been uninstalled would go on granting commands, and would be indistinguish-
+/// able from the mod still being installed.
+fn write_mod_conf_files(cfg: &Config, mods: &crate::mods::Assembled) -> Result<(), String> {
+    let conf = cfg.state.join("conf");
+    for file in ["groups.yml", "atcommands.yml"] {
+        let path = conf.join(file);
+        match mods.conf.get(&format!("file:{file}")) {
+            None => {
+                let _ = fs::remove_file(&path);
+            }
+            Some(entries) => {
+                // Last name wins, as everywhere else -- but say so, because a
+                // whole-file layer silently discarding another mod's copy is
+                // worse than a table doing it.
+                if entries.len() > 1 {
+                    let names: Vec<&str> = entries.iter().map(|(n, _)| n.as_str()).collect();
+                    eprintln!(
+                        "mods: {} all supply conf/{file}; only {} is in effect",
+                        names.join(", "),
+                        names.last().copied().unwrap_or("")
+                    );
+                }
+                let (name, body) = entries.last().unwrap();
+                fs::write(&path, body)
+                    .map_err(|e| format!("writing conf/{file} from {name}: {e}"))?;
+                eprintln!("mods: {name} supplies conf/{file}");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The settings mods asked for in one conf file, ready to append.
+///
+/// Empty for every file no mod named, which is the usual case, and the reason
+/// this returns a string rather than taking a writer: the caller can drop it
+/// into a format! and the generated file is unchanged when no mod is
+/// installed.
+fn conf_lines(mods: &crate::mods::Assembled, file: &str) -> String {
+    match mods.conf.get(file) {
+        None => String::new(),
+        Some(pairs) => pairs.iter().map(|(k, v)| format!("{k}: {v}\n")).collect(),
+    }
+}
+
 /// Is the server running pre-renewal?
 ///
 /// A marker file rather than a parsed setting, matching free_kafra_warp: the
@@ -1191,7 +1298,73 @@ fn strip_ansi(s: &str) -> String {
     out.trim().to_string()
 }
 
+/// Keep a crashed server's last words before the container is thrown away.
+///
+/// `run_server` removes the old container before starting the new one, and
+/// removing a container deletes its log with it. So every restart destroyed the
+/// only record of why the previous one died -- which, for a server that falls
+/// over intermittently, is the evidence and nothing else is.
+///
+/// rAthena prints no backtrace: `sig_proc` catches SIGSEGV, saves online
+/// characters, then re-raises with the default handler. The shipped binaries
+/// are stripped and Alpine's musl has no `execinfo`, so there is nothing to
+/// print even if it tried. What there *is* is the last few hundred lines of
+/// what the server was doing, and that is worth keeping.
+fn save_crash_log(cfg: &Config, dk: &Docker, name: &str) {
+    // "exited" covers a clean stop too, so the log is only kept when the exit
+    // looks unplanned -- a clean shutdown says so on its way out.
+    let Some(state) = dk.state(name) else { return };
+    if state != "exited" {
+        return;
+    }
+    let log = dk.logs(name, "400");
+    let crashed = log.contains("Received a crash signal")
+        || log.contains("Received another crash signal");
+    if !crashed {
+        return;
+    }
+    let dir = cfg.state.join("crashes");
+    if fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    // Seconds since the epoch: sortable, needs no date formatting, and this
+    // binary has no dependency that would provide one.
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let path = dir.join(format!("{name}-{stamp}.log"));
+    if fs::write(&path, strip_ansi_lines(&log)).is_ok() {
+        eprintln!(
+            "{name} crashed during the last run; its log was kept at {}",
+            path.display()
+        );
+        // Keep the last ten. A crash loop should not quietly fill a disk.
+        prune_crash_logs(&dir, 10);
+    }
+}
+
+/// rAthena colours its output, and a log full of escape sequences is a log
+/// nobody will read or attach to a bug report.
+fn strip_ansi_lines(s: &str) -> String {
+    s.lines().map(strip_ansi).collect::<Vec<_>>().join("\n")
+}
+
+fn prune_crash_logs(dir: &Path, keep: usize) {
+    let Ok(rd) = fs::read_dir(dir) else { return };
+    let mut files: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_file()).collect();
+    if files.len() <= keep {
+        return;
+    }
+    files.sort();
+    for p in &files[..files.len() - keep] {
+        let _ = fs::remove_file(p);
+    }
+}
+
 fn run_server(cfg: &Config, dk: &Docker, name: &str, port: u16, binary: &str, lan: bool) -> Result<(), String> {
+    // Before the container goes, and with it its log.
+    save_crash_log(cfg, dk, name);
     dk.remove_container(name);
 
     // One directory mount, not five file mounts: a single-file bind whose host
@@ -1425,9 +1598,35 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     } else {
         "start_point: iz_int,18,26"
     };
+
+    // Mods are assembled here, before the map server is started and before
+    // map_conf names their scripts: the mount and the config have to agree, and
+    // both are derived from the same pass over state/mods. It also has to
+    // happen before char_conf is written, because a mod may set the start
+    // point and that line has to be in the file rather than after it.
+    let mods = crate::mods::assemble(cfg)?;
+    if !mods.names.is_empty() {
+        println!("mods: {}", mods.names.join(", "));
+    }
+    if !mods.maps.is_empty() {
+        println!("mod maps: {}", mods.maps.join(", "));
+    }
+    // Named, one per line, so the reason reaches the log as well as Settings.
+    for (name, why) in &mods.refused {
+        eprintln!("mods: {name} was not applied -- {why}");
+    }
+    // Before the servers start, and after the database is up: a character left
+    // on a map that a removed mod used to provide cannot be selected at all.
+    rescue_stranded_characters(cfg, dk, &mods.maps);
+    write_mod_conf_files(cfg, &mods)?;
+
+    // A mod's allowlisted settings go after ours, because rAthena's config
+    // reader takes the last assignment of a key: start_point in particular is
+    // parsed by char_config_split_startpoint, which clears the array before
+    // filling it, so the last line is the whole answer rather than an addition.
     write_conf(&conf, "char_conf.txt",
         &format!("login_ip: ragnarok-login\nchar_ip: {advertise}\npincode_enabled: no\n\
-                  {start_point}\n"))?;
+                  {start_point}\n{}", conf_lines(&mods, "char_conf.txt")))?;
 
     let product = if cfg!(target_os = "macos") { "RagnarokMac" }
         else if cfg!(windows) { "RagnarokWindows" }
@@ -1435,16 +1634,9 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
         else { "Ragnarok" };
     write_conf(&conf, "motd.txt",
         &format!("Welcome to {product} Offline! Please report any bugs on Github\n"))?;
-    // Mods are assembled here, before the map server is started and before
-    // map_conf names their scripts: the mount and the config have to agree, and
-    // both are derived from the same pass over state/mods.
-    let mods = crate::mods::assemble(cfg)?;
-    if !mods.names.is_empty() {
-        println!("mods: {}", mods.names.join(", "));
-    }
     write_conf(&conf, "map_conf.txt",
-        &format!("char_ip: ragnarok-char\nmap_ip: {advertise}\nmotd_txt: conf/import/motd.txt\n{}",
-                 mods.npc_lines))?;
+        &format!("char_ip: ragnarok-char\nmap_ip: {advertise}\nmotd_txt: conf/import/motd.txt\n{}{}{}",
+                 conf_lines(&mods, "map_conf.txt"), mods.map_lines, mods.npc_lines))?;
 
     let endpoint = format!(
         "{{\"host\":\"{advertise}\",\"login\":6900,\"char\":6121,\"map\":5121}}\n");

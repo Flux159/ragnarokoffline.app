@@ -1,0 +1,7 @@
+{
+  "name": "island-population",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "Puts AI characters on the custom island. BLOCKED: the Population Engine does not read db/import.",
+  "requires": { "app": ">=1.0.6", "era": "any" }
+}

@@ -1,0 +1,47 @@
+# Change what a Poring *is*.
+#
+# This is the real test of the db/import layer. Only the fields named here are
+# touched -- everything else about Poring, including the sprite, the AI and the
+# drops not listed, stays exactly as rAthena shipped it. That is the whole
+# reason to override a table rather than replace one.
+#
+# Version: 5 matters. rAthena warns "Database version 3 is outdated and should
+# be updated. Current version is: 5" and then loads the file in a reduced
+# compatibility mode. Take the number from the header of
+# vendor/rathena/db/import-tmpl/mob_db.yml -- it is the one that will be right
+# for the build you are on.
+Header:
+  Type: MOB_DB
+  Version: 5
+
+Body:
+  - Id: 1002
+    AegisName: PORING
+    Name: Poring
+    Level: 8
+    Hp: 220
+    Attack: 24
+    Attack2: 34
+    Defense: 5
+    Agi: 12
+    BaseExp: 24
+    JobExp: 16
+    # Drops are the one field here that does NOT behave like the others.
+    #
+    # An entry without an `Index:` is *appended* to the monster's existing drop
+    # list -- it does not replace it. Poring already has most of its ten slots
+    # filled, so three appended drops overflow and rAthena says so:
+    #
+    #   [Error]: Maximum of 10 monster Drops met, skipping.
+    #   [Error]: Occurred in file 'db/import/mob_db.yml' on line 34
+    #
+    # With an `Index:`, the entry overwrites that slot instead
+    # (MobDatabase::parseDropNode, src/map/mob.cpp). Index 0 is the monster's
+    # first drop, which for Poring is Jellopy; index 1 is the rare knife.
+    Drops:
+      - Index: 0
+        Item: Jellopy
+        Rate: 9000
+      - Index: 1
+        Item: Red_Potion
+        Rate: 2000

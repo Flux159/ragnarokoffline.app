@@ -1259,8 +1259,86 @@ const openGame = () => {
 const openSetup = () => makeWindow('setup', 'setup.html', { width: 620, height: 620, resizable: false, title: `${productName()} — set up your client` });
 const openSettings = () => makeWindow('settings', 'settings.html', { width: 620, height: 780, title: `${productName()} — settings` });
 
+
 // ---------------------------------------------------------------------------
-// IPC — the same 23 names the Tauri build exposed, so the pages are unchanged
+// Installing a mod
+// ---------------------------------------------------------------------------
+
+// One folder, named for the mod. Anything else is a zip somebody built by
+// selecting the files instead of the directory, and unpacking it would strew
+// db/ and npc/ across the mods root.
+function singleTopLevel(names) {
+	const tops = new Set(names.map(n => n.split('/')[0]).filter(Boolean));
+	return tops.size === 1 ? [...tops][0] : null;
+}
+
+// Refuse anything that would land outside the destination: `../`, an absolute
+// path, or a drive letter. Zip-slip is the classic way an unpack becomes an
+// arbitrary write.
+function safeEntryName(name) {
+	if (!name || name.startsWith('/') || name.startsWith('\\') || /^[a-zA-Z]:/.test(name)) return null;
+	const parts = name.split('/');
+	if (parts.some(p => p === '..')) return null;
+	return name;
+}
+
+async function installModFrom(src) {
+	const dest = path.join(stateDir(), 'mods');
+	fs.mkdirSync(dest, { recursive: true });
+
+	let name;
+	if (fs.statSync(src).isDirectory()) {
+		name = path.basename(src);
+		const target = path.join(dest, name);
+		if (fs.existsSync(target)) throw new Error(`${name} is already installed. Remove it first.`);
+		fs.cpSync(src, target, { recursive: true });
+	} else {
+		// `ditto` on macOS, `tar` elsewhere: both ship with the OS, and neither
+		// needs a zip library in the app. Unpacked to a scratch directory first
+		// so nothing lands in mods/ until it has been checked.
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ro-mod-'));
+		try {
+			const { execFileSync } = require('child_process');
+			if (process.platform === 'darwin') execFileSync('ditto', ['-x', '-k', src, tmp]);
+			else execFileSync('tar', ['-xf', src, '-C', tmp]);
+
+			const walk = (dir, rel = '') => fs.readdirSync(dir, { withFileTypes: true })
+				.flatMap(e => e.isDirectory()
+					? walk(path.join(dir, e.name), rel ? `${rel}/${e.name}` : e.name)
+					: [rel ? `${rel}/${e.name}` : e.name]);
+			const entries = walk(tmp).filter(n => !n.split('/').some(p => p === '__MACOSX' || p.startsWith('._')));
+			if (!entries.length) throw new Error('That archive is empty.');
+			for (const e of entries) {
+				if (!safeEntryName(e)) throw new Error(`Refusing ${src}: it contains an unsafe path (${e}).`);
+			}
+			name = singleTopLevel(entries);
+			if (!name) throw new Error('A mod zip must contain exactly one folder, named for the mod.');
+			const target = path.join(dest, name);
+			if (fs.existsSync(target)) throw new Error(`${name} is already installed. Remove it first.`);
+			fs.cpSync(path.join(tmp, name), target, { recursive: true });
+		} finally {
+			fs.rmSync(tmp, { recursive: true, force: true });
+		}
+	}
+
+	// The supervisor is the authority on whether a mod is usable, so ask it
+	// rather than re-implementing the manifest rules here. A mod that will be
+	// refused is still installed -- the player may be about to switch era, and
+	// deleting it would be worse -- but they are told now rather than after a
+	// restart that appears to do nothing.
+	let note = '';
+	try {
+		const rows = (await runStack(['mods'])).split('\n').filter(Boolean);
+		const row = rows.map(l => l.split('\t')).find(r => r[1] === name);
+		if (row && row[0] === 'refused') note = ` It will not load: ${row[3]}`;
+	} catch { /* the supervisor may be unavailable; the install still stands */ }
+
+	appLog(`installed mod ${name} from ${src}`);
+	return `Installed ${name}.${note} Apply to restart the server.`;
+}
+
+// ---------------------------------------------------------------------------
+// IPC — every name the pages can call, reached via window.__ELECTRON__.core
 // ---------------------------------------------------------------------------
 
 const handlers = {
@@ -1272,13 +1350,40 @@ const handlers = {
 	// Mods
 	list_mods: async () => {
 		const out = await runStack(['mods']);
+		// Tab-separated, in the order mods.rs writes them. `refused` is its own
+		// state rather than a flavour of off: the player did not switch it off,
+		// the app would not run it, and the difference is the whole point of
+		// having a reason to show.
 		return out.split('\n').filter(Boolean).map(l => {
-			const [state, name, ...rest] = l.split('\t');
-			return { name, enabled: state === 'on', description: rest.join('\t') };
+			const [state, name, description, reason, origin, version, author] = l.split('\t');
+			return {
+				name,
+				enabled: state === 'on',
+				refused: state === 'refused',
+				description: description || '',
+				reason: reason || '',
+				bundled: origin === 'bundled',
+				version: version || '',
+				author: author || '',
+			};
 		});
 	},
 	set_mod_enabled: ({ name, enabled }) =>
 		runStack([enabled ? 'mod-enable' : 'mod-disable', name]),
+	// Install a mod from a folder or a .zip the player chose.
+	//
+	// A mod is not data: it drops scripts and tables into the server's paths and
+	// can ship JavaScript that the game page executes. Installing one is running
+	// somebody's code, so this checks before it moves anything, and unpacks
+	// defensively.
+	install_mod: async () => {
+		const picked = await handlers.__dialog_open({
+			filters: [{ name: 'Mod folder or .zip', extensions: ['zip'] }],
+		});
+		if (!picked) return 'Cancelled.';
+		const src = Array.isArray(picked) ? picked[0] : picked;
+		return installModFrom(src);
+	},
 	open_mods_folder: () => {
 		const dir = path.join(stateDir(), 'mods');
 		fs.mkdirSync(dir, { recursive: true });
@@ -1699,7 +1804,8 @@ const handlers = {
 		win.setTitle(gameTitle());
 	},
 
-	// Dialogs — Tauri's plugin API, reimplemented so the pages keep their shape
+	// Dialogs — the return shape the pages branch on: a path string, an array
+	// when multiple, null when cancelled.
 	__dialog_open: async ({ directory, filters, multiple }) => {
 		const props = [directory ? 'openDirectory' : 'openFile'];
 		if (multiple) props.push('multiSelections');
@@ -1769,7 +1875,36 @@ function appLog(line) {
 	}
 }
 
-ipcMain.handle('invoke', async (_event, name, args) => {
+// What the *game* page is allowed to call.
+//
+// Every window this app opens shares one preload, and the game window is then
+// navigated to whatever is serving the game — which, when the player joins a
+// friend, is a page from somebody else's machine. Without this list that page
+// could call any handler here: stop the local server, rewrite settings, restore
+// a database from a path of its choosing, or hand `save_diagnostics` an
+// arbitrary path to write to.
+//
+// So the bridge is split by where the page came from. The app's own windows are
+// loaded with `loadFile`, so they are `file://` and get everything. The game is
+// loaded with `loadURL`, so it is `http://` and gets only what is on this list.
+//
+// It is empty today because the game page needs nothing. Adding a name here is
+// a decision about what a page served by a stranger may do to this machine —
+// not a convenience.
+const GAME_PAGE_HANDLERS = new Set([]);
+
+/// Where an IPC call came from. `file://` means one of our own pages.
+function callerIsOwnPage(event) {
+	const url = (event && event.senderFrame && event.senderFrame.url) || '';
+	return url.startsWith('file://');
+}
+
+ipcMain.handle('invoke', async (event, name, args) => {
+	if (!callerIsOwnPage(event) && !GAME_PAGE_HANDLERS.has(name)) {
+		const from = (event && event.senderFrame && event.senderFrame.url) || 'unknown';
+		appLog(`refused ${name} from ${from}`);
+		throw new Error(`${name} is not available to this page`);
+	}
 	const fn = handlers[name];
 	if (!fn) throw new Error(`unknown command: ${name}`);
 	try {

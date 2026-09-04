@@ -13,6 +13,8 @@ mod assets;
 mod cmds;
 mod config;
 mod docker;
+mod json;
+mod mapcache;
 mod mods;
 
 use config::Config;
@@ -95,8 +97,8 @@ fn main() {
         // Listing and toggling are separate from `up` so the Settings window
         // can show what is installed without starting a server.
         "mods" => {
-            for (name, on, desc) in mods::list(&cfg.state) {
-                println!("{}\t{}\t{}", if on { "on" } else { "off" }, name, desc);
+            for row in mods::list(&cfg) {
+                println!("{}", row.join("\t"));
             }
             Ok(())
         }

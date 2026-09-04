@@ -1,0 +1,25 @@
+// Everything that stands on ro_isle.
+//
+// The map itself is geometry in data/. This is what makes it a place.
+
+// A caretaker, so there is something to talk to.
+ro_isle,40,44,4	script	Isle Caretaker#roisle	4_M_SAGE_A,{
+	mes "[Isle Caretaker]";
+	mes "This island is not in any of the client's files.";
+	mes "It is a .gat, a .gnd and a .rsw in somebody's mod folder.";
+	next;
+	mes "[Isle Caretaker]";
+	mes "The server would not have let you in without a map cache entry";
+	mes "and a line in the map index. It has both, because the supervisor";
+	mes "wrote them from the same geometry the client is drawing.";
+	close;
+}
+
+// Monsters. x,y,xs,ys all zero means anywhere on the map.
+ro_isle,0,0,0,0	monster	Poring	1002,25,15000,0,0
+ro_isle,0,0,0,0	monster	Lunatic	1063,15,15000,0,0
+
+// A way home, well away from where the ferry drops you -- a return warp placed
+// on the arrival point teleports you straight back out again, which looks
+// exactly like the map not working.
+ro_isle,40,68,0	warp	Isle Boat Home#roisle	3,3,prontera,154,178

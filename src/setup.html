@@ -157,8 +157,8 @@
   </div>
 
 <script>
-const { invoke } = window.__TAURI__.core;
-const { open } = window.__TAURI__.dialog;
+const { invoke } = window.__ELECTRON__.core;
+const { open } = window.__ELECTRON__.dialog;
 const $ = id => document.getElementById(id);
 const KEYS = ['data_grf', 'rdata_grf', 'official_grf', 'bgm_dir'];
 const paths = { data_grf: '', rdata_grf: '', official_grf: '', bgm_dir: '' };

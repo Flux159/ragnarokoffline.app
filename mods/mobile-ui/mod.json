@@ -1,0 +1,7 @@
+{
+  "name": "mobile-ui",
+  "version": "0.2.0",
+  "author": "Ragnarok Offline",
+  "description": "Makes the client usable on a phone: real viewport, thumb-sized controls, no page zoom. Does nothing on a desktop.",
+  "requires": { "app": ">=1.0.6", "era": "any" }
+}
