@@ -785,18 +785,42 @@ function linkClient(paths) {
 	// terminal's grant — which is exactly the confusing asymmetry this avoids.
 	// Opening the file here makes the app itself the requester, so the prompt
 	// appears attached to the app and the answer is remembered.
-	for (const p of [paths.data_grf, paths.rdata_grf, paths.official_grf, paths.bgm_dir]) {
+	// Named, and optional ones say so: three of these four can simply be
+	// forgotten, and a player whose external drive is unplugged should be told
+	// that rather than left to re-pick every location.
+	const ASSETS = [
+		['data_grf', paths.data_grf, 'data.grf', false],
+		['rdata_grf', paths.rdata_grf, 'rdata.grf', true],
+		['official_grf', paths.official_grf, 'official_data.grf', true],
+		['bgm_dir', paths.bgm_dir, 'the BGM folder', true],
+	];
+	for (const [, p, label, optional] of ASSETS) {
 		if (!p) continue;
 		try {
 			const st = fs.statSync(p);
 			if (st.isFile()) fs.closeSync(fs.openSync(p, 'r'));
 			else fs.readdirSync(p);
 		} catch (e) {
-			throw new Error(
-				`cannot read ${p}: ${e.message}\n\n` +
-					'If this is in Downloads, Documents or Desktop, macOS needs permission: ' +
-					'System Settings > Privacy & Security > Files and Folders.'
-			);
+			// The macOS advice is macOS advice. Telling a Windows player to open
+			// System Settings > Privacy & Security sends them looking for a
+			// screen that does not exist, and buries the thing that is actually
+			// wrong -- which on Windows is usually a drive that is not there.
+			let hint;
+			if (e.code === 'ENOENT') {
+				hint = `${label} is no longer at that location. If it is on a removable ` +
+					'or network drive, connect it; if it moved, choose it again.';
+				if (optional) {
+					hint += ` ${label} is optional -- Change asset locations has an ` +
+						'x beside it to forget it, and the game runs without it.';
+				}
+			} else if (process.platform === 'darwin') {
+				hint = 'If this is in Downloads, Documents or Desktop, macOS needs permission: ' +
+					'System Settings > Privacy & Security > Files and Folders.';
+			} else {
+				hint = 'The file is there but could not be opened. Another program may have ' +
+					'it locked, or the account may not have permission to read it.';
+			}
+			throw new Error(`cannot read ${p}: ${e.message}\n\n${hint}`);
 		}
 	}
 	// Positional: an empty string keeps rdata's slot so official and bgm still

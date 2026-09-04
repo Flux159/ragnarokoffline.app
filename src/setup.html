@@ -40,6 +40,10 @@
   button:hover:not(:disabled) { background: var(--accent-hi); }
   button.ghost { background: transparent; color: var(--dim); border: 1px solid var(--line); }
   button.ghost:hover { border-color: var(--accent-dim); color: var(--text); }
+  /* Only offered when there is something to forget: an x beside "Not selected"
+     is a button that does nothing, and these three rows are optional. */
+  button.clear { display: none; padding: 6px 10px; line-height: 1; }
+  button.clear.on { display: inline-block; }
   button:disabled { opacity: .4; cursor: default; }
   .tabs { display: flex; gap: 4px; margin: 0 0 18px; border-bottom: 1px solid var(--line); }
   .tab {
@@ -100,6 +104,7 @@
     <div class="picker">
       <div class="path" id="p-rdata_grf">Not selected</div>
       <button data-pick="rdata_grf" class="ghost">Choose…</button>
+      <button data-clear="rdata_grf" class="ghost clear" id="c-rdata_grf" title="Forget this file">&times;</button>
     </div>
   </div>
 
@@ -108,6 +113,7 @@
     <div class="picker">
       <div class="path" id="p-official_grf">Not selected</div>
       <button data-pick="official_grf" class="ghost">Choose…</button>
+      <button data-clear="official_grf" class="ghost clear" id="c-official_grf" title="Forget this file">&times;</button>
     </div>
   </div>
 
@@ -116,6 +122,7 @@
     <div class="picker">
       <div class="path" id="p-bgm_dir">Not selected</div>
       <button data-pick="bgm_dir" data-dir="1" class="ghost">Choose…</button>
+      <button data-clear="bgm_dir" class="ghost clear" id="c-bgm_dir" title="Forget this file">&times;</button>
     </div>
   </div>
 
@@ -167,6 +174,8 @@ function render() {
     const el = $('p-' + k);
     el.textContent = paths[k] || 'Not selected';
     el.classList.toggle('set', !!paths[k]);
+    const x = $('c-' + k);
+    if (x) x.classList.toggle('on', !!paths[k]);
   }
   // Each mode has its own idea of "enough to continue": a host needs data.grf
   // -- everything else on this screen is optional -- a guest needs only an
@@ -212,6 +221,21 @@ $('pick-folder').onclick = async () => {
       : 'Found everything.';
   render();
 };
+
+// Forgetting an optional file, without disturbing the others.
+//
+// A path that no longer resolves -- an external drive that is not plugged in,
+// a file moved after it was chosen -- stops the whole stack, and until now the
+// only way out was to re-pick every location. These three are optional, so
+// clearing one is a legitimate answer rather than a repair.
+for (const btn of document.querySelectorAll('[data-clear]')) {
+  btn.onclick = () => {
+    paths[btn.dataset.clear] = '';
+    $('msg').className = 'msg';
+    $('msg').textContent = 'Cleared. The game runs without it.';
+    render();
+  };
+}
 
 for (const btn of document.querySelectorAll('[data-pick]')) {
   btn.onclick = async () => {
