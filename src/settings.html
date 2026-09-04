@@ -54,6 +54,13 @@
   label > span:first-child { color: var(--dim); width: 128px; flex: none; }
   input[type=range] { flex: 1; accent-color: var(--accent); }
   .val { width: 50px; text-align: right; font-variant-numeric: tabular-nums; color: var(--accent-hi); }
+  /* The slider is a shortcut; this box is the value. Typing here is the only
+     way past the slider's ceiling, which is deliberately not the server's. */
+  .mult { display: flex; align-items: baseline; gap: 2px; color: var(--accent-hi); flex: none; }
+  input.num { background: var(--panel-2, #1b1b1f); color: var(--accent-hi); border: 1px solid var(--line, #333);
+              border-radius: 4px; padding: 2px 4px; width: 68px; font: inherit;
+              font-variant-numeric: tabular-nums; text-align: right; }
+  input.num:focus { outline: none; border-color: var(--accent); }
   /* The multiplayer section is the first place this window asks for typed
      input or a choice, so these controls have no styles yet. Browser defaults
      on a dark panel are unreadable rather than merely plain. */
@@ -222,12 +229,21 @@
 
   <h2>Rates</h2>
   <div class="panel">
-    <label><span>Base EXP</span><input type="range" id="base_exp_rate" min="100" max="5000" step="100"><span class="val" id="v-base_exp_rate"></span></label>
-    <label><span>Job EXP</span><input type="range" id="job_exp_rate" min="100" max="5000" step="100"><span class="val" id="v-job_exp_rate"></span></label>
-    <label><span>Quest EXP</span><input type="range" id="quest_exp_rate" min="100" max="5000" step="100"><span class="val" id="v-quest_exp_rate"></span></label>
-    <label><span>Item drops</span><input type="range" id="item_rate_common" min="100" max="5000" step="100"><span class="val" id="v-item_rate_common"></span></label>
-    <label><span>Equipment drops</span><input type="range" id="item_rate_equip" min="100" max="5000" step="100"><span class="val" id="v-item_rate_equip"></span></label>
-    <label><span>Card drops</span><input type="range" id="item_rate_card" min="100" max="5000" step="100"><span class="val" id="v-item_rate_card"></span></label>
+    <label><span>Base EXP</span><input type="range" id="base_exp_rate" min="100" max="5000" step="100"><span class="mult"><input type="number" class="val num" id="v-base_exp_rate" min="0" step="0.1">x</span></label>
+    <label><span>Job EXP</span><input type="range" id="job_exp_rate" min="100" max="5000" step="100"><span class="mult"><input type="number" class="val num" id="v-job_exp_rate" min="0" step="0.1">x</span></label>
+    <label><span>Quest EXP</span><input type="range" id="quest_exp_rate" min="100" max="5000" step="100"><span class="mult"><input type="number" class="val num" id="v-quest_exp_rate" min="0" step="0.1">x</span></label>
+    <label><span>Item drops</span><input type="range" id="item_rate_common" min="100" max="5000" step="100"><span class="mult"><input type="number" class="val num" id="v-item_rate_common" min="0" step="0.1">x</span></label>
+    <label><span>Equipment drops</span><input type="range" id="item_rate_equip" min="100" max="5000" step="100"><span class="mult"><input type="number" class="val num" id="v-item_rate_equip" min="0" step="0.1">x</span></label>
+    <label><span>Card drops</span><input type="range" id="item_rate_card" min="100" max="5000" step="100"><span class="mult"><input type="number" class="val num" id="v-item_rate_card" min="0" step="0.1">x</span></label>
+    <label><span>Attack speed cap</span>
+      <span class="mult" style="margin-left:auto"><input type="number" class="val num" id="max_aspd" min="190" max="199" step="1"></span></label>
+    <label><span>Stat cap</span>
+      <span class="mult" style="margin-left:auto"><input type="number" class="val num" id="max_parameter" min="99" max="32767" step="1"></span></label>
+    <p class="note">Both raise only. <b>Attack speed</b> is 190 by default and 199 is
+       the server's ceiling — the difference is small but it is the whole gap
+       between fast and instant. <b>Stat cap</b> is 99 by default and goes to
+       32767; third, baby and summoner classes are lifted with it, and left at
+       their own defaults while this is untouched.</p>
     <label>
       <span>Monsters drop Zeny</span>
       <input type="checkbox" id="zeny_from_mobs" style="accent-color: var(--accent); flex: none" />
@@ -615,7 +631,9 @@ $('mods-apply').onclick = () => withButton('mods-apply', 'Applying…', 'Apply',
 
 $('save').onclick = async () => {
   const settings = await invoke('get_settings');
-  for (const k of RATES) settings[k] = Number($(k).value);
+  for (const k of RATES) settings[k] = rateOf(k);
+  settings.max_aspd = Number($('max_aspd').value) || 190;
+  settings.max_parameter = Number($('max_parameter').value) || 99;
   settings.free_kafra_warp = $('free_kafra_warp').checked;
   settings.prerenewal = eraIsPre;
   settings.zeny_from_mobs = $('zeny_from_mobs').checked;
@@ -626,11 +644,28 @@ $('save').onclick = async () => {
   refresh();
 };
 
+// The typed box holds the multiplier and is the value that gets saved; the
+// slider is a shortcut to it. They are bound both ways, and the slider pins at
+// its own maximum when the typed value goes past it -- 50x is the top of the
+// slider but nowhere near the server's limit, which is effectively unbounded
+// for experience and 10000x for drops.
+const rateOf = k => Math.max(0, Math.round((Number($('v-' + k).value) || 0) * 100));
+
+function showRate(k, rate) {
+  $('v-' + k).value = rate / 100;
+  $(k).value = Math.min(rate, Number($(k).max));
+}
+
 for (const k of RATES) {
-  $(k).addEventListener('input', () => { $('v-' + k).textContent = ($(k).value / 100) + 'x'; });
+  $(k).addEventListener('input', () => { $('v-' + k).value = $(k).value / 100; });
+  // Not 'input': re-pinning the slider mid-keystroke fights the typist, and an
+  // empty box during editing would read as 0.
+  $('v-' + k).addEventListener('change', () => showRate(k, rateOf(k)));
 }
 invoke('get_settings').then(s => {
-  for (const k of RATES) { $(k).value = s[k]; $('v-' + k).textContent = (s[k] / 100) + 'x'; }
+  for (const k of RATES) showRate(k, s[k]);
+  $('max_aspd').value = s.max_aspd ?? 190;
+  $('max_parameter').value = s.max_parameter ?? 99;
   $('free_kafra_warp').checked = !!s.free_kafra_warp;
   setEra(!!s.prerenewal);
   $('zeny_from_mobs').checked = !!s.zeny_from_mobs;
