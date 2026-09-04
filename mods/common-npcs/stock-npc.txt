@@ -1,0 +1,32 @@
+# Scripts rAthena already ships and does not load.
+#
+# Every one of these is in the image at /rathena/npc/custom/, written and
+# maintained upstream, and commented out in scripts_custom.conf. This mod adds
+# no files at all -- it switches them on.
+#
+# They place themselves: warper and healer are `-  script` definitions with
+# duplicate() instances in every major town, so you get one per city without
+# anybody choosing coordinates.
+
+# Warp to any town, field or dungeon, for a fee that scales with distance.
+npc/custom/warper.txt
+
+# Change job, including rebirth and third classes. Reads its own .ThirdClass
+# setting, so it does the right thing in both eras.
+npc/custom/jobmaster.txt
+
+# Full heal, for a small fee.
+npc/custom/healer.txt
+
+# Change hair style, hair colour and clothes colour.
+npc/custom/stylist.txt
+
+# Deliberately not enabled here, because they are a bigger change than the four
+# above and are better as a decision than a default:
+#
+#   npc/custom/resetnpc.txt          reset stats and skills
+#   npc/custom/platinum_skills.txt   hands out every platinum skill
+#   npc/custom/breeder.txt           free pet/mount renting
+#   npc/custom/card_remover.txt      pull cards back out of gear
+#
+# Copy this file into a mod of your own and add whichever you want.

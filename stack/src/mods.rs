@@ -81,7 +81,7 @@ impl Assembled {
 
 /// What `mod.json` says. Every field is optional except in the sense that a
 /// mod without a description is a folder name in a settings list.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Manifest {
     pub name: String,
     pub version: String,
@@ -91,6 +91,28 @@ pub struct Manifest {
     pub requires_app: Option<String>,
     /// `"renewal"`, `"pre-renewal"`, or `"any"`.
     pub requires_era: Option<String>,
+    /// Whether the mod is on before the player has said anything about it.
+    ///
+    /// Only meaningful for mods that ship with the app: a mod somebody went to
+    /// the trouble of installing should be on. A *bundled* one that changes how
+    /// the game is played -- free warps, instant job changes -- should be
+    /// offered rather than applied, so it declares `"default": "off"` and waits
+    /// to be ticked.
+    pub default_on: bool,
+}
+
+impl Default for Manifest {
+    fn default() -> Manifest {
+        Manifest {
+            name: String::new(),
+            version: String::new(),
+            author: String::new(),
+            description: String::new(),
+            requires_app: None,
+            requires_era: None,
+            default_on: true,
+        }
+    }
 }
 
 /// Read and check one mod's manifest.
@@ -116,6 +138,16 @@ fn read_manifest(dir: &Path) -> Result<Option<Manifest>, String> {
         version: v.str("version").unwrap_or_default().to_string(),
         author: v.str("author").unwrap_or_default().to_string(),
         description: v.str("description").unwrap_or_default().to_string(),
+        default_on: match v.str("default") {
+            None => true,
+            Some("on") => true,
+            Some("off") => false,
+            Some(other) => {
+                return Err(format!(
+                    "mod.json: \"default\" is \"on\" or \"off\", not \"{other}\""
+                ))
+            }
+        },
         ..Manifest::default()
     };
     if let Some(req) = v.get("requires") {
@@ -349,7 +381,8 @@ pub struct Installed {
 /// changed one is the one that loads.
 pub fn scan(cfg: &Config) -> Vec<Installed> {
     let user = cfg.state.join("mods");
-    let disabled = read_disabled(&cfg.state);
+    let disabled = read_list(&cfg.state, "disabled.txt");
+    let enabled = read_list(&cfg.state, "enabled.txt");
     let prerenewal = crate::cmds::is_prerenewal(cfg);
     let app = cfg.app_version.as_deref();
 
@@ -391,7 +424,13 @@ pub fn scan(cfg: &Config) -> Vec<Installed> {
             // Refusal outranks being switched off, so a player who turns a
             // broken mod off and back on is told the same thing both times.
             Some(reason) => Status::Refused(reason),
+            // An explicit choice always wins, in either direction. Only when
+            // the player has said nothing does the manifest's default apply --
+            // which is how a bundled mod can ship switched off and still be
+            // switchable on.
             None if disabled.contains(&name) => Status::Off,
+            None if enabled.contains(&name) => Status::On,
+            None if !manifest.default_on => Status::Off,
             None => Status::On,
         };
         // The folder name is the identity -- it is what disabled.txt lists,
@@ -557,7 +596,15 @@ pub fn assemble(cfg: &Config) -> Result<Assembled, String> {
         out.db = Some(dst);
     }
 
-    let mut lines = String::new();
+    // Stock scripts first, so a mod's own can duplicate or disable them.
+    let mut stock: Vec<String> = Vec::new();
+    for m in &live {
+        read_stock_npc(&m.dir, &m.name, &mut stock);
+    }
+    let mut lines: String = stock.iter().map(|p| format!("npc: {p}\n")).collect();
+    if !stock.is_empty() {
+        println!("stock scripts: {}", stock.len());
+    }
     for m in &live {
         let from = m.dir.join("npc");
         if !from.is_dir() {
@@ -571,7 +618,11 @@ pub fn assemble(cfg: &Config) -> Result<Assembled, String> {
         collect_scripts(&dst, &format!("npc/mods/{}", m.name), &mut lines);
     }
     if !lines.is_empty() {
-        out.npc = Some(build.join("npc"));
+        // The mount is only needed when a mod ships its own scripts; stock
+        // lines name paths that are already in the image.
+        if build.join("npc").is_dir() {
+            out.npc = Some(build.join("npc"));
+        }
         out.npc_lines = lines;
     }
 
@@ -626,6 +677,43 @@ fn write_map_layer(db: &Path, maps: &[mapcache::Map]) -> Result<(), String> {
     fs::write(&index, body).map_err(|e| format!("writing {}: {e}", index.display()))
 }
 
+/// Scripts rAthena already ships that a mod asks to switch on.
+///
+/// rAthena carries a job changer, a warper, a healer and a stylist in
+/// `npc/custom/`, fully written and placed in every town -- and loads none of
+/// them, because `scripts_custom.conf` has every line commented out. They are
+/// already inside the image, so switching one on is one `npc:` line and no
+/// files at all.
+///
+/// A mod names them in `stock-npc.txt` at its root, one path per line. The path
+/// is checked rather than trusted: it has to be under `npc/`, and it cannot
+/// climb out with `..`. The blast radius is small either way -- the worst a mod
+/// can do is load a script rAthena wrote -- but a path this ends up in a config
+/// file is not a place to skip validation.
+fn read_stock_npc(dir: &Path, name: &str, out: &mut Vec<String>) {
+    let path = dir.join("stock-npc.txt");
+    let Ok(body) = fs::read_to_string(&path) else { return };
+    for line in body.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("//") || line.starts_with('#') {
+            continue;
+        }
+        let bad = !line.starts_with("npc/")
+            || line.contains("..")
+            || line.contains('\\')
+            || !line.ends_with(".txt");
+        if bad {
+            eprintln!(
+                "mods: {name} asked to load \"{line}\", which is not a script path under npc/ -- ignoring"
+            );
+            continue;
+        }
+        if !out.iter().any(|l| l == line) {
+            out.push(line.to_string());
+        }
+    }
+}
+
 fn collect_scripts(dir: &Path, prefix: &str, out: &mut String) {
     let Ok(rd) = fs::read_dir(dir) else { return };
     let mut entries: Vec<_> = rd.flatten().map(|e| e.path()).collect();
@@ -640,9 +728,13 @@ fn collect_scripts(dir: &Path, prefix: &str, out: &mut String) {
     }
 }
 
-/// Mods the player has switched off. Missing file means none.
-pub fn read_disabled(state: &Path) -> Vec<String> {
-    fs::read_to_string(state.join("mods/disabled.txt"))
+/// One of the two lists of explicit choices under `state/mods`.
+///
+/// `disabled.txt` and `enabled.txt` between them record what the player has
+/// actually decided. A mod in neither has not been decided about, and takes
+/// whatever its manifest says.
+fn read_list(state: &Path, file: &str) -> Vec<String> {
+    fs::read_to_string(state.join("mods").join(file))
         .map(|b| {
             b.lines()
                 .map(|l| l.trim().to_string())
@@ -692,19 +784,27 @@ pub fn list(cfg: &Config) -> Vec<[String; 7]> {
 }
 
 /// Turn one mod on or off, leaving the rest alone.
+///
+/// Written to both lists rather than one, because "off" and "not yet decided"
+/// are different states now: a bundled mod that ships switched off has to be
+/// able to record that the player switched it *on*.
 pub fn set_enabled(state: &Path, name: &str, on: bool) -> Result<(), String> {
-    let mut disabled = read_disabled(state);
-    disabled.retain(|n| n != name);
-    if !on {
-        disabled.push(name.to_string());
+    write_list(state, "disabled.txt", name, !on,
+        "# Mods listed here are installed but switched off.")?;
+    write_list(state, "enabled.txt", name, on,
+        "# Mods listed here are switched on, including any that ship switched off.")
+}
+
+fn write_list(state: &Path, file: &str, name: &str, present: bool, header: &str) -> Result<(), String> {
+    let mut names = read_list(state, file);
+    names.retain(|n| n != name);
+    if present {
+        names.push(name.to_string());
     }
-    disabled.sort();
-    let path = state.join("mods/disabled.txt");
+    names.sort();
     let _ = fs::create_dir_all(state.join("mods"));
-    let body = format!(
-        "# Mods listed here are installed but switched off.\n# Managed from Settings; one name per line.\n{}\n",
-        disabled.join("\n")
-    );
+    let path = state.join("mods").join(file);
+    let body = format!("{header}\n# Managed from Settings; one name per line.\n{}\n", names.join("\n"));
     fs::write(&path, body).map_err(|e| format!("writing {}: {e}", path.display()))
 }
 

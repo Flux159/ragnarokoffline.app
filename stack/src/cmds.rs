@@ -1298,7 +1298,73 @@ fn strip_ansi(s: &str) -> String {
     out.trim().to_string()
 }
 
+/// Keep a crashed server's last words before the container is thrown away.
+///
+/// `run_server` removes the old container before starting the new one, and
+/// removing a container deletes its log with it. So every restart destroyed the
+/// only record of why the previous one died -- which, for a server that falls
+/// over intermittently, is the evidence and nothing else is.
+///
+/// rAthena prints no backtrace: `sig_proc` catches SIGSEGV, saves online
+/// characters, then re-raises with the default handler. The shipped binaries
+/// are stripped and Alpine's musl has no `execinfo`, so there is nothing to
+/// print even if it tried. What there *is* is the last few hundred lines of
+/// what the server was doing, and that is worth keeping.
+fn save_crash_log(cfg: &Config, dk: &Docker, name: &str) {
+    // "exited" covers a clean stop too, so the log is only kept when the exit
+    // looks unplanned -- a clean shutdown says so on its way out.
+    let Some(state) = dk.state(name) else { return };
+    if state != "exited" {
+        return;
+    }
+    let log = dk.logs(name, "400");
+    let crashed = log.contains("Received a crash signal")
+        || log.contains("Received another crash signal");
+    if !crashed {
+        return;
+    }
+    let dir = cfg.state.join("crashes");
+    if fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    // Seconds since the epoch: sortable, needs no date formatting, and this
+    // binary has no dependency that would provide one.
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let path = dir.join(format!("{name}-{stamp}.log"));
+    if fs::write(&path, strip_ansi_lines(&log)).is_ok() {
+        eprintln!(
+            "{name} crashed during the last run; its log was kept at {}",
+            path.display()
+        );
+        // Keep the last ten. A crash loop should not quietly fill a disk.
+        prune_crash_logs(&dir, 10);
+    }
+}
+
+/// rAthena colours its output, and a log full of escape sequences is a log
+/// nobody will read or attach to a bug report.
+fn strip_ansi_lines(s: &str) -> String {
+    s.lines().map(strip_ansi).collect::<Vec<_>>().join("\n")
+}
+
+fn prune_crash_logs(dir: &Path, keep: usize) {
+    let Ok(rd) = fs::read_dir(dir) else { return };
+    let mut files: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_file()).collect();
+    if files.len() <= keep {
+        return;
+    }
+    files.sort();
+    for p in &files[..files.len() - keep] {
+        let _ = fs::remove_file(p);
+    }
+}
+
 fn run_server(cfg: &Config, dk: &Docker, name: &str, port: u16, binary: &str, lan: bool) -> Result<(), String> {
+    // Before the container goes, and with it its log.
+    save_crash_log(cfg, dk, name);
     dk.remove_container(name);
 
     // One directory mount, not five file mounts: a single-file bind whose host
