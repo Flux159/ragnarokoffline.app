@@ -479,6 +479,18 @@ function assetsReady() {
 	});
 }
 
+// Windows only: the drive letter a path sits on, against the one the app keeps
+// its data on, when they differ. Null everywhere else, for a UNC path, and when
+// they match -- "same drive" is not a question worth asking then.
+function otherDrive(p) {
+	if (process.platform !== 'win32') return null;
+	const of = q => (/^([A-Za-z]):[\\/]/.exec(q || '') || [])[1];
+	const from = of(p);
+	const to = of(dataRoot());
+	if (!from || !to || from.toUpperCase() === to.toUpperCase()) return null;
+	return { from: from.toUpperCase(), to: to.toUpperCase() };
+}
+
 async function assetsStart() {
 	if (await assetsReady()) return;
 	const root = projectRoot();
@@ -809,6 +821,20 @@ function linkClient(paths) {
 			if (e.code === 'ENOENT') {
 				hint = `${label} is no longer at that location. If it is on a removable ` +
 					'or network drive, connect it; if it moved, choose it again.';
+				// Reconnecting is only half an answer when the drive was never
+				// the same one. Windows cannot link across volumes without
+				// Developer Mode, so a player who plugs the drive back in hits
+				// the linking error next -- say both now rather than in two
+				// rounds. Same advice link_file gives, from the one place that
+				// still knows the path.
+				const other = otherDrive(p);
+				if (other) {
+					hint += ` It is also on the ${other.from}: drive while this app keeps ` +
+						`its data on ${other.to}:, and Windows cannot link files between ` +
+						`drives -- so move or copy it to ${other.to}: and choose it again. ` +
+						'(Turning on Developer Mode in Settings, System, For developers ' +
+						'is the alternative.)';
+				}
 				if (optional) {
 					hint += ` ${label} is optional -- Change asset locations has an ` +
 						'x beside it to forget it, and the game runs without it.';
