@@ -184,6 +184,7 @@
   <div class="panel">
     <div id="mods-list" class="note">Looking…</div>
     <div class="actions" style="margin-top:10px">
+      <button id="mods-install" class="ghost">Install a mod…</button>
       <button id="mods-folder" class="ghost">Open mods folder</button>
       <button id="mods-apply" class="ghost">Apply</button>
     </div>
@@ -265,7 +266,7 @@
   <div class="panel"><pre id="log">idle</pre></div>
 
 <script>
-const { invoke } = window.__TAURI__.core;
+const { invoke } = window.__ELECTRON__.core;
 const $ = id => document.getElementById(id);
 const RATES = ['base_exp_rate','job_exp_rate','quest_exp_rate','item_rate_common',
                'item_rate_equip','item_rate_card'];
@@ -462,7 +463,7 @@ $('repair').onclick = async () => {
   refresh();
 };
 
-const { save: saveDialog, open: openDialog } = window.__TAURI__.dialog;
+const { save: saveDialog, open: openDialog } = window.__ELECTRON__.dialog;
 
 invoke('data_location').then(p => { if (p) $('s-dbfile').textContent = p; }).catch(() => {});
 
@@ -603,20 +604,43 @@ async function refreshMods() {
   modState = {};
   box.innerHTML = '';
   for (const m of mods) {
-    modState[m.name] = m.enabled;
+    // A refused mod is not a mod the player can turn on, so it does not get a
+    // checkbox that lies about being able to. It stays in the list, next to
+    // the ones that loaded, with the reason it did not.
+    if (!m.refused) modState[m.name] = m.enabled;
     const row = document.createElement('label');
     row.style.cssText = 'display:flex; align-items:flex-start; gap:10px; padding:4px 0';
     const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.checked = m.enabled;
+    cb.type = 'checkbox'; cb.checked = m.enabled; cb.disabled = m.refused;
     cb.style.cssText = 'accent-color: var(--accent); flex:none; margin-top:2px';
     cb.onchange = () => { modState[m.name] = cb.checked; };
     const text = document.createElement('span');
-    text.innerHTML = `<b>${m.name}</b>`
-      + (m.description ? `<br><span style="color:var(--dim)">${m.description}</span>` : '');
+    const by = [m.version && 'v' + m.version, m.author && 'by ' + m.author]
+      .filter(Boolean).join(' ');
+    text.innerHTML = `<b>${esc(m.name)}</b>`
+      + (m.bundled ? ' <span style="color:var(--dim); font-size:11px">included</span>' : '')
+      + (by ? ` <span style="color:var(--dim); font-size:11px">${esc(by)}</span>` : '')
+      + (m.description ? `<br><span style="color:var(--dim)">${esc(m.description)}</span>` : '')
+      + (m.refused
+        ? `<br><span style="color:var(--bad, #e5534b)">Not loaded — ${esc(m.reason)}</span>`
+        : '');
     row.append(cb, text);
     box.append(row);
   }
 }
+
+// Mod names, descriptions and refusal reasons are written by whoever made the
+// mod, and land in innerHTML. Nothing about a mod folder is trusted markup.
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+$('mods-install').onclick = () => withButton('mods-install', 'Installing…', 'Install a mod…', async () => {
+  const msg = await invoke('install_mod');
+  await refreshMods();
+  return msg;
+});
 
 $('mods-folder').onclick = async () => log('Mods folder: ' + await invoke('open_mods_folder'));
 
