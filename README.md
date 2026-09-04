@@ -497,6 +497,24 @@ game itself runs on very little.
 
 ---
 
+## Modding
+
+A mod is a folder. Drop it in the mods directory, restart, and it is live — no
+rebuild, no compiler, no Docker.
+
+You can change what monsters are worth and what they drop, add NPCs with real
+quests, replace the login screen and the loading screens with your own art,
+build a map that is in nobody's GRF and put monsters and NPCs on it, decide
+where new characters wake up, and restyle the client itself. Settings → Mods
+lists what is installed, with a checkbox each.
+
+**[docs/MODDING.md](docs/MODDING.md)** is the guide, and
+**[examples/mods/](examples/mods)** has eight worked examples — each one a mod
+that has actually been run, with a README saying what it demonstrates. Copy the
+folder closest to what you want.
+
+<img src="docs/assets/modlogin.jpg" alt="A custom login screen from the login-screen example mod" width="640">
+
 ## Advanced features
 
 Backing up and restoring your characters, where the app keeps its data on each

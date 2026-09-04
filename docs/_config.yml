@@ -1,0 +1,13 @@
+# GitHub Pages, serving this folder as ragnarokoffline.app's documentation.
+#
+# Settings -> Pages -> "Deploy from a branch", main, /docs. Nothing here is
+# needed to read the documentation in the repository -- these files are plain
+# Markdown and GitHub renders them either way. This only decides what the
+# hosted site looks like.
+title: Ragnarok Offline
+description: Ragnarok Online, offline, in one app — documentation
+theme: jekyll-theme-cayman
+
+# Files that are documentation, not pages.
+exclude:
+  - assets/*.psd
