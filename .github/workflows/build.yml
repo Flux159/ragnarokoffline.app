@@ -115,7 +115,7 @@ jobs:
           name: client
           path: |
             vendor/roBrowserLegacy/dist/Web
-            vendor/ROenglishRE/Translation/Renewal
+            vendor/ROenglishRE/Translation
           retention-days: 1
 
   # ---------------------------------------------------------------------------
