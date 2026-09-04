@@ -219,6 +219,27 @@ else
     echo "warning: no vendor/rathena/db/import-tmpl -- mods overriding a db table will warn" >&2
 fi
 
+# Mods that ship with the app. The supervisor reads these alongside the ones a
+# player installs, and a player's mod of the same name replaces the shipped
+# one -- so this is a starting point, not a locked cabinet.
+echo "==> bundled mods"
+if [ -d "$ROOT/mods" ]; then
+    mkdir -p "$PAYLOAD/mods"
+    cp -R "$ROOT"/mods/* "$PAYLOAD/mods/"
+    ls "$PAYLOAD/mods"
+fi
+
+# The randomizer, shipped as a binary so that generating a seed needs no
+# toolchain and no scripting runtime. It reads rAthena's tables out of the
+# running map-server container, so it has nothing to bundle and cannot go
+# stale against the image.
+echo "==> randomizer"
+if [ -d "$ROOT/examples/mods/randomizer" ]; then
+    ( cd "$ROOT/examples/mods/randomizer" && cargo test --quiet && cargo build --release --quiet )
+    cp "$ROOT/examples/mods/randomizer/target/release/ro-randomizer$EXE" "$PAYLOAD/bin/"
+    echo "ro-randomizer $(du -h "$PAYLOAD/bin/ro-randomizer$EXE" | cut -f1)"
+fi
+
 echo "==> english translation"
 # Both eras, not just renewal.
 #
@@ -298,6 +319,18 @@ esac
 # A marker the app compares against, so a new build refreshes the copy it
 # materialises into Application Support.
 git -C "$ROOT" rev-parse --short HEAD 2>/dev/null > "$PAYLOAD/VERSION" || echo dev > "$PAYLOAD/VERSION"
+
+# The release version, which is a different thing from the build marker above:
+# VERSION changes on every commit and exists so the app knows to re-materialise
+# this tree, APP_VERSION is the number a human sees and a mod's
+# `"requires": {"app": ">=1.0.6"}` is compared against.
+#
+# package.json is the one source. The supervisor reads this file when it is
+# there and falls back to package.json itself in a source checkout, so nothing
+# in stack/ carries a version constant that could drift.
+sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/package.json" \
+    | head -1 > "$PAYLOAD/APP_VERSION"
+echo "app version $(cat "$PAYLOAD/APP_VERSION")"
 
 echo
 du -sh "$PAYLOAD"

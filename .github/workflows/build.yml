@@ -10,7 +10,8 @@ name: build
 #   payload/dist    rAthena + MariaDB images — needs a real Docker daemon, and
 #                   must match the *guest* architecture, not the runner's, so
 #                   images.yml builds them on native Linux runners
-#   payload/bin     ragnarok-stack (built here from stack/), plus nebula,
+#   payload/bin     ragnarok-stack (built here from stack/) and ro-randomizer
+#                   (from examples/mods/randomizer/), plus nebula,
 #                   nebulad, docker-slim, robrowser-remoteclient —
 #   payload/lib     private repos, built there and consumed here. Three
 #   payload/guest   separate release assets: the embed kit (nebula, nebulad,
@@ -179,7 +180,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: stack
+          # Both crates in the repo. ro-randomizer is small and has no
+          # dependencies either, but leaving it out of the cache means it is
+          # the one thing rebuilt from scratch on every run.
+          workspaces: |
+            stack
+            examples/mods/randomizer
 
       - uses: actions/download-artifact@v4
         with:
@@ -381,6 +387,16 @@ jobs:
           case "$out" in
             *usage*) ;;
             *) echo "the bundled ragnarok-stack did not print usage: $out" >&2; exit 1 ;;
+          esac
+          # The same proof for the randomizer: it goes through afterPack's
+          # signing loop like every other payload binary, and a signed binary
+          # that will not launch is exactly what that loop can produce.
+          # --help, because with no arguments it goes looking for a running
+          # server and there is not one on a build runner.
+          out=$("$APP/Contents/Resources/payload/bin/ro-randomizer" --help 2>&1 || true)
+          case "$out" in
+            *"--seed"*) ;;
+            *) echo "the bundled ro-randomizer did not print usage: $out" >&2; exit 1 ;;
           esac
           # No scripts/ check: the payload deliberately carries none. Everything
           # the app runs is the supervisor binary, verified above.
