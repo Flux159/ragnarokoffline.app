@@ -174,8 +174,14 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
         .map(PathBuf::from)
         .filter(|p| p.is_dir())
         .or_else(|| first_dir(&[client_dir.join("BGM"), client_dir.join("dll_exe/BGM")]));
+    // A merged directory, not a link. Linking the player's BGM folder straight
+    // in leaves a mod nowhere to put a track: the destination is somebody
+    // else's directory, and writing into it would edit the player's own files.
+    // Linked file by file instead, exactly like System/, so a mod can overlay.
     if let Some(b) = &bgm_src {
-        link_dir(b, &server_root.join("BGM"))?;
+        let dst = server_root.join("BGM");
+        fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
+        overlay_tree(b, &dst)?;
     }
     if let Some(a) = first_dir(&[client_dir.join("AI"), client_dir.join("dll_exe/AI")]) {
         link_dir(&a, &server_root.join("AI"))?;
@@ -228,7 +234,7 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
     //
     // Mods live in state/mods, not in the asset root, so rebuilding this tree
     // on every link cannot destroy them.
-    let plugins = overlay_mods(cfg, &server_root, &merged);
+    let (plugins, item_tables) = overlay_mods(cfg, &server_root, &merged);
 
     link_dir(&merged, &server_root.join("System"))?;
     // Several loaders fall back to a SystemEN/ path when the System/ one is absent.
@@ -237,7 +243,7 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
     // roBrowser reads this over its baked-in defaults.
     let web = cfg.root.join("vendor/roBrowserLegacy/dist/Web");
     if web.is_dir() {
-        write_client_config(cfg, &web, &plugins)?;
+        write_client_config(cfg, &web, &plugins, &item_tables)?;
         // And the root of the server becomes the game rather than roBrowser's
         // developer launcher, so the address a host copies out of Settings is a
         // link that works pasted into a browser as well as into the app.
@@ -255,38 +261,166 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
 /// Copy a mod's client files over the assembled asset root.
 ///
 /// Returns the mods that ship a roBrowser plugin, in the order they are loaded.
-fn overlay_mods(cfg: &Config, server_root: &Path, merged: &Path) -> Vec<String> {
-    let root = cfg.state.join("mods");
-    let mut names: Vec<String> = match fs::read_dir(&root) {
-        Ok(rd) => rd
-            .flatten()
-            .filter(|e| e.path().is_dir())
-            .map(|e| e.file_name().to_string_lossy().to_string())
-            .filter(|n| !n.starts_with('.'))
-            .collect(),
-        Err(_) => return Vec::new(),
-    };
-    // Name order, so two mods touching one file resolve predictably rather than
-    // by whatever order the filesystem happens to hand back.
-    names.sort();
-
+/// The list comes from `mods::enabled`, in merge order, rather than from a
+/// second pass over the folder. It used to be the latter, and the two
+/// disagreed: a mod switched off in Settings stopped reaching the server and
+/// went on overlaying its sprites and loading its plugin, so half of it stayed
+/// on with nothing in the interface to say so.
+fn overlay_mods(cfg: &Config, server_root: &Path, merged: &Path) -> (Vec<String>, Vec<String>) {
     let mut plugins = Vec::new();
-    for n in &names {
-        let m = root.join(n);
+    let mut item_tables = Vec::new();
+    for m in crate::mods::enabled(cfg) {
         // Served ahead of the GRFs: sprites, .act/.spr, map geometry, Lua.
-        let _ = copy_over(&m.join("data"), &server_root.join("data"));
-        // Client tables -- itemInfo.lua and friends.
-        let _ = copy_over(&m.join("System"), merged);
+        // Aliased, so a mod can be written in ASCII rather than in CP949 bytes.
+        let _ = copy_data_aliased(&m.dir.join("data"), &server_root.join("data"));
+        // Music. The client asks for `BGM/<file>`, a root outside data/, so
+        // this is its own layer rather than part of the one above.
+        let _ = copy_over(&m.dir.join("BGM"), &server_root.join("BGM"));
+        // Client tables. itemInfo is merged rather than replaced; see
+        // copy_system_layer.
+        if let Some(table) = copy_system_layer(&m.dir.join("System"), merged, &m.name) {
+            item_tables.push(table);
+        }
         // A roBrowser plugin: styling, UI, anything the client can be told to
         // load. Served from the root, so the path in the config is
         // server-relative -- which is the one thing that will confuse people.
-        let client = m.join("client");
+        let client = m.dir.join("client");
         if client.join("index.js").is_file() {
-            let _ = copy_over(&client, &server_root.join("plugins").join(n));
-            plugins.push(n.clone());
+            let _ = copy_over(&client, &server_root.join("plugins").join(&m.name));
+            plugins.push(m.name.clone());
         }
     }
-    plugins
+    (plugins, item_tables)
+}
+
+/// ASCII names a mod may use in place of the client's own directory names.
+///
+/// The client asks for its assets under Korean directory names encoded as
+/// CP949 and read by every tool in the chain as Latin-1, so on disk they look
+/// like `À¯ÀúÀÎÅÍÆäÀÌ½º`. Those names are hard-coded in the client, so they
+/// cannot simply be renamed -- but nothing stops a mod from *writing* ASCII and
+/// this translating on the way in.
+///
+/// It matters more than tidiness: a zip containing those bytes unpacks
+/// differently depending on the machine, so a mod that ships them is a mod that
+/// arrives corrupted for some people. A mod written entirely in ASCII travels.
+///
+/// Longest first, because `sprite/human/body` has to match before `sprite/human`.
+/// Each right-hand side was taken from a real GRF, not typed.
+const PATH_ALIASES: &[(&str, &str)] = &[
+    // data/texture
+    ("texture/ui",             "texture/\u{c0}\u{af}\u{c0}\u{fa}\u{c0}\u{ce}\u{c5}\u{cd}\u{c6}\u{e4}\u{c0}\u{cc}\u{bd}\u{ba}"), // 유저인터페이스
+    ("texture/field-ground",   "texture/\u{c7}\u{ca}\u{b5}\u{e5}\u{b9}\u{d9}\u{b4}\u{da}"),                                     // 필드바닥
+    ("texture/town",           "texture/\u{b1}\u{e2}\u{c5}\u{b8}\u{b8}\u{b6}\u{c0}\u{bb}"),                                     // 기타마을
+    ("texture/indoor-props",   "texture/\u{b3}\u{bb}\u{ba}\u{ce}\u{bc}\u{d2}\u{c7}\u{b0}"),                                     // 내부소품
+    ("texture/outdoor-props",  "texture/\u{bf}\u{dc}\u{ba}\u{ce}\u{bc}\u{d2}\u{c7}\u{b0}"),                                     // 외부소품
+    // data/sprite
+    ("sprite/human/body",      "sprite/\u{c0}\u{ce}\u{b0}\u{a3}\u{c1}\u{b7}/\u{b8}\u{f6}\u{c5}\u{eb}"),                         // 인간족/몸통
+    ("sprite/human",           "sprite/\u{c0}\u{ce}\u{b0}\u{a3}\u{c1}\u{b7}"),                                                  // 인간족
+    ("sprite/monster",         "sprite/\u{b8}\u{f3}\u{bd}\u{ba}\u{c5}\u{cd}"),                                                  // 몬스터
+    ("sprite/item",            "sprite/\u{be}\u{c6}\u{c0}\u{cc}\u{c5}\u{db}"),                                                  // 아이템
+    ("sprite/accessory",       "sprite/\u{be}\u{c7}\u{bc}\u{bc}\u{bb}\u{e7}\u{b8}\u{ae}"),                                      // 악세사리
+    ("sprite/robe",            "sprite/\u{b7}\u{ce}\u{ba}\u{ea}"),                                                              // 로브
+    ("sprite/shield",          "sprite/\u{b9}\u{e6}\u{c6}\u{d0}"),                                                              // 방패
+    ("sprite/effect",          "sprite/\u{c0}\u{cc}\u{c6}\u{d1}\u{c6}\u{ae}"),                                                  // 이팩트
+];
+
+/// Rewrite a mod-relative asset path through `PATH_ALIASES`.
+///
+/// Only the leading segments are translated, and only on an exact segment
+/// boundary, so a mod folder that happens to be called `sprite/monsters` is
+/// left alone.
+fn apply_aliases(rel: &str) -> String {
+    for (ascii, native) in PATH_ALIASES {
+        if let Some(rest) = rel.strip_prefix(ascii) {
+            if rest.is_empty() || rest.starts_with('/') {
+                return format!("{native}{rest}");
+            }
+        }
+    }
+    rel.to_string()
+}
+
+/// Copy a mod's `data/` tree, translating ASCII directory aliases as it goes.
+fn copy_data_aliased(src: &Path, dst: &Path) -> Result<(), String> {
+    if !src.is_dir() {
+        return Ok(());
+    }
+    let mut stack = vec![(src.to_path_buf(), String::new())];
+    while let Some((dir, rel)) = stack.pop() {
+        let Ok(rd) = fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            let from = e.path();
+            let name = e.file_name().to_string_lossy().to_string();
+            let child = if rel.is_empty() { name } else { format!("{rel}/{name}") };
+            if from.is_dir() {
+                stack.push((from, child));
+            } else {
+                let to = dst.join(apply_aliases(&child));
+                if let Some(parent) = to.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                let _ = fs::remove_file(&to);
+                let _ = fs::copy(&from, &to);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Copy a mod's `System/` layer, keeping item tables as *additions*.
+///
+/// Everything in `System/` replaces the client's copy, which is right for a
+/// font or a quest table -- but wrong for `itemInfo`, the table that names every
+/// item in the game. Replacing it to add one item means shipping the
+/// translation's five-megabyte copy inside your mod, which nobody will do.
+///
+/// roBrowser has the way out: `customItemInfo` is a *list* of tables, loaded
+/// with `loadAll`, and `loadItemInfo` assigns `ItemTable[ItemID]` per entry --
+/// so several files merge by item id and the last one wins. This copies a mod's
+/// item table aside under its own name and returns it, so the caller can name
+/// it in that list after the base table.
+///
+/// Nothing is lost by making this additive: a mod that really wants to replace
+/// the whole table can still ship a complete one, and defining every id is
+/// indistinguishable from replacing.
+fn copy_system_layer(src: &Path, merged: &Path, mod_name: &str) -> Option<String> {
+    if !src.is_dir() {
+        return None;
+    }
+    let mut added = None;
+    let Ok(rd) = fs::read_dir(src) else { return None };
+    for e in rd.flatten() {
+        let from = e.path();
+        let name = e.file_name().to_string_lossy().to_string();
+        let lower = name.to_lowercase();
+        let is_item_table = lower.starts_with("iteminfo")
+            && (lower.ends_with(".lua") || lower.ends_with(".lub"));
+        if from.is_file() && is_item_table {
+            // Named for the mod so two mods can each ship one, and so the file
+            // cannot collide with the translation's own copy.
+            let safe: String = mod_name
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+                .collect();
+            let dst_name = format!("itemInfo-{safe}.lua");
+            let to = merged.join(&dst_name);
+            let _ = fs::remove_file(&to);
+            if fs::copy(&from, &to).is_ok() {
+                added = Some(dst_name);
+            }
+        } else if from.is_dir() {
+            let _ = copy_over(&from, &merged.join(&name));
+        } else {
+            // Removed first: the destination is usually a symlink into the
+            // translation, and writing through one would edit the file it
+            // points at rather than replacing the link.
+            let to = merged.join(&name);
+            let _ = fs::remove_file(&to);
+            let _ = fs::copy(&from, &to);
+        }
+    }
+    added
 }
 
 /// Copy every file under `src` into `dst`, creating directories as needed.
@@ -381,7 +515,26 @@ fn translation_root(cfg: &Config) -> PathBuf {
 ///
 /// Generated rather than copied so the plugin list can be part of it. roBrowser
 /// resolves these from the server root, which is where overlay_mods puts them.
-fn write_client_config(cfg: &Config, web: &Path, plugins: &[String]) -> Result<(), String> {
+/// Insert a property block before the closing brace of Config.local.js.
+///
+/// The file ends `\n};`, and each block is added just before it. The comma is
+/// the fiddly part: two blocks in a row used to produce `],,` -- the first
+/// block ended with a comma and the second inserter added another -- which is a
+/// syntax error, and a config that does not parse is a game that does not
+/// start. So the separator is added only when what comes before needs one.
+fn insert_before_close(body: String, block: &str) -> String {
+    let Some(i) = body.rfind("\n};") else { return body };
+    let head = &body[..i];
+    let sep = if head.trim_end().ends_with(',') || head.trim_end().ends_with('{') { "" } else { "," };
+    format!("{head}{sep}\n{block}{}", &body[i + 1..])
+}
+
+fn write_client_config(
+    cfg: &Config,
+    web: &Path,
+    plugins: &[String],
+    item_tables: &[String],
+) -> Result<(), String> {
     let src = cfg.root.join("config/Config.local.js");
     let body = fs::read_to_string(&src).map_err(|e| format!("reading {}: {e}", src.display()))?;
     // The client's own renewal flag has to follow the server's era: it selects
@@ -393,6 +546,18 @@ fn write_client_config(cfg: &Config, web: &Path, plugins: &[String]) -> Result<(
     } else {
         body
     };
+    // `customItemInfo` replaces the client's default list rather than adding to
+    // it, so the base table has to be named first or every stock item loses its
+    // name. Written only when a mod actually ships a table, so an install with
+    // no item mods keeps the untouched default path.
+    let body = if item_tables.is_empty() {
+        body
+    } else {
+        let mut names = vec!["System/itemInfo.lub".to_string(), "System/itemInfo.lua".to_string()];
+        names.extend(item_tables.iter().map(|n| format!("System/{n}")));
+        let list = names.iter().map(|n| format!("'{n}'")).collect::<Vec<_>>().join(", ");
+        insert_before_close(body, &format!("\tcustomItemInfo: [{list}],\n"))
+    };
     let out = if plugins.is_empty() {
         body
     } else {
@@ -403,10 +568,7 @@ fn write_client_config(cfg: &Config, web: &Path, plugins: &[String]) -> Result<(
         // Inserted before the closing brace of the config object rather than
         // appended: this is the last thing in the file and has to stay inside it.
         let plugin_map = format!("\tplugins: {{\n{}\n\t}},\n", entries.join(",\n"));
-        match body.rfind("\n};") {
-            Some(i) => format!("{},\n{}{}", &body[..i], plugin_map, &body[i + 1..]),
-            None => body,
-        }
+        insert_before_close(body, &plugin_map)
     };
     fs::write(web.join("Config.local.js"), out)
         .map_err(|e| format!("writing Config.local.js: {e}"))
@@ -421,7 +583,105 @@ mod tests {
         fs::write(p, body).unwrap();
     }
 
+    /// The names in PATH_ALIASES were copied out of a real GRF. If one of them
+    /// is ever retyped by hand this catches it, because the bytes are the whole
+    /// point -- a directory named in Korean is one the client never looks in.
+    #[test]
+    fn aliases_expand_to_the_client_s_own_names() {
+        // 유저인터페이스, as CP949 read back as Latin-1.
+        assert_eq!(
+            apply_aliases("texture/ui/login/bg.bmp"),
+            "texture/\u{c0}\u{af}\u{c0}\u{fa}\u{c0}\u{ce}\u{c5}\u{cd}\u{c6}\u{e4}\u{c0}\u{cc}\u{bd}\u{ba}/login/bg.bmp"
+        );
+        // 인간족/몸통 -- and the longer prefix has to win over `sprite/human`.
+        assert!(apply_aliases("sprite/human/body/x.spr").ends_with("/\u{b8}\u{f6}\u{c5}\u{eb}/x.spr"));
+    }
+
+    /// Only whole segments are translated, so a mod with its own folder called
+    /// `sprite/monsters` is left alone.
+    #[test]
+    fn aliases_match_on_segment_boundaries_only() {
+        assert_eq!(apply_aliases("sprite/monsters/x.spr"), "sprite/monsters/x.spr");
+        assert_eq!(apply_aliases("texture/uix/y.bmp"), "texture/uix/y.bmp");
+        // Anything unrecognised is passed through untouched, so a mod that
+        // writes the real names still works.
+        assert_eq!(apply_aliases("texture/effect/z.bmp"), "texture/effect/z.bmp");
+    }
+
+    /// The whole point of the layer: a mod written in ASCII lands where the
+    /// client looks.
+    #[test]
+    fn a_mod_written_in_ascii_lands_on_the_client_s_path() {
+        let tmp = std::env::temp_dir().join(format!("ro-alias-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let (src, dst) = (tmp.join("mod/data"), tmp.join("assets/data"));
+        write(&src.join("texture/ui/login_interface/x.bmp"), "art");
+        copy_data_aliased(&src, &dst).unwrap();
+        let landed = dst
+            .join("texture/\u{c0}\u{af}\u{c0}\u{fa}\u{c0}\u{ce}\u{c5}\u{cd}\u{c6}\u{e4}\u{c0}\u{cc}\u{bd}\u{ba}/login_interface/x.bmp");
+        assert!(landed.is_file(), "not at {}", landed.display());
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+/// A mod that adds one item must not have to ship the whole table.
+    #[test]
+    fn an_item_table_is_kept_aside_rather_than_replacing_the_base() {
+        let tmp = std::env::temp_dir().join(format!("ro-sys-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let (src, merged) = (tmp.join("mod/System"), tmp.join("merged"));
+        fs::create_dir_all(&merged).unwrap();
+        // The base table, as link() leaves it.
+        write(&merged.join("itemInfo.lua"), "BASE");
+        write(&src.join("itemInfo.lua"), "MOD ADDITIONS");
+        write(&src.join("OngoingQuests.lub"), "other table");
+
+        let added = copy_system_layer(&src, &merged, "my-mod");
+
+        assert_eq!(added.as_deref(), Some("itemInfo-my-mod.lua"));
+        // The base is untouched...
+        assert_eq!(fs::read_to_string(merged.join("itemInfo.lua")).unwrap(), "BASE");
+        // ...the mod's copy is beside it...
+        assert_eq!(
+            fs::read_to_string(merged.join("itemInfo-my-mod.lua")).unwrap(),
+            "MOD ADDITIONS"
+        );
+        // ...and everything else in System/ still replaces as before.
+        assert_eq!(fs::read_to_string(merged.join("OngoingQuests.lub")).unwrap(), "other table");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// A mod name that is not a safe filename must not become one.
+    #[test]
+    fn the_item_table_filename_is_sanitised() {
+        let tmp = std::env::temp_dir().join(format!("ro-sys2-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let (src, merged) = (tmp.join("mod/System"), tmp.join("merged"));
+        fs::create_dir_all(&merged).unwrap();
+        write(&src.join("itemInfo.lub"), "x");
+        assert_eq!(
+            copy_system_layer(&src, &merged, "../evil name").as_deref(),
+            Some("itemInfo----evil-name.lua")
+        );
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+/// Two blocks in a row must not produce `],,` -- a syntax error, and a
+    /// config that does not parse is a game that does not start.
+    #[test]
+    fn two_inserted_blocks_do_not_double_the_comma() {
+        let base = "window.ROConfigLocal = {\n\tskipIntro: true\n};\n".to_string();
+        let one = insert_before_close(base, "\tcustomItemInfo: ['a'],\n");
+        let two = insert_before_close(one, "\tplugins: {\n\t\t'p': 'x'\n\t},\n");
+        assert!(!two.contains(",,"), "{two}");
+        assert!(two.contains("skipIntro: true,"), "{two}");
+        assert!(two.contains("customItemInfo: ['a'],"), "{two}");
+        assert!(two.contains("plugins: {"), "{two}");
+        assert!(two.trim_end().ends_with("};"), "{two}");
+    }
+
     /// The property the era merge depends on.
+
+
     ///
     /// Pre-Renewal is an overlay: it replaces the files it carries and leaves
     /// the rest of Renewal standing. Linking a directory whole would satisfy

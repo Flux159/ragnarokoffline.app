@@ -59,6 +59,35 @@ pub struct Config {
     pub docker: PathBuf,
     pub image: String,
     pub db_image: String,
+    /// The app's release version -- "1.0.5" -- or `None` when this build
+    /// cannot tell. Only mods use it, to say what they need.
+    pub app_version: Option<String>,
+}
+
+/// What version of the app this runtime tree belongs to.
+///
+/// One source, `package.json`, reaching here two ways: `package.sh` copies the
+/// version into `APP_VERSION` beside the payload it builds, and a source
+/// checkout is recognised by the `package.json` sitting one level above the
+/// payload directory. The supervisor never carries a version constant of its
+/// own -- a second number that has to agree with the first forever is a number
+/// that eventually will not.
+fn app_version(root: &Path) -> Option<String> {
+    if let Ok(s) = std::fs::read_to_string(root.join("APP_VERSION")) {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            return Some(s);
+        }
+    }
+    for pkg in [root.join("package.json"), root.join("../package.json")] {
+        let Ok(body) = std::fs::read_to_string(&pkg) else { continue };
+        if let Ok(v) = crate::json::parse(&body) {
+            if let Some(v) = v.str("version") {
+                return Some(v.to_string());
+            }
+        }
+    }
+    None
 }
 
 impl Config {
@@ -89,6 +118,7 @@ impl Config {
             .ok_or_else(|| "no docker client found (bundled or installed)".to_string())?;
 
         Ok(Config {
+            app_version: app_version(&root),
             root,
             state,
             nebula_home,
