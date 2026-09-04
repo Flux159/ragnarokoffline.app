@@ -54,7 +54,7 @@ KIT_NEBULA=$("$EMBED/bin/nebula$EXE" --version 2>/dev/null | awk '{print $NF}')
 # Keep this in step with NEBULA_VERSION in .github/workflows/build.yml:
 # CI downloads that kit and then packages with this script, so a minimum
 # above the pin fails every release build rather than catching anything.
-MIN_NEBULA=$(cat "$ROOT/config/NEBULA_MIN_VERSION" 2>/dev/null || echo 0.2.1)
+MIN_NEBULA=$(cat "$ROOT/config/NEBULA_MIN_VERSION" 2>/dev/null || echo 0.2.2)
 if [ -z "$KIT_NEBULA" ]; then
     echo "cannot read a version from the embed kit at $EMBED" >&2; exit 1
 fi
