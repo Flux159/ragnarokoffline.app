@@ -1,0 +1,11 @@
+{
+  "name": "stylist-fallback",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "Makes the seven renewal stylists work. They normally open a window this client cannot draw, leaving you facing an NPC that does nothing.",
+  "default": "on",
+  "requires": {
+    "app": ">=1.0.6",
+    "era": "renewal"
+  }
+}

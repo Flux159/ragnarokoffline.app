@@ -1,0 +1,54 @@
+// Put a working stylist where the broken ones stand.
+//
+// Renewal has seven stylists and every one of them ends in openstylist(),
+// which sends ZC_UI_OPEN with ui_type OUT_UI_STYLIST (1). roBrowser's
+// onUIOpen implements exactly three ui_types -- 7 attendance, 8 enchant grade,
+// 10 enchant -- and logs "not implemented" for everything else. So the NPC
+// closes its dialogue, asks for a window nobody draws, and the player is left
+// looking at a stylist who does nothing. #32.
+//
+// There is no flag for this the way there was for the refine window: the
+// client has no stylist UI to switch on. The fix has to be to stop sending
+// players to it.
+//
+// So: switch the seven off, and stand rAthena's own script-driven stylist on
+// the same squares. That script is `npc/custom/stylist.txt`, which upstream
+// ships and leaves unloaded; this mod's stock-npc.txt turns it on. It does the
+// same three things through `setlook`, which needs no window at all.
+//
+// Each duplicate keeps the sprite and facing of the NPC it replaces, so
+// nothing about the town looks different -- the stylist is simply one that
+// answers.
+//
+// This mod is renewal-only, declared in mod.json. Pre-renewal never had the
+// problem: its stylists are the old menu-driven ones already, and two NPCs on
+// one square would be a collision for no reason.
+
+-	script	StylistFallback	-1,{
+OnInit:
+	// The seven that call openstylist(). Names, not coordinates: disablenpc
+	// takes the unique name, and these are stable across rAthena releases in a
+	// way the coordinates are not.
+	disablenpc "Stylist#alberta";
+	disablenpc "Stylist#prontera";
+	disablenpc "Stylist#lhz";
+	disablenpc "Stylist#lasagna";
+	disablenpc "Stylist#rachel";
+	disablenpc "Stylist#yuno";
+	disablenpc "Stylist#cash";
+
+	// And the one the replacement script places itself, in Prontera at
+	// 170,180. Loading that file is how we get the script; the NPC it comes
+	// with is not part of the deal, and leaving it would put a stylist in a
+	// spot the game never had one.
+	disablenpc "Stylist#custom_stylist";
+	end;
+}
+
+alberta_in,55,142,7	duplicate(Stylist#custom_stylist)	Stylist#alberta_ro	4_F_02
+prt_in,243,168,4	duplicate(Stylist#custom_stylist)	Stylist#prontera_ro	4_F_02
+lhz_in02,100,143,4	duplicate(Stylist#custom_stylist)	Stylist#lhz_ro	2_M_DYEINGER
+lasagna,134,113,3	duplicate(Stylist#custom_stylist)	Stylist#lasagna_ro	4_DR_F_02
+ra_in01,186,148,5	duplicate(Stylist#custom_stylist)	Stylist#rachel_ro	4_F_MASK1
+yuno_in04,186,21,1	duplicate(Stylist#custom_stylist)	Stylist#yuno_ro	4_M_BARBER
+itemmall,19,74,5	duplicate(Stylist#custom_stylist)	Stylist#cash_ro	91
