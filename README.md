@@ -41,13 +41,12 @@ assets, first launch — or follow the same three steps below.
 **1. Download a build.** Grab the latest release for your platform from the
 [releases page](../../releases).
 
-**2. Get a Ragnarok client.** You supply your own — see [License](#license). Put it
+**2. Get the game files for your Ragnarok client.** You will need to obtain these from another source. Put it
 somewhere you can find again; unzipping a full client gives you a folder containing
-`data.grf`, `rdata.grf` and a `BGM` folder, which is what the app looks for.
+`data.grf`, `rdata.grf` and a `BGM` folder, which is what the app looks for. **kRO '23 and a current 2026 client are both tested.**
 
-Renewal or pre-renewal is a setting, not a client: you supply one client either
-way and pick the era in Settings → Game era, which keeps a separate set of
-characters for each. **kRO '23 and a current 2026 client are both tested.**
+Renewal or pre-renewal is a setting you can change in Settings → Game era, which keeps a separate set of
+characters for each.
 
 `rdata.grf` is optional. Older clients split renewal content into it; newer ones
 ship a single `data.grf` with everything merged in, and either is fine.
