@@ -342,9 +342,30 @@ a directory named in Korean is one the client never looks in.
 
 ### The client caches, hard
 
-The asset server keeps every file it has served in memory. **A changed image
-that appears not to take is usually a cached one** — restart the app, not just
-the server.
+There are two caches between your file and the screen, and they fail
+differently.
+
+The **asset server** keeps every file it has served in memory. It is emptied
+when the server stops, so restarting the app is enough.
+
+The **client** keeps its own copy of every file it downloads, in the browser's
+sandboxed filesystem, and looks there before asking the server again. That one
+is keyed by *filename* and survives restarts, which is what made this the
+nastiest failure in the whole system: a mod replacing a stock file the client
+had already saved — a login background, a loading screen, `itemInfo.lua` —
+loaded on the server, reported `on` in Settings, and changed nothing on screen.
+Everything that could tell you the mod was working said it was.
+
+The app now clears that cache for you. `link-assets` writes a fingerprint of
+the overlay to `state/assets/overlay.id` — the era, plus the name, size and
+mtime of every file each enabled mod puts under `data/`, `BGM/`, `System/` or
+`client/` — and the app drops the client's cache whenever that number moves.
+So installing, editing or switching off a mod takes effect on the next launch,
+and an ordinary launch still starts from a warm cache.
+
+A mod that only touches `db/`, `npc/` or `conf/` deliberately does not count:
+the client never sees those, and clearing its cache would cost you a re-download
+for nothing.
 
 ### Two things worth knowing before you replace a background
 

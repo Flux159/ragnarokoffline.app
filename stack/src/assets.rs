@@ -236,6 +236,10 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
     // on every link cannot destroy them.
     let (plugins, item_tables) = overlay_mods(cfg, &server_root, &merged);
 
+    // Written after the overlay rather than before it, so a link that fails
+    // half way leaves no fingerprint claiming the client's cache is current.
+    let _ = fs::write(server_root.join("overlay.id"), overlay_fingerprint(cfg));
+
     link_dir(&merged, &server_root.join("System"))?;
     // Several loaders fall back to a SystemEN/ path when the System/ one is absent.
     link_dir(&en.join("SystemEN"), &server_root.join("SystemEN"))?;
@@ -291,6 +295,102 @@ fn overlay_mods(cfg: &Config, server_root: &Path, merged: &Path) -> (Vec<String>
         }
     }
     (plugins, item_tables)
+}
+
+/// FNV-1a, the same one `guest_fingerprint` uses, fed a piece at a time.
+fn fnv(hash: &mut u64, bytes: &[u8]) {
+    for b in bytes {
+        *hash ^= *b as u64;
+        *hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+}
+
+/// Hash a tree by name, size and mtime, in a fixed order.
+///
+/// `read_dir` order is whatever the filesystem hands back, so it is sorted
+/// here: an unsorted walk gives a different answer for the same tree on
+/// another machine, and the whole value of this number is that it only changes
+/// when the tree does.
+fn hash_tree(hash: &mut u64, dir: &Path, rel: &Path) {
+    let Ok(rd) = fs::read_dir(dir) else { return };
+    let mut entries: Vec<_> = rd.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for e in entries {
+        let path = e.path();
+        let rel = rel.join(e.file_name());
+        if path.is_dir() {
+            hash_tree(hash, &path, &rel);
+            continue;
+        }
+        fnv(hash, rel.to_string_lossy().as_bytes());
+        let Ok(meta) = e.metadata() else { continue };
+        fnv(hash, &meta.len().to_le_bytes());
+        if let Ok(t) = meta.modified() {
+            if let Ok(d) = t.duration_since(std::time::UNIX_EPOCH) {
+                fnv(hash, &d.as_secs().to_le_bytes());
+            }
+        }
+    }
+}
+
+/// A fingerprint of everything the enabled mods put in front of the client.
+///
+/// The client keeps its own cache of every file it downloads, in the browser's
+/// sandboxed filesystem, and looks there before asking the server again. The
+/// cache is keyed by *filename*, which is what makes a mod that replaces a
+/// stock file invisible: a login background, a loading screen or an itemInfo
+/// table the client already has under that name is never re-fetched, so the
+/// mod loads on the server, shows as `on` in Settings, and changes nothing on
+/// screen. The app clears that cache when this value changes.
+///
+/// Size and mtime rather than contents. The tree is copied on every link
+/// anyway, and hashing the bytes would mean reading a mod's artwork twice on
+/// every launch to answer a question that a changed file already answers.
+///
+/// The era is in here because it is the same bug without any mod involved: the
+/// two translation trees carry different text under identical filenames, so a
+/// client that cached `itemInfo.lua` as pre-renewal keeps serving it after a
+/// switch to renewal.
+fn overlay_fingerprint(cfg: &Config) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    fnv(&mut hash, era_tag(cfg).as_bytes());
+    for m in crate::mods::enabled(cfg) {
+        let roots = client_roots(&m.dir);
+        // A mod that reaches only the server has nothing the client could be
+        // holding a stale copy of. Skipping its name as well as its files is
+        // the difference between toggling a drop-rate mod and re-downloading
+        // the client's whole working set to find nothing had changed.
+        if roots.is_empty() {
+            continue;
+        }
+        // The name, and in order: two mods overlaying the same path resolve by
+        // load order, so the same set in a different order is a different tree.
+        fnv(&mut hash, m.name.as_bytes());
+        for sub in roots {
+            hash_tree(&mut hash, &m.dir.join(sub), Path::new(sub));
+        }
+    }
+    format!("{hash:016x}")
+}
+
+/// The roots a mod can reach the *client* through, of those it actually has.
+///
+/// `db/`, `npc/` and `conf/` are deliberately not here: they are the server's,
+/// the client never sees them, and a mod built only from those must not cost
+/// the player their cache.
+fn client_roots(dir: &Path) -> Vec<&'static str> {
+    ["data", "BGM", "System", "client"]
+        .into_iter()
+        .filter(|sub| dir.join(sub).is_dir())
+        .collect()
+}
+
+fn era_tag(cfg: &Config) -> &'static str {
+    if crate::cmds::is_prerenewal(cfg) {
+        "pre-re"
+    } else {
+        "re"
+    }
 }
 
 /// ASCII names a mod may use in place of the client's own directory names.
@@ -595,6 +695,70 @@ mod tests {
         );
         // 인간족/몸통 -- and the longer prefix has to win over `sprite/human`.
         assert!(apply_aliases("sprite/human/body/x.spr").ends_with("/\u{b8}\u{f6}\u{c5}\u{eb}/x.spr"));
+    }
+
+    /// The property the cache invalidation rests on: the same tree is the same
+    /// number, and any change to it is a different one.
+    ///
+    /// This is what decides whether the client keeps a cache that may be
+    /// serving a file the mod has replaced, so a false "unchanged" is the login
+    /// screen that would not update.
+    #[test]
+    fn a_changed_mod_tree_is_a_changed_fingerprint() {
+        let tmp = std::env::temp_dir().join(format!("ro-fp-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let art = tmp.join("data/texture/ui/login/bg.bmp");
+        write(&art, "first");
+
+        let of = |dir: &Path| {
+            let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+            hash_tree(&mut h, &dir.join("data"), Path::new("data"));
+            format!("{h:016x}")
+        };
+
+        let before = of(&tmp);
+        assert_eq!(before, of(&tmp), "the same tree hashed twice must agree");
+
+        // A different size is a different file.
+        write(&art, "second, and longer");
+        assert_ne!(before, of(&tmp), "an edited file went unnoticed");
+
+        // And so is a new one, even at the same total size.
+        let two = of(&tmp);
+        write(&tmp.join("data/texture/ui/login/bg2.bmp"), "x");
+        assert_ne!(two, of(&tmp), "an added file went unnoticed");
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// A mod the client never sees must not cost the player their cache.
+    #[test]
+    fn only_the_roots_the_client_reads_count() {
+        let tmp = std::env::temp_dir().join(format!("ro-roots-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+
+        // A drop-rate mod: server tables and a script, nothing else.
+        write(&tmp.join("server-only/db/mob_db.yml"), "Body:");
+        write(&tmp.join("server-only/npc/x.txt"), "");
+        write(&tmp.join("server-only/conf/battle.conf"), "");
+        assert!(client_roots(&tmp.join("server-only")).is_empty());
+
+        // One that replaces artwork, and one that only ships a plugin.
+        write(&tmp.join("art/data/texture/x.bmp"), "");
+        assert_eq!(client_roots(&tmp.join("art")), vec!["data"]);
+        write(&tmp.join("ui/client/index.js"), "");
+        write(&tmp.join("ui/db/item_db.yml"), "Body:");
+        assert_eq!(client_roots(&tmp.join("ui")), vec!["client"]);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// An absent root is not an error: most mods ship one or two of the four.
+    #[test]
+    fn missing_roots_hash_to_nothing_rather_than_panicking() {
+        let mut h: u64 = 7;
+        hash_tree(&mut h, Path::new("/nonexistent/mod/BGM"), Path::new("BGM"));
+        assert_eq!(h, 7);
     }
 
     /// Only whole segments are translated, so a mod with its own folder called

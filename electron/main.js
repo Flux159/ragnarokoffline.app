@@ -10,7 +10,7 @@
 // sprites render doubled on WebKit (roBrowserLegacy #1350). One engine
 // everywhere is worth ~60 MB of download.
 //
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, clipboard, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -280,6 +280,51 @@ function readIfExists(p) {
 	} catch {
 		return '';
 	}
+}
+
+// Throw away the client's own file cache when the mods behind it have changed.
+//
+// roBrowser saves every file it downloads into the browser's sandboxed
+// filesystem and looks there before asking the server again, keyed by
+// filename. That is what makes the second launch quick, and it is also why an
+// enabled mod could change nothing on screen: the client already had a file of
+// that name from before the mod existed, so it never asked for the new one.
+// A mod's login background, loading screens and itemInfo table were all
+// invisible this way, while the mod itself loaded on the server and read as
+// `on` in Settings — the worst shape a bug can take, because everything that
+// reports status says it is working.
+//
+// The stack writes a fingerprint of the overlay next to the assets it serves;
+// anything that changes what the client is handed changes that number. Only
+// then is the cache dropped, so an ordinary launch still starts from a warm
+// one.
+//
+// Not just the sandboxed filesystem: Config.local.js and the plugin bundles
+// are ordinary HTTP requests, and a stale one of those loads the previous
+// mod's client code, or a plugin the player has since switched off.
+async function dropStaleClientCache() {
+	const want = readIfExists(path.join(stateDir(), 'assets', 'overlay.id')).trim();
+	// No fingerprint means link-assets has not run, and dropping a warm cache
+	// on a guess would just make the launch slower.
+	if (!want) return;
+	const stamp = path.join(stateDir(), 'client-cache.id');
+	if (readIfExists(stamp).trim() === want) return;
+	try {
+		const ses = session.defaultSession;
+		await ses.clearStorageData({ storages: ['filesystem', 'cachestorage'] });
+		await ses.clearCache();
+	} catch (e) {
+		// A cache we failed to clear shows stale art. A launch we refused
+		// shows nothing at all, so this is not worth failing over.
+		console.error('could not clear the client cache:', e.message);
+		return;
+	}
+	try {
+		fs.mkdirSync(stateDir(), { recursive: true });
+		// Written only after the clear succeeded: a stamp saved first would
+		// mark the cache current and never try again.
+		fs.writeFileSync(stamp, want + '\n');
+	} catch {}
 }
 
 function spawnSync(cmd, args) {
@@ -1831,12 +1876,16 @@ const handlers = {
 	close_setup: () => {
 		if (windows.setup && !windows.setup.isDestroyed()) windows.setup.close();
 	},
-	launch_game: () => {
+	launch_game: async () => {
 		const c = getClientPaths();
 		// The host's asset server when joining, our own when hosting. Hardcoding
 		// loopback here sent a joining player to a server that does not exist on
 		// their machine.
 		const base = c.mode === 'join' ? joinUrl(c.join_host) : 'http://127.0.0.1:3338';
+		// Before the page loads, not after: the client reads its cache as it
+		// boots, and clearing it out from under a running client would be a
+		// race for no gain.
+		if (c.mode !== 'join') await dropStaleClientCache();
 		const win = openGame();
 		win.loadURL(base + GAME_PATH);
 		win.setTitle(gameTitle());
