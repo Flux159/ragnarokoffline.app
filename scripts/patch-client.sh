@@ -470,4 +470,190 @@ else:
         s = s.replace(a, b)
     p.write_text(s)
     print(f"patched QuestCommon.js ({n} quest lists now actually shown)")
+
+# 0009 - The equipment window: an empty preview doll, and a costume tab that
+# ignored every click.
+#
+# Two independent mistakes in the same component.
+#
+# 1. renderCharacter() runs every frame, and renderEntity() built a brand-new
+#    Entity each time. Sprite loading is asynchronous, so a doll thrown away
+#    ~16ms later never lived long enough for its headgear and garment to
+#    finish loading: the body drew (it is on the sprite path the entity gets
+#    synchronously) and nothing else ever did. The entity is now built once
+#    and reused, rebuilt only when what it depicts actually changes -- job,
+#    sex, head, palettes, the visible slots, or the tab being shown.
+#
+# 2. Component.init() wired its listeners to `root.querySelector('.content')`,
+#    the *first* .content table. Each tab (general, costume, title,
+#    damageskin) is its own .content, so only the general tab was ever
+#    interactive: on the costume tab a double-click did not unequip, a
+#    right-click showed no description, and nothing highlighted on hover.
+p = rb / "src/UI/Components/Equipment/EquipmentCommon.js"
+s = p.read_text()
+if "_equipEntity" in s:
+    print("EquipmentCommon.js preview/costume already patched")
+else:
+    subs = [
+        (
+"""	const renderCharacter = (function renderCharacterClosure() {
+		let _lastState = 0;
+		let _hasCart = 0;""",
+"""	const renderCharacter = (function renderCharacterClosure() {
+		let _lastState = 0;
+		let _hasCart = 0;
+
+		// Preview entity, kept across frames. renderEntity() used to build a fresh
+		// Entity every frame, so the async SPR/ACT loads for hats, garment, etc.
+		// always landed on an object that was already discarded -- the preview only
+		// ever showed the body. Reuse the entity and rebuild it only when something
+		// it depends on actually changes (job/sex/head/palettes/tab/equipment), so
+		// the loaded sprites persist and get drawn.
+		let _equipEntity = null;
+		let _equipSig = null;""",
+        ),
+        (
+"""		function renderEntity() {
+			const equip_character = new Entity();
+			equip_character.set({
+				GID: Session.Entity.GID + '_EQUIP',
+				objecttype: equip_character.constructor.TYPE_PC,
+				job: Session.Entity.job,
+				sex: Session.Entity.sex,
+				name: '',
+				hideShadow: true,
+				head: Session.Entity.head,
+				headpalette: Session.Entity.headpalette,
+				bodypalette: Session.Entity.bodypalette
+			});
+
+			updateAttachmentButtons();
+
+			if (currentTabId === 'general') {
+				equip_character.accessory = Component.checkEquipLoc(EquipLocation.HEAD_BOTTOM);
+				equip_character.accessory2 = Component.checkEquipLoc(EquipLocation.HEAD_TOP);
+				equip_character.accessory3 = Component.checkEquipLoc(EquipLocation.HEAD_MID);
+				equip_character.robe = Component.checkEquipLoc(EquipLocation.GARMENT);
+			} else if (currentTabId === 'costume') {
+				equip_character.accessory = Component.checkEquipLoc(EquipLocation.COSTUME_HEAD_BOTTOM);
+				equip_character.accessory2 = Component.checkEquipLoc(EquipLocation.COSTUME_HEAD_TOP);
+				equip_character.accessory3 = Component.checkEquipLoc(EquipLocation.COSTUME_HEAD_MID);
+				equip_character.robe = Component.checkEquipLoc(EquipLocation.COSTUME_ROBE);
+			}
+
+			_savedColor.set(equip_character.effectColor);""",
+"""		function renderEntity() {
+			updateAttachmentButtons();
+
+			let accessory = 0;
+			let accessory2 = 0;
+			let accessory3 = 0;
+			let robe = 0;
+
+			if (currentTabId === 'general') {
+				accessory = Component.checkEquipLoc(EquipLocation.HEAD_BOTTOM);
+				accessory2 = Component.checkEquipLoc(EquipLocation.HEAD_TOP);
+				accessory3 = Component.checkEquipLoc(EquipLocation.HEAD_MID);
+				robe = Component.checkEquipLoc(EquipLocation.GARMENT);
+			} else if (currentTabId === 'costume') {
+				accessory = Component.checkEquipLoc(EquipLocation.COSTUME_HEAD_BOTTOM);
+				accessory2 = Component.checkEquipLoc(EquipLocation.COSTUME_HEAD_TOP);
+				accessory3 = Component.checkEquipLoc(EquipLocation.COSTUME_HEAD_MID);
+				robe = Component.checkEquipLoc(EquipLocation.COSTUME_ROBE);
+			}
+
+			// Only rebuild the preview entity when an input it depends on changes.
+			// Otherwise reuse it so the previously issued (async) sprite loads have
+			// somewhere to land -- a per-frame `new Entity()` never showed them.
+			const sig = [
+				Session.Entity.job,
+				Session.Entity.sex,
+				Session.Entity.head,
+				Session.Entity.headpalette,
+				Session.Entity.bodypalette,
+				currentTabId,
+				accessory,
+				accessory2,
+				accessory3,
+				robe
+			].join(':');
+
+			if (!_equipEntity || sig !== _equipSig) {
+				_equipSig = sig;
+
+				_equipEntity = new Entity();
+				_equipEntity.set({
+					GID: Session.Entity.GID + '_EQUIP',
+					objecttype: _equipEntity.constructor.TYPE_PC,
+					job: Session.Entity.job,
+					sex: Session.Entity.sex,
+					name: '',
+					hideShadow: true,
+					head: Session.Entity.head,
+					headpalette: Session.Entity.headpalette,
+					bodypalette: Session.Entity.bodypalette
+				});
+
+				_equipEntity.accessory = accessory;
+				_equipEntity.accessory2 = accessory2;
+				_equipEntity.accessory3 = accessory3;
+				_equipEntity.robe = robe;
+			}
+
+			const equip_character = _equipEntity;
+
+			_savedColor.set(equip_character.effectColor);""",
+        ),
+        (
+"""		const content = root.querySelector('.content');
+		if (content) {
+			content.addEventListener('contextmenu', e => {
+				e.preventDefault();
+				const item = e.target.closest('.item');
+				if (item) onEquipmentInfo.call(item, e);
+			});
+			content.addEventListener('dblclick', e => {
+				const item = e.target.closest('.item');
+				if (item) onEquipmentUnEquip.call(item, e);
+			});
+			content.addEventListener('mouseover', e => {
+				const btn = e.target.closest('button');
+				if (btn) onEquipmentOver.call(btn, e);
+			});
+			content.addEventListener('mouseout', e => {
+				const btn = e.target.closest('button');
+				if (btn) onEquipmentOut();
+			});
+		}""",
+"""		// Every tab (general, costume, title, damageskin) is its own `.content`
+		// table. Listening on a single one only wired the first tab, so
+		// double-click / right-click did nothing on the costume tab. Attach to all.
+		root.querySelectorAll('.content').forEach(content => {
+			content.addEventListener('contextmenu', e => {
+				e.preventDefault();
+				const item = e.target.closest('.item');
+				if (item) onEquipmentInfo.call(item, e);
+			});
+			content.addEventListener('dblclick', e => {
+				const item = e.target.closest('.item');
+				if (item) onEquipmentUnEquip.call(item, e);
+			});
+			content.addEventListener('mouseover', e => {
+				const btn = e.target.closest('button');
+				if (btn) onEquipmentOver.call(btn, e);
+			});
+			content.addEventListener('mouseout', e => {
+				const btn = e.target.closest('button');
+				if (btn) onEquipmentOut();
+			});
+		});""",
+        ),
+    ]
+    for old, new in subs:
+        if s.count(old) != 1:
+            sys.exit("EquipmentCommon.js: preview/costume anchor no longer matches (%d hits); re-check the patch" % s.count(old))
+        s = s.replace(old, new, 1)
+    p.write_text(s)
+    print("patched EquipmentCommon.js (preview entity reuse, every tab interactive)")
+
 PY
