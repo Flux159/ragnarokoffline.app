@@ -1,0 +1,7 @@
+# rAthena's own script-driven stylist, which it ships and does not load.
+#
+# It is the replacement the NPCs below get: a plain menu of hair style, hair
+# colour and clothes colour, built from `setlook` calls that every client
+# generation has understood. Nothing here is written by us -- the point is to
+# use the version upstream already maintains and tests.
+npc/custom/stylist.txt
