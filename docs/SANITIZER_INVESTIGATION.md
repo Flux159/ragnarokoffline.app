@@ -113,3 +113,13 @@ job with default coefficients computes -2 at level 10. The second small server
 patch clamps the floating-point value to the unsigned return range before the
 cast. `verify-base-sp.py` reproduces the original UBSan failure and verifies the
 fix, ordinary values and overflow. Again this is a separate startup finding.
+
+Build `34156678115` (source `eedaaf2fd466eb6c96730dc2904d6f6e5e4fcbc9`)
+passed both architectures and the guest fixture, then reached actual character
+login. The Pre-Renewal/population-off row stopped at `skill_get_sp` with index -1
+while `clif_skillinfoblock` built the unlearned skill list after `LoadEndAck`.
+`0003-unlearned-skill-level.patch` returns zero before indexing a level-zero
+skill; the source-macro UBSan reduction fails before and passes after, including
+stored and extrapolated learned levels. The original private game report is
+retained. This is a reproduced login defect, not proof of the intermittent
+logout crash's cause.

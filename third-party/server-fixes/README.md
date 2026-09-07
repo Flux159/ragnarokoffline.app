@@ -15,3 +15,8 @@ floating-point result to unsigned. Default coefficients for a Ninja-mapped job
 produce -2 at level 10; converting that to `uint32` is undefined. Normal
 nonnegative values are unchanged, and overflow saturates at the return type's
 maximum. The actual function has a separate UBSan reduction covering both bounds.
+
+`0003-unlearned-skill-level.patch` returns zero for an unlearned skill before the
+shared accessor indexes a level table. Native character login asks for SP at
+level zero while constructing the skill list; the previous macro read index -1.
+Stored and extrapolated learned levels retain their existing behavior.
