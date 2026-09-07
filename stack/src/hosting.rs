@@ -236,6 +236,10 @@ pub fn sharing_check(cfg: &Config, dk: &Docker) -> Result<String, String> {
     let era = service_credentials::era(cfg);
     accounts::verify_era(cfg, dk, era)?;
     require_game_policy(cfg, dk)?;
+    let running_login = dk.output(["exec", "ragnarok-login", "cat", "/rathena/conf/import/login_conf.txt"])?;
+    if flag(&running_login, "ipban_dynamic_pass_failure_ban")? != "no" {
+        return Err("Restart in friends mode to apply browser login attempt protection".into());
+    }
     for (name, port) in [("ragnarok-db", None), ("ragnarok-login", Some("6900")), ("ragnarok-char", Some("6121")), ("ragnarok-map", Some("5121"))] {
         let inspected = dk.output(["inspect", name])?;
         let Value::Array(values) = json::parse(&inspected).map_err(|_| "Cannot verify game listeners")? else { return Err("Cannot verify game listeners".into()); };

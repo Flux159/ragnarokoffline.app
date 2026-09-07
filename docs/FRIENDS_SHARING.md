@@ -57,6 +57,13 @@ attempts, socket counts and WebSocket frames/messages are bounded; proxy pipes
 preserve backpressure. Authenticated content is private/no-store at the HTTP/CDN
 layer. The client's existing local file cache still applies.
 
+Friends mode replaces automatic failed-password bans of the shared proxy IP
+with five login attempts per minute per browser and per account. Other friends
+can still log in after one browser makes mistakes. The gateway parses the
+shipped client's ordinary login protocol across split/batched frames, retains
+only hashed account keys for these limits, and leaves explicit IP bans intact.
+Custom SSO/Han login modes and non-ASCII account names are not supported here.
+
 The Rust supervisor checks the actual running era, managed credentials, GM
 password policy, suffix signup policy, container port bindings and the pinned
 base command/permission files. Mods replacing command/permission imports are

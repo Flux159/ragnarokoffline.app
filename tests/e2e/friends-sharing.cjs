@@ -191,6 +191,39 @@ async function main() {
     await expect.poll(async () => (await snapshot(boot)).input.canMove, { timeout: 90000 }).toBe(true);
     const mapBefore = JSON.parse(docker(['inspect', 'ragnarok-map']).stdout)[0];
     browser = await chromium.launch({ headless: true });
+    // Two invited browsers make four rejected native logins each. Native
+    // source-IP bans used to group these together and lock out every friend.
+    // Distinct account/session limits allow these attempts but cap each one.
+    for (let visitor = 0; visitor < 2; visitor++) {
+      const attempts = await browser.newContext({ ignoreHTTPSErrors: true });
+      try {
+        const loginPage = await attempts.newPage(); await loginPage.goto(link);
+        await expect(loginPage.locator('#ready')).toBeVisible();
+        const rejected = await loginPage.evaluate(async name => {
+          const socket = new WebSocket(location.origin.replace('https:', 'wss:') + '/ws/127.0.0.1:6900');
+          socket.binaryType = 'arraybuffer';
+          await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = () => reject(Error('Invited login socket failed')); });
+          const packet = new Uint8Array(55), view = new DataView(packet.buffer);
+          view.setUint16(0, 0x64, true); view.setUint32(2, 20221005, true);
+          packet.set(new TextEncoder().encode(name), 6); packet.set(new TextEncoder().encode('invalid-test-password'), 30);
+          const replies = [];
+          try {
+            for (let count = 0; count < 4; count++) {
+              replies.push(await new Promise((resolve, reject) => {
+                const timer = setTimeout(() => reject(Error('Native login rejection timed out')), 5000);
+                socket.onmessage = event => { clearTimeout(timer); const response = new DataView(event.data); resolve({ id: response.getUint16(0, true), error: response.getUint8(2) }); };
+                socket.onclose = () => { clearTimeout(timer); reject(Error('Group was blocked after rejected passwords')); };
+                socket.send(packet);
+              }));
+            }
+          } finally { socket.onclose = null; socket.close(); }
+          return replies;
+        }, 'absent' + Date.now().toString(36) + visitor);
+        expect(rejected).toHaveLength(4);
+        for (const reply of rejected) { expect([0x6a, 0x83e]).toContain(reply.id); expect(reply.error).toBe(0); }
+      } finally { await attempts.close(); }
+    }
+    report.checks.push('eight rejected native logins did not ban the shared proxy or prevent another friend from joining');
     // Trust only this test browser's loopback TLS fixture. Product probes do
     // not disable certificate validation and no system trust store is changed.
     const context = await browser.newContext({ ...devices['Pixel 5'], ignoreHTTPSErrors: true });

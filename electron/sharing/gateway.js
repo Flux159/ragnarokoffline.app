@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Transform } = require('node:stream');
+const { LoginPackets, LoginLimits } = require('./login-limits');
 const token = () => crypto.randomBytes(32).toString('base64url');
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
@@ -40,7 +41,7 @@ async function body(req, limit = LIMIT) {
 // bytes. Backpressure is preserved through the two pipes. An attacker cannot
 // ask the Rust endpoint to accumulate an arbitrarily large fragmented message.
 class Frames extends Transform {
-  constructor(masked) { super(); this.masked = masked; this.header = Buffer.alloc(0); this.left = 0; this.message = 0; this.fragmented = false; }
+  constructor(masked, inspect) { super(); this.masked = masked; this.inspect = inspect; this.header = Buffer.alloc(0); this.left = 0; this.message = 0; this.fragmented = false; }
   _flush(done) { done(this.header.length || this.left || this.fragmented ? Error('Incomplete game frame') : undefined); }
   _transform(chunk, encoding, done) {
     try {
@@ -48,6 +49,11 @@ class Frames extends Transform {
       while (offset < chunk.length) {
         if (this.left) {
           const count = Math.min(this.left, chunk.length - offset);
+          if (this.inspect && this.dataFrame) {
+            const decoded = Buffer.alloc(count);
+            for (let i = 0; i < count; i++) decoded[i] = chunk[offset + i] ^ this.mask[(this.position + i) % 4];
+            this.inspect(decoded); this.position += count;
+          }
           this.push(chunk.subarray(offset, offset + count)); offset += count; this.left -= count;
           continue;
         }
@@ -59,6 +65,7 @@ class Frames extends Transform {
         const opcode = this.header[0] & 15, final = !!(this.header[0] & 128);
         if ((this.header[0] & 112) || !!(this.header[1] & 128) !== this.masked || ![0, 1, 2, 8, 9, 10].includes(opcode)) throw Error('Invalid frame');
         const bytes = size === 126 ? this.header.readUInt16BE(2) : size === 127 ? Number(this.header.readBigUInt64BE(2)) : size;
+        if (this.inspect && (bytes > 1024 || opcode === 1)) throw Error('Invalid login frame');
         if (!Number.isSafeInteger(bytes) || bytes > 1024 * 1024 || (opcode >= 8 && (!final || bytes > 125))) throw Error('Frame limit');
         if (opcode < 8) {
           if ((opcode === 0) !== this.fragmented) throw Error('Invalid continuation');
@@ -67,6 +74,8 @@ class Frames extends Transform {
           this.fragmented = !final;
           if (final) this.message = 0;
         }
+        this.dataFrame = opcode < 8; this.position = 0;
+        if (this.inspect) this.mask = this.header.subarray(-4);
         this.left = bytes; this.push(this.header); this.header = Buffer.alloc(0);
       }
       done();
@@ -81,6 +90,7 @@ class FriendGateway {
     this.host = url.host; this.sessions = new Map(); this.sockets = new Set(); this.requests = new Set();
     this.invite = token(); this.inviteHash = digest(this.invite); this.expires = now() + lifetime;
     this.challenge = token(); this.attempts = []; this.closed = false; this.pendingRegistrations = 0;
+    this.loginLimits = new LoginLimits(now);
   }
   probeSession() {
     const value = token(), key = digest(value);
@@ -197,7 +207,8 @@ class FriendGateway {
       const accept = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
       if (response.statusCode !== 101 || response.headers['sec-websocket-accept'] !== accept) { upstream.destroy(); return close(); }
       socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
-      const incoming = new Frames(true), outgoing = new Frames(false);
+      const login = req.url.endsWith(':6900') ? new LoginPackets(name => this.loginLimits.allow(entry, name)) : null;
+      const incoming = new Frames(true, login ? bytes => login.consume(bytes) : undefined), outgoing = new Frames(false);
       incoming.on('error', close); outgoing.on('error', close); upstream.on('error', close);
       upstream.on('close', close); socket.once('close', () => upstream.destroy());
       if (head.length) incoming.write(head); if (initial.length) outgoing.write(initial);

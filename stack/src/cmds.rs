@@ -1741,7 +1741,14 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     write_mod_conf_files(cfg, &mods)?;
     // Owner account policy is final, after mod assembly, and regenerated for
     // startup, Repair and each era. Mods cannot reopen suffix registration.
-    write_conf(&conf, "login_conf.txt", &crate::registration::login_config(open_registration))?;
+    let mut login_config = crate::registration::login_config(open_registration);
+    // Browser clients share the proxy's source IP. Friends mode replaces
+    // automatic IP-wide password bans with the gateway's account/session
+    // attempt limits. Local/LAN mode and explicit IP bans retain defaults.
+    if scope == crate::hosting::Scope::Friends {
+        login_config.push_str("ipban_dynamic_pass_failure_ban: no\n");
+    }
+    write_conf(&conf, "login_conf.txt", &login_config)?;
     if scope.internet() { crate::hosting::require_game_policy(cfg, dk)?; }
 
     // A mod's allowlisted settings go after ours, because rAthena's config
