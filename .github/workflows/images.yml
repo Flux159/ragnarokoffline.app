@@ -47,12 +47,21 @@ on:
       - 'scripts/apply-server-mods.sh'
       - 'scripts/apply-crash-trace.py'
   workflow_dispatch:
+    inputs:
+      diagnostics:
+        description: Build development-only ASan/UBSan images instead of release images
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
+  diagnostics:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostics }}
+    uses: ./.github/workflows/diagnostics.yml
   build:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics }}
     strategy:
       fail-fast: false
       matrix:
