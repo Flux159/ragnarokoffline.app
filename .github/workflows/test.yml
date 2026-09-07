@@ -8,6 +8,7 @@ permissions:
   contents: read
 jobs:
   supervisor-and-lifecycle:
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -24,10 +25,13 @@ jobs:
           workspaces: stack
       - run: cargo test --locked --manifest-path stack/Cargo.toml
       - run: node --check electron/main.js
-      - name: Build the pinned Rust dependency and test the real process protocol
+      - name: Build the pinned Rust dependency
+        timeout-minutes: 12
+        shell: bash
+        run: bash scripts/build-remoteclient.sh
+      - name: Test lifecycle and the real process protocol
+        timeout-minutes: 5
         shell: bash
         run: |
-          bash scripts/build-remoteclient.sh
-          bin="$PWD/bin/robrowser-remoteclient"
-          if [ "$RUNNER_OS" = Windows ]; then bin="$bin.exe"; fi
-          REMOTECLIENT_BIN="$bin" node --test tests/*.test.cjs
+          binary_path="$(node -p 'require("node:path").resolve("bin/robrowser-remoteclient" + (process.platform === "win32" ? ".exe" : ""))')"
+          REMOTECLIENT_BIN="$binary_path" node --test --test-timeout=45000 --test-reporter=spec tests/*.test.cjs
