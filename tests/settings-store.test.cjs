@@ -41,3 +41,24 @@ test('invalid updates cannot erase or reopen owner policy', t => {
     assert.equal(fs.readFileSync(file, 'utf8'), previous);
   }
 });
+
+test('the real supervisor rejects corrupt policy before startup or Repair reaches the engine', { skip: !process.env.STACK_BIN }, t => {
+  const { spawnSync } = require('node:child_process');
+  const file = fixture(t);
+  const root = path.dirname(file);
+  const fake = path.join(root, 'must-not-execute' + (process.platform === 'win32' ? '.exe' : ''));
+  fs.writeFileSync(fake, 'This is deliberately not an executable.', { mode: 0o700 });
+  fs.writeFileSync(file, '{"open_registration":"false"}');
+  for (const verb of ['up', 'repair']) {
+    const result = spawnSync(process.env.STACK_BIN, [verb], {
+      encoding: 'utf8', timeout: 5000,
+      env: { ...process.env, RAGNAROK_OFFLINE_ROOT: root, RAGNAROKMAC_STATE: root,
+        NEBULA_HOME: path.join(root, 'never-started'), NEBULA_BIN: fake, RAGNAROKMAC_DOCKER: fake },
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Cannot read account creation policy/);
+    assert.equal(fs.existsSync(path.join(root, 'never-started')), false);
+    assert.equal(fs.existsSync(path.join(root, 'phase')), false);
+    assert.equal(fs.readFileSync(file, 'utf8'), '{"open_registration":"false"}');
+  }
+});

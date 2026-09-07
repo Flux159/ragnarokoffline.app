@@ -136,7 +136,7 @@ async function main() {
       await page.locator('#account-password').fill(friendPassword);
       await page.locator('#account-confirmation').fill(friendPassword);
       await page.locator('#account-create').click();
-      await expect(page.locator('#accounts-status')).toContainText('Account updated in ' + era);
+      await expect(page.locator('#accounts-status')).toContainText('Account updated in ' + (era === 'prerenewal' ? 'pre-renewal' : era));
       await signupAttempt(friend, friendPassword, true);
       report.approvedAccounts = [...(report.approvedAccounts || []), { era, username: friend }];
       await page.getByRole('button', { name: 'Refresh accounts', exact: true }).click();
