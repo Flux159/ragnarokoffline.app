@@ -3,10 +3,11 @@
 FROM alpine:3.23 AS diagnostic-runtime
 RUN apk add --no-cache mariadb-connector-c zlib libstdc++ libgcc bash tzdata \
         compiler-rt=21.1.2-r0 llvm21=21.1.2-r1 \
+    && ln -s /usr/bin/llvm21-symbolizer /usr/local/bin/llvm-symbolizer \
     && adduser -D -h /rathena rathena
 # Stop at the first error. Do not let the game's save handler replace ASan's
 # original-fault handler, and do not produce raw cores or exit-time leak noise.
-ENV ASAN_SYMBOLIZER_PATH=/usr/bin/llvm21-symbolizer
+ENV ASAN_SYMBOLIZER_PATH=/usr/local/bin/llvm-symbolizer
 ENV ASAN_OPTIONS="detect_leaks=0:halt_on_error=1:abort_on_error=0:disable_coredump=1:handle_segv=2:handle_sigbus=2:handle_sigfpe=2:fast_unwind_on_fatal=0"
 ENV UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1"
 
