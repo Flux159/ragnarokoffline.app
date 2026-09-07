@@ -1031,42 +1031,26 @@ async function saveSettings(settings) {
 
 	// Same shape: the supervisor only needs to know which era to start.
 	const era = path.join(state, 'prerenewal');
-	const eraChanged = fs.existsSync(era) !== !!settings.prerenewal;
 	if (settings.prerenewal) fs.writeFileSync(era, '');
 	else fs.rmSync(era, { force: true });
 
-	// Cycle the asset server around the supervisor, not after it.
-	//
-	// Two reasons, and the order matters for the second. It resolves the
-	// era's translation tree once, when it spawns -- so without this the servers
-	// restart and the player is still served the previous era's maps, which
-	// for pre-renewal is a different Prontera, not different wording.
-	//
-	// And it has to stop *before* the supervisor runs: the supervisor rebuilds
-	// the merged tree by deleting state/translation and relinking it, while
-	// the asset server is serving files straight out of that directory.
-	// Deleting a tree another process holds open is a sharing violation on
-	// Windows, and where the delete does succeed the server spends the rebuild
-	// serving a half-built tree.
-	//
-	// Only when the era actually changed, and only if one is running: a
-	// joining player has no asset server and should not be given one.
-	const cycleAssets = eraChanged && assetServer.running;
+	// link-assets now owns the translated overlay and generated client config.
+	// Restarting RemoteClient alone does not change either. Rebuild on Apply,
+	// including retries after a partially completed era switch or mod change.
+	const client = getClientPaths();
+	const cycleAssets = assetServer.running;
 	if (cycleAssets) {
-		appLog('era changed: stopping the asset server before the rebuild');
+		appLog('applying settings: stopping the asset server before rebuilding');
 		await assetsStop();
 	}
 
 	const out = await runStack(['up']);
-
+	if (clientComplete(client)) await linkClient(client);
 	if (cycleAssets) {
-		try {
-			await assetsStart();
-			appLog('era changed: asset server restarted');
-		} catch (e) {
-			appLog(`could not restart the asset server after an era change: ${e.message}`);
-		}
+		await assetsStart();
+		appLog('settings applied: asset server restarted');
 	}
+
 	return out;
 }
 

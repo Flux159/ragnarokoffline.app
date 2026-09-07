@@ -266,6 +266,34 @@ uncertain. Later gameplay tests must load the current test password into
 `<world>/account-tests/<timestamp>/`; no password-filled trace is recorded. The
 test exits its shell directly so the externally owned world remains running.
 
-Fresh-era initialization, startup/Repair and renamed/deleted GM preservation,
-era isolation, full packaged payloads and internet-mode safeguards are additional
-release gates; the account UI test alone does not close issue #4.
+`tests/e2e/era-settings.cjs` takes ownership of a **stopped** disposable world,
+opens real Settings, switches renewal → pre-renewal → renewal, checks the
+served `Config.local.js` and account panel, and logs into a playable map in
+each era. It retains one browser context across switches and asserts the loaded
+era flag as well as the served config. It requires private `account-test-credentials.json` and
+`prerenewal-account-test-credentials.json` files with `{account,password}` for
+already changed GM passwords. Renewal needs a character in slot 1; pre-renewal
+creates `AstraEra` there if empty. No other host may be running.
+
+```sh
+RO_E2E_WORLD=/absolute/path/to/disposable-world \
+RO_E2E_CLIENT_JSON=/absolute/path/to/client-selection.json \
+node tests/e2e/era-settings.cjs
+```
+
+The selection file is read only. The harness temporarily writes a local-only
+selection inside the test world and removes it after stopping the owned server.
+On teardown failure it retains that selection for recovery. Reports and
+screenshots live under `<world>/account-tests/settings-eras-<timestamp>/`;
+passwords never enter traces. Use the current image containing both
+`char-server-prere` and `map-server-prere`, not an older local archive.
+
+Startup/Repair recovery acceptance also requires a backed-up disposable DB:
+rename the GM, delete its login row, and disable it in separate cases; run both
+startup and Repair; prove no default login appears and character IDs/rows remain
+unchanged; then restore the fixture's original row. Resetting a disabled account's
+password must leave it disabled. Keep snapshots and passwords private, stop game
+services before direct fixture changes, and never run these cases on player data.
+Check independent first-era initialization and preservation in both directions.
+Full packaged payloads and internet-mode safeguards remain release gates; these
+account tests alone do not close issue #4.

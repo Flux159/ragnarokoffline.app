@@ -1528,6 +1528,18 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     let volume_marker = cfg.state.join(".db-volume");
     let had_volume = fs::read_to_string(&volume_marker).ok().map(|s| s.trim().to_string());
     if had_volume.as_deref() != Some(want_volume.as_str()) {
+        // Flush the old era while its database is still available. Replacing
+        // MariaDB first leaves live game services with stale connections and
+        // kills their chance to save when run_server later removes them.
+        // Stop MariaDB cleanly too; rm -f would make every era switch a crash
+        // recovery (including MyISAM tables such as loginlog).
+        for service in ["ragnarok-map", "ragnarok-char", "ragnarok-login", DB_CONTAINER] {
+            if dk.is_running(service)
+                && (dk.output(["stop", "-t", "30", service]).is_err() || dk.is_running(service))
+            {
+                return Err(format!("Could not stop {service}; the era database was not switched. Start again to retry."));
+            }
+        }
         dk.remove_container(DB_CONTAINER);
     }
 

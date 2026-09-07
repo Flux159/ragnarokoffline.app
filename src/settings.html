@@ -425,8 +425,12 @@ async function chooseEra(pre) {
     log(`${label} ready`);
   } catch (e) {
     clearInterval(ticking);
-    setEra(!pre);
-    show(`Could not switch to ${label}: ${String(e)}`);
+    // The DB switch may have succeeded before an asset rebuild failed. Show
+    // the saved selection, not an invented rollback to the previous era.
+    const saved = await invoke('get_settings').catch(() => ({ prerenewal: pre }));
+    setEra(!!saved.prerenewal);
+    status.hidden = false;
+    status.textContent = `Could not finish switching to ${label}: ${String(e)}. Saved era: ${saved.prerenewal ? 'pre-renewal' : 'renewal'}. Start the server to retry.`;
     log(String(e));
   } finally {
     clearInterval(ticking);
