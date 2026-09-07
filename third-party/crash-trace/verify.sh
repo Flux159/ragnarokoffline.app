@@ -1,6 +1,6 @@
 #!/bin/sh
 # Runs in each native Alpine image build; no VM, SQL or player data involved.
-set -eu
+set -eux
 cd /rathena/ragnarok-crash-tests
 g++ -g -O1 -fno-omit-frame-pointer -fno-optimize-sibling-calls -DRAGNAROK_CRASH_TRACE -Wl,--build-id=sha1 -rdynamic fixture.cpp -lunwind -o fixture
 objcopy --only-keep-debug fixture fixture.debug
@@ -9,6 +9,7 @@ objcopy --add-gnu-debuglink=fixture.debug fixture
 for mode in segv fpe; do
     status=0
     ./fixture "$mode" > "$mode.log" 2>&1 || status=$?
+    cat "$mode.log"
     if [ "$mode" = segv ]; then expected=139; else expected=136; fi
     test "$status" = "$expected"
     grep -q 'RAGNAROK_CRASH_TRACE v1 signal=' "$mode.log"

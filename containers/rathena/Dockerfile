@@ -89,6 +89,7 @@ RUN apk add --no-cache mariadb-connector-c zlib libstdc++ libgcc bash tzdata lib
     && adduser -D -h /rathena rathena
 
 WORKDIR /rathena
+COPY --from=build /rathena/ragnarok-crash-tests/libunwind-COPYING /usr/share/licenses/libunwind/COPYING
 COPY --from=build /out/re/login-server /out/re/char-server \
                   /out/re/map-server /out/re/web-server /rathena/
 # The pre-renewal pair sits beside them under its own names, in the same
