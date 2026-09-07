@@ -175,6 +175,14 @@
     <p class="note">Manage accounts on your own running server. Renewal and pre-renewal
       have separate accounts and passwords. Changes disconnect current players and restart
       game services; account IDs, privileges and characters are preserved.</p>
+    <label><span>New account creation</span><select id="open-registration">
+      <option value="open">Anyone at the game login screen</option>
+      <option value="owner">Owner only, through Settings</option>
+    </select></label>
+    <p class="note">Owner only disables _M / _F signup. Existing accounts keep working.
+      This policy applies to both eras. Apply and restart to change it.</p>
+    <button id="registration-save" class="ghost">Apply account creation policy and restart</button>
+    <p class="note" id="registration-status" role="status" aria-live="polite"></p>
     <div class="row"><span id="accounts-era">Choose Refresh to load the current era</span>
       <button id="accounts-refresh" class="ghost">Refresh accounts</button></div>
     <p class="note" id="accounts-status" role="status" aria-live="polite"></p>
@@ -688,12 +696,34 @@ $('mods-apply').onclick = () => withButton('mods-apply', 'Applying…', 'Apply',
   return 'Mods applied. Restart the app for client-side changes.';
 });
 
+$('registration-save').onclick = async () => {
+  const button = $('registration-save');
+  const status = $('registration-status');
+  button.disabled = true;
+  status.textContent = 'Saving account creation policy and restarting…';
+  try {
+    const settings = await invoke('get_settings');
+    settings.open_registration = $('open-registration').value === 'open';
+    await invoke('save_settings', { settings });
+    const mode = await invoke('get_mode');
+    status.textContent = mode.mode === 'join'
+      ? 'Saved for your own server. It will apply when you next host.'
+      : settings.open_registration ? 'Game login signup is enabled.'
+        : 'Only the owner can create accounts through Settings. Existing accounts can still log in.';
+  } catch (error) {
+    status.textContent = `Could not apply account creation policy: ${String(error)}. Start the server to retry.`;
+  } finally {
+    button.disabled = false;
+  }
+};
+
 $('save').onclick = async () => {
   const settings = await invoke('get_settings');
   for (const k of RATES) settings[k] = rateOf(k);
   settings.max_aspd = Number($('max_aspd').value) || 190;
   settings.max_parameter = Number($('max_parameter').value) || 99;
   settings.free_kafra_warp = $('free_kafra_warp').checked;
+  settings.open_registration = $('open-registration').value === 'open';
   settings.prerenewal = eraIsPre;
   settings.zeny_from_mobs = $('zeny_from_mobs').checked;
   $('save').disabled = true;
@@ -726,6 +756,7 @@ invoke('get_settings').then(s => {
   $('max_aspd').value = s.max_aspd ?? 190;
   $('max_parameter').value = s.max_parameter ?? 99;
   $('free_kafra_warp').checked = !!s.free_kafra_warp;
+  $('open-registration').value = s.open_registration === false ? 'owner' : 'open';
   setEra(!!s.prerenewal);
   $('zeny_from_mobs').checked = !!s.zeny_from_mobs;
   $('population_enable').checked = !!s.population_enable;

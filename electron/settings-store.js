@@ -1,0 +1,52 @@
+'use strict';
+
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const LIMIT = 1024 * 1024;
+const ERROR = 'Cannot read account creation policy. Repair settings.json before starting the server; registration was not enabled.';
+
+function validate(settings) {
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings) ||
+      (Object.hasOwn(settings, 'open_registration') && typeof settings.open_registration !== 'boolean')) {
+    throw new Error(ERROR);
+  }
+  return settings;
+}
+
+function read(file, defaults) {
+  let body;
+  try {
+    if (fs.statSync(file).size > LIMIT) throw new Error(ERROR);
+    body = fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return { ...defaults };
+    throw new Error(ERROR);
+  }
+  try { return { ...defaults, ...validate(JSON.parse(body)) }; }
+  catch { throw new Error(ERROR); }
+}
+
+function write(file, update, defaults) {
+  validate(update);
+  const settings = validate({ ...read(file, defaults), ...update });
+  const body = JSON.stringify(settings, null, 2) + '\n';
+  if (Buffer.byteLength(body) > LIMIT) throw new Error(ERROR);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temporary = file + '.' + crypto.randomBytes(12).toString('hex') + '.tmp';
+  let fd;
+  try {
+    fd = fs.openSync(temporary, 'wx', 0o600);
+    fs.writeFileSync(fd, body);
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = undefined;
+    fs.renameSync(temporary, file);
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+    fs.rmSync(temporary, { force: true });
+  }
+  return settings;
+}
+
+module.exports = { read, write };

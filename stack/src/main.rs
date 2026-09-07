@@ -19,6 +19,7 @@ mod json;
 mod mapcache;
 mod mods;
 mod process_identity;
+mod registration;
 mod operation_lock;
 
 use config::Config;

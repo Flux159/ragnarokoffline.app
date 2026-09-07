@@ -64,6 +64,15 @@ doesn't matter if you pick `_M` or `_F`, you are still able to create male and
 female characters after logging in. After your first account creation, you can 
 login as `myname`  without the suffix. Both the name and the password need at least four characters.
 
+To approve accounts yourself, choose **Settings → Accounts → New account creation →
+Owner only, through Settings**, then **Apply account creation policy and restart**.
+This disables `_M` / `_F` signup while existing accounts keep working. Create
+ordinary accounts with **Create friend account** in the same panel. The account
+creation policy applies to both eras and survives Repair and era changes; accounts
+and passwords themselves remain separate for each era. Local/LAN installs retain
+login signup until you change this setting. Internet sharing is still under
+development and requires additional access and credential safeguards.
+
 Ordinary accounts have almost no `@` commands — rAthena keeps `@autoloot` and
 `@showexp` for GMs. Settings → Mods → **player-commands** gives player characters some common commands.
 

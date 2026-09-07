@@ -1474,6 +1474,8 @@ fn run_server(cfg: &Config, dk: &Docker, name: &str, port: u16, binary: &str, la
 }
 
 pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<(), String> {
+    // Validate before touching the engine or replacing any running service.
+    let open_registration = crate::registration::enabled(&cfg.state)?;
     let conf = cfg.state.join("conf");
     for d in ["conf", "sql", "backups"] {
         fs::create_dir_all(cfg.state.join(d)).map_err(|e| format!("creating {d}: {e}"))?;
@@ -1605,10 +1607,6 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
         "login_server_ip: ragnarok-db\n", "ipban_db_ip: ragnarok-db\n",
         "char_server_ip: ragnarok-db\n", "map_server_ip: ragnarok-db\n",
         "web_server_ip: ragnarok-db\n", "log_db_ip: ragnarok-db\n"))?;
-    // rAthena ships new_account: no, so roBrowser's simplified registration has
-    // nothing to talk to. This is a single-player server on loopback.
-    write_conf(&conf, "login_conf.txt",
-        "new_account: yes\nacc_name_min_length: 4\npassword_min_length: 4\n")?;
     // The address char and map hand the client to reconnect to. This is the
     // one that actually decides whether a LAN player can play: everything can
     // be bound wide and reachable, and the client will still be told to go to
@@ -1668,6 +1666,9 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     // on a map that a removed mod used to provide cannot be selected at all.
     rescue_stranded_characters(cfg, dk, &mods.maps);
     write_mod_conf_files(cfg, &mods)?;
+    // Owner account policy is final, after mod assembly, and regenerated for
+    // startup, Repair and each era. Mods cannot reopen suffix registration.
+    write_conf(&conf, "login_conf.txt", &crate::registration::login_config(open_registration))?;
 
     // A mod's allowlisted settings go after ours, because rAthena's config
     // reader takes the last assignment of a key: start_point in particular is
@@ -1833,6 +1834,7 @@ pub fn restore(cfg: &Config, dk: &Docker, src: &str) -> Result<(), String> {
 /// container-level can be cleaned because the daemon is not answering.
 /// Player data is untouched — characters live in the ragnarokmac-db volume.
 pub fn repair(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<(), String> {
+    crate::registration::enabled(&cfg.state)?;
     phase(cfg, "Repairing…");
     // Break the lock rather than wait: the usual reason to reach for repair is
     // a previous run that died holding one.

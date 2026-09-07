@@ -333,3 +333,16 @@ are never part of the application payload.
 To also test a real host stopping when it becomes a joiner, run the stopped-world
 era harness above with `RO_E2E_JOIN_AT_END=1`. It verifies that all local game and
 engine ports close, and that applying Settings in Join mode keeps them closed.
+
+
+### Owner account creation policy
+
+`tests/e2e/registration-settings.cjs` owns a stopped disposable world, using the
+same `RO_E2E_WORLD` / `RO_E2E_CLIENT_JSON` inputs as the era Settings fixture. It
+checks actual game signup when enabled, rejected `_M` and `_F` signup with owner
+policy, group-0 account creation through Settings, existing GM characters in both
+eras, and policy persistence through Repair and renewal → pre-renewal → renewal.
+It saves Settings/game screenshots and a credential-free JSON report under the
+world's `account-tests/registration-*` directory. Test accounts stay in that
+disposable database; the fixture restores the original local settings and stops
+its server before exiting. Do not run it against a player save.

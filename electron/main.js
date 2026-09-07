@@ -786,6 +786,7 @@ async function linkClientOwned(paths) {
 }
 
 const SETTINGS_DEFAULTS = {
+	open_registration: true,
 	base_exp_rate: 100,
 	job_exp_rate: 100,
 	quest_exp_rate: 100,
@@ -817,11 +818,7 @@ const SETTINGS_DEFAULTS = {
 };
 
 function getSettings() {
-	try {
-		return { ...SETTINGS_DEFAULTS, ...JSON.parse(fs.readFileSync(path.join(stateDir(), 'settings.json'), 'utf8')) };
-	} catch {
-		return { ...SETTINGS_DEFAULTS };
-	}
+	return require('./settings-store').read(path.join(stateDir(), 'settings.json'), SETTINGS_DEFAULTS);
 }
 
 // rAthena has no zeny multiplier: whether monsters drop zeny at all is a
@@ -927,7 +924,7 @@ async function saveSettings(settings) {
 	// settings written there would be silently lost.
 	const state = stateDir();
 	fs.mkdirSync(path.join(state, 'conf'), { recursive: true });
-	fs.writeFileSync(path.join(state, 'settings.json'), JSON.stringify(settings, null, 2));
+	settings = require('./settings-store').write(path.join(state, 'settings.json'), settings, SETTINGS_DEFAULTS);
 	writeSettingsFiles(settings);
 
 	// A marker rather than a value: stack.sh regenerates the Kafra scripts from
