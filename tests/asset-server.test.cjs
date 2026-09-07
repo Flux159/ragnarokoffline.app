@@ -89,6 +89,25 @@ test('spawn failure is recoverable on the next serialized start', async t => {
 	assert.equal(ready.protocol, 1);
 });
 
+test('a reset initial control connection retries with a fresh authenticated challenge', async t => {
+	const { server, options, dir } = await fixture(t, 'reset-first-control');
+	await server.start(options);
+	assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'control-attempts.json'))), { count: 2, unique: 2 });
+	assert.equal(await server.ready(), true);
+});
+
+for (const mode of ['bad-control-mac-first', 'wrong-control-identity-first', 'reset-control-always']) {
+	test(`startup fails closed for ${mode}`, async t => {
+		const { server, options, dir } = await fixture(t, mode);
+		await assert.rejects(server.start(options));
+		const { count, unique } = JSON.parse(fs.readFileSync(path.join(dir, 'control-attempts.json')));
+		assert.equal(count, mode === 'reset-control-always' ? 3 : 1);
+		assert.equal(unique, count);
+		assert.equal(server.running, false);
+		assert.equal(fs.existsSync(path.join(dir, 'asset-owner.json')), false);
+	});
+}
+
 test('configuration changes replace the process and rotate diagnostic logs', async t => {
 	const { server, options, dir } = await fixture(t);
 	let previous = await server.start(options);

@@ -253,7 +253,22 @@ class AssetServer {
 			if (identity.protocol !== 1 || identity.service !== SERVICE || identity.pid !== child.pid || identity.launchId !== launchId || identity.stateRoot !== stateRoot || identity.executableDigest !== digest || identity.configFingerprint !== fingerprint || identity.httpPort !== port || !Number.isInteger(identity.controlPort) || identity.controlPort < 1 || identity.controlPort > 65535) throw new Error('Asset server launch identity does not match this build/configuration');
 			launch.identity = identity;
 			launch.osIdentity = await this.identify(child.pid);
-			await control(identity, secret, 'status');
+			// A busy host can reset the first control connection before the
+			// private peer's deadline. Retry only this owned launch's read-only
+			// status, with a new challenge and full verification each time.
+			const deadline = Date.now() + Math.min(this.startTimeout, 6000);
+			for (let attempt = 0; ; attempt++) {
+				try {
+					await control(identity, secret, 'status', Math.max(1, Math.min(2000, deadline - Date.now())));
+					break;
+				} catch (error) {
+					const transient = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EPIPE'].includes(error.code)
+						|| ['asset control timed out', 'asset control closed without a reply'].includes(error.message);
+					if (!transient || attempt >= 2 || Date.now() + 100 >= deadline
+						|| !this.running || this.current !== launch) throw error;
+					await new Promise(resolve => setTimeout(resolve, 100));
+				}
+			}
 			if (!(await healthy(identity)) || !this.running || this.current !== launch) throw new Error('Asset server failed its readiness probe');
 			atomicJson(recordPath, { identity, osIdentity: launch.osIdentity });
 			this.log(`owned asset server ready: pid=${identity.pid} configuration=${fingerprint}`);

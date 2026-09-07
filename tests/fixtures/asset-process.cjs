@@ -22,6 +22,8 @@ input.once('line', bootstrap => {
 		setTimeout(() => process.exit(0), 30);
 	};
 	let identity;
+	let statusCount = 0;
+	const challenges = new Set();
 	const control = net.createServer(socket => {
 		let text = '';
 		socket.on('error', () => {});
@@ -32,8 +34,17 @@ input.once('line', bootstrap => {
 			if (mac(envelope.payload) !== envelope.mac) return socket.end();
 			const request = JSON.parse(envelope.payload);
 			if (request.launchId !== config.launchId) return socket.end();
-			const payload = JSON.stringify({ identity, challenge: request.challenge, action: request.action });
-			socket.end(JSON.stringify({ payload, mac: mac(payload) }) + '\n');
+			if (request.action === 'status' && mode.includes('control')) {
+				statusCount++;
+				challenges.add(request.challenge);
+				fs.writeFileSync('control-attempts.json', JSON.stringify({ count: statusCount, unique: challenges.size }));
+				if (mode === 'reset-control-always' || (mode === 'reset-first-control' && statusCount === 1)) return socket.resetAndDestroy();
+			}
+			const firstStatus = request.action === 'status' && statusCount === 1;
+			const claimed = mode === 'wrong-control-identity-first' && firstStatus ? { ...identity, launchId: '0'.repeat(64) } : identity;
+			const payload = JSON.stringify({ identity: claimed, challenge: request.challenge, action: request.action });
+			const signature = mode === 'bad-control-mac-first' && firstStatus ? '0'.repeat(64) : mac(payload);
+			socket.end(JSON.stringify({ payload, mac: signature }) + '\n');
 			if (request.action === 'shutdown') shutdown();
 		});
 	});
