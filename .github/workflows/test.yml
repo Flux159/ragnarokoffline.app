@@ -7,6 +7,16 @@ on:
 permissions:
   contents: read
 jobs:
+  server-language:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/vendor-fetch.sh rathena vendor/rathena
+      - run: python3 tests/diagnostics/verify-language.py vendor/rathena --expect-fault
+      - run: bash scripts/apply-server-mods.sh vendor/rathena
+      - run: bash scripts/apply-server-mods.sh vendor/rathena
+      - run: python3 tests/diagnostics/verify-language.py vendor/rathena
   client-build:
     runs-on: ubuntu-latest
     timeout-minutes: 10

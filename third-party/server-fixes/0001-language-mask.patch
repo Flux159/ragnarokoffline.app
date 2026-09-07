@@ -1,0 +1,17 @@
+--- a/src/common/msg_conf.cpp
++++ b/src/common/msg_conf.cpp
+@@ -130,9 +130,11 @@
+  * -2 : disable
+  */
+ int32 msg_checklangtype(int32 lang, bool display){
+-	uint16 test= (1<<(lang-1));
+-	if(!lang) return 1; //default english
+-	else if(lang < 0 || test > LANG_MAX) return -1; //false range
++	if(!lang) return 1; //default english; do not shift by -1
++	// RAGNAROKMAC: validate before shifting or narrowing the language mask.
++	if(lang < 0 || lang > 16) return -1;
++	uint16 test = static_cast<uint16>(1u << (lang - 1));
++	if(test > LANG_MAX) return -1; //false range
+ 	else if (LANG_ENABLE&test) return 1;
+ 	else if(display) {
+ 		ShowDebug("Unsupported langtype '%d'.\n",lang);

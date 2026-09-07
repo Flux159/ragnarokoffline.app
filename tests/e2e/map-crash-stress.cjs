@@ -1,4 +1,4 @@
-// Opt-in real Settings/roBrowser mandatory hosting guard acceptance. Owns one stopped disposable
+// Opt-in real rAthena reload/logout and server-recovery acceptance. Owns one stopped disposable
 // world for the duration; never reads or writes a player's save.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -18,6 +18,10 @@ const selected = JSON.parse(fs.readFileSync(process.env.RO_E2E_CLIENT_JSON));
 const state = path.join(world, 'state');
 const settingsPath = path.join(state, 'settings.json');
 const settings = fs.existsSync(settingsPath) ? fs.readFileSync(settingsPath) : null;
+const modSelection = Object.fromEntries(['enabled.txt', 'disabled.txt'].map(name => {
+  const file = path.join(state, 'mods', name);
+  return [name, fs.existsSync(file) ? fs.readFileSync(file) : null];
+}));
 if (fs.existsSync(path.join(state, 'prerenewal'))) throw Error('Start with renewal selected');
 const credentials = Object.fromEntries(['renewal', 'prerenewal'].map(era => [era,
   JSON.parse(fs.readFileSync(path.join(world, era === 'renewal'
@@ -33,6 +37,9 @@ fs.writeFileSync(path.join(recovery, 'selection.json'), JSON.stringify({
   clientExisted: false, settingsExisted: settings !== null, prerenewalExisted: false,
 }), { mode: 0o600 });
 if (settings) fs.writeFileSync(path.join(recovery, 'settings.json'), settings, { mode: 0o600 });
+for (const [name, bytes] of Object.entries(modSelection)) {
+  if (bytes !== null) fs.writeFileSync(path.join(recovery, name), bytes, { mode: 0o600 });
+}
 const report = { checks: [], screens: [], pageErrors: [], startedAt: new Date().toISOString() };
 const serviceSecrets = [];
 const env = { ...process.env, RAGNAROK_OFFLINE_HOME: world,
@@ -86,6 +93,10 @@ async function main() {
     owner = await app.firstWindow();
     await expect(owner.locator('body')).toContainText('Waiting for your client', { timeout: 30000 });
     const boot = owner;
+    // A server disconnect can open roBrowser's unload confirmation while the
+    // shell navigates to recovery. Own the dialog so Playwright does not race
+    // its automatic handler against that navigation.
+    boot.on('dialog', dialog => dialog.accept().catch(() => {}));
     await invoke('open_settings');
     await expect.poll(() => app.windows().some(p => p.url().endsWith('settings.html'))).toBe(true);
     const page = app.windows().find(p => p.url().endsWith('settings.html'));
@@ -93,6 +104,10 @@ async function main() {
     // in Settings and complete the actual setup Continue handler instead of
     // starting services behind an abandoned "Waiting for your client" page.
     owner = page;
+    if (process.env.RO_E2E_STRESS_MODS === 'off') {
+      for (const mod of await invoke('list_mods')) await invoke('set_mod_enabled', { name: mod.name, enabled: false });
+    }
+    report.mods = await invoke('list_mods');
     await expect.poll(() => app.windows().some(p => p.url().endsWith('setup.html'))).toBe(true);
     const setup = app.windows().find(p => p.url().endsWith('setup.html'));
     await app.evaluate(({ dialog }) => { globalThis.roOriginalOpenDialog = dialog.showOpenDialog; });
@@ -161,12 +176,14 @@ async function main() {
       await game.locator('#slot0').dblclick();
       await expect.poll(async () => (await snapshot(game)).input.canMove, { timeout: 90000 }).toBe(true);
     }
+    const chatText = () => game.locator('#ChatBox').evaluate(host => host.shadowRoot?.textContent || host.textContent);
     async function command(value, acknowledgement) {
+      const previous = acknowledgement ? (await chatText()).split(acknowledgement).length : 0;
       await game.keyboard.press('Enter');
       const chat = game.locator('.input-chatbox');
       await chat.fill(value);
       await game.keyboard.press('Enter');
-      if (acknowledgement) await expect(game.locator('#ChatBox')).toContainText(acknowledgement, { timeout: 60000 });
+      if (acknowledgement) await expect.poll(async () => (await chatText()).split(acknowledgement).length, { timeout: 60000 }).toBeGreaterThan(previous);
       await game.locator('.input-chatbox').blur();
     }
     async function healthy() {
@@ -203,8 +220,16 @@ async function main() {
           await expect.poll(async () => (await snapshot(game)).input.canMove).toBe(true);
           if (population) {
             await command('@populate stats', 'Active / created / errors');
-            row.populationStats = await game.locator('#ChatBox').evaluate(host => host.shadowRoot?.textContent || host.textContent);
+            row.populationStats = await chatText();
             if (!/Active \/ created \/ errors\s*:\s*[1-9]/.test(row.populationStats)) throw Error('Population did not actually spawn');
+          }
+          await command('@warp prt_fild08 170 200');
+          await expect.poll(async () => (await snapshot(game)).map, { timeout: 60000 }).toMatch(/^prt_fild08/);
+          await expect.poll(async () => (await snapshot(game)).input.canMove).toBe(true);
+          if (population) {
+            await command('@populate stop', 'Population engine stopped and cleaned up');
+            await command('@populate 100 prt_fild08', 'Population PCs spawned:');
+            row.events.push('population stop and 100-shell spawn');
           }
           await command('@reloadscript', 'Scripts have been reloaded.');
           await healthy();
@@ -230,6 +255,10 @@ async function main() {
   } catch (error) {
     failure = error;
     report.failure = redact(error);
+    for (const service of ['ragnarok-map', 'ragnarok-char', 'ragnarok-login']) {
+      const logs = docker(['logs', '--tail', '200', service]);
+      if (logs.status === 0) fs.writeFileSync(path.join(out, service + '-failure.log'), redact(logs.stdout + logs.stderr), { mode: 0o600 });
+    }
     console.error('Acceptance failed:', report.failure);
     if (game && !game.isClosed()) await game.screenshot({ path: path.join(out, 'failed-game.png'), mask: [game.locator('input, textarea')] }).catch(() => {});
     // Capture the failing UI before cleanup can close it. Mask form fields;
@@ -263,6 +292,10 @@ async function main() {
       if (stopped) {
         fs.rmSync(clientPath);
         if (settings) fs.writeFileSync(settingsPath, settings); else fs.rmSync(settingsPath, { force: true });
+        for (const [name, bytes] of Object.entries(modSelection)) {
+          const file = path.join(state, 'mods', name);
+          if (bytes !== null) fs.writeFileSync(file, bytes); else fs.rmSync(file, { force: true });
+        }
         fs.rmSync(path.join(state, 'prerenewal'), { force: true });
       }
       report.finishedAt = new Date().toISOString();

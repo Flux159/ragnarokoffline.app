@@ -85,3 +85,23 @@ Normal ARM64 image `ec813673406bdfa995723535f926697f1167467ab105a0e5f938d96236d6
 completed 20 reload/logout cycles: five per era/population-off-or-on combination.
 Bundled mobile and keyboard mods were enabled. No crash was reproduced; this
 short exposure is not closure of #16 or the full acceptance matrix.
+
+The corrected diagnostic image from build `34153441798` (source
+`7cd027d67218ee40e6829579da3d82d32d37ca87`, ARM64 image
+`5b4dc29e9dce57b3969af9e84e92c1acf40c2f87048c1f02a62030d60203a8cd`)
+passed the synthetic guest fixture, then found another real startup defect:
+`msg_checklangtype(0)` shifts by -1 before its English early return. The retained
+stack starts at `msg_conf.cpp:133`, called by `map_do_init_msg`. The small
+`third-party/server-fixes/0001-language-mask.patch` moves the early return and
+range checks before the shift. It applies to both normal and diagnostic builds.
+`tests/diagnostics/verify-language.py` compiles that actual source function with
+UBSan: the pinned original fails on English; the patched checker passes English,
+all nine other languages, three enable masks and invalid integer bounds.
+This is a startup UB finding, not evidence of the intermittent logout fault.
+
+The real injected-map-fault recovery test passed with the normal image:
+`RO_E2E_RECOVERY_SMOKE=1` detected the stopped map, showed its private-report
+screen and returned to native login through Retry. The stress fixture also
+supports `RO_E2E_STRESS_MODS=off`, preserving/restoring mod selection files, and
+records the actual mod list. Population rows explicitly stop and respawn 100
+shells between map transitions before reloading scripts.
