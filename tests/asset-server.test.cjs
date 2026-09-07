@@ -51,7 +51,7 @@ test('concurrent starts share one owned process; stop awaits actual exit', async
 for (const label of ['HTTP 200', 'non-HTTP listener']) {
 	test(`never adopts or kills an unrelated ${label}`, async t => {
 		const { server, options, dir } = await fixture(t);
-		const foreign = label === 'HTTP 200' ? http.createServer((_, res) => res.end('{}')) : net.createServer(socket => socket.end('not HTTP'));
+		const foreign = label === 'HTTP 200' ? http.createServer((_, res) => res.end('{}')) : net.createServer(socket => { socket.on('error', () => {}); socket.end('not HTTP'); });
 		const port = await listen(foreign);
 		t.after(() => new Promise(resolve => foreign.close(resolve)));
 		options.environment.PORT = String(port);
