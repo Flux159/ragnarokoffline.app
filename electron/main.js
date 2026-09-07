@@ -2024,6 +2024,12 @@ function buildMenu() {
 // ---------------------------------------------------------------------------
 
 let tearingDown = false;
+const crashMonitor = new (require('./crash-monitor').CrashMonitor)({
+	active: () => !tearingDown && assetServer.running,
+	collect: () => queueServerOperation(() => !tearingDown && assetServer.running
+		? runStack(['capture-crashes']) : ''),
+	log: message => appLog(message),
+});
 // Set when a launch arrives while we are quitting: see the second-instance
 // handler. Guarded because two clicks must not queue two copies.
 let relaunchQueued = false;
@@ -2137,6 +2143,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.whenReady().then(() => {
+	crashMonitor.start();
 	// Before anything reads a path: an existing install still has its data
 	// under the old folder name.
 	migrateDataRoot();

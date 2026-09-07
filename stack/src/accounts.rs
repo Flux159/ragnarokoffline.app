@@ -171,6 +171,7 @@ pub(crate) fn with_servers_stopped<T>(
     dk: &Docker,
     operation: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
+    crate::crashes::capture_all(cfg, dk);
     let previous_start = dk.started_at("ragnarok-char");
     let mut stopped = Vec::new();
     let mut result = Ok(());

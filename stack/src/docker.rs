@@ -102,6 +102,45 @@ impl Docker {
         self.state(name).as_deref() == Some("running")
     }
 
+    /// Bounded diagnostic reads. Drain both pipes concurrently so a large log
+    /// cannot deadlock the CLI; retain only each stream's tail and cap time.
+    pub fn diagnostic_output(&self, args: &[&str], limit: usize) -> Result<String, String> {
+        let mut child = self.base().args(args).stdin(Stdio::null())
+            .stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
+            .map_err(|_| "Diagnostic command could not start")?;
+        fn tail(mut input: impl Read, limit: usize) -> std::io::Result<Vec<u8>> {
+            let mut out = std::collections::VecDeque::with_capacity(limit);
+            let mut buffer = [0; 8192];
+            loop {
+                let n = input.read(&mut buffer)?;
+                if n == 0 { break; }
+                for byte in &buffer[..n] {
+                    if out.len() == limit { out.pop_front(); }
+                    out.push_back(*byte);
+                }
+            }
+            Ok(out.into())
+        }
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+        let output = std::thread::spawn(move || tail(stdout, limit));
+        let errors = std::thread::spawn(move || tail(stderr, limit));
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let success = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status.success(),
+                Ok(None) if Instant::now() < deadline => sleep(Duration::from_millis(20)),
+                _ => { let _ = child.kill(); let _ = child.wait(); break false; }
+            }
+        };
+        let out = output.join().ok().and_then(Result::ok);
+        let err = errors.join().ok().and_then(Result::ok);
+        if !success { return Err("Diagnostic command failed or timed out".into()); }
+        let mut body = String::from_utf8_lossy(&out.ok_or("Diagnostic output unavailable")?).into_owned();
+        body.push_str(&String::from_utf8_lossy(&err.ok_or("Diagnostic output unavailable")?));
+        Ok(body)
+    }
+
     /// Remove every container answering to a name, then wait for the name to be
     /// released.
     ///

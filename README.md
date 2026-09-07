@@ -361,6 +361,8 @@ a client folder on the wrong drive, the virtual machine refusing to start,
 the first login not taking, and moving your characters to another machine —
 are collected in **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)**.
 
+Unexpected game-server exits also retain private [crash evidence](docs/CRASH_DIAGNOSTICS.md) before container cleanup. Native stack traces and the intermittent crash investigation remain in progress.
+
 If yours is not there, the Settings window has a **Report a problem** button
 that copies everything a fix needs — logs, paths, versions — and opens a new
 issue ready to paste it into. Or ask in the

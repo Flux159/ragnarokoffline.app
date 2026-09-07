@@ -1355,73 +1355,9 @@ fn strip_ansi(s: &str) -> String {
     out.trim().to_string()
 }
 
-/// Keep a crashed server's last words before the container is thrown away.
-///
-/// `run_server` removes the old container before starting the new one, and
-/// removing a container deletes its log with it. So every restart destroyed the
-/// only record of why the previous one died -- which, for a server that falls
-/// over intermittently, is the evidence and nothing else is.
-///
-/// rAthena prints no backtrace: `sig_proc` catches SIGSEGV, saves online
-/// characters, then re-raises with the default handler. The shipped binaries
-/// are stripped and Alpine's musl has no `execinfo`, so there is nothing to
-/// print even if it tried. What there *is* is the last few hundred lines of
-/// what the server was doing, and that is worth keeping.
-fn save_crash_log(cfg: &Config, dk: &Docker, name: &str) {
-    // "exited" covers a clean stop too, so the log is only kept when the exit
-    // looks unplanned -- a clean shutdown says so on its way out.
-    let Some(state) = dk.state(name) else { return };
-    if state != "exited" {
-        return;
-    }
-    let log = dk.logs(name, "400");
-    let crashed = log.contains("Received a crash signal")
-        || log.contains("Received another crash signal");
-    if !crashed {
-        return;
-    }
-    let dir = cfg.state.join("crashes");
-    if fs::create_dir_all(&dir).is_err() {
-        return;
-    }
-    // Seconds since the epoch: sortable, needs no date formatting, and this
-    // binary has no dependency that would provide one.
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let path = dir.join(format!("{name}-{stamp}.log"));
-    if fs::write(&path, strip_ansi_lines(&log)).is_ok() {
-        eprintln!(
-            "{name} crashed during the last run; its log was kept at {}",
-            path.display()
-        );
-        // Keep the last ten. A crash loop should not quietly fill a disk.
-        prune_crash_logs(&dir, 10);
-    }
-}
-
-/// rAthena colours its output, and a log full of escape sequences is a log
-/// nobody will read or attach to a bug report.
-fn strip_ansi_lines(s: &str) -> String {
-    s.lines().map(strip_ansi).collect::<Vec<_>>().join("\n")
-}
-
-fn prune_crash_logs(dir: &Path, keep: usize) {
-    let Ok(rd) = fs::read_dir(dir) else { return };
-    let mut files: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_file()).collect();
-    if files.len() <= keep {
-        return;
-    }
-    files.sort();
-    for p in &files[..files.len() - keep] {
-        let _ = fs::remove_file(p);
-    }
-}
-
 fn run_server(cfg: &Config, dk: &Docker, name: &str, port: u16, binary: &str, lan: bool) -> Result<(), String> {
     // Before the container goes, and with it its log.
-    save_crash_log(cfg, dk, name);
+    crate::crashes::capture_all(cfg, dk);
     dk.remove_container(name);
 
     // One directory mount, not five file mounts: a single-file bind whose host
@@ -1474,7 +1410,8 @@ fn run_server(cfg: &Config, dk: &Docker, name: &str, port: u16, binary: &str, la
         .map_err(|e| format!("starting {name}: {e}"))
 }
 
-fn stop_game_services(dk: &Docker) -> Result<(), String> {
+fn stop_game_services(cfg: &Config, dk: &Docker) -> Result<(), String> {
+    crate::crashes::capture_all(cfg, dk);
     for service in ["ragnarok-map", "ragnarok-char", "ragnarok-login"] {
         if dk.is_running(service) && (dk.output(["stop", "-t", "30", service]).is_err() || dk.is_running(service)) {
             return Err(format!("Could not stop {service} cleanly; database credentials were not changed."));
@@ -1574,7 +1511,7 @@ pub fn secure_services(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32
         // includes all player data; secure its host directory before writing.
         crate::private_fs::directory(&cfg.state)?;
         let backups = cfg.state.join("backups"); crate::private_fs::directory(&backups)?;
-        stop_game_services(dk)?;
+        stop_game_services(cfg, dk)?;
         let destination = backups.join(format!("before-service-credentials-{}-{}.sql", crate::service_credentials::era(cfg), crate::private_fs::random_hex(8)?));
         if let Err(error) = backup(cfg, dk, &destination.to_string_lossy()) {
             return Err(format!("Service credentials were not changed: {error}. Start the server to reconnect."));
@@ -1610,7 +1547,7 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
         protect_game_config(cfg)?;
         // Recreate the database with the private bind/copy, including after a
         // failed migration or a runtime update. Flush players first.
-        stop_game_services(dk)?;
+        stop_game_services(cfg, dk)?;
         if dk.is_running(DB_CONTAINER) && (dk.output(["stop", "-t", "30", DB_CONTAINER]).is_err() || dk.is_running(DB_CONTAINER)) {
             return Err("Could not stop the database cleanly; credentials were not changed".into());
         }
@@ -1866,7 +1803,7 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
 
 pub fn down(cfg: &Config, dk: &Docker) -> Result<(), String> {
     let _lock = Lock::acquire(cfg)?;
-    stop_game_services(dk)?;
+    stop_game_services(cfg, dk)?;
     for c in SERVERS {
         dk.remove_container(c);
     }
@@ -1956,7 +1893,7 @@ pub fn restore(cfg: &Config, dk: &Docker, src: &str) -> Result<(), String> {
         return Err(format!("no such backup: {src}"));
     }
     crate::accounts::verify_era(cfg, dk, crate::service_credentials::era(cfg))?;
-    stop_game_services(dk)?;
+    stop_game_services(cfg, dk)?;
     let backups = cfg.state.join("backups");
     crate::private_fs::directory(&backups)?;
     let safety = backups.join(format!("before-restore-{}-{}.sql", crate::service_credentials::era(cfg), crate::private_fs::random_hex(8)?));
@@ -1996,6 +1933,7 @@ pub fn restore(cfg: &Config, dk: &Docker, src: &str) -> Result<(), String> {
 pub fn repair(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<(), String> {
     crate::registration::enabled(&cfg.state)?;
     crate::hosting::before_start(cfg, crate::hosting::Scope::load(cfg, lan)?)?;
+    crate::crashes::capture_all(cfg, dk);
     phase(cfg, "Repairing…");
     // Break the lock rather than wait: the usual reason to reach for repair is
     // a previous run that died holding one.
