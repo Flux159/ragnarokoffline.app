@@ -1,0 +1,6 @@
+{
+  "name": "client-api",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "Client API example: show the map name and add a scoped chat border, with complete cleanup."
+}

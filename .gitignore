@@ -55,6 +55,9 @@ data.ini
 /node_modules/
 /dist/electron/
 
+# Local gameplay screenshots, traces and baseline client builds.
+/artifacts/
+
 # The supervisor crate build output.
 stack/target/
 

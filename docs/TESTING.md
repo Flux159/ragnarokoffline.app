@@ -106,3 +106,80 @@ Rebuilds hold a separate OS-managed file lock; a competing CLI rebuild is refuse
 and a crashed process releases the lock without an age-based stale-lock guess.
 This uses [standard-library file locking](https://doc.rust-lang.org/std/fs/struct.File.html#method.try_lock)
 and sets the supervisor's minimum Rust version to 1.89 without adding crates.
+# Client controls in a real game
+
+The client API and WASD branch includes `npm run test:e2e`. It joins a running
+**disposable** world through the owned Rust asset server and checks actual
+rAthena movement acknowledgements. It does not start or reuse a player's VM.
+See [Playwright's browser setup](https://playwright.dev/docs/browsers) for browser
+installation. Playwright is a development dependency and is not packaged.
+
+Quit the packaged app and let it finish quitting before preparing or starting
+the test world. Fixed game ports still prohibit running two worlds at once.
+Build the pinned client and current supervisor/RemoteClient first:
+
+```sh
+bash scripts/vendor-fetch.sh roBrowserLegacy vendor/roBrowserLegacy
+bash scripts/patch-client.sh
+npm ci --prefix vendor/roBrowserLegacy
+npm --prefix vendor/roBrowserLegacy run build -- --O --T --H
+cargo build --manifest-path stack/Cargo.toml
+bash scripts/build-remoteclient.sh
+npm ci
+npx playwright install chromium
+```
+
+Use a new directory for `RO_E2E_WORLD`. `RO_E2E_RUNTIME` must name an unpacked
+working app runtime with current `bin/nebula`, its signed helpers, guest images
+and packaged container images; the source tree's old nebula binary is unsuitable.
+`RO_E2E_CLIENT_JSON` supplies only the selected GRF/BGM paths. Preparation copies
+runtime/build inputs, creates its own save and reads the selected archives in
+place. It refuses an existing world directory, and never deletes a data disk.
+
+macOS example (use equivalent runtime/client-selection paths on Windows/Linux):
+
+```sh
+export RO_E2E_WORLD="$PWD/artifacts/issue-6/my-world"
+export RO_E2E_RUNTIME="$HOME/Library/Application Support/Ragnarok Offline/runtime"
+export RO_E2E_CLIENT_JSON="$HOME/Library/Application Support/Ragnarok Offline/client.json"
+node tests/e2e/world.cjs prepare
+node tests/e2e/world.cjs up
+node tests/e2e/world.cjs serve
+```
+
+Keep `serve` in that terminal. Open `http://127.0.0.1:3338/`, log into the new
+world using its shipped local GM account, and create a character in slot 1.
+This first creation exercises the real character UI; no position assignments or
+database character fabrication are used. In a second terminal with the same
+`RO_E2E_WORLD`:
+
+```sh
+node tests/e2e/world.cjs backup
+npm run test:e2e
+```
+
+Optional `RO_E2E_ACCOUNT` and `RO_E2E_PASSWORD` select another disposable test
+account. The harness authenticates the private asset ownership control endpoint,
+checks the executable hash and OS process identity, then uses the actual login
+UI. It never records authentication fill actions or raw WebSocket frames.
+Tracing starts after login/map entry. Reports include browser/packet versions,
+configuration/executable fingerprints, server movement acknowledgement counts,
+page/console errors, failed HTTP paths and WebSocket lifecycle.
+
+Screenshots and traces are under `artifacts/issue-6/local/playwright/` (override
+the build label with `RO_E2E_BUILD`). `map-before.png` and `map-after.png` bracket
+the movement test; they are **not** a comparison with the previous app version.
+Inspect screenshots alongside the JSON report. Expected asset fallbacks and
+upstream console diagnostics must be reviewed rather than called a clean console.
+
+Stop `serve` with Ctrl-C, then run `node tests/e2e/world.cjs down`. Save backups
+remain in the world folder. For a new build, use a new world path or explicitly
+stop the existing host before replacing its runtime inputs.
+
+Current automated coverage: desktop login/relogin, W/A/S/D and arrows, actual
+server movement, release, chat typing, per-browser disable/persistence and
+stable source counts after reload. Unit tests additionally cover diagonals,
+opposing directions, camera rotation, input ownership, cancellation, shortcut
+priority and plugin cleanup/timeouts. The mobile viewport/two-thumb tests, real
+phone testing, warp/death/IME/hidden-tab gameplay cases and previous-version
+screenshot matrix remain release gates for issue #6.

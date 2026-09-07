@@ -7,7 +7,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RB="$ROOT/vendor/roBrowserLegacy"
+RB="${RAGNAROK_ROBROWSER_DIR:-$ROOT/vendor/roBrowserLegacy}"
 
 python3 - "$ROOT" "$RB" <<'PY'
 import shutil, sys
@@ -108,20 +108,7 @@ elif old in s:
 else:
     sys.exit("CharSelectCommon.js: init() no longer matches; re-check the patch")
 
-# 0002 - WASD / arrow-key movement.
-shutil.copyfile(root / "patches/KeyboardMove.js", rb / "src/Controls/KeyboardMove.js")
-p = rb / "src/Engine/MapEngine.js"
-s = p.read_text()
-if "KeyboardMove" not in s:
-    s = s.replace(
-        "import MapControl from 'Controls/MapControl.js';",
-        "import MapControl from 'Controls/MapControl.js';\nimport KeyboardMove from 'Controls/KeyboardMove.js';",
-    )
-    s = s.replace("\t\t\tMapControl.init();", "\t\t\tMapControl.init();\n\t\t\tKeyboardMove.init();")
-    p.write_text(s)
-    print("patched MapEngine.js (keyboard movement)")
-else:
-    print("MapEngine.js already patched")
+# 0002 is now the optional wasd-movement mod using the client extension API.
 # 0004 - A missing .lub must not strand the player at character select.
 #
 # loadLuaValue() calls Client.loadFile(file, onload) with no error callback.
@@ -681,3 +668,5 @@ else:
     print("patched EquipmentCommon.js (drag and drop onto the equipment window)")
 
 PY
+
+python3 "$ROOT/scripts/patch-client-controls.py" "$ROOT" "$RB"

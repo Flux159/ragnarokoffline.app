@@ -7,6 +7,25 @@ on:
 permissions:
   contents: read
 jobs:
+  client-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: bash scripts/vendor-fetch.sh roBrowserLegacy vendor/roBrowserLegacy
+      - name: Apply the patch set twice to the release pin
+        run: |
+          bash scripts/patch-client.sh
+          git -C vendor/roBrowserLegacy diff --binary > /tmp/client-first.patch
+          bash scripts/patch-client.sh
+          git -C vendor/roBrowserLegacy diff --binary > /tmp/client-second.patch
+          cmp /tmp/client-first.patch /tmp/client-second.patch
+      - run: npm ci --prefix vendor/roBrowserLegacy
+      - run: npm --prefix vendor/roBrowserLegacy run build -- --O --T --H
+      - run: node --test tests/client-extensions.test.cjs
   supervisor-and-lifecycle:
     timeout-minutes: 20
     strategy:

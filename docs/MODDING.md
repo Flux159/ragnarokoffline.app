@@ -26,9 +26,9 @@ The mods directory is:
 or `$RAGNAROK_OFFLINE_HOME/state/mods` if that is set — which is how to test
 against a scratch install instead of the one you play on.
 
-**Nine worked examples live in [`examples/mods/`](../examples/mods).** Each one
-is a mod that has actually been run, with a README saying what it demonstrates
-and what to look at first. Start from the one closest to what you want.
+**Worked examples live in [`examples/mods/`](../examples/mods).** Their READMEs
+describe what each demonstrates and what to look at first. Start from the one
+closest to what you want.
 
 Mods merge in **name order**, so if two touch the same file the later name
 wins. Everything is reassembled on every start, so removing a folder removes
@@ -508,16 +508,20 @@ translation's version and add to it.
 can restyle the interface, adjust the viewport, or hook the client's own UI.
 
 **It must be an ES module whose default export is a function.** The plugin
-manager `import()`s the file and calls `module.default(params)`; a truthy
-return means "loaded".
+manager imports the file and awaits `module.default(params, api)`. Initializers
+run in configured order before login, once per page. Existing one-argument
+plugins remain compatible. Return a cleanup function or `{ dispose() }` for
+owned resources; `false` reports failure. A failed or timed-out initializer
+releases its registered resources and does not stop the next plugin or login.
 
 ```js
 // my-mod/client/index.js
-export default function () {
+export default function (params, api) {
+	if (api?.version !== 1) throw new Error('This mod requires client API 1');
 	const css = document.createElement('style');
 	css.textContent = '#chat { font-size: 15px !important; }';
 	document.head.appendChild(css);
-	return true;
+	return () => css.remove();
 }
 ```
 
@@ -530,13 +534,46 @@ to check.
 The second thing: **roBrowser's windows live in shadow roots**, and a `<style>`
 in the document head does not cross that boundary. To restyle the interface
 rather than the page, build a `CSSStyleSheet` and adopt it into each shadow
-root as it appears. [`mods/mobile-ui`](../mods/mobile-ui) does exactly this and
-is worth reading for it.
+root as it appears. Use `api.on('ui:append', component => …)` for supported
+component notifications. Already mounted components replay to new subscribers;
+`ui:remove` lets a mod remove its styles. Avoid scanning the entire document on
+every DOM mutation. See [`examples/mods/client-api`](../examples/mods/client-api).
 
 Enabled mods are written into the `plugins` map of the generated
 `Config.local.js` automatically; there is nothing to register by hand. Files
-next to `index.js` are served from `plugins/<mod-name>/`, and paths inside the
-plugin resolve from the **server root**, not from the plugin folder.
+next to `index.js` are served from `plugins/<mod-name>/`. The configured entry
+path resolves from the page URL; relative ES module imports resolve from the
+importing module. Use `new URL('./file.css', import.meta.url)` for adjacent
+resources. Plugin entries must use the same HTTP(S) origin as the game.
+
+### Client API 1
+
+This is an unprivileged game-page API. It does not expose Electron IPC, engine
+objects, passwords, database operations or arbitrary packet construction.
+It is a supported interface, not a sandbox for untrusted JavaScript.
+
+| API | Contract |
+| --- | --- |
+| `api.on(event, listener, { replay: true })` | Returns an unsubscribe function; subscriptions also end at disposal. Events: `map:enter`, `map:leave`, `connection`, `ui:append`, `ui:remove`, `movement:clear`, `preferences:change`. |
+| `api.snapshot()` | Frozen copy of map, connection, player position/HP/SP, camera, packet version and movement counters. Server movement acknowledgements are read-only evidence. |
+| `api.components.current()` | Mounted `{ name, root, host }` descriptors. DOM references support styling; do not retain detached components after `ui:remove`. |
+| `api.preferences.get(key, fallback)` / `.set(key, value)` | JSON values isolated by plugin, browser and server origin. Storage failure is reported by `set`. Do not store secrets. |
+| `api.movement.register(name, onCancel)` | Returns `begin(x,y)`, `update(x,y)`, `end()`, `dispose()`. Screen-up is positive Y. Only a deliberate `begin` can take ownership; a stale `update` cannot. |
+| `api.input.state()` / `.shortcutConflict(keyCode)` | Read input eligibility and the active native battle-shortcut mapping. |
+| `api.input.suspend()` | Suspend movement while showing a plugin dialog. Returns an idempotent release function, also released at disposal. |
+| `api.actions.perform(name, payload)` | Native actions: `attack`, `target` (toggle auto-target), `interact`, `pickup`, `shortcut` with `{ index: 0…35 }`, or `window` with an allowed `{ name }`. Returns whether the action was dispatched, not whether the server accepted it. |
+| `api.cleanup(fn)` | Register idempotent cleanup immediately after allocating a resource. The returned function can release it early. Runs on failure, scope replacement and page teardown. |
+
+Allowed window actions currently cover Inventory, Equipment, SkillList, Quest,
+WorldMap, PartyFriends and WinStats. Map and connection events clear movement;
+blur, hidden page, text entry, IME and modal UI also cancel it. Directional
+requests use native pathfinding and packets, with a 180 ms cadence and at most
+three path steps per destination. The server remains authoritative.
+
+Host mod enable/disable still requires the normal reload. Arbitrary older
+plugins cannot be safely hot-unloaded if they never registered cleanup. The
+in-game **Controls** button from [`wasd-movement`](../mods/wasd-movement) offers
+per-browser activation, rebinding, arrows and battle-shortcut priority.
 
 ---
 

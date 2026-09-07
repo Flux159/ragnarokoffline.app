@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Versioned client API hooks; fail if a pinned upstream contract changes."""
+from pathlib import Path
+import shutil
+import sys
+
+root, rb = map(Path, sys.argv[1:])
+destination = rb / 'src/Plugins/Ragnarok'
+destination.mkdir(parents=True, exist_ok=True)
+for source in (root / 'patches/client').glob('*.mjs'):
+    shutil.copyfile(source, destination / source.name)
+shutil.copyfile(root / 'patches/client/PluginManager.js', rb / 'src/Plugins/PluginManager.js')
+
+
+def edit(file, old, new):
+    path = rb / 'src' / file
+    text = path.read_text()
+    if new in text:
+        return
+    if text.count(old) != 1:
+        sys.exit(f'{file}: expected one extension hook anchor, got {text.count(old)}: {old[:80]!r}')
+    path.write_text(text.replace(old, new, 1))
+
+
+def runtime(file):
+    path = rb / 'src' / file
+    text = path.read_text()
+    line = "import ClientRuntime from 'Plugins/Ragnarok/ExtensionRuntime.mjs';\n"
+    if line not in text:
+        path.write_text(line + text)
+
+
+# Older working checkouts have the previous unconditional WASD patch installed.
+p = rb / 'src/Engine/MapEngine.js'
+s = p.read_text().replace("import KeyboardMove from 'Controls/KeyboardMove.js';\n", '').replace('\t\t\tKeyboardMove.init();\n', '')
+p.write_text(s)
+
+edit('App/Online.js', "import Plugins from 'Plugins/PluginManager.js';",
+     "import Plugins from 'Plugins/PluginManager.js';\nimport { init as initExtensions } from 'Plugins/Ragnarok/ExtensionBridge.mjs';")
+edit('App/Online.js', 'export function init() {', 'export async function init() {')
+edit('App/Online.js', '\tPlugins.init();\n\tGameEngine.init();', '\tinitExtensions();\n\tawait Plugins.init();\n\tGameEngine.init();')
+edit('App/Online.js', "\twindow.addEventListener('pagehide', persistUI);",
+     "\twindow.addEventListener('pagehide', () => { persistUI(); Plugins.dispose(); });\n"
+     "\twindow.addEventListener('pageshow', event => { if (event.persisted) location.reload(); });")
+
+runtime('UI/GUIComponent.js')
+edit('UI/GUIComponent.js', '\t\t// Scrollbars\n', '\t\tClientRuntime.appendComponent(this);\n\n\t\t// Scrollbars\n')
+edit('UI/GUIComponent.js', '\tremove() {\n\t\tthis.__active = false;',
+     '\tremove() {\n\t\tClientRuntime.removeComponent(this);\n\t\tthis.__active = false;')
+
+runtime('Renderer/MapRenderer.js')
+edit('Renderer/MapRenderer.js', '\t\t// Support for instance map',
+     "\t\tClientRuntime.leaveMap('loading');\n\n\t\t// Support for instance map")
+edit('Engine/MapEngine.js', "import MapControl from 'Controls/MapControl.js';",
+     "import MapControl from 'Controls/MapControl.js';\nimport { enterMap as enterExtensionMap } from 'Plugins/Ragnarok/ExtensionBridge.mjs';")
+edit('Engine/MapEngine.js', '\t\t// Reload plugins\n', '\t\tenterExtensionMap(MapRenderer.currentMap);\n\n\t\t// Reload plugins\n')
+runtime('Engine/MapEngine/Main.js')
+edit('Engine/MapEngine/Main.js', 'function onPlayerMove(pkt) {\n',
+     'function onPlayerMove(pkt) {\n\tClientRuntime.recordMovement(pkt.MoveData);\n')
+
+runtime('Network/NetworkManager.js')
+edit('Network/NetworkManager.js', '\t\tcallback.call(this, success);',
+     "\t\tClientRuntime.connection(success ? 'connected' : 'failed', isZone ? 'map' : 'account');\n\t\tcallback.call(this, success);")
+edit('Network/NetworkManager.js', "\t\tconsole.warn('[Network] Disconnect from server');",
+     "\t\tClientRuntime.connection('disconnected');\n\t\tconsole.warn('[Network] Disconnect from server');")
+edit('Network/NetworkManager.js', 'function close() {\n', "function close() {\n\tClientRuntime.connection('disconnected');\n")
+
+runtime('Controls/MapControl.js')
+edit('Controls/MapControl.js', '\tconst entityOver = EntityManager.getOverEntity();',
+     "\tif (action === 1) ClientRuntime.movement.clear('map-click');\n\tconst entityOver = EntityManager.getOverEntity();")
+
+# Keep upstream action controls, replace only its independent movement timer.
+runtime('UI/Components/MobileUI/MobileUI.js')
+edit('UI/Components/MobileUI/MobileUI.js', "import Camera from 'Renderer/Camera.js';",
+     "import Camera from 'Renderer/Camera.js';\nimport { attachJoystick } from 'Plugins/Ragnarok/PointerJoystick.mjs';")
+p = rb / 'src/UI/Components/MobileUI/MobileUI.js'
+s = p.read_text()
+if '// RAGNAROK shared pointer movement' not in s:
+    start = s.index('function setupJoystick() {')
+    end = s.index('/**\n * Talk to NPC Button Function', start)
+    s = s[:start] + '''// RAGNAROK shared pointer movement
+let disposeJoystick = null;
+let joystickScope = null;
+function setupJoystick() {
+    const root = MobileUI.getRoot();
+    _joystickBase = root.querySelector('#joystickBase');
+    _joystickThumb = root.querySelector('#joystickThumb');
+}
+function startJoystick() {
+    stopJoystick();
+    joystickScope = ClientRuntime.scope('engine:touch');
+    disposeJoystick = attachJoystick(_joystickBase, _joystickThumb, joystickScope.api.movement);
+}
+function stopJoystick() {
+    disposeJoystick?.(); disposeJoystick = null;
+    joystickScope?.dispose(); joystickScope = null;
+}
+
+''' + s[end:]
+    p.write_text(s)
+edit('UI/Components/MobileUI/MobileUI.js', 'MobileUI.onAppend = function onAppend() {\n',
+     'MobileUI.onAppend = function onAppend() {\n\tstartJoystick();\n')
+edit('UI/Components/MobileUI/MobileUI.js', 'MobileUI.onRemove = function onRemove() {\n',
+     'MobileUI.onRemove = function onRemove() {\n\tstopJoystick();\n')
+print('installed client extension API and shared movement hooks')
