@@ -45,6 +45,11 @@ async function main() {
       expect(await invoke('assets_ready')).toBe(true);
       const settings = await invoke('get_settings');
       expect(await invoke('save_settings', { settings })).toContain('Joining starts no local server');
+      await invoke('save_settings', { settings: { prerenewal: true, max_aspd: 197 } });
+      await owner.locator('#open-registration').selectOption('owner');
+      await owner.locator('#registration-save').click();
+      await expect(owner.locator('#registration-status')).toHaveText('Saved for your own server. It will apply when you next host.');
+      expect(await invoke('get_settings')).toMatchObject({ open_registration: false, prerenewal: true, max_aspd: 197 });
       await invoke('launch_game');
       await expect(boot.locator('h1')).toHaveText('Host authentication fixture');
       expect(boot.url()).toBe(origin + '/api.html?app=ONLINE#invite=' + invite);
