@@ -14,6 +14,8 @@ in the selected era. The runtime image must advertise
 `app.ragnarokoffline.private-db-files=v1`; an older image is rejected before a
 migration journal or password change. Custom SQL/interserver accounts are refused
 before the first migration rather than silently replacing an unsupported setup.
+Startup reloads a changed bundled image archive even when its image tags already
+exist in the VM cache; a successful load is recorded only after both images exist.
 
 ## Persistence and recovery
 

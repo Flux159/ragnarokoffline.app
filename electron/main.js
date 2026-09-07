@@ -1639,9 +1639,11 @@ const handlers = {
 		return 'Diagnostics copied. Paste them into the issue that just opened.';
 	},
 	stack_repair: () => runStack(['repair']),
-	secure_services: () => {
+	secure_services: async () => {
 		if (getClientPaths().mode !== 'host') throw new Error('Switch to your own server before securing its internal credentials.');
-		return runStack(['secure-services']);
+		const output = await runStack(['secure-services']);
+		return output.match(/^Internal service credentials secured for (?:renewal|prerenewal)\..*$/m)?.[0]
+			|| 'Internal service credentials secured. Player accounts and characters were preserved.';
 	},
 	db_backup: ({ path: p }) => runStack(['backup', p]),
 	db_restore: ({ path: p }) => runStack(['restore', p]),

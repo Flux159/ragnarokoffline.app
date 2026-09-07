@@ -28,6 +28,7 @@ fs.mkdirSync(out, { recursive: true });
 const report = { checks: [], screens: [], pageErrors: [] };
 const serviceSecrets = [];
 const journals = new Map();
+const accountChecks = new Set();
 const env = { ...process.env, RAGNAROK_OFFLINE_HOME: world,
   RAGNAROKMAC_ROOT: path.join(world, 'runtime'), RAGNAROKMAC_STATE: state,
   NEBULA_HOME: path.join(world, 'nebula') };
@@ -104,7 +105,8 @@ async function main() {
       const previousPlayers = fingerprint(!wasManaged);
       const previousJournal = wasManaged ? journal(era) : null;
       await page.locator('#secure-services').click();
-      await expect(page.locator('#services-status')).toContainText('Internal service credentials secured for ' + era, { timeout: 300000 });
+      await expect(page.locator('#secure-services')).toBeEnabled({ timeout: 300000 });
+      await expect(page.locator('#services-status')).toHaveText('Internal service credentials secured for ' + era + '. Player accounts and characters were preserved.');
       const currentJournal = journal(era);
       if (previousJournal !== null && currentJournal !== previousJournal) throw Error('Idempotent preparation changed service credentials');
       if (fingerprint(false) !== previousPlayers) throw Error('Service migration changed player credentials or identities');
@@ -121,7 +123,12 @@ async function main() {
         expect(fs.statSync(backup).size).toBeGreaterThan(1000);
         const before = fs.readdirSync(path.join(state, 'backups')).filter(name => name.startsWith('before-service-credentials-renewal-') && name.endsWith('.sql')).sort();
         if (!before.length) throw Error('Pre-migration backup was not preserved');
-        await invoke('db_restore', { path: path.join(state, 'backups', before[0]) });
+        // Keep the fixture repeatable: current player data with the legacy
+        // interserver row exercises restore without dropping later test users.
+        const legacyBackup = path.join(world, 'account-backups', 'legacy-service-' + Date.now() + '.sql');
+        fs.writeFileSync(legacyBackup, Buffer.concat([fs.readFileSync(backup),
+          Buffer.from("\nUPDATE login SET user_pass='p1' WHERE account_id=1 AND BINARY userid='s1' AND sex='S';\n")]), { mode: 0o600, flag: 'wx' });
+        await invoke('db_restore', { path: legacyBackup });
         await invoke('stack_up');
         if (fingerprint(false) !== previousPlayers || journal(era) !== currentJournal) throw Error('Restore did not retain player identities and current service credentials');
         query('SELECT 1;', true, false);
@@ -138,6 +145,31 @@ async function main() {
         if (fingerprint(false) !== previousPlayers || journal(era) !== currentJournal) throw Error('Pending migration recovery changed player data or regenerated secrets');
         query('SELECT 1;', true, false);
         report.partialMigrationRecovered = true;
+      }
+      if (!accountChecks.has(era)) {
+        const random = require('node:crypto').randomBytes;
+        const username = 'svc' + random(7).toString('hex');
+        const password = random(9).toString('hex');
+        const replacement = ' ' + random(8).toString('hex') + "'\\! ";
+        serviceSecrets.push(password, replacement);
+        await invoke('accounts', { action: 'create', era, username, password, confirmation: password });
+        const list = await invoke('accounts', { action: 'list', era });
+        const friend = list.accounts.find(account => account.username === username);
+        expect(friend).toMatchObject({ group: 0, state: 0, defaultPassword: false });
+        const account = { era, id: friend.id, username };
+        await invoke('accounts', { ...account, action: 'password', password: replacement, confirmation: replacement });
+        await invoke('accounts', { ...account, action: 'disable' });
+        expect((await invoke('accounts', { action: 'list', era })).accounts.find(a => a.id === friend.id).state).toBe(5);
+        await invoke('accounts', { ...account, action: 'enable' });
+        expect((await invoke('accounts', { action: 'list', era })).accounts.find(a => a.id === friend.id)).toMatchObject({ ...friend, state: 0 });
+        await game.goto('http://127.0.0.1:3338/');
+        await game.getByLabel('Account', { exact: true }).fill(username);
+        await game.getByLabel('Password', { exact: true }).fill(replacement);
+        await game.getByRole('button', { name: 'Log in', exact: true }).tap();
+        await expect(game.getByRole('button', { name: 'Character slot 1', exact: true })).toBeVisible();
+        await game.goto('about:blank');
+        accountChecks.add(era);
+        report.managedAccountActions = [...accountChecks];
       }
       await page.getByRole('button', { name: 'Refresh accounts', exact: true }).click();
       await expect(page.locator('#accounts-era')).toHaveText(era === 'renewal' ? 'Renewal accounts' : 'Pre-renewal accounts');
