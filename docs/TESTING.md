@@ -346,3 +346,24 @@ It saves Settings/game screenshots and a credential-free JSON report under the
 world's `account-tests/registration-*` directory. Test accounts stay in that
 disposable database; the fixture restores the original local settings and stops
 its server before exiting. Do not run it against a player save.
+
+### Internal service credentials
+
+`tests/e2e/service-credentials-settings.cjs` uses those same stopped-world inputs
+and existing per-era GM fixture credentials. Use the bundled image advertising
+`private-db-files=v1`. The test secures renewal and pre-renewal, switches back,
+and verifies existing native character login, unchanged player identities and
+passwords, independent durable service credentials, and rejected legacy SQL root
+authentication. It also exercises managed backup/restore with a legacy interserver
+row, recovery from interrupted password changes, and ordinary account creation,
+password changes, disabling and enabling through the owner IPC.
+
+Recovery deliberately changes the disposable SQL root password back to its known
+legacy value after stopping game writers and removing the pending journal's ready
+marker. Never use this fixture on a player save or publicly reachable host. The
+test restores ordinary Settings and stops its server, but retains managed service
+journals, private backups and test accounts for subsequent acceptance work. Keep
+that private state with the disposable VM disk. Reports and Settings/game
+screenshots are under `account-tests/service-credentials-<timestamp>/`; they do
+not contain passwords. Native packaged migration on Windows/Linux and full
+internet-hosting safeguards remain separate acceptance requirements.

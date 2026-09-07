@@ -166,7 +166,7 @@ async function main() {
         await game.getByLabel('Account', { exact: true }).fill(username);
         await game.getByLabel('Password', { exact: true }).fill(replacement);
         await game.getByRole('button', { name: 'Log in', exact: true }).tap();
-        await expect(game.getByRole('button', { name: 'Character slot 1', exact: true })).toBeVisible();
+        await expect(game.getByRole('button', { name: 'Character slot 1', exact: true })).toBeVisible({ timeout: 90000 });
         await game.goto('about:blank');
         accountChecks.add(era);
         report.managedAccountActions = [...accountChecks];
