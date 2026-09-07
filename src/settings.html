@@ -179,7 +179,7 @@
       <option value="open">Anyone at the game login screen</option>
       <option value="owner">Owner only, through Settings</option>
     </select></label>
-    <p class="note">Owner only disables _M / _F signup. Existing accounts keep working.
+    <p class="note" id="registration-note">Owner only disables _M / _F signup. Existing accounts keep working.
       This policy applies to both eras. Apply and restart to change it.</p>
     <button id="registration-save" class="ghost">Apply account creation policy and restart</button>
     <p class="note" id="registration-status" role="status" aria-live="polite"></p>
@@ -208,6 +208,9 @@
       passwords and characters are preserved. Keep the app’s private state with your save.</p>
     <button id="secure-services" class="ghost">Secure internal server credentials</button>
     <p class="note" id="services-status" role="status" aria-live="polite"></p>
+    <div class="actions"><button id="hosting-check" class="ghost">Check internet account safeguards</button></div>
+    <ul class="note" id="hosting-checks" aria-live="polite"></ul>
+    <p class="note" id="hosting-readiness">Internet sharing also requires protected access and a configured connector; these account checks do not enable a public link.</p>
   </div>
 
   <h2>Save data</h2>
@@ -328,6 +331,17 @@ async function refreshMode() {
   // what the supervisor actually advertised, not a second guess made here.
   $('mp-addr').textContent = m.join_address
     || (m.lan ? 'starts with the server' : 'not shared');
+  paintRegistration(await invoke('get_settings'));
+}
+
+function paintRegistration(settings) {
+  const required = ['friends', 'public'].includes(settings.hosting_scope);
+  $('open-registration').value = required || settings.open_registration === false ? 'owner' : 'open';
+  $('open-registration').disabled = required;
+  $('registration-save').disabled = required;
+  $('registration-note').textContent = required
+    ? 'Internet modes require owner-approved accounts. Game-login signup stays off on every restart, Repair and era change. Your Local/LAN preference is preserved.'
+    : 'Owner only disables _M / _F signup. Existing accounts keep working. This policy applies to both eras. Apply and restart to change it.';
 }
 
 $('mp-mode').onchange = async () => {
@@ -711,6 +725,23 @@ $('secure-services').onclick = async () => {
   finally { button.disabled = false; }
 };
 
+$('hosting-check').onclick = async () => {
+  const button = $('hosting-check');
+  button.disabled = true;
+  $('hosting-checks').replaceChildren();
+  $('hosting-readiness').textContent = 'Checking this era’s account safeguards…';
+  try {
+    const report = await invoke('hosting_check');
+    for (const check of report.checks) {
+      const item = document.createElement('li');
+      item.textContent = `${check.passed ? 'Passed' : 'Needs attention'}: ${check.detail}`;
+      $('hosting-checks').appendChild(item);
+    }
+    $('hosting-readiness').textContent = `${report.era === 'renewal' ? 'Renewal' : 'Pre-renewal'} (${report.scope}). ${report.remaining}`;
+  } catch (error) { $('hosting-readiness').textContent = String(error); }
+  finally { button.disabled = false; }
+};
+
 $('registration-save').onclick = async () => {
   const button = $('registration-save');
   const status = $('registration-status');
@@ -724,7 +755,7 @@ $('registration-save').onclick = async () => {
     const mode = await invoke('get_mode');
     status.textContent = mode.mode === 'join'
       ? 'Saved for your own server. It will apply when you next host.'
-      : settings.open_registration ? 'Game login signup is enabled.'
+      : settings.open_registration && !['friends', 'public'].includes(mode.hosting_scope) ? 'Game login signup is enabled.'
         : 'Only the owner can create accounts through Settings. Existing accounts can still log in.';
   } catch (error) {
     status.textContent = `Could not apply account creation policy: ${String(error)}. Start the server to retry.`;
@@ -739,7 +770,7 @@ $('save').onclick = async () => {
   settings.max_aspd = Number($('max_aspd').value) || 190;
   settings.max_parameter = Number($('max_parameter').value) || 99;
   settings.free_kafra_warp = $('free_kafra_warp').checked;
-  settings.open_registration = $('open-registration').value === 'open';
+  if (!['friends', 'public'].includes(settings.hosting_scope)) settings.open_registration = $('open-registration').value === 'open';
   settings.prerenewal = eraIsPre;
   settings.zeny_from_mobs = $('zeny_from_mobs').checked;
   $('save').disabled = true;
@@ -772,7 +803,7 @@ invoke('get_settings').then(s => {
   $('max_aspd').value = s.max_aspd ?? 190;
   $('max_parameter').value = s.max_parameter ?? 99;
   $('free_kafra_warp').checked = !!s.free_kafra_warp;
-  $('open-registration').value = s.open_registration === false ? 'owner' : 'open';
+  paintRegistration(s);
   setEra(!!s.prerenewal);
   $('zeny_from_mobs').checked = !!s.zeny_from_mobs;
   $('population_enable').checked = !!s.population_enable;

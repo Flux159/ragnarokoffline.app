@@ -1590,6 +1590,9 @@ pub fn secure_services(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32
 pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<(), String> {
     // Validate before touching the engine or replacing any running service.
     let open_registration = crate::registration::enabled(&cfg.state)?;
+    let scope = crate::hosting::Scope::load(cfg, lan)?;
+    crate::hosting::before_start(cfg, scope)?;
+    let lan = scope.lan();
     let credentials = crate::service_credentials::load(&cfg.state, crate::service_credentials::era(cfg))?;
     let conf = cfg.state.join("conf");
     for d in ["conf", "sql", "backups"] {
@@ -1802,6 +1805,7 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     // Owner account policy is final, after mod assembly, and regenerated for
     // startup, Repair and each era. Mods cannot reopen suffix registration.
     write_conf(&conf, "login_conf.txt", &crate::registration::login_config(open_registration))?;
+    if scope.internet() { crate::hosting::require_game_policy(cfg, dk)?; }
 
     // A mod's allowlisted settings go after ours, because rAthena's config
     // reader takes the last assignment of a key: start_point in particular is
@@ -1908,7 +1912,7 @@ pub fn status(dk: &Docker) {
 
 pub fn backup(cfg: &Config, dk: &Docker, dest: &str) -> Result<(), String> {
     crate::accounts::verify_era(cfg, dk, crate::service_credentials::era(cfg))?;
-    crate::accounts::with_servers_stopped(dk, || backup_snapshot(cfg, dk, dest))
+    crate::accounts::with_servers_stopped(cfg, dk, || backup_snapshot(cfg, dk, dest))
 }
 
 fn backup_snapshot(cfg: &Config, dk: &Docker, dest: &str) -> Result<(), String> {
@@ -1991,6 +1995,7 @@ pub fn restore(cfg: &Config, dk: &Docker, src: &str) -> Result<(), String> {
 /// Player data is untouched — characters live in the ragnarokmac-db volume.
 pub fn repair(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<(), String> {
     crate::registration::enabled(&cfg.state)?;
+    crate::hosting::before_start(cfg, crate::hosting::Scope::load(cfg, lan)?)?;
     phase(cfg, "Repairing…");
     // Break the lock rather than wait: the usual reason to reach for repair is
     // a previous run that died holding one.

@@ -9,22 +9,26 @@ use std::path::Path;
 const LIMIT: u64 = 1024 * 1024;
 const ERROR: &str = "Cannot read account creation policy. Repair settings.json before starting the server; registration was not enabled.";
 
+#[cfg(test)]
 fn parse(body: &str) -> Result<bool, String> {
     let settings = json::parse(body).map_err(|_| ERROR)?;
     if !settings.is_object() {
         return Err(ERROR.into());
     }
-    match settings.get("open_registration") {
-        None => Ok(true),
-        Some(Value::Bool(value)) => Ok(*value),
-        _ => Err(ERROR.into()),
-    }
+    let requested = match settings.get("open_registration") {
+        None => true,
+        Some(Value::Bool(value)) => *value,
+        _ => return Err(ERROR.into()),
+    };
+    Ok(requested && !crate::hosting::Scope::from_settings(&settings, false)?.internet())
 }
 
-pub fn enabled(state: &Path) -> Result<bool, String> {
+pub fn settings(state: &Path) -> Result<Value, String> {
     let file = match File::open(state.join("settings.json")) {
         Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Value::Object(Default::default()))
+        }
         Err(_) => return Err(ERROR.into()),
     };
     let mut body = String::new();
@@ -34,7 +38,21 @@ pub fn enabled(state: &Path) -> Result<bool, String> {
     if body.len() as u64 > LIMIT {
         return Err(ERROR.into());
     }
-    parse(&body)
+    let value = json::parse(&body).map_err(|_| ERROR)?;
+    if !value.is_object() {
+        return Err(ERROR.into());
+    }
+    Ok(value)
+}
+
+pub fn enabled(state: &Path) -> Result<bool, String> {
+    let settings = settings(state)?;
+    let requested = match settings.get("open_registration") {
+        None => true,
+        Some(Value::Bool(value)) => *value,
+        _ => return Err(ERROR.into()),
+    };
+    Ok(requested && !crate::hosting::Scope::from_settings(&settings, false)?.internet())
 }
 
 pub fn login_config(enabled: bool) -> String {
@@ -68,6 +86,25 @@ mod tests {
             r#"{"open_registration":0}"#,
         ] {
             assert!(parse(value).is_err());
+        }
+    }
+
+    #[test]
+    fn internet_modes_cannot_reopen_signup_with_a_saved_preference() {
+        for scope in ["friends", "public"] {
+            for request in ["true", "false"] {
+                assert!(!parse(&format!(
+                    "{{\"hosting_scope\":\"{scope}\",\"open_registration\":{request}}}"
+                ))
+                .unwrap());
+            }
+            assert!(!parse(&format!("{{\"hosting_scope\":\"{scope}\"}}")).unwrap());
+        }
+        for scope in ["local", "lan"] {
+            assert!(parse(&format!(
+                "{{\"hosting_scope\":\"{scope}\",\"open_registration\":true}}"
+            ))
+            .unwrap());
         }
     }
 }

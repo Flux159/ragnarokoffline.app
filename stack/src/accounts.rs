@@ -167,6 +167,7 @@ fn list(dk: &Docker, era: &str) -> Result<String, String> {
 /// record and overwrite a concurrent password change. Restart only the services
 /// that were running. The database and all account/character IDs stay intact.
 pub(crate) fn with_servers_stopped<T>(
+    cfg: &Config,
     dk: &Docker,
     operation: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
@@ -184,6 +185,12 @@ pub(crate) fn with_servers_stopped<T>(
         }
     }
     let updated = result.and_then(|_| operation());
+    if crate::hosting::Scope::load(cfg, false)?.internet() {
+        if let Err(error) = crate::hosting::require_game_policy(cfg, dk) {
+            let outcome = match &updated { Ok(_) => "The operation completed".to_string(), Err(error) => error.clone() };
+            return Err(format!("{outcome}, but game services were not restarted because internet account safeguards failed: {error}"));
+        }
+    }
     let mut restarted = true;
     for service in stopped.iter().rev() {
         if dk.output(["start", service]).is_err() {
@@ -313,7 +320,7 @@ pub fn run(cfg: &Config, dk: &Docker) -> Result<(), String> {
         }
         _ => return Err("Unknown account action".into()),
     };
-    with_servers_stopped(dk, || {
+    with_servers_stopped(cfg, dk, || {
         // Recheck after shutdown, before touching any records.
         verify_era(cfg, dk, era)?;
         let output = dk.private_sql(&sql)?;

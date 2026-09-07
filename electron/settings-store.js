@@ -11,6 +11,9 @@ function validate(settings) {
       (Object.hasOwn(settings, 'open_registration') && typeof settings.open_registration !== 'boolean')) {
     throw new Error(ERROR);
   }
+  if (Object.hasOwn(settings, 'hosting_scope') && !['local', 'lan', 'friends', 'public'].includes(settings.hosting_scope)) {
+    throw new Error('Invalid hosting scope. Choose local, lan, friends or public before starting.');
+  }
   return settings;
 }
 
@@ -23,8 +26,10 @@ function read(file, defaults) {
     if (error.code === 'ENOENT') return { ...defaults };
     throw new Error(ERROR);
   }
-  try { return { ...defaults, ...validate(JSON.parse(body)) }; }
+  let settings;
+  try { settings = JSON.parse(body); }
   catch { throw new Error(ERROR); }
+  return { ...defaults, ...validate(settings) };
 }
 
 function write(file, update, defaults) {

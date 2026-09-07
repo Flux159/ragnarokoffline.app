@@ -20,6 +20,7 @@ mod mapcache;
 mod mods;
 mod process_identity;
 mod registration;
+mod hosting;
 mod private_fs;
 mod service_credentials;
 mod operation_lock;
@@ -30,7 +31,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process::exit;
 
-const USAGE: &str = "usage: ragnarok-stack secure-services [--lan] [--ram MiB]|mods|mod-enable NAME|mod-disable NAME|up [--lan] [--ram MiB]|down|repair [--lan] [--ram MiB]|status|logs [service] [tail]\n\
+const USAGE: &str = "usage: ragnarok-stack hosting-check [--lan]|secure-services [--lan] [--ram MiB]|mods|mod-enable NAME|mod-disable NAME|up [--lan] [--ram MiB]|down|repair [--lan] [--ram MiB]|status|logs [service] [tail]\n\
                      \x20      backup <file>|restore <file>\n\
                      \x20      accounts (private JSON request on stdin)\n\
                      \x20      link-assets <data.grf> [rdata.grf] [official_data.grf] [bgm-dir]";
@@ -82,7 +83,7 @@ fn main() {
         Err(e) => fail(verb, &e),
     };
     let dk = Docker::new(cfg.docker.clone(), cfg.nebula_home.clone(), cfg.state.clone());
-    let _operation = if matches!(verb, "up" | "down" | "repair" | "backup" | "restore" | "accounts" | "secure-services") {
+    let _operation = if matches!(verb, "up" | "down" | "repair" | "backup" | "restore" | "accounts" | "secure-services" | "hosting-check") {
         match operation_lock::acquire(&cfg.state) {
             Ok(lock) => Some(lock),
             Err(error) => fail(verb, &error),
@@ -104,6 +105,7 @@ fn main() {
         .and_then(|v| v.parse::<u32>().ok());
 
     let result = match verb {
+        "hosting-check" => hosting::check(&cfg, &dk, lan).map(|report| println!("{report}")),
         "accounts" => {
             if let Err(error) = accounts::run(&cfg, &dk) {
                 fail(verb, &error);

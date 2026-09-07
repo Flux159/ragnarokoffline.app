@@ -79,6 +79,11 @@ credentials. Game logins and characters are preserved. See
 [managed internal credentials](docs/SERVICE_CREDENTIALS.md) for persistence and
 recovery; internet access still requires additional safeguards.
 
+**Check internet account safeguards** in that panel reports the selected era's
+account-policy checks. It does not publish a link. See the
+[hosting policy contract](docs/HOSTING_POLICY.md) for mandatory internet defaults
+and the remaining access-protection requirements.
+
 Ordinary accounts have almost no `@` commands — rAthena keeps `@autoloot` and
 `@showexp` for GMs. Settings → Mods → **player-commands** gives player characters some common commands.
 

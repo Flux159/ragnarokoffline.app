@@ -417,10 +417,11 @@ function migrateDataRoot() {
 // rather than at each call site because there are seven of them and a missed
 // one is a setting that silently does nothing.
 function withEngineFlags(args) {
-	if (!['up', 'repair', 'secure-services'].includes(args[0])) return args;
+	if (!['up', 'repair', 'secure-services', 'hosting-check'].includes(args[0])) return args;
 	const client = getClientPaths();
 	const out = [...args];
 	if (client.lan && !out.includes('--lan')) out.push('--lan');
+	if (args[0] === 'hosting-check') return out;
 	const ram = Number(client.vm_ram_mib);
 	if (Number.isFinite(ram) && ram > 0) out.push('--ram', String(ram));
 	return out;
@@ -635,7 +636,8 @@ function getClientPaths() {
 	if (!Number.isFinite(Number(out.vm_ram_mib)) || Number(out.vm_ram_mib) <= 0) {
 		out.vm_ram_mib = defaultVmRamMib();
 	}
-	return out;
+	return require('./hosting-policy').effective(out,
+		require('./settings-store').read(path.join(stateDir(), 'settings.json'), {}));
 }
 
 // Stop joining and run the server here instead.
@@ -1645,6 +1647,10 @@ const handlers = {
 		return output.match(/^Internal service credentials secured for (?:renewal|prerenewal)\..*$/m)?.[0]
 			|| 'Internal service credentials secured. Player accounts and characters were preserved.';
 	},
+	hosting_check: async () => {
+		if (getClientPaths().mode !== 'host') throw new Error('Hosting checks belong to your own server.');
+		return JSON.parse(await runStack(['hosting-check']));
+	},
 	db_backup: ({ path: p }) => runStack(['backup', p]),
 	db_restore: ({ path: p }) => runStack(['restore', p]),
 
@@ -1722,6 +1728,11 @@ const handlers = {
 		if (next.rdata_grf && !fs.existsSync(next.rdata_grf)) {
 			throw new Error('rdata.grf is not a file');
 		}
+		if (Object.hasOwn(paths, 'lan')) {
+			next.hosting_scope = paths.lan ? 'lan' : 'local';
+			require('./settings-store').write(path.join(stateDir(), 'settings.json'),
+				{ hosting_scope: paths.lan ? 'lan' : 'local' }, SETTINGS_DEFAULTS);
+		}
 		fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
 		return linkClient(next);
 	},
@@ -1732,7 +1743,7 @@ const handlers = {
 	get_mode: () => {
 		const c = getClientPaths();
 		return {
-			mode: c.mode, lan: !!c.lan, join_host: c.join_host,
+			mode: c.mode, lan: !!c.lan, hosting_scope: c.hosting_scope, join_host: c.join_host,
 			// Only meaningful once the stack has run; before that there is no
 			// endpoint.json and no address to give out.
 			join_address: c.mode === 'host' && c.lan ? serveUrl(advertiseHost()) : '',
@@ -1747,6 +1758,11 @@ const handlers = {
 		if (lan === true && !prev.lan) await nudgeLocalNetworkPermission();
 		if (join_host !== undefined) next.join_host = join_host ? joinSession.remember(join_host) : '';
 		if (mode === 'join' && prev.mode !== 'join') await stopLocalHostForJoin();
+		if (lan !== undefined) {
+			next.hosting_scope = lan ? 'lan' : 'local';
+			require('./settings-store').write(path.join(stateDir(), 'settings.json'),
+				{ hosting_scope: lan ? 'lan' : 'local' }, SETTINGS_DEFAULTS);
+		}
 		fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
 		// Before anything slow: the mode has already changed, and leaving the
 		// window claiming (Local) over a server that is about to stop is the
@@ -1926,7 +1942,7 @@ function appLog(line) {
 const GAME_PAGE_HANDLERS = new Set([]);
 // Includes settings writes before their supervisor call: an era marker must
 // not change halfway through an account operation. Read-only status stays live.
-const SERVER_OPERATIONS = new Set(['accounts', 'save_settings', 'set_mode', 'set_client_paths', 'start_stack',
+const SERVER_OPERATIONS = new Set(['accounts', 'hosting_check', 'save_settings', 'set_mode', 'set_client_paths', 'start_stack',
 	'stack_up', 'stack_down', 'stack_repair', 'secure_services', 'db_backup', 'db_restore']);
 let serverOperationQueue = Promise.resolve();
 function queueServerOperation(operation) {
