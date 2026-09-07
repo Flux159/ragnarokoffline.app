@@ -105,3 +105,11 @@ screen and returned to native login through Retry. The stress fixture also
 supports `RO_E2E_STRESS_MODS=off`, preserving/restoring mod selection files, and
 records the actual mod list. Population rows explicitly stop and respawn 100
 shells between map transitions before reloading scripts.
+
+After that fix, build `34155293027` passed both architecture jobs and the actual
+guest fixture. Real startup then found a negative-to-unsigned conversion in
+`JobDatabase::calc_basesp` (`pc.cpp:13822`, via `loadingFinished`). A Ninja-mapped
+job with default coefficients computes -2 at level 10. The second small server
+patch clamps the floating-point value to the unsigned return range before the
+cast. `verify-base-sp.py` reproduces the original UBSan failure and verifies the
+fix, ordinary values and overflow. Again this is a separate startup finding.

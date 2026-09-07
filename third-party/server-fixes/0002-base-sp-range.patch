@@ -1,0 +1,13 @@
+--- a/src/map/pc.cpp
++++ b/src/map/pc.cpp
+@@ -13819,6 +13819,10 @@
+ 		base_sp += floor( ( base_sp / 2 ) + 0.5 );
+ 	}
+ 
++	// RAGNAROKMAC: incomplete job tables can produce negative base SP;
++	// clamp while still floating point, before converting to unsigned.
++	if( base_sp <= 0. ) return 0;
++	if( base_sp >= static_cast<double>( UINT_MAX ) ) return UINT_MAX;
+ 	return static_cast<uint32>( base_sp );
+ }
+ 
