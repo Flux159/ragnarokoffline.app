@@ -34,8 +34,10 @@ async function processIdentity(pid) {
 		return { start: stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19], executable: await fs.promises.readlink(`/proc/${pid}/exe`) };
 	}
 	if (process.platform === 'win32') {
-		const command = `$p=Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}'; if (!$p) { exit 1 }; @{start=$p.CreationDate.ToUniversalTime().ToString('o');executable=$p.ExecutablePath} | ConvertTo-Json -Compress`;
-		const { stdout } = await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 3000, windowsHide: true });
+		// Query the process directly; WMI/CIM startup can exceed several seconds
+		// on a cold Windows machine even when the child itself is already ready.
+		const command = `$ErrorActionPreference='Stop'; $p=[System.Diagnostics.Process]::GetProcessById(${pid}); @{start=$p.StartTime.ToUniversalTime().ToString('o');executable=$p.MainModule.FileName} | ConvertTo-Json -Compress`;
+		const { stdout } = await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 10000, windowsHide: true });
 		const identity = JSON.parse(stdout);
 		if (!identity.start || !identity.executable) throw new Error('cannot verify process identity');
 		return identity;

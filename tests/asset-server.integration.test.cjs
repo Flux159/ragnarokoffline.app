@@ -20,7 +20,6 @@ async function setup(t) {
 	await new Promise(resolve => listener.listen(0, '127.0.0.1', resolve));
 	const port = listener.address().port;
 	await new Promise(resolve => listener.close(resolve));
-	t.after(() => fs.rmSync(stateRoot, { recursive: true, force: true }));
 	return { executable, cwd: stateRoot, stateRoot, environment: {
 		PORT: String(port), HOST: '127.0.0.1', NODE_ENV: 'production',
 		SERVER_ROOT: assets, CLIENT_PUBLIC_URL: `http://127.0.0.1:${port}`,
@@ -31,7 +30,10 @@ async function setup(t) {
 test('Electron lifecycle authenticates the real Rust binary and serves real archive bytes', { skip: !executable && 'set REMOTECLIENT_BIN to the built Rust server' }, async t => {
 	const options = await setup(t);
 	const server = new AssetServer();
-	t.after(() => server.stop());
+	t.after(async () => {
+		await server.stop();
+		await fs.promises.rm(options.stateRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+	});
 	const identity = await server.start(options);
 	assert.equal(await server.ready(), true);
 	const base = `http://127.0.0.1:${identity.httpPort}`;
@@ -47,9 +49,18 @@ test('force-killing the owning parent shuts down its Rust child; next launch rec
 	const options = await setup(t);
 	const parent = fork(path.join(__dirname, 'fixtures/asset-owner-parent.cjs'), [], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
 	parent.stderr.resume();
-	t.after(() => { if (parent.exitCode === null && parent.signalCode === null) parent.kill('SIGKILL'); });
+	const replacement = new AssetServer();
+	t.after(async () => {
+		if (parent.exitCode === null && parent.signalCode === null) {
+			const exit = new Promise(resolve => parent.once('exit', resolve));
+			parent.kill('SIGKILL');
+			await exit;
+		}
+		await replacement.stop();
+		await fs.promises.rm(options.stateRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+	});
 	const result = new Promise((resolve, reject) => {
-		const timer = setTimeout(() => reject(new Error('parent fixture did not start')), 10000);
+		const timer = setTimeout(() => reject(new Error('parent fixture did not start')), 20000);
 		parent.once('message', message => { clearTimeout(timer); message.error ? reject(new Error(message.error)) : resolve(message.identity); });
 		parent.once('error', reject);
 	});
@@ -67,8 +78,6 @@ test('force-killing the owning parent shuts down its Rust child; next launch rec
 		await new Promise(resolve => setTimeout(resolve, 100));
 	}
 	assert.equal(gone, true, 'Rust child survived the parent crash');
-	const replacement = new AssetServer();
-	t.after(() => replacement.stop());
 	const next = await replacement.start(options);
 	assert.notEqual(next.pid, identity.pid);
 	assert.equal(await replacement.ready(), true);
