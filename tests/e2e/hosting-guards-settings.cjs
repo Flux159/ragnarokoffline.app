@@ -196,6 +196,7 @@ async function main() {
         await invoke('accounts', { action: 'disable', era, id: account.id, username });
         report.guardedAdminLifecycle = true;
       }
+      await page.locator('#mp-internet-setup').check();
       await page.locator('#hosting-check').click();
       await expect(page.locator('#hosting-check')).toBeEnabled({ timeout: 60000 });
       await expect(page.locator('#hosting-checks li')).toHaveCount(3);

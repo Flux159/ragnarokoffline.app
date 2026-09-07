@@ -104,6 +104,7 @@ async function main() {
       const wasManaged = fs.existsSync(path.join(directory, 'ready'));
       const previousPlayers = fingerprint(!wasManaged);
       const previousJournal = wasManaged ? journal(era) : null;
+      await page.locator('#mp-internet-setup').check();
       await page.locator('#secure-services').click();
       await expect(page.locator('#secure-services')).toBeEnabled({ timeout: 300000 });
       await expect(page.locator('#services-status')).toHaveText('Internal service credentials secured for ' + era + '. Player accounts and characters were preserved.');
