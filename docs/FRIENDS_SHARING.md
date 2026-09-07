@@ -32,14 +32,14 @@ are separate databases.
 
 **Stop sharing** closes remote sessions and the connector while local play keeps
 running. Replacing the invitation disconnects existing friends and invalidates
-the old link. Changing server settings, switching era/mode, repairing, quitting
+the old link. Changing server settings, switching era/mode, backing up, repairing, quitting
 or suspending the host also stops sharing. Start sharing again when ready.
 A failed/reconnecting link is shown as such; Copy is enabled only after the
 public HTTPS endpoint and a game WebSocket have verified against this host.
 
 Forgetting a connection removes its saved local credential. The stopped tunnel
 and DNS record remain in Cloudflare for the account owner to remove there.
-No Quick Tunnel, public registration portal, SMTP/reset service or ngrok adapter
+No Quick Tunnel, open public registration, SMTP/reset service or ngrok adapter
 is provided by this implementation.
 
 ## Access boundary

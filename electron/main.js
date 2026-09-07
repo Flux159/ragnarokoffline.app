@@ -462,7 +462,7 @@ function withEngineFlags(args) {
 }
 
 async function runStack(rawArgs) {
-    if (sharing && ['up', 'down', 'repair', 'restore', 'secure-services'].includes(rawArgs[0])) await sharing.stop();
+    if (sharing && ['up', 'down', 'repair', 'backup', 'restore', 'secure-services'].includes(rawArgs[0])) await sharing.stop();
     return runStackProcess(rawArgs);
 }
 function runStackProcess(rawArgs) {
@@ -1786,7 +1786,7 @@ const handlers = {
 
 	// Asset server
 	assets_start: () => assetsStart(),
-	assets_stop: () => assetsStop(),
+	assets_stop: () => { ++sharingStartRequest; return assetsStop(); },
 	// In host mode this is the local asset server coming up. A joining player
 	// starts no asset server at all, so waiting for one would spin until the
 	// boot page's deadline and then report a stall that never had anything to
@@ -2144,6 +2144,7 @@ const crashMonitor = new (require('./crash-monitor').CrashMonitor)({
 		? runStack(['capture-crashes']) : ''),
 	log: message => appLog(message),
 	onCrash: services => {
+        ++sharingStartRequest;
         if (sharing) sharing.stop().catch(() => {});
 		const label = services.includes('map') ? 'Map server' : 'Game server';
 		showGameFailure(windows.game, `${label} stopped unexpectedly. A private crash report was saved. Retry to restart the server and log in again.`);
@@ -2266,7 +2267,7 @@ if (!app.requestSingleInstanceLock()) {
 
 app.whenReady().then(() => {
 	crashMonitor.start();
-    powerMonitor.on('suspend', () => { if (sharing) sharing.stop().catch(() => {}); });
+    powerMonitor.on('suspend', () => { ++sharingStartRequest; if (sharing) sharing.stop().catch(() => {}); });
 	// Before anything reads a path: an existing install still has its data
 	// under the old folder name.
 	migrateDataRoot();
