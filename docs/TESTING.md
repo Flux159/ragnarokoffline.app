@@ -217,7 +217,18 @@ recorded after login. Run with the same `RO_E2E_WORLD` and `RO_E2E_BUILD` settin
 as the other suites, using `node node_modules/@playwright/test/cli.js test
 mobile-commerce.spec.cjs`.
 
-Full combat, player vending and remaining NPC/quest flows, plus
+`mobile-actions.spec.cjs` checks native item/shortcut healing and inventory
+counts, distant one-tap pickup, cancellation of a queued pickup by a new touch
+joystick direction, and Poring combat. Damage and experience messages come from
+received server packets; a button click or unknown monster HP does not prove a
+kill. The fixture clears old floor loot in its disposable town, adds five Red
+Potions, damages/heals the test character, drops the healing stack and spawns a
+Poring. Successful runs restore potion count and HP; experience and F2's potion
+assignment persist. It records browser/viewport, page and console errors, HTTP
+failures, WebSocket lifecycle (not frames), screenshots and a post-login trace.
+`phone.cjs` shares native phone login/menu/chat/warp helpers with commerce tests.
+
+Learned skill use/targeting, further combat cases, player vending and remaining NPC/quest flows, plus
 orientation/keyboard transitions, death/IME/background gameplay cases, Firefox,
 packaged Electron and physical Android/iPhone testing remain release gates for
 issue #6. Chromium device emulation is not a physical Safari/Android pass.

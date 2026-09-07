@@ -16,6 +16,8 @@ or Deposit all/Withdraw all. Open inventory and Back to storage bring the
 respective panel forward. The server still authorizes each transfer; the
 request message is not a success acknowledgement. Shops use Add selected,
 the native quantity dialog, then Buy or Sell; Remove selected edits the cart.
+Pick up approaches a distant item and collects it after the walk finishes. Moving
+with the joystick or keyboard cancels that pending pickup.
 
 Viewport and safe-area handling keep controls within the visible game. Small
 touch devices retain a real viewport even with the phone layout Off. Default

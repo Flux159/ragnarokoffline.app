@@ -149,3 +149,79 @@ edit('UI/Components/NpcStore/NpcStore.js', '&& !Session.isTouchDevice) {',
      '&& !Session.isTouchDevice && !phoneLayout) {')
 edit('UI/Components/InputBox/InputBox.js', '\tthis.isPersistent = !!isPersistent;\n',
      "\tthis.isPersistent = !!isPersistent;\n\tconst entry = this.getRoot().querySelector('input');\n\tif (entry) entry.inputMode = ['number', 'price'].includes(type) ? 'numeric' : '';\n")
+
+# The touch pickup action must wait for the same walk-end callback as map clicks.
+edit('UI/Components/MobileUI/MobileUI.js', """function pickUpItem() {
+	const player = Session.Entity;
+
+	if (!player) {
+		return;
+	}
+
+	const closestItem = EntityManager.getClosestEntity(player, Session.Entity.constructor.TYPE_ITEM);
+
+	if (!closestItem) {
+		return;
+	}
+
+	let dx = Math.abs(player.position[0] - closestItem.position[0]);
+	let dy = Math.abs(player.position[1] - closestItem.position[1]);
+	if (dx < 0) {
+		dx = -dx;
+	}
+	if (dy < 0) {
+		dy = -dy;
+	}
+
+	if ((dx < dy ? dy : dx) > 2) {
+		const dest = [0, 0];
+
+		if (checkFreeCell(Math.round(closestItem.position[0]), Math.round(closestItem.position[1]), 1, dest)) {
+			let pkt;
+			if (PACKETVER.value >= 20180307) {
+				pkt = new PACKET.CZ.REQUEST_MOVE2();
+			} else {
+				pkt = new PACKET.CZ.REQUEST_MOVE();
+			}
+			pkt.dest = dest;
+			Network.sendPacket(pkt);
+		}
+	}
+
+	let pickUpPacket;
+
+	if (PACKETVER.value >= 20180307) {
+		pickUpPacket = new PACKET.CZ.ITEM_PICKUP2();
+	} else {
+		pickUpPacket = new PACKET.CZ.ITEM_PICKUP();
+	}
+
+	pickUpPacket.ITAID = closestItem.GID;
+
+	Network.sendPacket(pickUpPacket);
+}""",
+     """function pickUpItem() {
+	const player = Session.Entity;
+	if (!player) return;
+	const closestItem = EntityManager.getClosestEntity(player, Session.Entity.constructor.TYPE_ITEM);
+	if (!closestItem) return;
+
+	const pickup = PACKETVER.value >= 20180307 ? new PACKET.CZ.ITEM_PICKUP2() : new PACKET.CZ.ITEM_PICKUP();
+	pickup.ITAID = closestItem.GID;
+	Session.moveAction = null;
+	const distance = Math.max(Math.abs(player.position[0] - closestItem.position[0]),
+		Math.abs(player.position[1] - closestItem.position[1]));
+	if (distance > 2) {
+		const dest = [0, 0];
+		if (checkFreeCell(Math.round(closestItem.position[0]), Math.round(closestItem.position[1]), 1, dest)) {
+			// RAGNAROK: use the same deferred action as native map-item clicks.
+			// The server rejects pickup while the approach walk is still pending.
+			Session.moveAction = pickup;
+			const move = PACKETVER.value >= 20180307 ? new PACKET.CZ.REQUEST_MOVE2() : new PACKET.CZ.REQUEST_MOVE();
+			move.dest = dest;
+			Network.sendPacket(move);
+		}
+		return;
+	}
+	Network.sendPacket(pickup);
+}""")
