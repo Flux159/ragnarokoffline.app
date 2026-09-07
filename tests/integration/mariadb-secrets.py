@@ -21,7 +21,7 @@ def docker(*args, data=None, check=True):
     result = subprocess.run(['docker', *args], input=data, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
     if check and result.returncode:
-        raise RuntimeError('Docker test operation failed (output suppressed).')
+        raise RuntimeError('Docker test operation failed: ' + args[0] + ' (output suppressed).')
     return result
 
 
@@ -57,7 +57,7 @@ def start(label, directory, env, volume=None, init_dir=None):
         docker('volume', 'create', volume)
         volumes.append(volume)
     containers.append(name)
-    args = ['run', '-d', '--name', name, '--network', 'none', '-v', volume + ':/var/lib/mysql',
+    args = ['run', '-d', '--name', name, '--network', 'none', '--cap-add', 'SYS_PTRACE', '-v', volume + ':/var/lib/mysql',
             '-v', str(directory) + ':/run/test-secrets:ro']
     if init_dir is not None:
         args += ['-v', str(init_dir) + ':/docker-entrypoint-initdb.d:ro']
@@ -102,6 +102,8 @@ def check_no_secret_output(name, passwords):
     inspected = docker('inspect', name).stdout
     processes = docker('top', name, '-eo', 'args').stdout
     environment = docker('exec', name, 'sh', '-c', 'cat /proc/1/environ').stdout
+    # Include unique suffixes so SQL/option-file escaping cannot hide leakage.
+    passwords = passwords + [password[-33:-1] for password in passwords]
     for password in passwords:
         assert_safe(password not in captured + inspected + processes + environment,
                     'A credential appeared in container metadata, logs or process state.')
@@ -166,6 +168,7 @@ def main():
             ('missing', {**env, 'MARIADB_PASSWORD_FILE': '/run/test-secrets/absent.secret'}),
             ('identifier', {**env, 'MARIADB_DATABASE': 'invalid`; DROP DATABASE mysql;--'}),
             ('empty-value', {'MARIADB_PASSWORD': ''}),
+            ('empty-file-path', {**env, 'MARIADB_PASSWORD_FILE': ''}),
         ]:
             name, _ = start(label, directory, invalid)
             wait_failed(name)

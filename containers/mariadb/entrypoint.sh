@@ -36,7 +36,8 @@ if [ ! -d "$DATADIR/mysql" ]; then
         value=$1
         secret_file=$2
         supplied=$3
-        if [ -n "$secret_file" ]; then
+        if [ "$4" = x ]; then
+            [ -n "$secret_file" ] || fail 'Database password file path cannot be empty.'
             [ "$supplied" = no ] || fail 'Supply a password value or a password file, not both.'
             [ -f "$secret_file" ] && [ -r "$secret_file" ] || fail 'Cannot read database password file.'
             count=$(wc -c < "$secret_file")
@@ -54,8 +55,8 @@ if [ ! -d "$DATADIR/mysql" ]; then
     app_supplied=no
     [ "${MARIADB_ROOT_PASSWORD+x}" != x ] || root_supplied=yes
     [ "${MARIADB_PASSWORD+x}" != x ] || app_supplied=yes
-    root_password=$(read_password "${MARIADB_ROOT_PASSWORD-ragnarok}" "${MARIADB_ROOT_PASSWORD_FILE-}" "$root_supplied")
-    app_password=$(read_password "${MARIADB_PASSWORD-ragnarok}" "${MARIADB_PASSWORD_FILE-}" "$app_supplied")
+    root_password=$(read_password "${MARIADB_ROOT_PASSWORD-ragnarok}" "${MARIADB_ROOT_PASSWORD_FILE-}" "$root_supplied" "${MARIADB_ROOT_PASSWORD_FILE+x}")
+    app_password=$(read_password "${MARIADB_PASSWORD-ragnarok}" "${MARIADB_PASSWORD_FILE-}" "$app_supplied" "${MARIADB_PASSWORD_FILE+x}")
     database=${MARIADB_DATABASE-ragnarok}
     username=${MARIADB_USER-ragnarok}
     case "$database" in ''|*[!a-zA-Z0-9_]*) fail 'Database name must contain letters, digits or underscores.' ;; esac
