@@ -1,7 +1,7 @@
 name: images
 
 # Builds the two container images the app ships with, and publishes them as a
-# rolling release asset.
+# rolling release asset on main. Manual runs produce review artifacts only.
 #
 # These cannot be built in the app workflow. Two reasons, either sufficient:
 #
@@ -33,6 +33,7 @@ on:
     paths:
       - 'containers/**'
       - '.github/workflows/images.yml'
+      - 'tests/integration/mariadb-secrets.py'
       # The packetver lives here and is a build arg for the rAthena image, so a
       # bump has to rebuild. It over-triggers on unrelated bootstrap edits;
       # a stale image is the worse failure.
@@ -80,6 +81,9 @@ jobs:
       - name: Build the database image
         run: docker build -t ragnarokmac/mariadb:11.4 containers/mariadb
 
+      - name: Validate database secret bootstrap against the image
+        run: python3 tests/integration/mariadb-secrets.py
+
       # rAthena's source is the build context, so our Dockerfile is copied into
       # the checkout — the same thing bootstrap.sh does locally.
       - name: Build rAthena
@@ -119,12 +123,23 @@ jobs:
           tar czf rathena-sql.tar.gz -C sql .
           ls -lh rathena-sql.tar.gz
 
+      - name: Upload reviewable image artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-images-${{ matrix.arch }}
+          path: |
+            images-${{ matrix.arch }}.tar.gz
+            rathena-sql.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+
       # A rolling tag, not a version. These track the Dockerfiles, which change
       # on their own schedule, and the app build fetches them by this tag
       # explicitly — so cutting an app release never has to carry a fresh copy
       # of two container images with it. Marked prerelease so it does not
       # present itself as a version of the app on the releases page.
       - name: Publish
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: images
