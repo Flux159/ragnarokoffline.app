@@ -490,8 +490,8 @@ function runStack(rawArgs) {
 // Asset server
 // ---------------------------------------------------------------------------
 
-const { AssetServer, sha256 } = require('./asset-server');
-const assetServer = new AssetServer({ log: message => appLog(message) });
+const { AssetServer, sha256, processIdentity } = require('./asset-server');
+const assetServer = new AssetServer({ log: message => appLog(message), identify: pid => processIdentity(pid, stackBin()) });
 let assetLinkQueue = Promise.resolve();
 
 function assetsReady() { return assetServer.ready(); }

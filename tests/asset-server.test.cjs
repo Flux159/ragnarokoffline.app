@@ -40,6 +40,11 @@ test('OS identity includes the current process creation time and executable', as
 	assert.ok(id.executable.includes('node'));
 });
 
+test('parallel OS identity queries agree without a shell startup dependency', async () => {
+	const identities = await Promise.all(Array.from({ length: 8 }, () => processIdentity(process.pid)));
+	for (const id of identities) assert.deepEqual(id, identities[0]);
+});
+
 test('concurrent starts share one owned process; stop awaits actual exit', async t => {
 	const { server, options, dir } = await fixture(t);
 	const [a, b] = await Promise.all([server.start(options), server.start(options)]);

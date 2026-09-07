@@ -27,17 +27,15 @@ function sameMac(a, b) {
 		&& crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
 }
 
-async function processIdentity(pid) {
+async function processIdentity(pid, inspector = process.env.STACK_BIN) {
 	if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('invalid process ID');
 	if (process.platform === 'linux') {
 		const stat = await fs.promises.readFile(`/proc/${pid}/stat`, 'utf8');
 		return { start: stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19], executable: await fs.promises.readlink(`/proc/${pid}/exe`) };
 	}
 	if (process.platform === 'win32') {
-		// Query the process directly; WMI/CIM startup can exceed several seconds
-		// on a cold Windows machine even when the child itself is already ready.
-		const command = `$ErrorActionPreference='Stop'; $p=[System.Diagnostics.Process]::GetProcessById(${pid}); @{start=$p.StartTime.ToUniversalTime().ToString('o');executable=$p.MainModule.FileName} | ConvertTo-Json -Compress`;
-		const { stdout } = await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 10000, windowsHide: true });
+		if (!inspector) throw new Error('Windows process identity needs the bundled supervisor (STACK_BIN for tests)');
+		const { stdout } = await exec(inspector, ['process-identity', String(pid)], { timeout: 3000, windowsHide: true, maxBuffer: 131072 });
 		const identity = JSON.parse(stdout);
 		if (!identity.start || !identity.executable) throw new Error('cannot verify process identity');
 		return identity;

@@ -13,6 +13,28 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+/// A JSON string literal, also used by small host-only command responses.
+#[cfg(any(windows, test))]
+pub fn quote(value: &str) -> String {
+    let mut result = String::from("\"");
+    for ch in value.chars() {
+        match ch {
+            '"' => result.push_str("\\\""),
+            '\\' => result.push_str("\\\\"),
+            c if (c as u32) < 0x20 => result.push_str(&format!("\\u{:04x}", c as u32)),
+            c => result.push(c),
+        }
+    }
+    result.push('"');
+    result
+}
+
+#[test]
+fn quoted_host_paths_round_trip_quotes_controls_and_unicode() {
+    let value = "C:\\game files 한글\\\"name\"\n\0";
+    assert_eq!(parse(&quote(value)).unwrap(), Value::String(value.to_string()));
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Null,

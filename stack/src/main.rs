@@ -17,6 +17,7 @@ mod docker;
 mod json;
 mod mapcache;
 mod mods;
+mod process_identity;
 
 use config::Config;
 use docker::Docker;
@@ -53,6 +54,17 @@ fn main() {
     config::widen_path();
     let args: Vec<String> = env::args().skip(1).collect();
     let verb = args.first().map(String::as_str).unwrap_or("status");
+
+    if verb == "process-identity" {
+        let result = args.get(1).and_then(|s| s.parse::<u32>().ok())
+            .ok_or_else(|| "process-identity needs a numeric PID".to_string())
+            .and_then(process_identity::query);
+        match result {
+            Ok(identity) => println!("{identity}"),
+            Err(error) => { eprintln!("{error}"); exit(1); }
+        }
+        return;
+    }
 
     let loaded = if verb == "link-assets" {
         Config::load_for_assets(project_root())

@@ -15,6 +15,10 @@ node --check electron/main.js
 ```
 
 On Windows, run the script in Git Bash and append `.exe` to `REMOTECLIENT_BIN`.
+Build the supervisor with `cargo build --manifest-path stack/Cargo.toml` and set
+`STACK_BIN` to its absolute `.exe` path for Windows tests. The shell uses the
+bundled supervisor's `process-identity PID` command to read native process
+creation time and executable path; PowerShell startup is no longer involved.
 The unit fixtures use temporary directories and random ports. The two Rust
 integration tests use synthetic GRFs, including a real force-killed-parent
 test; they do not use your characters, assets or running game. Without
