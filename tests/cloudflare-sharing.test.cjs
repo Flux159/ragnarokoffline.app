@@ -111,3 +111,45 @@ test('canceling while the gateway starts cannot launch a helper or interfere wit
   const active = f.instance.gateway; release(); await pending;
   assert.equal(f.instance.gateway, active); assert.equal(f.instance.state, 'sharing');
 });
+test('temporary sharing binds its protected gateway before getting a public hostname and needs no credential', async t => {
+  const f = controller(t), launch = f.instance.launch;
+  f.instance.launch = (...args) => {
+    assert.equal(f.instance.gateway.server.listening, true);
+    assert.equal(f.instance.gateway.origin, 'https://pending.invalid');
+    const child = launch(...args); child.stderr = new (require('node:stream').PassThrough)();
+    queueMicrotask(() => child.stderr.write('Your tunnel: https://quick-test.trycloudflare.com'));
+    return child;
+  };
+  f.instance.websocket = async (origin, cookie) => { assert.equal(origin, 'https://quick-test.trycloudflare.com'); assert.match(cookie, /^__Host-ro-friend=/); };
+  await f.instance.start();
+  assert.equal(f.instance.status().state, 'sharing');
+  assert.match(f.instance.invitation(), /^https:\/\/quick-test\.trycloudflare\.com\/#invite=/);
+  assert.equal(f.launched().options.env.TUNNEL_CRED_CONTENTS, undefined);
+  assert.ok(f.launched().args.includes('--url'));
+});
+test('Stop cancels a temporary hostname request and removes the gateway and connector', async t => {
+  const f = controller(t), launch = f.instance.launch;
+  let ready; const launched = new Promise(resolve => { ready = resolve; });
+  f.instance.launch = (...args) => { const child = launch(...args); child.stderr = new (require('node:stream').PassThrough)(); ready(); return child; };
+  const pending = f.instance.start(); await launched; await f.instance.stop(); await pending;
+  assert.equal(f.instance.state, 'stopped'); assert.equal(f.instance.gateway, null); assert.ok(f.child().signalCode);
+});
+test('a fresh DNS channel recovers from a cached NXDOMAIN and supports IPv6-only answers', async t => {
+  const { publicLookup } = require('../electron/sharing/controller');
+  let published = false, channels = 0;
+  const servers = [];
+  t.mock.method(require('node:dns').promises, 'Resolver', function(options) {
+    assert.equal(options.timeout, 2000);
+    channels++;
+    const cached = published;
+    return { setServers: value => servers.push(value),
+      resolve4: async () => { throw Error('No IPv4 answer'); },
+      resolve6: async () => { if (!cached) throw Error('Not published'); return ['2001:db8::1']; } };
+  });
+  const lookup = (hostname = 'new.trycloudflare.com') => new Promise((resolve, reject) => publicLookup(hostname, { all: true }, (error, addresses) => error ? reject(error) : resolve(addresses)));
+  await assert.rejects(lookup(), /not in DNS yet/);
+  published = true; assert.deepEqual(await lookup(), [{ address: '2001:db8::1', family: 6 }]);
+  assert.equal(channels, 2); assert.deepEqual(servers, [['1.1.1.1', '1.0.0.1'], ['1.1.1.1', '1.0.0.1']]);
+  await lookup('new.example.com'); await lookup('new.trycloudflare.com.example.com');
+  assert.equal(servers.length, 2, 'Named domains and lookalike suffixes use configured DNS');
+});

@@ -1705,8 +1705,9 @@ const handlers = {
 	},
     sharing_token_help: () => shell.openExternal('https://dash.cloudflare.com/profile/api-tokens'),
     sharing_status: () => {
-        const saved = getSharingSecrets().load();
-        return { configured: !!saved, ...getSharing().status(), hostname: saved?.hostname || '' };
+        let saved, configurationError = '';
+        try { saved = getSharingSecrets().load(); } catch (error) { configurationError = error.message; }
+        return { configured: !!saved, ...getSharing().status(), configuredHostname: saved?.hostname || '', configurationError };
     },
     sharing_connect: async request => {
         if (getClientPaths().mode !== 'host') throw Error('Cloudflare setup belongs to your own server.');
@@ -1725,10 +1726,11 @@ const handlers = {
         }
         return { hostname: saved.hostname };
     },
-    sharing_start: async () => {
+    sharing_start: async ({ useDomain = false } = {}) => {
         const request = ++sharingStartRequest;
         if (getClientPaths().mode !== 'host') throw Error('Start your own server before sharing.');
-        const saved = getSharingSecrets().load(); if (!saved) throw Error('Connect Cloudflare first.');
+        const saved = useDomain ? getSharingSecrets().load() : null;
+        if (useDomain && !saved) throw Error('Connect your Cloudflare domain first, or use a temporary session link.');
         // The existing mandatory account safeguards remain in force. Never
         // turn packet-level _M/_F signup back on for invited web users.
         const policy = JSON.parse(await runStack(['hosting-check']));

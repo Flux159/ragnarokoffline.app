@@ -10,6 +10,7 @@ const { spawnSync } = require('node:child_process');
 const { _electron, chromium, devices, expect } = require('@playwright/test');
 const { verifyWorld, snapshot } = require('./support.cjs');
 const work = path.resolve(__dirname, '../..');
+const liveCloudflare = process.env.RO_E2E_REAL_CLOUDFLARE === '1';
 if (!process.env.RO_E2E_WORLD || !process.env.RO_E2E_CLIENT_JSON)
   throw Error('Set RO_E2E_WORLD and RO_E2E_CLIENT_JSON; stop the disposable world first');
 const world = fs.realpathSync(process.env.RO_E2E_WORLD);
@@ -143,6 +144,8 @@ async function main() {
     await invoke('db_backup', { path: path.join(out, 'before-friends-sharing.sql') });
     // Only the connector is substituted: real TLS -> real invitation gateway
     // -> pinned Rust RemoteClient -> the same actual rAthena world.
+    let origin;
+    if (!liveCloudflare) {
     tls = https.createServer({ key: fs.readFileSync(path.join(work, 'tests/fixtures/tls/localhost-key.pem')),
       cert: fs.readFileSync(path.join(work, 'tests/fixtures/tls/localhost-cert.pem')) }, (req, res) => {
       const proxy = http.request({ host: '127.0.0.1', port: 3339, method: req.method, path: req.url, headers: req.headers }, reply => { res.writeHead(reply.statusCode, reply.headers); reply.pipe(res); });
@@ -157,8 +160,10 @@ async function main() {
       socket.on('error', () => proxy.destroy()); proxy.on('error', () => socket.destroy()); socket.on('close', () => proxy.destroy()); proxy.on('close', () => socket.destroy());
     });
     await new Promise(resolve => tls.listen(0, '127.0.0.1', resolve));
-    const origin = 'https://localhost:' + tls.address().port;
-    await app.evaluate(({ safeStorage, clipboard }, { work, world, origin }) => {
+    origin = 'https://localhost:' + tls.address().port;
+    }
+    await app.evaluate(({ clipboard }) => { globalThis.roSharingClipboard = clipboard.readText(); });
+    if (!liveCloudflare) await app.evaluate(({ safeStorage, clipboard }, { work, world, origin }) => {
       const require = globalThis.roFixtureRequire;
       const fs = require('node:fs'), path = require('node:path');
       const secretFile = path.join(world, 'sharing/cloudflare.enc');
@@ -170,18 +175,28 @@ async function main() {
       Controller.prototype.start = async function() {
         await this.guard();
         this.gateway = new (require(path.join(work, 'electron/sharing/gateway')).FriendGateway)({ origin, register: this.register });
-        await this.gateway.start(); this.update('sharing', 'Sharing through the local TLS acceptance fixture.');
+        await this.gateway.start();
+        this.update('sharing', 'Sharing through the local TLS acceptance fixture.');
       };
     }, { work, world, origin });
-    fixtureSecretCreated = true;
+    fixtureSecretCreated = !liveCloudflare;
     await page.locator('#mp-internet-setup').check();
     await expect(page.locator('#sharing-start')).toBeEnabled({ timeout: 10000 });
     await page.locator('#sharing-start').click();
-    await expect(page.locator('#sharing-state')).toContainText('Sharing through', { timeout: 240000 });
+    const sharingDeadline = Date.now() + 240000;
+    for (;;) {
+      const status = await invoke('sharing_status');
+      if (status.state === 'failed') throw Error(status.message);
+      if (status.state === 'sharing') break;
+      if (Date.now() >= sharingDeadline) throw Error('Sharing did not become ready: ' + status.message);
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    await expect(page.locator('#sharing-state')).toContainText(liveCloudflare ? 'Sharing is on' : 'Sharing through', { timeout: 240000 });
     await page.locator('#sharing-copy').click();
     const link = await app.evaluate(({ clipboard }) => clipboard.readText());
+    origin = new URL(link).origin;
     serviceSecrets.push(new URL(link).hash.slice('#invite='.length));
-    report.transport = 'local TLS connector fixture, real gateway and game';
+    report.transport = liveCloudflare ? 'real temporary Cloudflare HTTPS/WSS tunnel, normal certificate verification' : 'local TLS connector fixture, real gateway and game';
     await page.locator('#internet-hosting').screenshot({ path: path.join(out, 'sharing-settings.png') });
     let hostDisconnects = 0; boot.on('websocket', socket => { if (socket.url().endsWith(':5121')) socket.on('close', () => hostDisconnects++); });
     await boot.reload(); await boot.bringToFront();
@@ -195,7 +210,7 @@ async function main() {
     // source-IP bans used to group these together and lock out every friend.
     // Distinct account/session limits allow these attempts but cap each one.
     for (let visitor = 0; visitor < 2; visitor++) {
-      const attempts = await browser.newContext({ ignoreHTTPSErrors: true });
+      const attempts = await browser.newContext({ ignoreHTTPSErrors: !liveCloudflare });
       try {
         const loginPage = await attempts.newPage(); await loginPage.goto(link);
         await expect(loginPage.locator('#ready')).toBeVisible();
@@ -226,7 +241,7 @@ async function main() {
     report.checks.push('eight rejected native logins did not ban the shared proxy or prevent another friend from joining');
     // Trust only this test browser's loopback TLS fixture. Product probes do
     // not disable certificate validation and no system trust store is changed.
-    const context = await browser.newContext({ ...devices['Pixel 5'], ignoreHTTPSErrors: true });
+    const context = await browser.newContext({ ...devices['Pixel 5'], ignoreHTTPSErrors: !liveCloudflare });
     game = await context.newPage(); game.setDefaultTimeout(60000);
     game.on('pageerror', error => report.pageErrors.push(error.message));
     const sockets = []; game.on('websocket', socket => sockets.push(socket.url()));

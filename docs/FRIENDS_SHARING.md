@@ -5,24 +5,39 @@ create an ordinary game account if needed, and play in **that same server and
 database**. They do not install the app or download a separate game server.
 The host must keep the app running and the computer awake.
 
-## One-time Cloudflare setup
+## Simplest setup: a temporary session link
 
 Use **Settings → Multiplayer → Set up sharing over the internet**.
 
 1. Change or disable this era's default GM password under Accounts. Use
    **Prepare server for friends** to secure its internal credentials and save a
    backup. Existing characters and account IDs are preserved.
-2. Choose an unused hostname on a domain active in your Cloudflare account.
+2. Click **Share with friends**. The app downloads/checks the pinned Cloudflare
+   helper, creates a temporary hostname, and verifies public HTTPS and WSS.
+   No Cloudflare account, domain, API token or password store is needed.
+3. Click **Copy invitation link** and send it to your friends.
+
+Temporary links use Cloudflare Quick Tunnels, a development/test service with
+no uptime guarantee and a 200-in-flight-request limit. They are convenient for
+casual test sessions; use the optional named tunnel for regular hosting. A new
+sharing session gets a new temporary hostname. See [Cloudflare's limits](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
+
+## Optional: your own fixed hostname
+
+Open **Use your own Cloudflare domain** in the same section.
+
+1. Choose an unused hostname on a domain active in your Cloudflare account.
    Create an API token with Zone Read and DNS Edit scoped to that domain and
    Cloudflare Tunnel Edit scoped to its account. Enter it in the app's password
    field, not chat or a diagnostic report. A tunnel run token is different.
-3. Click **Connect Cloudflare**. The app downloads and checks the pinned helper,
-   creates a dedicated locally managed tunnel, and adds a proxied CNAME. It
-   refuses to overwrite an existing DNS record. The setup API token is not saved;
-   the dedicated tunnel credential uses the operating system's secure storage.
-4. Click **Share with friends**, then **Copy invitation link**. Paste that link
-   into your conversation with friends. Starting sharing applies protected
-   account policy and restarts game services; do this before everyone logs in.
+2. Click **Connect Cloudflare**. The app creates a dedicated locally managed
+   tunnel and proxied CNAME. It refuses to overwrite an existing DNS record.
+   The setup API token is not saved; the dedicated tunnel credential uses the
+   operating system's secure storage.
+3. Select **Use this fixed hostname**, then **Share with friends**.
+
+Starting sharing applies protected account policy and restarts game services;
+do this before everyone logs in.
 
 Invitations last eight hours. Each invited browser may create one ordinary
 account, with a maximum of 32 authenticated browser sessions per invitation.
@@ -39,8 +54,7 @@ public HTTPS endpoint and a game WebSocket have verified against this host.
 
 Forgetting a connection removes its saved local credential. The stopped tunnel
 and DNS record remain in Cloudflare for the account owner to remove there.
-No Quick Tunnel, open public registration, SMTP/reset service or ngrok adapter
-is provided by this implementation.
+Open public registration, SMTP/reset services and ngrok are not provided.
 
 ## Access boundary
 
@@ -83,7 +97,7 @@ It creates an invited group-0 account without restarting the host, logs in and
 creates a character through the phone browser, verifies all three WSS stages,
 shares a map and chat with the owner, and stops remote access while local play
 continues. It preserves settings, backs up the test DB, restores the clipboard,
-and stops the owned world. It never provisions Cloudflare resources.
+and stops the owned world. The default fixture never provisions Cloudflare resources.
 
 With the packaged app and other development hosts fully stopped, run:
 
@@ -97,11 +111,26 @@ The selection JSON supplies only installed game-asset paths. The test world
 must already have its own prepared runtime and private test accounts from the
 account acceptance fixture. Never point `RO_E2E_WORLD` at a player's save.
 
+Set `RO_E2E_REAL_CLOUDFLARE=1` to explicitly run the same test through the
+production controller and a real temporary Cloudflare tunnel. This mode uses
+normal certificate verification, creates no account/DNS resources, and closes
+the app-owned connector during cleanup. It exercises the actual no-token Share
+button. A separate physical/cellular client is still a different acceptance row.
+
+On September 7, the production no-token Share button passed this real Cloudflare
+test on macOS ARM64: eight rejected native logins left another friend able to
+join, invited account creation preserved running services, both clients shared
+a map and live chat, and Stop removed remote access while local services stayed
+up. Browser errors were empty and the owned connector/world stopped during
+cleanup. The readiness check uses a fresh DNS resolver for each attempt and
+Cloudflare's public DNS for temporary names; this avoids stale negative answers
+observed during Electron startup while retaining normal TLS verification.
+
 Unit tests cover unauthorized paths, forged headers/origins, private files,
 account limits, revoked/expired sessions and active sockets, frame limits,
 Cloudflare provisioning rollback, secure-storage refusal, and connector
-cancellation/failure. Actual provider, separate-network/cellular, sleep/wake and
-packaged platform acceptance must be recorded separately from the TLS fixture.
+cancellation/failure. Named-tunnel provisioning, separate-network/cellular, sleep/wake and packaged
+platform acceptance must be recorded separately from either automated fixture.
 
 Provider references: [Cloudflare setup](https://developers.cloudflare.com/tunnel/setup/),
 [API setup](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel-api/),

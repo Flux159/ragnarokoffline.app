@@ -4,17 +4,38 @@ const https = require('node:https');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const dns = require('node:dns').promises;
 const { FriendGateway } = require('./gateway');
 const { configuration } = require('./cloudflare');
 const { ensureHelper } = require('./helper');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+// New temporary hostnames can be announced before DNS is published. macOS's
+// getaddrinfo and home-router caches can retain that initial NXDOMAIN for
+// minutes. Resolve Cloudflare's temporary names through its public DNS; named
+// domains keep the configured resolver. Preserve hostname/SNI and normal
+// certificate verification (never connect with an unverified IP URL).
+function publicLookup(hostname, options, callback, resolver) {
+  if (!resolver) {
+    // A resolver created during Electron startup can keep returning a
+    // negative result after a fresh channel sees the published name.
+    resolver = new dns.Resolver({ timeout: 2000, tries: 1 });
+    if (/^[a-z0-9-]+\.trycloudflare\.com$/.test(hostname)) resolver.setServers(['1.1.1.1', '1.0.0.1']);
+  }
+  Promise.allSettled([resolver.resolve4(hostname), resolver.resolve6(hostname)]).then(results => {
+    const addresses = results.flatMap((result, index) => result.status === 'fulfilled'
+      ? result.value.map(address => ({ address, family: index === 0 ? 4 : 6 })) : [])
+      .filter(entry => !options.family || options.family === entry.family);
+    if (!addresses.length) return callback(Error('The public hostname is not in DNS yet'));
+    if (options.all) callback(null, addresses); else callback(null, addresses[0].address, addresses[0].family);
+  }, callback);
+}
 function publicHealth(origin) {
   return new Promise((resolve, reject) => {
-    const request = https.get(origin + '/_friend/health', { timeout: 8000, agent: false }, response => {
+    const request = https.get(origin + '/_friend/health', { timeout: 8000, agent: false, lookup: publicLookup }, response => {
       let body = '', size = 0;
       response.on('data', chunk => { size += chunk.length; if (size > 4096) request.destroy(); else body += chunk; });
       response.on('end', () => {
-        try { if (response.statusCode !== 200) throw Error(); resolve(JSON.parse(body)); } catch { reject(Error('Public link is not ready')); }
+        try { if (response.statusCode !== 200) throw Error(); resolve(JSON.parse(body)); } catch { reject(Error('Public link returned HTTP ' + response.statusCode)); }
       }); response.on('error', reject);
     }); request.on('timeout', () => request.destroy()); request.on('error', reject);
   });
@@ -23,12 +44,31 @@ function publicSocket(origin, cookie) {
   return new Promise((resolve, reject) => {
     const key = crypto.randomBytes(16).toString('base64');
     const accept = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
-    const request = https.request(origin + '/ws/127.0.0.1:6900', { timeout: 10000, agent: false,
+    const request = https.request(origin + '/ws/127.0.0.1:6900', { timeout: 10000, agent: false, lookup: publicLookup,
       headers: { origin, cookie, connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-key': key, 'sec-websocket-version': '13' } });
     const failure = () => reject(Error('The public page connected, but game connections did not. Check Cloudflare’s WebSocket setting and try again.'));
     request.on('upgrade', (response, socket) => { socket.destroy(); response.headers['sec-websocket-accept'] === accept ? resolve() : failure(); });
     request.on('response', response => { response.destroy(); failure(); });
     request.on('error', failure); request.on('timeout', () => request.destroy()); request.end();
+  });
+}
+function quickHostname(child) {
+  return new Promise((resolve, reject) => {
+    let output = '', settled = false;
+    const finish = (error, origin) => {
+      if (settled) return; settled = true; clearTimeout(timer);
+      child.removeListener('error', failed); child.removeListener('exit', failed); child.removeListener('close', failed);
+      child.stderr.removeListener('data', read); child.stderr.resume();
+      error ? reject(error) : resolve(origin);
+    };
+    const failed = () => finish(Error('Cloudflare could not create a temporary link. Try sharing again.'));
+    const read = bytes => {
+      output = (output + bytes.toString()).slice(-65536);
+      const match = output.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+      if (match) finish(null, match[0]);
+    };
+    const timer = setTimeout(failed, 60000);
+    child.once('error', failed); child.once('exit', failed); child.once('close', failed); child.stderr.on('data', read);
   });
 }
 class SharingController {
@@ -40,18 +80,20 @@ class SharingController {
   async start(saved) {
     if (this.state !== 'stopped' && this.state !== 'failed') throw Error('Sharing is already starting or running.');
     const generation = ++this.generation;
-    this.hostname = saved.hostname; this.update('preparing', 'Checking your server and preparing Cloudflare…');
+    this.hostname = saved?.hostname || ''; this.update('preparing', 'Checking your server and preparing Cloudflare…');
     try {
       await this.guard();
       if (generation !== this.generation) return;
       const executable = await this.helper(path.join(this.directory, 'helpers'));
       if (generation !== this.generation) return;
-      const origin = 'https://' + saved.hostname;
+      // Bind the protected gateway before requesting any public hostname.
+      // Until Cloudflare assigns it, every Host is rejected by this sentinel.
+      let origin = saved ? 'https://' + saved.hostname : 'https://pending.invalid';
       const gateway = new this.Gateway({ origin, register: this.register });
       this.gateway = gateway;
       const port = await gateway.start();
       if (generation !== this.generation) { await gateway.stop(); return; }
-      const { config, credentials } = configuration(saved, port);
+      const { config, credentials } = saved ? configuration(saved, port) : { config: '{}' };
       // This file contains routing only. Tunnel secrets are supplied via the
       // child's private environment and are never written to logs or argv.
       const configPath = path.join(this.directory, 'tunnel.json');
@@ -59,17 +101,26 @@ class SharingController {
       const env = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR,
         TUNNEL_CRED_CONTENTS: credentials };
       for (const key of Object.keys(env)) if (env[key] === undefined) delete env[key];
-      this.child = this.launch(executable, ['tunnel', '--config', configPath, '--no-autoupdate', '--loglevel', 'error', 'run', saved.tunnelId], { env, stdio: ['ignore', 'ignore', 'ignore'], windowsHide: true });
+      const args = saved ? ['tunnel', '--config', configPath, '--no-autoupdate', '--loglevel', 'error', 'run', saved.tunnelId]
+        : ['tunnel', '--config', configPath, '--no-autoupdate', '--url', 'http://127.0.0.1:' + port, '--metrics', '127.0.0.1:0'];
+      this.child = this.launch(executable, args, { env, stdio: ['ignore', 'ignore', saved ? 'ignore' : 'pipe'], windowsHide: true });
       const child = this.child;
       child.once('error', () => this.fail(generation, 'Cloudflare could not start. Try sharing again.'));
       child.once('exit', () => { if (this.child === child) this.fail(generation, 'Cloudflare stopped. Start sharing again to reconnect.'); });
       this.update('connecting', 'Waiting for the public game link…');
+      if (!saved) {
+        origin = await quickHostname(child);
+        if (generation !== this.generation) return;
+        this.hostname = new URL(origin).host;
+        gateway.origin = origin; gateway.host = this.hostname;
+      }
       const deadline = Date.now() + 120000;
+      let readiness = 'The public hostname has not answered yet';
       for (;;) {
         if (generation !== this.generation) return;
         try { const health = await this.health(origin); if (health.service === 'ragnarok-friends' && health.challenge === this.gateway.challenge) break; }
-        catch {}
-        if (Date.now() >= deadline) throw Error('The public link did not reach this server. Check the hostname’s Cloudflare DNS and try again.');
+        catch (error) { readiness = error.message; }
+        if (Date.now() >= deadline) throw Error('The public link did not reach this server. ' + readiness + '. Try sharing again; if using your own domain, check its Cloudflare DNS.');
         await pause(1000);
       }
       if (generation !== this.generation) return;
@@ -116,4 +167,4 @@ class SharingController {
     this.update('stopped', 'Sharing is off. Your local game can keep running.');
   }
 }
-module.exports = { SharingController, publicHealth, publicSocket };
+module.exports = { SharingController, publicHealth, publicSocket, publicLookup };

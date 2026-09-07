@@ -95,8 +95,9 @@ actually buy from. See [Filling the world](#filling-the-world) below.
 
 ## Sharing with friends over the internet
 
-Use **Settings → Multiplayer → Set up sharing over the internet**, connect your
-Cloudflare domain once, then choose **Share with friends → Copy invitation link**.
+Use **Settings → Multiplayer → Set up sharing over the internet**, then choose
+**Share with friends → Copy invitation link**. Temporary session links need no
+Cloudflare account or token; connecting your own fixed hostname is optional.
 Friends open the HTTPS link in their browser and play on your running world.
 See [setup, invitation expiry and Stop sharing](docs/FRIENDS_SHARING.md).
 
