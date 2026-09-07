@@ -62,3 +62,26 @@ does not reproduce it, with actual exposure duration and remaining hypotheses.
 
 References: [Clang ASan build and symbolization](https://clang.llvm.org/docs/AddressSanitizer.html),
 [sanitizer signal-handler controls](https://github.com/google/sanitizers/wiki/SanitizerCommonFlags).
+
+## September 7 continuation
+
+The original image passed the synthetic fixture inside the actual ARM64 guest,
+but real game startup failed UBSan at `char_logif.cpp:827`: `WFIFOL(fd,50)`
+casts a byte-offset FIFO pointer to `uint32*`. Similar unaligned accesses are
+pervasive in the pinned packet macros. This is real C++ alignment UB, not a
+reproduction of the intermittent logout crash. The gameplay diagnostic image
+excludes only `alignment`; ASan and the other UBSan checks remain fatal. It
+cannot be used to claim the absence of alignment defects. See the
+[Clang per-check controls](https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html#usage).
+
+`tests/e2e/sanitizer-guest.cjs` verifies the archive checksum and deliberately
+faulting runtime inside a stopped, marked disposable world, then waits for
+owned shutdown to release its ports. `tests/e2e/map-crash-stress.cjs` backs up
+each era before repeated real client login, warp, script reload, native
+character-select logout and abrupt navigation disconnect. It records completed
+counts and image identity, and preserves the first detected game fault.
+
+Normal ARM64 image `ec813673406bdfa995723535f926697f1167467ab105a0e5f938d96236d61660`
+completed 20 reload/logout cycles: five per era/population-off-or-on combination.
+Bundled mobile and keyboard mods were enabled. No crash was reproduced; this
+short exposure is not closure of #16 or the full acceptance matrix.

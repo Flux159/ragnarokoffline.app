@@ -19,8 +19,11 @@ COPY . /rathena
 ARG PACKETVER=20221005
 ARG BUILD_JOBS=2
 ENV CC=clang CXX=clang++
-ENV CFLAGS="-g -O1 -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address,undefined -fno-sanitize-recover=all"
-ENV CXXFLAGS="-g -O1 -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address,undefined -fno-sanitize-recover=all"
+# The pinned packet FIFO macros dereference integers at byte offsets (e.g.
+# char_logif.cpp offset 50). Exclude alignment to reach gameplay; keep ASan
+# and every other undefined-behavior check fatal. See SANITIZER_INVESTIGATION.md.
+ENV CFLAGS="-g -O1 -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address,undefined -fno-sanitize=alignment -fno-sanitize-recover=all"
+ENV CXXFLAGS="-g -O1 -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address,undefined -fno-sanitize=alignment -fno-sanitize-recover=all"
 ENV LDFLAGS="-fsanitize=address,undefined -Wl,--build-id=sha1 -rdynamic"
 # Do not enable RAGNAROK_CRASH_TRACE: sanitizer diagnostics own fault handling.
 # NO_MEMMGR exposes allocation/free boundaries that the built-in pool obscures.
