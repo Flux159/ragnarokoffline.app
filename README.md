@@ -47,6 +47,13 @@ progresses. Every launch after that is ~10-15 seconds.
 Log in with **`ragnarok`** / **`ragnarok`** — the account is created for you on
 first run — and make a character.
 
+Change that password in **Settings → Accounts → Refresh accounts → Change
+GM/admin password**. The panel identifies the affected era and account ID and
+requires confirmation. Each era has its own password; changing one leaves the
+other alone. Account changes disconnect players briefly and restart game
+services, preserving characters and privileges. Startup and Repair never
+recreate a default login that was deleted or renamed in an existing database.
+
 **`ragnarok` is a GM account.** It can use every `@` command including warping. 
 With GM accounts your outfit generally always looks like a GM, so if you don't want that create your own non-GM account.
 

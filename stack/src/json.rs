@@ -14,7 +14,6 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 /// A JSON string literal, also used by small host-only command responses.
-#[cfg(any(windows, test))]
 pub fn quote(value: &str) -> String {
     let mut result = String::from("\"");
     for ch in value.chars() {

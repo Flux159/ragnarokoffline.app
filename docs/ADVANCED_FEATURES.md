@@ -6,6 +6,45 @@ machine, work out what is using disk space, or start over from scratch.
 
 ---
 
+## Managing owner and friend accounts
+
+Start your own server, then open **Settings → Accounts → Refresh accounts**.
+The panel names the selected era, account ID, privilege group and enabled state.
+Renewal and pre-renewal use different databases: a password change applies only
+to the era shown. If an era switch did not finish, account operations refuse to
+write to a database whose actual volume does not match the selected era.
+
+Select `ragnarok` and use **Change GM/admin password**, entering the new password
+twice. The new value must be 12–23 printable ASCII characters; spaces and
+punctuation are supported. The pinned game login packet has only 24 bytes for
+the password including its terminator. Inputs are rejected rather than silently
+truncated. This setting preserves the account ID, GM privileges and characters.
+Passwords are cleared from the form after an attempted change and are excluded
+from application diagnostics. This build uses rAthena's default plaintext game
+password format. Custom login imports and MD5 mode are rejected for password
+writes and need an explicit migration; this is not modern web password hashing.
+
+The same panel creates ordinary group-0 friend accounts, resets passwords and
+disables or enables logins. Changes disconnect active players and restart the
+previously running game services, preventing an older in-memory account record
+from overwriting a password change. A restart failure explicitly says whether
+the account was already updated. Refresh the panel and start the server before
+reconnecting. The panel currently supports up to 250 accounts.
+
+The first database initialization seeds `ragnarok/ragnarok`. Startup, Repair
+and switching eras no longer recreate that login in an existing database when
+it has been deleted or renamed. Resetting a password never changes the account's
+enabled/disabled state. A backup contains the account state and credentials from
+when it was made; restoring it restores those values too.
+
+Account settings require a bundled `docker-slim` that advertises
+`exec-stdin-eof-v1` (nebula PR #33). Older runtimes are rejected before stopping
+game services. This account foundation does not enable internet hosting;
+restricted registration, service-secret rotation, invitations and tunnel
+protection remain separate work for issue #4.
+
+---
+
 ## Backing up and restoring your characters
 
 Accounts and characters live in a MariaDB database inside the microVM, not in a

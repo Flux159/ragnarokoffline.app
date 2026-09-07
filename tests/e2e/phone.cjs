@@ -1,7 +1,7 @@
 const { expect } = require("@playwright/test");
 const { snapshot } = require("./support.cjs");
 
-async function login(page) {
+async function login(page, { movementTimeout = 60000 } = {}) {
   await page.goto("/");
   await page
     .getByLabel("Account", { exact: true })
@@ -15,7 +15,9 @@ async function login(page) {
     .tap();
   await page.getByRole("button", { name: "Play / create", exact: true }).tap();
   await expect
-    .poll(async () => (await snapshot(page)).input.canMove)
+    .poll(async () => (await snapshot(page)).input.canMove, {
+      timeout: movementTimeout,
+    })
     .toBe(true);
 }
 async function menu(page, name) {

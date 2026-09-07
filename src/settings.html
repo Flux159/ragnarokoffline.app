@@ -64,7 +64,7 @@
   /* The multiplayer section is the first place this window asks for typed
      input or a choice, so these controls have no styles yet. Browser defaults
      on a dark panel are unreadable rather than merely plain. */
-  select, input[type=text] {
+  select, input[type=text], input[type=password] {
     background: var(--panel-hi); border: 1px solid var(--line);
     border-radius: 6px; padding: 7px 10px; font-size: 13px;
     color: var(--text); font-family: inherit; min-width: 200px;
@@ -168,6 +168,32 @@
          in seconds. Register on their login screen by adding <code>_M</code> or
          <code>_F</code> to a new username.</p>
     </div>
+  </div>
+
+  <h2>Accounts</h2>
+  <div class="panel" id="accounts-panel">
+    <p class="note">Manage accounts on your own running server. Renewal and pre-renewal
+      have separate accounts and passwords. Changes disconnect current players and restart
+      game services; account IDs, privileges and characters are preserved.</p>
+    <div class="row"><span id="accounts-era">Choose Refresh to load the current era</span>
+      <button id="accounts-refresh" class="ghost">Refresh accounts</button></div>
+    <p class="note" id="accounts-status" role="status" aria-live="polite"></p>
+    <label><span>Account</span><select id="account-select" disabled></select></label>
+    <p class="note" id="account-detail"></p>
+    <label><span>New password</span><input id="account-password" type="password" autocomplete="new-password" /></label>
+    <label><span>Confirm password</span><input id="account-confirmation" type="password" autocomplete="new-password" /></label>
+    <p class="note">Use 12–23 printable ASCII characters, including letters, numbers, spaces
+      and punctuation. The game protocol limits password length; longer or non-ASCII passwords
+      cannot be accepted here. Passwords are never included in diagnostics.</p>
+    <div class="actions">
+      <button id="account-password-save" disabled>Change password</button>
+      <button id="account-disable" class="ghost" disabled>Disable account</button>
+      <button id="account-enable" class="ghost" disabled>Enable account</button>
+    </div>
+    <label style="margin-top:12px"><span>New friend account</span><input id="account-username" type="text" autocomplete="off" /></label>
+    <p class="note">Create an ordinary player account with the password entered above.
+      Use 4–23 letters, numbers, underscores or hyphens, without an _M or _F suffix.</p>
+    <button id="account-create" class="ghost" disabled>Create friend account</button>
   </div>
 
   <h2>Save data</h2>
@@ -733,5 +759,6 @@ refresh();
 refreshMods();
 setInterval(refresh, 4000);
 </script>
+<script src="accounts-settings.js"></script>
 </body>
 </html>

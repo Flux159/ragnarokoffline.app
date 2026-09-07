@@ -56,6 +56,9 @@ jobs:
         timeout-minutes: 12
         shell: bash
         run: bash scripts/build-remoteclient.sh
+      - name: Build the pinned container client and verify private stdin capability
+        shell: bash
+        run: bash scripts/build-docker-slim.sh
       - name: Test lifecycle and the real process protocol
         timeout-minutes: 5
         shell: bash

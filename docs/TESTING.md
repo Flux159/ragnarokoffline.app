@@ -232,3 +232,40 @@ Learned skill use/targeting, further combat cases, player vending and remaining 
 orientation/keyboard transitions, death/IME/background gameplay cases, Firefox,
 packaged Electron and physical Android/iPhone testing remain release gates for
 issue #6. Chromium device emulation is not a physical Safari/Android pass.
+
+## Owner account integration (opt-in, disposable world only)
+
+`tests/e2e/accounts-settings.cjs` launches real Electron Settings and a Chromium
+phone client against an already running disposable test world. Install the app's
+Node dependencies and build/copy the current supervisor into that world's runtime;
+its `docker-slim capabilities` must include `exec-stdin-eof-v1` (nebula PR #33).
+The world must contain the marker from `world.cjs prepare`, a playable renewal GM
+character in slot 1, and no `client.json`. The missing client selection makes the
+test shell's boot page wait instead of starting another supervisor. The fixture
+uses its own Electron user-data directory and verifies asset ownership first.
+
+```sh
+RO_E2E_WORLD=/absolute/path/to/disposable-world node tests/e2e/accounts-settings.cjs
+```
+
+It rejects an overlength paste without truncating it, checks that password fields
+clear, creates an ordinary friend, disables/enables that account, and changes the
+GM password through real IPC. It then verifies native rejection of the old
+password and reaches a playable map with the new one. The supervisor waits for a
+map-ready log newer than the restarted char-server's `StartedAt`; retained logs
+from a previous process cannot report readiness. Node tests separately check
+private stdin transport and redaction, while Rust tests cover credential limits,
+SQL encoding, reserved names and the operation lock.
+
+This test intentionally changes only the disposable world's GM password and adds
+a unique friend account. Generated test credentials stay in mode-600
+`account-test-credentials.json` and `friend-test-credentials.json` outside the
+served root. A pending GM credential file is retained if the write outcome is
+uncertain. Later gameplay tests must load the current test password into
+`RO_E2E_PASSWORD` without printing it. Screenshots and JSON reports go under
+`<world>/account-tests/<timestamp>/`; no password-filled trace is recorded. The
+test exits its shell directly so the externally owned world remains running.
+
+Fresh-era initialization, startup/Repair and renamed/deleted GM preservation,
+era isolation, full packaged payloads and internet-mode safeguards are additional
+release gates; the account UI test alone does not close issue #4.

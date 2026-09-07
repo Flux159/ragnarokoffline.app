@@ -48,7 +48,7 @@ exports.default = async function afterPack(context) {
 	for (const name of fs.readdirSync(bin)) {
 		const target = path.join(bin, name);
 		if (!fs.statSync(target).isFile()) continue;
-		if (name.endsWith('.sha256')) continue;
+		if (name.endsWith('.sha256') || name.endsWith('.source-commit')) continue;
 		const needsVZ = name === 'nebula' || name === 'nebulad';
 		execFileSync('codesign', [
 			'--force', '--sign', identity,

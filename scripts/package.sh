@@ -74,13 +74,27 @@ echo "    embed kit: nebula $KIT_NEBULA"
 # nebula + nebulad, with docker-slim shipping as a separate release asset.
 cp "$EMBED"/bin/* "$PAYLOAD/bin/"
 rm -f "$PAYLOAD"/bin/kubectl-slim* "$PAYLOAD"/bin/helm-slim*
-# docker-slim is nebula-slim's docker client and the app cannot start without
-# it, so accept it from outside the kit when the kit does not carry it.
-if [ ! -e "$PAYLOAD/bin/docker-slim$EXE" ]; then
-    [ -n "${DOCKER_SLIM_BIN:-}" ] && [ -e "$DOCKER_SLIM_BIN" ] \
-        || { echo "the embed kit has no docker-slim and DOCKER_SLIM_BIN is unset" >&2; exit 1; }
-    cp "$DOCKER_SLIM_BIN" "$PAYLOAD/bin/docker-slim$EXE"
+# Account changes require the pinned client's stdin EOF contract. Override even
+# a kit that contains a client: an older kit must not silently hide this build.
+if [ -z "${DOCKER_SLIM_BIN:-}" ]; then
+    bash "$ROOT/scripts/build-docker-slim.sh"
+    DOCKER_SLIM_BIN="$ROOT/bin/docker-slim$EXE"
 fi
+node - "$DOCKER_SLIM_BIN" "$ROOT/config/DOCKER_SLIM_PIN" <<'JS'
+const fs = require('node:fs'), crypto = require('node:crypto');
+const [binary, pin] = process.argv.slice(2);
+const result = require('node:child_process').spawnSync(binary, ['capabilities'], { encoding: 'utf8', timeout: 10000 });
+if (result.error || result.status !== 0 || !result.stdout.split(/\r?\n/).includes('exec-stdin-eof-v1')
+    || fs.readFileSync(binary + '.source-commit', 'utf8').trim() !== fs.readFileSync(pin, 'utf8').trim()
+    || fs.readFileSync(binary + '.sha256', 'utf8').trim() !== crypto.createHash('sha256').update(fs.readFileSync(binary)).digest('hex')) {
+    throw new Error('docker-slim must match DOCKER_SLIM_PIN and support private stdin; run scripts/build-docker-slim.sh');
+}
+JS
+cp "$DOCKER_SLIM_BIN" "$PAYLOAD/bin/docker-slim$EXE"
+cp "$DOCKER_SLIM_BIN.source-commit" "$PAYLOAD/bin/docker-slim.source-commit"
+sha256_of "$PAYLOAD/bin/docker-slim$EXE" > "$PAYLOAD/bin/docker-slim.sha256"
+mkdir -p "$PAYLOAD/licenses"
+cp "$DOCKER_SLIM_BIN.LICENSE" "$PAYLOAD/licenses/nebula-docker-slim-LICENSE"
 # libkrun, which nebula loads from ../lib next to bin/. Only on Linux and
 # Windows: macOS drives the microVM through Virtualization.framework instead,
 # and the shipped app has never carried a libkrun. The macOS kit does contain

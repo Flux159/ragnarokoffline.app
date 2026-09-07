@@ -8,10 +8,11 @@
 
 use std::ffi::OsStr;
 use std::fs;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread::sleep;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 pub struct Docker {
     bin: PathBuf,
@@ -138,10 +139,69 @@ impl Docker {
         }
     }
 
+    pub fn started_at(&self, name: &str) -> Option<String> {
+        let output = self.output(["inspect", name]).ok()?;
+        let crate::json::Value::Array(containers) = crate::json::parse(&output).ok()? else { return None; };
+        let state = containers.first()?.get("State")?;
+        if state.str("Status") != Some("running") { return None; }
+        state.str("StartedAt").map(str::to_owned)
+    }
+
+    pub fn timestamped_logs(&self, name: &str) -> [String; 2] {
+        match self.base().args(["logs", "-t", "--tail", "400", name]).output() {
+            Ok(output) => [String::from_utf8_lossy(&output.stdout).into_owned(), String::from_utf8_lossy(&output.stderr).into_owned()],
+            Err(_) => [String::new(), String::new()],
+        }
+    }
+
     pub fn exec_sql(&self, sql: &str) -> Result<String, String> {
         self.output([
-            "exec", "ragnarok-db", "mariadb", "-uragnarok", "-pragnarok", "ragnarok", "-e", sql,
+            "exec", "ragnarok-db", "mariadb", "--protocol=TCP", "-h127.0.0.1", "-uragnarok", "-pragnarok", "ragnarok", "-e", sql,
         ])
+    }
+
+    /// Account operations send SQL through a pipe, never argv, a shell or a
+    /// temporary file. Requires docker-slim's exec stdin EOF fix (nebula #33).
+    /// Database errors can quote the query, so stderr must never reach logs.
+    pub fn private_sql(&self, sql: &str) -> Result<String, String> {
+        self.require_private_sql()?;
+        let failure = || "The private account database operation failed. Check that the server is running and the bundled container client supports exec stdin EOF.".to_string();
+        if sql.len() > 16 * 1024 { return Err(failure()); }
+        let mut child = self.base().args([
+            "exec", "-i", "ragnarok-db", "mariadb", "--protocol=TCP", "-h127.0.0.1", "-uragnarok", "-pragnarok",
+            "--batch", "--skip-column-names", "--raw", "ragnarok",
+        ]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null())
+            .spawn().map_err(|_| failure())?;
+        let mut stdin = child.stdin.take().ok_or_else(failure)?;
+        let input = sql.as_bytes().to_vec();
+        let writer = std::thread::spawn(move || stdin.write_all(&input));
+        let stdout = child.stdout.take().ok_or_else(failure)?;
+        let reader = std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            stdout.take(64 * 1024 + 1).read_to_end(&mut bytes).map(|_| bytes)
+        });
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break Some(status),
+                Ok(None) if Instant::now() < deadline => sleep(Duration::from_millis(20)),
+                _ => { let _ = child.kill(); let _ = child.wait(); break None; }
+            }
+        };
+        let wrote = writer.join().ok().and_then(Result::ok).is_some();
+        let bytes = reader.join().ok().and_then(Result::ok).ok_or_else(failure)?;
+        if !wrote || !status.map(|s| s.success()).unwrap_or(false) || bytes.len() > 64 * 1024 {
+            return Err(failure());
+        }
+        String::from_utf8(bytes).map_err(|_| failure())
+    }
+
+    pub fn require_private_sql(&self) -> Result<(), String> {
+        if self.output(["capabilities"]).ok().map(|s| s.lines().any(|l| l == "exec-stdin-eof-v1")).unwrap_or(false) {
+            Ok(())
+        } else {
+            Err("Account settings require an updated bundled docker-slim with exec-stdin-eof-v1 support. Update the app's runtime before changing accounts.".into())
+        }
     }
 
     /// Create, populate and start a container, honouring `Mount` in whatever

@@ -24,8 +24,9 @@ pub fn phase(cfg: &Config, msg: &str) {
 /// they do, both remove the containers and then both try to create them, and
 /// the loser fails with "container name is already in use".
 ///
-/// Directory creation is the atomic primitive on every platform we ship to,
-/// which advisory file locking is not.
+/// Retained for compatibility with older supervisors. main.rs also takes a
+/// kernel file lock covering accounts, lifecycle, backup and restore; Repair
+/// may clear this legacy directory but cannot break that live operation lock.
 pub struct Lock(PathBuf);
 
 impl Lock {
@@ -1272,13 +1273,10 @@ fn zero_numbers(line: &str) -> String {
 /// rather than a container healthcheck.
 fn wait_for_db(dk: &Docker) -> Result<(), String> {
     for _ in 0..90 {
-        // Not `SELECT 1`. mariadb's entrypoint starts a temporary server on the
-        // same socket we exec against, and only then imports the schema from
-        // docker-entrypoint-initdb.d -- so a bare connection succeeds long
-        // before `login` exists. The account insert that follows was landing on
-        // a missing table, its error discarded, and the player was left with a
-        // server that had no ragnarok/ragnarok account until the next launch
-        // ran the insert again. Waiting for the table, not the socket.
+        // exec_sql uses loopback TCP: the entrypoint's temporary bootstrap
+        // server has networking disabled. A Unix-socket connection can see the
+        // login table before 03-account.sql has seeded the first-run GM. Wait
+        // for the final server and the schema, without recreating credentials.
         if dk.exec_sql("SELECT 1 FROM login LIMIT 1").is_ok() {
             return Ok(());
         }
@@ -1567,28 +1565,9 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     phase(cfg, "Starting the database…");
     wait_for_db(dk)?;
 
-    // Applied here, not only in the seed SQL: the entrypoint imports
-    // initdb.d exactly once, when it creates the data directory, so an install
-    // predating this would never get the account.
-    // NOT EXISTS rather than INSERT IGNORE: userid carries a plain KEY, not a
-    // UNIQUE one, so IGNORE suppresses nothing and adds a duplicate account on
-    // every start.
-    // Checked, not discarded: this is the only account a player has, and a
-    // silent failure here is indistinguishable from the game being broken.
-    if let Err(e) = dk.exec_sql(
-        "INSERT INTO login (userid, user_pass, sex, email, group_id)
-         SELECT 'ragnarok', 'ragnarok', 'M', 'ragnarok@localhost', 99 FROM DUAL
-          WHERE NOT EXISTS (SELECT 1 FROM login WHERE userid = 'ragnarok');",
-    ) {
-        return Err(format!("could not create the ragnarok account: {e}"));
-    }
-    // And confirm it is actually there. The insert can succeed against a schema
-    // that is still being replaced underneath it.
-    match dk.exec_sql("SELECT COUNT(*) FROM login WHERE userid = 'ragnarok';") {
-        Ok(out) if out.contains('1') => {}
-        Ok(_) => return Err("the ragnarok account was not created; try Repair".into()),
-        Err(e) => return Err(format!("could not verify the ragnarok account: {e}")),
-    }
+    // Only sql/03-account.sql seeds the GM, during first database creation.
+    // An existing database may intentionally have renamed, disabled or deleted
+    // it. Startup, Repair and era switches must never recreate known credentials.
 
     // The population engine writes its live shell count here on every autosummon
     // tick. Created here rather than in sql/ for the same reason as the account

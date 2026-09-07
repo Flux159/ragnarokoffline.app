@@ -10,6 +10,7 @@
 //! code path, as they always have.
 
 mod assets;
+mod accounts;
 mod asset_transaction;
 mod cmds;
 mod config;
@@ -18,6 +19,7 @@ mod json;
 mod mapcache;
 mod mods;
 mod process_identity;
+mod operation_lock;
 
 use config::Config;
 use docker::Docker;
@@ -27,6 +29,7 @@ use std::process::exit;
 
 const USAGE: &str = "usage: ragnarok-stack mods|mod-enable NAME|mod-disable NAME|up [--lan] [--ram MiB]|down|repair [--lan] [--ram MiB]|status|logs [service] [tail]\n\
                      \x20      backup <file>|restore <file>\n\
+                     \x20      accounts (private JSON request on stdin)\n\
                      \x20      link-assets <data.grf> [rdata.grf] [official_data.grf] [bgm-dir]";
 
 /// The runtime tree, which is the directory containing bin/ and scripts/.
@@ -73,12 +76,15 @@ fn main() {
     };
     let cfg = match loaded {
         Ok(c) => c,
-        Err(e) => {
-            eprintln!("{e}");
-            exit(1);
-        }
+        Err(e) => fail(verb, &e),
     };
     let dk = Docker::new(cfg.docker.clone(), cfg.nebula_home.clone());
+    let _operation = if matches!(verb, "up" | "down" | "repair" | "backup" | "restore" | "accounts") {
+        match operation_lock::acquire(&cfg.state) {
+            Ok(lock) => Some(lock),
+            Err(error) => fail(verb, &error),
+        }
+    } else { None };
 
     // LAN hosting is opt-in per invocation rather than sticky state: the app
     // passes it from a setting the player can see, and a plain `up` from a
@@ -95,6 +101,12 @@ fn main() {
         .and_then(|v| v.parse::<u32>().ok());
 
     let result = match verb {
+        "accounts" => {
+            if let Err(error) = accounts::run(&cfg, &dk) {
+                fail(verb, &error);
+            }
+            Ok(())
+        },
         "up" => cmds::up(&cfg, &dk, lan, ram_mib),
         "down" => cmds::down(&cfg, &dk),
         "repair" => cmds::repair(&cfg, &dk, lan, ram_mib),
@@ -138,4 +150,13 @@ fn main() {
         eprintln!("{e}");
         exit(1);
     }
+}
+
+fn fail(verb: &str, error: &str) -> ! {
+    if verb == "accounts" {
+        println!("{{\"error\":{}}}", json::quote(error));
+    } else {
+        eprintln!("{error}");
+    }
+    exit(1);
 }

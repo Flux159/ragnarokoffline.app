@@ -1859,6 +1859,10 @@ const handlers = {
 	},
 	scan_client_dir: ({ dir }) => scanClientDir(dir),
 	get_settings: () => getSettings(),
+	accounts: request => {
+		if (getClientPaths().mode !== 'host') throw new Error('Accounts belong to the host. Switch to your own server to manage them.');
+		return require('./accounts').runAccounts(stackBin(), stackEnv(), request);
+	},
 	host_ram_mib: () => Math.floor(require('os').totalmem() / (1024 * 1024)),
 	// Whether idle guest memory comes back. vz (macOS) balloons; the krun
 	// backend behind Windows and Linux does not, and is not expected to, so on
@@ -2012,6 +2016,11 @@ function appLog(line) {
 // a decision about what a page served by a stranger may do to this machine —
 // not a convenience.
 const GAME_PAGE_HANDLERS = new Set([]);
+// Includes settings writes before their supervisor call: an era marker must
+// not change halfway through an account operation. Read-only status stays live.
+const SERVER_OPERATIONS = new Set(['accounts', 'save_settings', 'set_mode', 'start_stack',
+	'stack_up', 'stack_down', 'stack_repair', 'db_backup', 'db_restore']);
+let serverOperationQueue = Promise.resolve();
 
 /// Where an IPC call came from. `file://` means one of our own pages.
 function callerIsOwnPage(event) {
@@ -2028,6 +2037,12 @@ ipcMain.handle('invoke', async (event, name, args) => {
 	const fn = handlers[name];
 	if (!fn) throw new Error(`unknown command: ${name}`);
 	try {
+		if (SERVER_OPERATIONS.has(name)) {
+			if (tearingDown) throw new Error('The app is quitting; wait until the next launch.');
+			const operation = serverOperationQueue.then(() => fn(args || {}));
+			serverOperationQueue = operation.catch(() => {});
+			return await operation;
+		}
 		return await fn(args || {});
 	} catch (e) {
 		const msg = (e && e.message) || String(e);
@@ -2098,6 +2113,7 @@ function stackEnv() {
 // responding until the containers finished stopping. Quitting must stay
 // responsive even though the work behind it is slow.
 async function teardownAsync() {
+	await serverOperationQueue;
 	try { await assetsStop(); } catch (error) { appLog(`asset shutdown failed: ${error.message}`); }
 	// A joining player started no engine and no containers, so there is
 	// nothing to stop -- and `down` would spend its timeout talking to a

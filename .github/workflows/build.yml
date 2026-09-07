@@ -213,15 +213,12 @@ jobs:
              --pattern 'nebula-slim-embed-${{ matrix.triple }}.tar.gz' --dir /tmp
           tar xzf /tmp/nebula-slim-embed-${{ matrix.triple }}.tar.gz -C /tmp/kit
 
-          # docker-slim ships separately, as one of the three slim host CLIs.
-          # The Linux and Windows embed kits do not include it, and the app
-          # cannot talk to the engine without it.
-          if [ ! -e /tmp/kit/bin/docker-slim ] && [ ! -e /tmp/kit/bin/docker-slim.exe ]; then
-            gh release download "$NEBULA_VERSION" --repo Flux159/nebula \
-               --pattern 'nebula-slim-clis-*-${{ matrix.clis }}.tar.gz' --dir /tmp/clis
-            tar xzf /tmp/clis/*.tar.gz -C /tmp/clis --strip-components=1
-            echo "DOCKER_SLIM_BIN=$(ls /tmp/clis/docker-slim*)" >> "$GITHUB_ENV"
-          fi
+          # Build the private-account stdin contract from its immutable source
+          # pin, even when the embed kit carries an older docker-slim.
+          bash scripts/build-docker-slim.sh
+          docker_bin="$PWD/bin/docker-slim"
+          [ "${{ matrix.platform }}" = "win" ] && docker_bin="$docker_bin.exe"
+          echo "DOCKER_SLIM_BIN=$docker_bin" >> "$GITHUB_ENV"
 
           # The shell and asset-server lifecycle protocol move together.
           # Build the immutable source pin, including dependency PR commits,
