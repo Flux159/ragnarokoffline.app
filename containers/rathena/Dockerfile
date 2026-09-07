@@ -8,13 +8,19 @@ FROM alpine:3.23 AS build
 
 RUN apk add --no-cache \
         bash git make cmake gcc g++ \
-        zlib-dev mariadb-dev linux-headers
+        zlib-dev mariadb-dev linux-headers libunwind-dev=1.8.1-r0 binutils
 
 WORKDIR /rathena
 COPY . /rathena
 
 # Must match roBrowser's `packetver` and the era of the client GRFs.
 ARG PACKETVER=20221005
+ENV CXXFLAGS="-g -O2 -fno-omit-frame-pointer -fno-optimize-sibling-calls"
+ENV CPPFLAGS="-DRAGNAROK_CRASH_TRACE"
+ENV LIBS="-lunwind"
+ENV LDFLAGS="-Wl,--build-id=sha1 -rdynamic"
+
+RUN sh /rathena/ragnarok-crash-tests/verify.sh
 
 # Renewal, and then the same source again for pre-renewal.
 #
@@ -35,13 +41,25 @@ ARG PACKETVER=20221005
 # renewal binary under a pre-renewal name.
 RUN ./configure --enable-packetver=${PACKETVER} \
     && make -j"$(nproc)" server \
-    && strip login-server char-server map-server web-server || true
+    && mkdir -p /symbols/re \
+    && for binary in login-server char-server map-server web-server; do \
+        objcopy --only-keep-debug "$binary" "/symbols/re/$binary.debug" \
+        && readelf -n "$binary" | sed -n "s/.*Build ID: /$binary /p" >> "/symbols/re/BUILD_IDS" \
+        && strip --strip-debug "$binary" \
+        && objcopy --add-gnu-debuglink="/symbols/re/$binary.debug" "$binary" || exit 1; \
+    done
 RUN mkdir -p /out/re \
     && cp login-server char-server map-server web-server /out/re/
 RUN make clean \
     && ./configure --enable-packetver=${PACKETVER} --enable-prere \
     && make -j"$(nproc)" char map \
-    && (strip char-server map-server || true) \
+    && mkdir -p /symbols/pre-re \
+    && for binary in char-server map-server; do \
+        objcopy --only-keep-debug "$binary" "/symbols/pre-re/$binary.debug" \
+        && readelf -n "$binary" | sed -n "s/.*Build ID: /$binary /p" >> "/symbols/pre-re/BUILD_IDS" \
+        && strip --strip-debug "$binary" \
+        && objcopy --add-gnu-debuglink="/symbols/pre-re/$binary.debug" "$binary" || exit 1; \
+    done \
     && mkdir -p /out/pre-re \
     && cp char-server map-server /out/pre-re/
 # Prove the two binaries are actually different eras.
@@ -62,9 +80,12 @@ RUN set -e; \
     ! grep -qa "npc/re/scripts_main.conf"   /out/pre-re/map-server || { echo "pre-re map-server has renewal in it" >&2; exit 1; }; \
     echo "era check: re and pre-re map-servers differ as expected"
 
+FROM scratch AS debug-symbols
+COPY --from=build /symbols/ /
+
 FROM alpine:3.23
 
-RUN apk add --no-cache mariadb-connector-c zlib libstdc++ libgcc bash tzdata \
+RUN apk add --no-cache mariadb-connector-c zlib libstdc++ libgcc bash tzdata libunwind=1.8.1-r0 \
     && adduser -D -h /rathena rathena
 
 WORKDIR /rathena

@@ -21,6 +21,8 @@ MOD="$ROOT/third-party/population-engine"
 [ -f "$TARGET/src/map/map.cpp" ] || { echo "not a rAthena checkout: $TARGET" >&2; exit 1; }
 [ -d "$MOD" ] || { echo "missing $MOD" >&2; exit 1; }
 
+python3 "$ROOT/scripts/apply-crash-trace.py" "$TARGET"
+
 echo "==> population engine: files"
 # Copied every time: these are ours alone, nothing upstream writes here, so
 # re-copying is how a third-party/ update reaches an existing checkout.

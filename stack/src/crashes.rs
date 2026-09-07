@@ -204,7 +204,18 @@ pub fn capture(cfg: &Config, dk: &Docker, name: &str) -> Result<Option<String>, 
         "ragnarokmac-db-prere" => "prerenewal",
         _ => "unknown",
     };
-    let mut report = format!("{{\"schema\":1,\"service\":{},\"container\":{},\"reason\":{},\"exitCode\":{exit},\"oomKilled\":{oom},\"era\":{},\"image\":{},\"startedAt\":{},\"finishedAt\":{},\"backtraceAvailable\":false}}\n\nPrivate diagnostic report. Review before sharing; logs may identify players.\nNo native fault stack was captured. Exit codes alone do not prove a particular signal.\n\n--- {name} ---\n{log}\n", quote(name), quote(id), quote(reason), quote(era), quote(container.str("Image").unwrap_or("unknown")), quote(state.str("StartedAt").unwrap_or("unknown")), quote(state.str("FinishedAt").unwrap_or("unknown")));
+    let trace_present = log
+        .lines()
+        .any(|line| line.contains("RAGNAROK_CRASH_TRACE v1 signal="))
+        && log
+            .lines()
+            .any(|line| line.contains("RAGNAROK_CRASH_FRAME index=0x0 "));
+    let trace_note = if trace_present {
+        "A native original-context trace is included below; it may be partial. Use matching image debug symbols."
+    } else {
+        "No native fault stack was captured."
+    };
+    let mut report = format!("{{\"schema\":1,\"service\":{},\"container\":{},\"reason\":{},\"exitCode\":{exit},\"oomKilled\":{oom},\"era\":{},\"image\":{},\"startedAt\":{},\"finishedAt\":{},\"backtraceAvailable\":{trace_present}}}\n\nPrivate diagnostic report. Review before sharing; logs may identify players.\n{trace_note} Exit codes alone do not prove a particular signal.\n\n--- {name} ---\n{log}\n", quote(name), quote(id), quote(reason), quote(era), quote(container.str("Image").unwrap_or("unknown")), quote(state.str("StartedAt").unwrap_or("unknown")), quote(state.str("FinishedAt").unwrap_or("unknown")));
     let pin = include_str!("../../config/VENDOR_PINS")
         .lines()
         .find_map(|line| {

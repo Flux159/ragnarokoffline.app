@@ -37,10 +37,13 @@ report labels it as a nonzero exit. Missing metadata remains unknown. Collection
 can miss a container removed externally between polls or a VM destroyed before
 its logs can be read; it cannot recover evidence the engine no longer retains.
 
-**There is no native backtrace in this increment.** Issue #16 stays open. Next
-steps are matching per-era/architecture debug symbols, original-fault capture
-before the existing handler re-raises, private bounded diagnostic artifacts,
-and disposable sanitizer/reload/logout stress tests. Population cleanup contains
+New server images include bounded original-context SIGSEGV/SIGFPE traces before
+rAthena's emergency-save handler. Old images still produce reports without a
+trace; `backtraceAvailable` describes the retained log evidence. Matching debug
+artifacts are exported for each image build and era. See
+[the trace hook](../third-party/crash-trace/README.md) for symbol lookup, signal
+safety and limitations. Issue #16 stays open: disposable sanitizer/reload/logout
+stress tests and the actual root-cause investigation remain outstanding. Population cleanup contains
 possible lifetime hazards worth auditing, but no underlying intermittent fault
 has been reproduced or fixed by this logging change.
 

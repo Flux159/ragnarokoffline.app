@@ -45,6 +45,7 @@ on:
       # unbuilt behind a workflow watching only the Dockerfile.
       - 'third-party/**'
       - 'scripts/apply-server-mods.sh'
+      - 'scripts/apply-crash-trace.py'
   workflow_dispatch:
 
 permissions:
@@ -96,6 +97,21 @@ jobs:
             --build-arg "PACKETVER=$PACKETVER" \
             -t "ragnarokmac/rathena:$PACKETVER" /tmp/rathena
 
+      - name: Export matching native debug symbols
+        run: |
+          set -e
+          docker build -f /tmp/rathena/Dockerfile.ragnarokmac \
+            --build-arg "PACKETVER=$PACKETVER" --target debug-symbols \
+            -t ragnarokmac/debug-symbols /tmp/rathena
+          cid=$(docker create ragnarokmac/debug-symbols true)
+          mkdir -p native-symbols
+          docker cp "$cid:/." native-symbols/
+          docker rm "$cid" >/dev/null
+          printf '%s\n' '${{ github.sha }}' > native-symbols/app-source.txt
+          docker image inspect "ragnarokmac/rathena:$PACKETVER" --format '{{.Id}}' > native-symbols/image-id.txt
+          tar czf "rathena-symbols-${{ matrix.arch }}-${{ github.sha }}.tar.gz" -C native-symbols .
+          sha256sum "rathena-symbols-${{ matrix.arch }}-${{ github.sha }}.tar.gz" > "rathena-symbols-${{ matrix.arch }}-${{ github.sha }}.sha256"
+
       - name: Save the bundle
         run: |
           set -e
@@ -130,7 +146,9 @@ jobs:
           path: |
             images-${{ matrix.arch }}.tar.gz
             rathena-sql.tar.gz
-          retention-days: 7
+            rathena-symbols-${{ matrix.arch }}-${{ github.sha }}.tar.gz
+            rathena-symbols-${{ matrix.arch }}-${{ github.sha }}.sha256
+          retention-days: 30
           if-no-files-found: error
 
       # A rolling tag, not a version. These track the Dockerfiles, which change
@@ -152,3 +170,5 @@ jobs:
           files: |
             images-${{ matrix.arch }}.tar.gz
             rathena-sql.tar.gz
+            rathena-symbols-${{ matrix.arch }}-${{ github.sha }}.tar.gz
+            rathena-symbols-${{ matrix.arch }}-${{ github.sha }}.sha256
