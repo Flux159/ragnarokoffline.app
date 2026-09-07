@@ -551,6 +551,12 @@ export default function mobileUI(parameters, api) {
       const toolbar = document.createElement("div");
       toolbar.className = "ro-mobile-toolbar ro-item-actions";
       const skills = /^SkillList/.test(name);
+      // SkillList delegates native use/info to its icon/name, whereas item
+      // windows delegate to the item itself. Dispatch through the actual
+      // native action target so the toolbar follows both event contracts.
+      const actionTarget = () => selected?.isConnected
+        ? skills ? selected.querySelector('.icon, .name') : selected
+        : null;
       const use = button(
         /^Equipment/.test(name)
           ? "Unequip"
@@ -558,8 +564,8 @@ export default function mobileUI(parameters, api) {
             ? "Use skill"
             : "Use / equip",
         () => {
-          if (selected?.isConnected)
-            selected.dispatchEvent(
+          if (actionTarget())
+            actionTarget().dispatchEvent(
               new MouseEvent("dblclick", { bubbles: true }),
             );
         },
@@ -569,8 +575,8 @@ export default function mobileUI(parameters, api) {
       add(
         toolbar,
         button("Info", () => {
-          if (selected?.isConnected)
-            selected.dispatchEvent(
+          if (actionTarget())
+            actionTarget().dispatchEvent(
               new MouseEvent("contextmenu", {
                 bubbles: true,
                 cancelable: true,
@@ -613,6 +619,7 @@ export default function mobileUI(parameters, api) {
       });
       cleanups.push(() => selected?.classList.remove("ro-mobile-selected"));
     }
+    if (name === 'SkillDescription') label(ui.querySelector('.close'), 'Close');
     // Labels for native button controls do not change their visibility/state.
     for (const [selector, text] of [
       [".titlebar .close", "Close"],

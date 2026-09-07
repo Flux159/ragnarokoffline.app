@@ -18,6 +18,13 @@ const safePanel = `
 input[type=text],input[type=password],input[type=number],textarea,select {font-size:16px!important;min-height:44px;box-sizing:border-box;}
 `;
 export function componentStyle(name) {
+  if (name === 'SkillDescription') return `${safePanel}${buttonStyle}
+:host {z-index:5200!important;left:max(16px,env(safe-area-inset-left))!important;top:calc(var(--ro-view-top,0px) + 72px)!important;}
+#SkillDescription {position:relative!important;box-sizing:border-box;background:#fff;box-shadow:0 4px 16px #0005;}
+.ui-component-root {position:relative!important;width:min(340px,calc(var(--ro-view-width,100vw) - 32px))!important;box-sizing:border-box;}
+#SkillDescription .close {position:sticky!important;top:0;float:right;z-index:1;width:auto!important;height:auto!important;}
+.content {clear:both;width:100%!important;box-sizing:border-box;overflow-wrap:anywhere;}
+`;
   if (name === "WinPopup")
     return `${safePanel}${buttonStyle}
 :host{width:min(360px,calc(var(--ro-view-width,100vw) - 16px))!important;height:auto!important;z-index:5100!important;}

@@ -376,3 +376,17 @@ setup, drops the game-page response after a successful host probe, verifies
 that recovery waits for Retry, then crashes only its own renderer and verifies
 another successful Retry. The remote fixture is denied owner IPC throughout.
 Screenshots are written to the reported temporary evidence directory.
+
+### Phone skill actions
+
+`tests/e2e/mobile-skills.cjs` owns a stopped disposable world with the same
+`RO_E2E_WORLD` / `RO_E2E_CLIENT_JSON` inputs and Renewal GM fixture credentials.
+It completes actual setup, logs in through the phone UI, damages/heals its test
+character, and verifies that the selected First Aid skill changes server-owned
+HP/SP. It opens and closes native skill information in a phone viewport, checks
+the close control after rotating to landscape, assigns F3 and casts again from
+the HUD. This exercises native packets, not a mocked cast handler. It backs up
+the disposable database; the F3 assignment remains in that test character.
+Reports and screenshots stay under `account-tests/mobile-skills-<timestamp>/`.
+It restores local settings and stops its owned world. Desktop/mobile browser
+emulation does not replace physical iOS/Android acceptance.
