@@ -702,8 +702,9 @@ $('registration-save').onclick = async () => {
   button.disabled = true;
   status.textContent = 'Saving account creation policy and restarting…';
   try {
-    const settings = await invoke('get_settings');
-    settings.open_registration = $('open-registration').value === 'open';
+    // Merge this one preference inside the serialized owner operation, so a
+    // concurrent era change cannot be overwritten by an older UI snapshot.
+    const settings = { open_registration: $('open-registration').value === 'open' };
     await invoke('save_settings', { settings });
     const mode = await invoke('get_mode');
     status.textContent = mode.mode === 'join'
