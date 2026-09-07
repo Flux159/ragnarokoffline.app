@@ -172,3 +172,11 @@ New builds authenticate their managed child and shut it down when the shell
 exits or crashes. The log's launch header records the executable fingerprint,
 configuration fingerprint and process ID; older logs are retained as
 `assets.log.1` through `.3`.
+
+If you close setup before selecting your client, use **Choose client files…**
+on the waiting screen to reopen it. The same button is available after a host
+startup failure, including when selected files have moved.
+
+A failed game-page load or terminated game window now returns to a recovery
+screen. **Retry** reopens the client so you can log in again. Joining a friend
+also offers **Play on this computer** when their host is unavailable.

@@ -367,3 +367,12 @@ that private state with the disposable VM disk. Reports and Settings/game
 screenshots are under `account-tests/service-credentials-<timestamp>/`; they do
 not contain passwords. Native packaged migration on Windows/Linux and full
 internet-hosting safeguards remain separate acceptance requirements.
+
+### Startup recovery
+
+`node tests/e2e/startup-recovery.cjs` launches an isolated Electron profile and
+an ephemeral loopback HTTP fixture, without starting a VM. It closes/reopens
+setup, drops the game-page response after a successful host probe, verifies
+that recovery waits for Retry, then crashes only its own renderer and verifies
+another successful Retry. The remote fixture is denied owner IPC throughout.
+Screenshots are written to the reported temporary evidence directory.

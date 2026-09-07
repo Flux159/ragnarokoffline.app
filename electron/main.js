@@ -1173,11 +1173,17 @@ function makeWindow(id, file, opts) {
 		clientLog(level, text, line, src);
 	});
 	// A page that fails to load at all logs nothing, so it needs saying here.
-	win.webContents.on('did-fail-load', (_e, code, desc, url) => {
+	win.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
 		clientLog('error', `page failed to load: ${desc} (${code}) ${url || ''}`);
+		if (id === 'game' && isMainFrame && code !== -3 && /^https?:/.test(url || '')) {
+			showGameFailure(win, 'The game page could not load. Check the host connection, then retry.');
+		}
 	});
 	win.webContents.on('render-process-gone', (_e, details) => {
 		clientLog('error', `renderer gone: ${details && details.reason}`);
+		if (id === 'game' && details?.reason !== 'clean-exit') {
+			showGameFailure(win, 'The game window stopped unexpectedly. Retry to reopen the client and log in again.');
+		}
 	});
 	// `opts.url` wins over a bundled page: a joining player's game window is
 	// the host's own client, served over HTTP, not a local copy of it.
@@ -1266,6 +1272,18 @@ function gameTitle() {
 // surfaces a failure with a retry, and only then navigates -- a joining player
 // pointed straight at a host gets a blank window when that host is down, with
 // nothing to act on. Where it navigates *to* is decided in launch_game.
+// Kept in the owner process so a failed/terminated game renderer cannot lose
+// its recovery reason. Loading the boot page never retries automatically.
+let gameFailure = null;
+function showGameFailure(win, message) {
+	if (tearingDown || !win || win.isDestroyed() || win !== windows.game || win.recoveryLoading) return;
+	gameFailure = message;
+	win.recoveryLoading = true;
+	win.loadFile(path.join(__dirname, '..', 'src', 'index.html'))
+		.catch(error => appLog(`Could not load game recovery: ${error.message}`))
+		.finally(() => { win.recoveryLoading = false; });
+}
+
 const openGame = () => {
 	const c = getClientPaths();
 	const win = makeWindow('game', 'index.html', { width: 1280, height: 800, title: gameTitle(), rememberBounds: true });
@@ -1816,7 +1834,10 @@ const handlers = {
 	// already given up stayed on screen forever, with the assets saved and the
 	// server never started. Finishing setup is exactly the event that makes
 	// the earlier answer wrong, so the page has to run again.
+	boot_failure: () => gameFailure,
+	clear_boot_failure: () => { gameFailure = null; },
 	open_game: () => {
+		gameFailure = null;
 		const existed = windows.game && !windows.game.isDestroyed();
 		const win = openGame();
 		// Load the boot page, not reload(). By the time this is called the
@@ -1845,7 +1866,12 @@ const handlers = {
 		// race for no gain.
 		if (c.mode !== 'join') await dropStaleClientCache();
 		const win = openGame();
-		await win.loadURL(c.mode === 'join' ? joinSession.url(base) : base + GAME_PATH);
+		try {
+			await win.loadURL(c.mode === 'join' ? joinSession.url(base) : base + GAME_PATH);
+		} catch (error) {
+			if (error.code !== 'ERR_ABORTED') showGameFailure(win, 'The game page could not load. Check the host connection, then retry.');
+			throw error;
+		}
 		win.setTitle(gameTitle());
 	},
 
