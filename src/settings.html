@@ -136,7 +136,7 @@
         <input type="checkbox" id="mp-internet-setup" aria-controls="internet-hosting" aria-expanded="false" />
       </label>
       <div class="row">
-        <span class="name">Let other machines connect</span>
+        <span class="name">Allow LAN connections</span>
         <input type="checkbox" id="mp-lan" />
       </div>
       <div class="row">
@@ -174,6 +174,22 @@
     </div>
   </div>
 
+  <section id="internet-hosting" hidden aria-labelledby="internet-hosting-heading">
+    <h2 id="internet-hosting-heading">Internet sharing</h2>
+    <div class="panel">
+    <p class="note">Set up accounts before inviting friends outside your local network.
+      This setup does not open a public link.</p>
+    <p class="note">Replace this era’s shared internal server passwords with unique credentials.
+      This saves a backup and disconnects players while the server restarts. Game account
+      passwords and characters are preserved. Keep the app’s private state with your save.</p>
+    <button id="secure-services" class="ghost">Secure internal server credentials</button>
+    <p class="note" id="services-status" role="status" aria-live="polite"></p>
+    <div class="actions"><button id="hosting-check" class="ghost">Check internet account safeguards</button></div>
+    <ul class="note" id="hosting-checks" aria-live="polite"></ul>
+    <p class="note" id="hosting-readiness">Internet sharing also requires protected access and a configured connector; these account checks do not enable a public link.</p>
+    </div>
+  </section>
+
   <h2>Accounts</h2>
   <div class="panel" id="accounts-panel">
     <p class="note">Manage accounts on your own running server. Renewal and pre-renewal
@@ -208,21 +224,6 @@
     <button id="account-create" class="ghost" disabled>Create friend account</button>
   </div>
 
-  <section id="internet-hosting" hidden aria-labelledby="internet-hosting-heading">
-    <h2 id="internet-hosting-heading">Internet sharing</h2>
-    <div class="panel">
-    <p class="note">Set up accounts before inviting friends outside your local network.
-      This setup does not open a public link.</p>
-    <p class="note">Replace this era’s shared internal server passwords with unique credentials.
-      This saves a backup and disconnects players while the server restarts. Game account
-      passwords and characters are preserved. Keep the app’s private state with your save.</p>
-    <button id="secure-services" class="ghost">Secure internal server credentials</button>
-    <p class="note" id="services-status" role="status" aria-live="polite"></p>
-    <div class="actions"><button id="hosting-check" class="ghost">Check internet account safeguards</button></div>
-    <ul class="note" id="hosting-checks" aria-live="polite"></ul>
-    <p class="note" id="hosting-readiness">Internet sharing also requires protected access and a configured connector; these account checks do not enable a public link.</p>
-    </div>
-  </section>
 
   <h2>Save data</h2>
   <div class="card">
