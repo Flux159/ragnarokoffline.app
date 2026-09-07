@@ -45,16 +45,6 @@ function docker(args, input) {
     { env: { ...env, DOCKER_HOST: host }, encoding: 'utf8', input, timeout: 120000, maxBuffer: 1024 * 1024 });
   return result;
 }
-function query(sql, legacy = false, success = true) {
-  const auth = legacy ? ['-uroot', '-pragnarok'] : ['--defaults-extra-file=/run/ragnarok-private/root.cnf'];
-  const result = docker(['exec', '-i', 'ragnarok-db', 'mariadb', ...auth, '--protocol=TCP', '-h127.0.0.1', '--batch', '--skip-column-names', 'ragnarok'], sql);
-  if (success && result.status !== 0) throw Error('Private test database query failed; output suppressed.');
-  if (!success && result.status === 0) throw Error('Known legacy SQL root password was unexpectedly accepted.');
-  return result.stdout.trim();
-}
-function fingerprint(legacy) {
-  return query("SET SESSION group_concat_max_len=1048576; SELECT SHA2(GROUP_CONCAT(CONCAT_WS(':',account_id,HEX(userid),HEX(user_pass),sex,group_id,state) ORDER BY account_id SEPARATOR '|'),256) FROM login WHERE sex<>'S'; SELECT SHA2(GROUP_CONCAT(CONCAT_WS(':',char_id,account_id,HEX(name)) ORDER BY char_id SEPARATOR '|'),256) FROM `char`;", legacy);
-}
 function journal(era) {
   const file = path.join(state, 'private/service-credentials', era, 'credentials.json');
   const body = fs.readFileSync(file, 'utf8');
@@ -89,7 +79,7 @@ async function main() {
   const app = await _electron.launch({ executablePath: require('electron'),
     args: [path.join(work, 'electron/main.js'), '--user-data-dir=' + path.join(world, 'map-stress-electron-profile')],
     env, cwd: work, timeout: 45000 });
-  let owner, browser;
+  let owner, browser, game;
   let failure;
   const invoke = (name, args) => owner.evaluate(({ name, args }) => window.__ELECTRON__.core.invoke(name, args), { name, args });
   try {
@@ -124,7 +114,10 @@ async function main() {
       });
     }
     await setup.getByRole('button', { name: 'Continue', exact: true }).click();
-    await expect(boot).toHaveURL(/^http:\/\/127\.0\.0\.1:3338\//, { timeout: 240000 });
+    await Promise.race([
+      boot.waitForURL(/^http:\/\/127\.0\.0\.1:3338\//, { timeout: 240000 }),
+      boot.locator('#fail').waitFor({ state: 'visible', timeout: 240000 }).then(async () => { throw Error(await boot.locator('#fail').textContent()); }),
+    ]);
     // The desktop skin uses the native WinLogin inputs; accessible Account
     // labels belong to the mobile adapter exercised separately below.
     await expect(boot.locator('#WinLogin .user')).toBeVisible({ timeout: 90000 });
@@ -138,12 +131,24 @@ async function main() {
         win.setTitle('Ragnarok Offline — disposable acceptance test');
       }
     });
+    if (process.env.RO_E2E_RECOVERY_SMOKE === '1') {
+      const meta = JSON.parse(docker(['inspect', 'ragnarok-map']).stdout)[0];
+      if (docker(['kill', '--signal', '11', 'ragnarok-map']).status !== 0) throw Error('Owned map fault injection failed');
+      await expect(boot.locator('#fail')).toContainText('Map server stopped unexpectedly', { timeout: 45000 });
+      await expect(boot.locator('#reports')).toBeVisible();
+      await boot.screenshot({ path: path.join(out, 'map-recovery.png') });
+      await boot.locator('#retry').click();
+      await expect(boot.locator('#WinLogin .user')).toBeVisible({ timeout: 120000 });
+      await verifyWorld();
+      report.checks.push({ injectedSignal: 11, container: meta.Id, image: meta.Image, recoveryAndRetry: true });
+      console.log('Actual map fault produced recovery UI and Retry reached native login:', out);
+    } else {
     page.setDefaultTimeout(240000);
     browser = await chromium.launch({ headless: true });
     report.browser = browser.version();
     report.requestedImage = process.env.RAGNAROKMAC_IMAGE || 'normal runtime image';
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-    const game = await context.newPage();
+    game = await context.newPage();
     game.setDefaultTimeout(60000);
     game.on('pageerror', error => report.pageErrors.push(error.message));
     const cycles = Number(process.env.RO_E2E_STRESS_CYCLES || 5);
@@ -221,10 +226,12 @@ async function main() {
       }
     }
     await game.goto('about:blank');
+    }
   } catch (error) {
     failure = error;
     report.failure = redact(error);
     console.error('Acceptance failed:', report.failure);
+    if (game && !game.isClosed()) await game.screenshot({ path: path.join(out, 'failed-game.png'), mask: [game.locator('input, textarea')] }).catch(() => {});
     // Capture the failing UI before cleanup can close it. Mask form fields;
     // no account or connector secrets should enter screenshots.
     for (const [index, page] of app.windows().entries()) {

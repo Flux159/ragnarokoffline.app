@@ -29,3 +29,31 @@ test('monitor retries failures without logging raw errors or repeated noise', as
   monitor.start(); const timer = monitor.timer; monitor.start();
   assert.equal(monitor.timer, timer); monitor.stop(); assert.equal(monitor.timer, null);
 });
+
+
+test('a retained incident notifies recovery once per collection only while still owned', async () => {
+  let active = true;
+  const recovered = [];
+  let reply = 'ragnarok-map stopped unexpectedly; private evidence saved at /private/report.log\n';
+  const monitor = new CrashMonitor({ active: () => active, log: () => {},
+    onCrash: services => recovered.push(services), collect: async () => reply });
+  await monitor.tick();
+  assert.deepEqual(recovered, [['map']]);
+  reply = ''; await monitor.tick();
+  assert.equal(recovered.length, 1);
+  monitor.collect = async () => { active = false; return 'ragnarok-map stopped unexpectedly; private evidence saved at /private/late.log'; };
+  await monitor.tick();
+  assert.equal(recovered.length, 1);
+});
+
+
+test('an old collection cannot replace the UI of a new asset launch', async () => {
+  let owner = 'first', notify = 0;
+  const monitor = new CrashMonitor({ active: () => owner, log: () => {},
+    onCrash: () => notify++, collect: async () => {
+      owner = 'replacement';
+      return 'ragnarok-map stopped unexpectedly; private evidence saved at /private/old.log';
+    } });
+  await monitor.tick();
+  assert.equal(notify, 0);
+});

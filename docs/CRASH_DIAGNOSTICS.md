@@ -89,3 +89,16 @@ the name `SEGV` and falls back to SIGTERM. A clean shutdown from that named
 signal does not test the crash handler. The fixture records image/container
 identity and observed exit status even if incident capture fails. This remains
 an injected-signal acceptance test, not a reproduction of issue #16.
+
+
+When the owning app captures a new game-server incident during play, it returns
+the game window to a recovery screen. **Open crash reports** opens the private
+reports folder; review files before sharing them. **Retry** starts the server
+and reopens the login screen. Recovery waits for that action and does not loop.
+An old collector result cannot replace a newer asset launch's window.
+
+A restarted container retains its old logs. Classification now discards log
+records older than its current `StartedAt`, so an earlier crash message cannot
+turn a later clean stop into a new incident. Reports also include the packet
+version, capture-time population settings and asset overlay fingerprint; these
+are explicitly capture-time observations, not proof of the fault-time state.

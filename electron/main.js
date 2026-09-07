@@ -1834,6 +1834,12 @@ const handlers = {
 	// already given up stayed on screen forever, with the assets saved and the
 	// server never started. Finishing setup is exactly the event that makes
 	// the earlier answer wrong, so the page has to run again.
+	open_crash_reports: async () => {
+		const directory = path.join(stateDir(), 'crashes', 'reports');
+		if (!fs.existsSync(directory)) throw new Error('No crash reports have been saved yet.');
+		const error = await shell.openPath(directory);
+		if (error) throw new Error('Could not open the crash reports folder.');
+	},
 	boot_failure: () => gameFailure,
 	clear_boot_failure: () => { gameFailure = null; },
 	open_game: () => {
@@ -2051,10 +2057,14 @@ function buildMenu() {
 
 let tearingDown = false;
 const crashMonitor = new (require('./crash-monitor').CrashMonitor)({
-	active: () => !tearingDown && assetServer.running,
+	active: () => !tearingDown && assetServer.running && assetServer.current?.identity?.launchId,
 	collect: () => queueServerOperation(() => !tearingDown && assetServer.running
 		? runStack(['capture-crashes']) : ''),
 	log: message => appLog(message),
+	onCrash: services => {
+		const label = services.includes('map') ? 'Map server' : 'Game server';
+		showGameFailure(windows.game, `${label} stopped unexpectedly. A private crash report was saved. Retry to restart the server and log in again.`);
+	},
 });
 // Set when a launch arrives while we are quitting: see the second-instance
 // handler. Guarded because two clicks must not queue two copies.

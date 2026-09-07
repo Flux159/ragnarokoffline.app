@@ -53,6 +53,8 @@ test('compiled collector captures abnormal exits privately, redacts secrets, ded
     assert.ok(latest.length < 1024 * 1024); assert.match(latest, /final fault marker/);
     state.StartedAt = '2026-09-07T04:00:00Z'; state.OOMKilled = false; state.ExitCode = 0; writeInspect();
     result = run(); assert.equal(result.status, 0, result.stderr); assert.equal(files().length, 2);
+    fs.writeFileSync(path.join(root, 'map.log'), '2026-09-07T01:00:00.000000000Z Received a crash signal\nold trace\n2026-09-07T04:00:01Z Finished\n');
+    result = run(); assert.equal(result.status, 0, result.stderr); assert.equal(files().length, 2);
     state.StartedAt = '2026-09-07T05:00:00Z'; state.ExitCode = 139; writeInspect();
     fs.writeFileSync(path.join(root, 'map.log'), 'RAGNAROK_CRASH_TRACE v1 signal=0xb\nRAGNAROK_CRASH_FRAME index=0x0 pc=0x42 main_offset=0x42 function=original_fault+0x1\nRAGNAROK_CRASH_TRACE_END partial\n');
     result = run(); assert.equal(result.status, 0, result.stderr); assert.equal(files().length, 3);

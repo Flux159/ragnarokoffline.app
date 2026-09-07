@@ -1,5 +1,5 @@
 //! Private, bounded evidence for an exited game process, before its container
-//! disappears. This captures termination metadata/logs, not a native backtrace.
+//! disappears. Native traces are retained when the server emitted them.
 use crate::{
     config::Config,
     docker::Docker,
@@ -24,6 +24,41 @@ fn number(value: Option<&Value>) -> Option<i32> {
         _ => None,
     }
 }
+// Container logs survive `docker start`. Classify only this process's records,
+// or a later clean stop can be mistaken for an earlier captured crash.
+fn current_log(log: &str, started: Option<&str>) -> String {
+    let Some(started) = started.filter(|s| s.len() >= 20 && s.ends_with('Z')) else {
+        return log.to_string();
+    };
+    let mut current = true;
+    let mut output = String::new();
+    for line in log.lines() {
+        if let Some((stamp, _)) = line.split_once(' ') {
+            if stamp.len() >= 20 && stamp.ends_with('Z') && stamp.as_bytes().get(10) == Some(&b'T')
+            {
+                // Compare seconds first, then fractional digits normalized to
+                // nanoseconds (engine timestamps may omit the fraction).
+                let key = |value: &str| {
+                    let mut value = value.trim_end_matches('Z').to_string();
+                    if value.len() == 19 {
+                        value.push('.');
+                    }
+                    while value.len() < 29 {
+                        value.push('0');
+                    }
+                    value
+                };
+                current = key(stamp) >= key(started);
+            }
+        }
+        if current {
+            output.push_str(line);
+            output.push('\n');
+        }
+    }
+    output
+}
+
 fn reason(state: &Value, log: &str) -> Option<&'static str> {
     if !matches!(state.str("Status"), Some("exited" | "dead")) {
         return None;
@@ -156,6 +191,7 @@ pub fn capture(cfg: &Config, dk: &Docker, name: &str) -> Result<Option<String>, 
     let log = dk
         .diagnostic_output(&["logs", "-t", "--tail", "400", id], LOG_LIMIT)
         .unwrap_or_else(|_| "[Log unavailable: diagnostic command failed or timed out]".into());
+    let log = current_log(&log, state.str("StartedAt"));
     let Some(reason) = reason(state, &log) else {
         return Ok(None);
     };
@@ -236,6 +272,36 @@ pub fn capture(cfg: &Config, dk: &Docker, name: &str) -> Result<Option<String>, 
             );
         }
     }
+    // Whitelist operational context; never dump settings or client selections,
+    // which may acquire private fields as hosting features evolve.
+    if let Ok(settings) = crate::registration::settings(&cfg.state) {
+        report.push_str("\nCapture-time settings (not necessarily fault-time settings):\n");
+        for key in [
+            "population_enable",
+            "population_max",
+            "population_density",
+            "prerenewal",
+        ] {
+            match settings.get(key) {
+                Some(Value::Bool(v)) => report.push_str(&format!("{key}: {v}\n")),
+                Some(Value::Number(v)) if v.is_finite() => {
+                    report.push_str(&format!("{key}: {v}\n"))
+                }
+                _ => {}
+            }
+        }
+    }
+    let packet = include_str!("../../scripts/bootstrap.sh")
+        .lines()
+        .find_map(|line| line.strip_prefix("PACKETVER="))
+        .filter(|value| value.bytes().all(|c| c.is_ascii_digit()))
+        .unwrap_or("unknown");
+    report.push_str(&format!("Compiled packet version: {packet}\n"));
+    if let Ok(overlay) = fs::read_to_string(cfg.state.join("assets/overlay.id")) {
+        if overlay.len() <= 128 && overlay.trim().bytes().all(|c| c.is_ascii_hexdigit()) {
+            report.push_str(&format!("Capture-time asset overlay: {}\n", overlay.trim()));
+        }
+    }
     report = redact(cfg, clean(&report))?;
     if report.len() as u64 > MAX_REPORT {
         return Err("Crash evidence exceeds its size limit".into());
@@ -297,6 +363,17 @@ mod tests {
             reason(&json::parse("{\"Status\":\"exited\"}").unwrap(), ""),
             Some("unknown-termination")
         );
+    }
+    #[test]
+    fn retained_faults_do_not_reclassify_a_later_clean_stop() {
+        let log = "2026-09-07T01:00:00.000000001Z Received a crash signal\nold frame\n2026-09-07T02:00:00Z Finished\n";
+        let current = current_log(log, Some("2026-09-07T02:00:00.000000000Z"));
+        assert!(!current.contains("crash signal"));
+        assert!(!current.contains("old frame"));
+        assert!(current.contains("Finished"));
+        let state = json::parse("{\"Status\":\"exited\",\"ExitCode\":0}").unwrap();
+        assert_eq!(reason(&state, &current), None);
+        assert!(current_log(log, None).contains("crash signal"));
     }
     #[test]
     fn strips_terminal_control_sequences() {

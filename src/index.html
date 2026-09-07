@@ -39,6 +39,7 @@
     <div class="status" id="status">Starting the server…</div>
     <div class="fail" id="fail" hidden></div>
     <button id="retry" hidden>Retry</button>
+    <button id="reports" class="ghost" hidden>Open crash reports</button>
     <button id="setup" class="ghost" hidden>Choose client files…</button>
     <button id="repair" class="ghost" hidden>Repair…</button>
     <button id="local" class="ghost" hidden>Play on this computer</button>
@@ -56,6 +57,7 @@ const repair = document.getElementById('repair');
 const local = document.getElementById('local');
 const mark = document.getElementById('mark');
 const setup = document.getElementById('setup');
+const reports = document.getElementById('reports');
 let booting = false;
 // Which failures make sense to offer a way out of. Read once per boot rather
 // than assumed: the two modes fail for entirely different reasons and have
@@ -90,6 +92,7 @@ async function boot() {
   try {
   await invoke('clear_boot_failure');
   setup.hidden = true;
+  reports.hidden = true;
   lastPhase = 'Starting the server…';
   fail.hidden = true; retry.hidden = true; repair.hidden = true;
   local.hidden = true; mark.hidden = false;
@@ -166,6 +169,7 @@ function giveUp(message) {
   fail.style.textAlign = instructions ? 'left' : 'center';
   fail.style.maxWidth = instructions ? '620px' : '460px';
   fail.hidden = false;
+  reports.hidden = !message.includes('A private crash report was saved.');
   retry.hidden = false;
   setup.hidden = mode !== 'host';
   // Repair restarts the engine, and a joining player is running no engine --
@@ -176,6 +180,7 @@ function giveUp(message) {
 }
 
 retry.onclick = boot;
+reports.onclick = () => invoke('open_crash_reports').catch(error => { fail.textContent = plain(error); });
 setup.onclick = () => invoke('open_setup').catch(error => giveUp(plain(error)));
 
 // Restarting the engine is the one recovery that works when the daemon itself
