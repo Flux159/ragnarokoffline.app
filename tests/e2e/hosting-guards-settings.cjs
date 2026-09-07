@@ -25,6 +25,14 @@ const credentials = Object.fromEntries(['renewal', 'prerenewal'].map(era => [era
 ]));
 const out = path.join(world, 'account-tests', 'hosting-guards-' + Date.now());
 fs.mkdirSync(out, { recursive: true });
+// Keep a private recovery copy even if the app or test process exits before
+// finally runs. Never copy account/service credentials into the report.
+const recovery = path.join(out, 'recovery');
+fs.mkdirSync(recovery, { mode: 0o700 });
+fs.writeFileSync(path.join(recovery, 'selection.json'), JSON.stringify({
+  clientExisted: false, settingsExisted: settings !== null, prerenewalExisted: false,
+}), { mode: 0o600 });
+if (settings) fs.writeFileSync(path.join(recovery, 'settings.json'), settings, { mode: 0o600 });
 const report = { checks: [], screens: [], pageErrors: [] };
 const serviceSecrets = [];
 const env = { ...process.env, RAGNAROK_OFFLINE_HOME: world,
@@ -57,6 +65,15 @@ function journal(era) {
   return body;
 }
 
+function redact(error) {
+  let message = String(error.message || error);
+  for (const era of ['renewal', 'prerenewal']) { try { journal(era); } catch {} }
+  for (const password of [...Object.values(credentials).map(c => c.password), ...serviceSecrets]) {
+    if (password) message = message.split(password).join('[redacted]');
+  }
+  return message;
+}
+
 async function freePorts() {
   for (const port of [3338, 6900, 6121, 5121, 7462]) {
     await new Promise((resolve, reject) => {
@@ -73,16 +90,54 @@ async function main() {
     args: [path.join(work, 'electron/main.js'), '--user-data-dir=' + path.join(world, 'hosting-guards-electron-profile')],
     env, cwd: work, timeout: 45000 });
   let owner, browser;
+  let failure;
   const invoke = (name, args) => owner.evaluate(({ name, args }) => window.__ELECTRON__.core.invoke(name, args), { name, args });
   try {
     owner = await app.firstWindow();
     await expect(owner.locator('body')).toContainText('Waiting for your client', { timeout: 30000 });
-    await invoke('set_client_paths', { paths: { ...selected, mode: 'host', lan: false, vm_ram_mib: 4096 } });
-    await invoke('start_stack');
-    await verifyWorld();
+    const boot = owner;
     await invoke('open_settings');
     await expect.poll(() => app.windows().some(p => p.url().endsWith('settings.html'))).toBe(true);
     const page = app.windows().find(p => p.url().endsWith('settings.html'));
+    // The game page loses privileged IPC once it navigates. Keep owner actions
+    // in Settings and complete the actual setup Continue handler instead of
+    // starting services behind an abandoned "Waiting for your client" page.
+    owner = page;
+    await expect.poll(() => app.windows().some(p => p.url().endsWith('setup.html'))).toBe(true);
+    const setup = app.windows().find(p => p.url().endsWith('setup.html'));
+    await app.evaluate(({ dialog }) => { globalThis.roOriginalOpenDialog = dialog.showOpenDialog; });
+    try {
+      for (const key of ['data_grf', 'rdata_grf', 'official_grf', 'bgm_dir']) {
+        if (!selected[key]) continue;
+        // Stub only the OS file picker; real setup selection, validation,
+        // save, boot reload, readiness and navigation all run unchanged.
+        await app.evaluate(({ dialog }, chosen) => {
+          dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [chosen] });
+        }, selected[key]);
+        await setup.locator(`[data-pick="${key}"]`).click();
+        await expect(setup.locator('#p-' + key)).toHaveText(selected[key]);
+      }
+    } finally {
+      await app.evaluate(({ dialog }) => {
+        dialog.showOpenDialog = globalThis.roOriginalOpenDialog;
+        delete globalThis.roOriginalOpenDialog;
+      });
+    }
+    await setup.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(boot).toHaveURL(/^http:\/\/127\.0\.0\.1:3338\//, { timeout: 240000 });
+    // The desktop skin uses the native WinLogin inputs; accessible Account
+    // labels belong to the mobile adapter exercised separately below.
+    await expect(boot.locator('#WinLogin .user')).toBeVisible({ timeout: 90000 });
+    await verifyWorld();
+    await boot.screenshot({ path: path.join(out, 'setup-completed-login.png') });
+    report.screens.push('setup-completed-login.png');
+    report.setupCompletedToNativeLogin = true;
+    console.log('Real setup Continue reached the owned desktop login screen.');
+    await app.evaluate(({ BrowserWindow }) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.setTitle('Ragnarok Offline — disposable acceptance test');
+      }
+    });
     page.setDefaultTimeout(240000);
     browser = await chromium.launch({ headless: true });
     report.browser = browser.version();
@@ -157,7 +212,7 @@ async function main() {
       await game.getByLabel('Account', { exact: true }).fill(rejected + '_F');
       await game.getByLabel('Password', { exact: true }).fill(rejectedPassword);
       await game.getByRole('button', { name: 'Log in', exact: true }).tap();
-      await expect(game.getByText('Unregistered ID', { exact: true })).toBeVisible({ timeout: 90000 });
+      await expect(game.locator('.text').filter({ hasText: /Unregistered ID/ })).toBeVisible({ timeout: 90000 });
       expect(query("SELECT COUNT(*) FROM login WHERE userid IN ('" + rejected + "','" + rejected + "_F');")).toBe('0');
       await game.goto('about:blank');
       await page.getByRole('button', { name: 'Refresh accounts', exact: true }).click();
@@ -195,14 +250,38 @@ async function main() {
     }
     expect(report.pageErrors).toEqual([]);
     console.log('Hosting guard Settings/game checks passed. Evidence:', out);
+  } catch (error) {
+    failure = error;
+    report.failure = redact(error);
+    console.error('Acceptance failed:', report.failure);
+    // Capture the failing UI before cleanup can close it. Mask form fields;
+    // no account or connector secrets should enter screenshots.
+    for (const [index, page] of app.windows().entries()) {
+      if (page.isClosed()) continue;
+      await page.screenshot({ path: path.join(out, `failure-${index}.png`),
+        mask: [page.locator('input, textarea')] }).catch(() => {});
+    }
   } finally {
-    if (browser) await browser.close();
+    if (browser) await browser.close().catch(() => {});
     // Use the owning shell to stop its assets before restoring selection files.
     // If teardown fails, retain the files so a later launch sees the true state.
     let stopped = false;
-    try { if (owner) { await invoke('assets_stop'); await invoke('stack_down'); stopped = true; } }
+    try {
+      if (owner && !owner.isClosed()) {
+        await invoke('assets_stop'); await invoke('stack_down');
+        await freePorts(); stopped = true;
+      }
+    } catch (error) {
+      report.cleanupFailure = redact(error);
+    }
     finally {
-      await app.evaluate(({ app }) => app.exit(0)).catch(() => {});
+      if (stopped) await app.evaluate(({ app }) => app.exit(0)).catch(() => {});
+      else {
+        // Request the app's normal graceful teardown, never bypass it with
+        // app.exit after a failed owner IPC call. Verify ports before restore.
+        await app.close().catch(() => {});
+        try { await freePorts(); stopped = true; } catch {}
+      }
       if (stopped) {
         fs.rmSync(clientPath);
         if (settings) fs.writeFileSync(settingsPath, settings); else fs.rmSync(settingsPath, { force: true });
@@ -210,11 +289,10 @@ async function main() {
       }
       fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify(report, null, 2));
     }
+    if (!stopped && !failure) failure = Error('Owned teardown did not free all ports; selection files retained');
   }
+  if (failure) throw failure;
 }
 main().catch(error => {
-  let message = String(error.message);
-  for (const era of ['renewal', 'prerenewal']) { try { journal(era); } catch {} }
-  for (const password of [...Object.values(credentials).map(c => c.password), ...serviceSecrets]) message = message.split(password).join('[redacted]');
-  console.error(message); process.exitCode = 1;
+  console.error(redact(error)); process.exitCode = 1;
 });
