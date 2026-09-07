@@ -75,7 +75,16 @@ async function main() {
         await attempt.getByLabel('Password', { exact: true }).fill(password);
         await attempt.getByRole('button', { name: 'Log in', exact: true }).tap();
         if (allowed) await expect(attempt.getByRole('button', { name: 'Character slot 1', exact: true })).toBeVisible();
-        else await expect(attempt.locator('.text').filter({ hasText: /Incorrect User ID or Password/ })).toBeVisible();
+        else {
+          // REFUSE_LOGIN code 0 is an unregistered ID; code 1 is a wrong
+          // password for an existing account. Assert the actual pinned message.
+          await expect(attempt.locator('.text').filter({ hasText: /Unregistered ID/ })).toBeVisible();
+          const era = (await invoke('get_settings')).prerenewal ? 'prerenewal' : 'renewal';
+          const accounts = await invoke('accounts', { action: 'list', era });
+          expect(accounts.accounts.some(a => [username, username.replace(/_[MF]$/, '')].includes(a.username))).toBe(false);
+          report.rejectedSignupCount = (report.rejectedSignupCount || 0) + 1;
+          if (report.rejectedSignupCount === 1) await attempt.screenshot({ path: path.join(out, 'signup-denied.png') });
+        }
       } finally { await isolated.close(); }
     }
     // Verify the opt-out reverses cleanly while this is a local test host.
