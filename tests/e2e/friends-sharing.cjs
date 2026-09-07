@@ -88,7 +88,7 @@ async function freePorts() {
 async function main() {
   await freePorts();
   const app = await _electron.launch({ executablePath: require('electron'),
-    args: [path.join(work, 'tests/fixtures/sharing-main.cjs'), '--user-data-dir=' + path.join(world, 'friends-sharing-electron-profile')],
+    args: [path.join(work, 'tests/fixtures/sharing-main.cjs'), '--quiet', '--user-data-dir=' + path.join(world, 'friends-sharing-electron-profile')],
     env, cwd: work, timeout: 45000 });
   let owner, browser, game, tls;
   const tlsSockets = new Set();

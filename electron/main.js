@@ -11,6 +11,10 @@
 // everywhere is worth ~60 MB of download.
 //
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell, clipboard, screen, session, safeStorage, powerMonitor } = require('electron');
+// Quiet launches mute every window for this run, without persisting a setting.
+if (process.argv.includes('--quiet')) {
+    app.on('web-contents-created', (_event, contents) => contents.setAudioMuted(true));
+}
 const path = require('path');
 const fs = require('fs');
 const os = require('os');

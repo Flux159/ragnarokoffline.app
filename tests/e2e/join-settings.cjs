@@ -27,7 +27,7 @@ async function main() {
   const plain = http.createServer(serve), secure = https.createServer({ key, cert }, serve);
   const origins = [await listen(plain), await listen(secure)];
   const app = await _electron.launch({ executablePath: require('electron'), cwd: work,
-    args: [path.join(work, 'electron/main.js'), '--user-data-dir=' + path.join(out, 'profile'), '--ignore-certificate-errors-spki-list=' + spki],
+    args: [path.join(work, 'electron/main.js'), '--quiet', '--user-data-dir=' + path.join(out, 'profile'), '--ignore-certificate-errors-spki-list=' + spki],
     env: { ...process.env, RAGNAROK_OFFLINE_HOME: home, RAGNAROKMAC_ROOT: runtime,
       RAGNAROKMAC_STATE: state, NEBULA_HOME: path.join(home, 'nebula'), NODE_EXTRA_CA_CERTS: certPath },
   });

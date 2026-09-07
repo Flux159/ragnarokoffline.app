@@ -20,7 +20,7 @@ const server = http.createServer((req, res) => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + server.address().port;
   const app = await _electron.launch({ executablePath: require('electron'), cwd: root,
-    args: [path.join(root, 'electron/main.js'), '--user-data-dir=' + path.join(out, 'profile')],
+    args: [path.join(root, 'electron/main.js'), '--quiet', '--user-data-dir=' + path.join(out, 'profile')],
     env: { ...process.env, RAGNAROK_OFFLINE_HOME: out, RAGNAROKMAC_ROOT: path.join(out, 'runtime'),
       RAGNAROKMAC_STATE: state, NEBULA_HOME: path.join(out, 'nebula') } });
   try {

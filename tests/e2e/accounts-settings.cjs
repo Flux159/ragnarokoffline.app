@@ -39,7 +39,7 @@ async function main() {
   const app = await _electron.launch({
     executablePath: require("electron"),
     args: [
-      path.join(work, "electron/main.js"),
+      path.join(work, "electron/main.js"), "--quiet",
       "--user-data-dir=" + path.join(world, "accounts-electron-profile"),
     ],
     env,

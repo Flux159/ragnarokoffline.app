@@ -370,6 +370,11 @@ internet-hosting safeguards remain separate acceptance requirements.
 
 ### Startup recovery
 
+Electron acceptance scripts pass `--quiet` to the regular app, which mutes all
+of its windows for that run. For a quiet manual launch, use `npm start -- --quiet`.
+Omit the flag when checking sound. The flag does not persist an audio preference
+or change the Mac's system volume.
+
 `node tests/e2e/startup-recovery.cjs` launches an isolated Electron profile and
 an ephemeral loopback HTTP fixture, without starting a VM. It closes/reopens
 setup, drops the game-page response after a successful host probe, verifies

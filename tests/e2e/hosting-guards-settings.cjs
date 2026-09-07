@@ -87,7 +87,7 @@ async function freePorts() {
 async function main() {
   await freePorts();
   const app = await _electron.launch({ executablePath: require('electron'),
-    args: [path.join(work, 'electron/main.js'), '--user-data-dir=' + path.join(world, 'hosting-guards-electron-profile')],
+    args: [path.join(work, 'electron/main.js'), '--quiet', '--user-data-dir=' + path.join(world, 'hosting-guards-electron-profile')],
     env, cwd: work, timeout: 45000 });
   let owner, browser;
   let failure;
