@@ -202,6 +202,12 @@
     <p class="note">Create an ordinary player account with the password entered above.
       Use 4–23 letters, numbers, underscores or hyphens, without an _M or _F suffix.</p>
     <button id="account-create" class="ghost" disabled>Create friend account</button>
+    <hr />
+    <p class="note">Replace this era’s shared internal server passwords with unique credentials.
+      This saves a backup and disconnects players while the server restarts. Game account
+      passwords and characters are preserved. Keep the app’s private state with your save.</p>
+    <button id="secure-services" class="ghost">Secure internal server credentials</button>
+    <p class="note" id="services-status" role="status" aria-live="polite"></p>
   </div>
 
   <h2>Save data</h2>
@@ -211,7 +217,7 @@
       <button id="backup" class="ghost">Back up…</button>
       <button id="restore" class="ghost">Restore…</button>
     </div>
-    <div class="note" id="db-note">Everything you have played is inside that disk image; it is not a folder you can open.</div>
+    <div class="note" id="db-note">Backups briefly disconnect players so their latest data can be saved consistently. Restore keeps the game stopped until you restart it and preserves a backup of the current database.</div>
   </div>
 
   <h2>Mods</h2>
@@ -695,6 +701,15 @@ $('mods-apply').onclick = () => withButton('mods-apply', 'Applying…', 'Apply',
   await refreshMods();
   return 'Mods applied. Restart the app for client-side changes.';
 });
+
+$('secure-services').onclick = async () => {
+  const button = $('secure-services');
+  button.disabled = true;
+  $('services-status').textContent = 'Backing up and securing this era’s internal credentials…';
+  try { $('services-status').textContent = (await invoke('secure_services')).trim(); }
+  catch (error) { $('services-status').textContent = String(error); }
+  finally { button.disabled = false; }
+};
 
 $('registration-save').onclick = async () => {
   const button = $('registration-save');

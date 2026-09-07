@@ -17,6 +17,7 @@ use std::time::{Duration, Instant, SystemTime};
 pub struct Docker {
     bin: PathBuf,
     nebula_home: PathBuf,
+    state: PathBuf,
 }
 
 /// Storage attached to a container.
@@ -31,8 +32,8 @@ pub enum Mount {
 }
 
 impl Docker {
-    pub fn new(bin: PathBuf, nebula_home: PathBuf) -> Docker {
-        Docker { bin, nebula_home }
+    pub fn new(bin: PathBuf, nebula_home: PathBuf, state: PathBuf) -> Docker {
+        Docker { bin, nebula_home, state }
     }
 
     fn base(&self) -> Command {
@@ -154,23 +155,46 @@ impl Docker {
         }
     }
 
-    pub fn exec_sql(&self, sql: &str) -> Result<String, String> {
-        self.output([
-            "exec", "ragnarok-db", "mariadb", "--protocol=TCP", "-h127.0.0.1", "-uragnarok", "-pragnarok", "ragnarok", "-e", sql,
-        ])
+    fn sql_auth(&self) -> Result<Vec<String>, String> {
+        // Use the recorded RUNNING volume, not a just-edited era preference.
+        let volume = fs::read_to_string(self.state.join(".db-volume")).unwrap_or_default();
+        let era = if volume.trim() == "ragnarokmac-db-prere" { "prerenewal" } else { "renewal" };
+        if crate::service_credentials::load(&self.state, era)?.is_some() {
+            Ok(vec!["--defaults-extra-file=/run/ragnarok-private/database.cnf".into()])
+        } else { Ok(vec!["-uragnarok".into(), "-pragnarok".into()]) }
     }
 
-    /// Account operations send SQL through a pipe, never argv, a shell or a
-    /// temporary file. Requires docker-slim's exec stdin EOF fix (nebula #33).
-    /// Database errors can quote the query, so stderr must never reach logs.
+    pub fn database_client(&self, binary: &str) -> Result<String, String> {
+        if !["mariadb", "mariadb-dump"].contains(&binary) { return Err("Unsupported database client".into()); }
+        Ok(format!("{binary} {} --protocol=TCP -h127.0.0.1", self.sql_auth()?.join(" ")))
+    }
+
+    pub fn exec_sql(&self, sql: &str) -> Result<String, String> {
+        self.sql(sql, &self.sql_auth()?, true)
+    }
+
+    /// No query or generated password enters argv, logs or raw error text.
     pub fn private_sql(&self, sql: &str) -> Result<String, String> {
+        self.sql(sql, &self.sql_auth()?, false)
+    }
+
+    pub fn root_sql(&self, sql: &str, legacy: bool) -> Result<String, String> {
+        let auth = if legacy { vec!["-uroot".into(), "-pragnarok".into()] }
+            else { vec!["--defaults-extra-file=/run/ragnarok-private/root.cnf".into()] };
+        self.sql(sql, &auth, false)
+    }
+
+    fn sql(&self, sql: &str, auth: &[String], headers: bool) -> Result<String, String> {
         self.require_private_sql()?;
-        let failure = || "The private account database operation failed. Check that the server is running and the bundled container client supports exec stdin EOF.".to_string();
+        let failure = || "The private database operation failed. Start the server to finish any pending credential migration, or restore its matching credential journal and backup.".to_string();
         if sql.len() > 16 * 1024 { return Err(failure()); }
-        let mut child = self.base().args([
-            "exec", "-i", "ragnarok-db", "mariadb", "--protocol=TCP", "-h127.0.0.1", "-uragnarok", "-pragnarok",
-            "--batch", "--skip-column-names", "--raw", "ragnarok",
-        ]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null())
+        let mut args: Vec<String> = ["exec", "-i", "ragnarok-db", "mariadb"].iter().map(|s| s.to_string()).collect();
+        args.extend(auth.iter().cloned());
+        args.extend(["--protocol=TCP", "-h127.0.0.1", "--batch", "--raw"].iter().map(|s| s.to_string()));
+        if !headers { args.push("--skip-column-names".into()); }
+        args.push("ragnarok".into());
+        let mut child = self.base().args(args)
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null())
             .spawn().map_err(|_| failure())?;
         let mut stdin = child.stdin.take().ok_or_else(failure)?;
         let input = sql.as_bytes().to_vec();
@@ -289,8 +313,11 @@ impl Docker {
         // which is exactly where they belong.
         let dest_name = dest.rsplit('/').find(|p| !p.is_empty())
             .ok_or_else(|| format!("destination {dest} has no name"))?;
-        let stage = std::env::temp_dir().join(format!("ro-cp-{}-{}", std::process::id(), dest_name));
-        let _ = fs::remove_dir_all(&stage);
+        crate::private_fs::directory(&self.state)?;
+        let private = self.state.join("private");
+        crate::private_fs::directory(&private)?;
+        let stage = private.join(format!("copy-{}", crate::private_fs::random_hex(12)?));
+        crate::private_fs::directory(&stage)?;
         let staged = stage.join(dest_name);
         copy_dir_all(host, &staged)?;
 

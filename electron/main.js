@@ -417,7 +417,7 @@ function migrateDataRoot() {
 // rather than at each call site because there are seven of them and a missed
 // one is a setting that silently does nothing.
 function withEngineFlags(args) {
-	if (args[0] !== 'up' && args[0] !== 'repair') return args;
+	if (!['up', 'repair', 'secure-services'].includes(args[0])) return args;
 	const client = getClientPaths();
 	const out = [...args];
 	if (client.lan && !out.includes('--lan')) out.push('--lan');
@@ -1639,6 +1639,10 @@ const handlers = {
 		return 'Diagnostics copied. Paste them into the issue that just opened.';
 	},
 	stack_repair: () => runStack(['repair']),
+	secure_services: () => {
+		if (getClientPaths().mode !== 'host') throw new Error('Switch to your own server before securing its internal credentials.');
+		return runStack(['secure-services']);
+	},
 	db_backup: ({ path: p }) => runStack(['backup', p]),
 	db_restore: ({ path: p }) => runStack(['restore', p]),
 
@@ -1921,7 +1925,7 @@ const GAME_PAGE_HANDLERS = new Set([]);
 // Includes settings writes before their supervisor call: an era marker must
 // not change halfway through an account operation. Read-only status stays live.
 const SERVER_OPERATIONS = new Set(['accounts', 'save_settings', 'set_mode', 'set_client_paths', 'start_stack',
-	'stack_up', 'stack_down', 'stack_repair', 'db_backup', 'db_restore']);
+	'stack_up', 'stack_down', 'stack_repair', 'secure_services', 'db_backup', 'db_restore']);
 let serverOperationQueue = Promise.resolve();
 function queueServerOperation(operation) {
 	if (tearingDown) return Promise.reject(new Error('The app is quitting; wait until the next launch.'));

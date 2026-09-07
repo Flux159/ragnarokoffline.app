@@ -1473,9 +1473,123 @@ fn run_server(cfg: &Config, dk: &Docker, name: &str, port: u16, binary: &str, la
         .map_err(|e| format!("starting {name}: {e}"))
 }
 
+fn stop_game_services(dk: &Docker) -> Result<(), String> {
+    for service in ["ragnarok-map", "ragnarok-char", "ragnarok-login"] {
+        if dk.is_running(service) && (dk.output(["stop", "-t", "30", service]).is_err() || dk.is_running(service)) {
+            return Err(format!("Could not stop {service} cleanly; database credentials were not changed."));
+        }
+    }
+    Ok(())
+}
+
+fn require_private_database_image(cfg: &Config, dk: &Docker) -> Result<(), String> {
+    let body = dk.output(["image", "inspect", &cfg.db_image]).map_err(|_| "Cannot inspect the database image")?;
+    let parsed = crate::json::parse(&body).map_err(|_| "Cannot inspect the database image")?;
+    let config = match &parsed { crate::json::Value::Array(images) => images.first(), _ => Some(&parsed) }
+        .and_then(|image| image.get("Config")).and_then(|config| config.get("Labels"));
+    if config.and_then(|labels| labels.str("app.ragnarokoffline.private-db-files")) != Some("v1") {
+        return Err("Service credential protection needs an updated bundled database image with private-db-files v1. Update the runtime images before continuing.".into());
+    }
+    Ok(())
+}
+
+fn protect_game_config(cfg: &Config) -> Result<(), String> {
+    crate::private_fs::directory(&cfg.state)?;
+    let conf = cfg.state.join("conf");
+    crate::private_fs::directory(&conf)?;
+    for entry in fs::read_dir(&conf).map_err(|_| "Cannot protect game configuration")? {
+        let entry = entry.map_err(|_| "Cannot protect game configuration")?;
+        // Reject links before writing any secret: a config alias into the
+        // asset root could otherwise expose its bytes through HTTP.
+        crate::private_fs::protect(&entry.path(), false)?;
+    }
+    Ok(())
+}
+
+fn finish_game_config(cfg: &Config) -> Result<(), String> {
+    let conf = cfg.state.join("conf");
+    for entry in fs::read_dir(&conf).map_err(|_| "Cannot protect generated game configuration")? {
+        let entry = entry.map_err(|_| "Cannot protect generated game configuration")?;
+        crate::private_fs::protect(&entry.path(), false)?;
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(entry.path(), fs::Permissions::from_mode(0o644)).map_err(|_| "Cannot prepare container game configuration")?;
+        }
+    }
+    #[cfg(unix)] {
+        use std::os::unix::fs::PermissionsExt;
+        // The host's state ancestor stays 0700, but this mount root must be
+        // traversable by USER rathena inside the VM. Windows copies preserve
+        // its private host DACL independently of the guest file mode.
+        fs::set_permissions(&conf, fs::Permissions::from_mode(0o755)).map_err(|_| "Cannot prepare container game configuration")?;
+    }
+    Ok(())
+}
+
+fn audit_service_accounts(dk: &Docker, legacy: bool) -> Result<(), String> {
+    let services = dk.root_sql("SELECT COUNT(*) FROM login WHERE sex='S' AND state=0; SELECT COUNT(*) FROM login WHERE account_id=1 AND BINARY userid='s1' AND sex='S' AND state=0;", legacy)?;
+    if services.lines().collect::<Vec<_>>() != ["1", "1"] {
+        return Err("This database has custom or disabled interserver accounts. Migrate those accounts explicitly before enabling managed service credentials; player accounts were not changed.".into());
+    }
+    let users = dk.root_sql("SELECT COUNT(*) FROM mysql.user WHERE User='root' AND Host='localhost'; SELECT COUNT(*) FROM mysql.user WHERE User='ragnarok' AND Host='%'; SELECT COUNT(*) FROM mysql.user WHERE (User='root' AND Host<>'localhost') OR (User='ragnarok' AND Host<>'%');", legacy)?;
+    if users.lines().collect::<Vec<_>>() != ["1", "1", "0"] {
+        return Err("This database has custom SQL service accounts. Migrate them explicitly before enabling managed credentials; player accounts were not changed.".into());
+    }
+    Ok(())
+}
+
+fn migrate_service_credentials(dk: &Docker, credentials: &crate::service_credentials::Credentials) -> Result<(), String> {
+    // Pending journals may be retried after any individual ALTER succeeds.
+    // Ready journals never fall back to the published legacy root password.
+    let mut legacy = false;
+    let mut connected = false;
+    for _ in 0..90 {
+        if dk.root_sql("SELECT 1 FROM login LIMIT 1;", false).is_ok() { connected = true; break; }
+        if !credentials.ready && dk.root_sql("SELECT 1 FROM login LIMIT 1;", true).is_ok() { legacy = true; connected = true; break; }
+        sleep(Duration::from_secs(2));
+    }
+    if !connected { return Err("Cannot authenticate the era's database using its credential journal. Preserve the journal and database; restore a matching backup to recover.".into()); }
+    audit_service_accounts(dk, legacy)?;
+    // All inserted values are generated/validated ASCII tokens, never player
+    // input. DDL commits individually, which is why the journal precedes this.
+    dk.root_sql(&format!("ALTER USER 'ragnarok'@'%' IDENTIFIED BY '{}'; UPDATE login SET user_pass='{}' WHERE account_id=1 AND BINARY userid='s1' AND sex='S'; ALTER USER 'root'@'localhost' IDENTIFIED BY '{}';", credentials.database, credentials.interserver, credentials.root), legacy)?;
+    if dk.root_sql("SELECT 1;", false)?.trim() != "1" || dk.private_sql("SELECT 1;")?.trim() != "1" {
+        return Err("New service credentials did not verify. Keep the journal and retry startup; no game service was started.".into());
+    }
+    let verified = dk.private_sql(&format!("SELECT COUNT(*) FROM login WHERE account_id=1 AND BINARY userid='s1' AND sex='S' AND state=0 AND BINARY user_pass='{}';", credentials.interserver))?;
+    if verified.trim() != "1" { return Err("Interserver credentials did not verify; game services remain stopped.".into()); }
+    credentials.mark_ready()
+}
+
+pub fn secure_services(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<(), String> {
+    crate::registration::enabled(&cfg.state)?;
+    dk.require_private_sql()?;
+    crate::accounts::verify_era(cfg, dk, crate::service_credentials::era(cfg))?;
+    ensure_images(cfg, dk)?;
+    require_private_database_image(cfg, dk)?;
+    if crate::service_credentials::load(&cfg.state, crate::service_credentials::era(cfg))?.is_none() {
+        audit_service_accounts(dk, true)?;
+        // The backup must complete before publishing a migration journal. It
+        // includes all player data; secure its host directory before writing.
+        crate::private_fs::directory(&cfg.state)?;
+        let backups = cfg.state.join("backups"); crate::private_fs::directory(&backups)?;
+        stop_game_services(dk)?;
+        let destination = backups.join(format!("before-service-credentials-{}-{}.sql", crate::service_credentials::era(cfg), crate::private_fs::random_hex(8)?));
+        if let Err(error) = backup(cfg, dk, &destination.to_string_lossy()) {
+            return Err(format!("Service credentials were not changed: {error}. Start the server to reconnect."));
+        }
+        crate::private_fs::protect(&destination, false)?;
+    }
+    crate::service_credentials::prepare(cfg)?;
+    up(cfg, dk, lan, ram_mib)?;
+    println!("Internal service credentials secured for {}. Player accounts and characters were preserved.", crate::service_credentials::era(cfg));
+    Ok(())
+}
+
 pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<(), String> {
     // Validate before touching the engine or replacing any running service.
     let open_registration = crate::registration::enabled(&cfg.state)?;
+    let credentials = crate::service_credentials::load(&cfg.state, crate::service_credentials::era(cfg))?;
     let conf = cfg.state.join("conf");
     for d in ["conf", "sql", "backups"] {
         fs::create_dir_all(cfg.state.join(d)).map_err(|e| format!("creating {d}: {e}"))?;
@@ -1487,6 +1601,17 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     let _lock = Lock::acquire(cfg)?;
     phase(cfg, "Starting the virtual machine…");
     ensure_engine(cfg, dk, lan, ram_mib)?;
+    if let Some(credentials) = &credentials {
+        credentials.write_files()?;
+        protect_game_config(cfg)?;
+        // Recreate the database with the private bind/copy, including after a
+        // failed migration or a runtime update. Flush players first.
+        stop_game_services(dk)?;
+        if dk.is_running(DB_CONTAINER) && (dk.output(["stop", "-t", "30", DB_CONTAINER]).is_err() || dk.is_running(DB_CONTAINER)) {
+            return Err("Could not stop the database cleanly; credentials were not changed".into());
+        }
+        dk.remove_container(DB_CONTAINER);
+    }
 
     // A failed single-file bind leaves a directory behind at the source path.
     // Clear anything in conf/ that is not a regular file so a stale one cannot
@@ -1519,6 +1644,7 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     }
 
     ensure_images(cfg, dk)?;
+    if credentials.is_some() { require_private_database_image(cfg, dk)?; }
     dk.quiet(["network", "create", NET]);
 
     // The era decides which volume holds the characters, and a running database
@@ -1547,7 +1673,7 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
 
     if !dk.is_running(DB_CONTAINER) {
         dk.remove_container(DB_CONTAINER);
-        let mounts = vec![
+        let mut mounts = vec![
             Mount::Bind {
                 host: cfg.state.join("sql"),
                 container: "/docker-entrypoint-initdb.d".into(),
@@ -1563,13 +1689,13 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
             },
             Mount::Volume { name: want_volume.clone(), container: "/var/lib/mysql".into() },
         ];
-        let opts: Vec<String> = [
-            "--network", NET,
-            "-e", "MARIADB_ROOT_PASSWORD=ragnarok",
-            "-e", "MARIADB_DATABASE=ragnarok",
-            "-e", "MARIADB_USER=ragnarok",
-            "-e", "MARIADB_PASSWORD=ragnarok",
-        ].iter().map(|s| s.to_string()).collect();
+        let mut opts: Vec<String> = ["--network", NET, "-e", "MARIADB_DATABASE=ragnarok", "-e", "MARIADB_USER=ragnarok"].iter().map(|s| s.to_string()).collect();
+        if let Some(credentials) = &credentials {
+            mounts.push(Mount::Bind { host: credentials.directory.clone(), container: crate::service_credentials::CONTAINER_DIR.into(), ro: true });
+            opts.extend(["-e", "MARIADB_ROOT_PASSWORD_FILE=/run/ragnarok-private/root.secret", "-e", "MARIADB_PASSWORD_FILE=/run/ragnarok-private/database.secret"].iter().map(|s| s.to_string()));
+        } else {
+            opts.extend(["-e", "MARIADB_ROOT_PASSWORD=ragnarok", "-e", "MARIADB_PASSWORD=ragnarok"].iter().map(|s| s.to_string()));
+        }
         dk.run_container(DB_CONTAINER, &cfg.db_image, &[], &mounts, &opts)
             .map_err(|e| format!("starting the database: {e}"))?;
     }
@@ -1577,6 +1703,7 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     // that is not running.
     let _ = fs::write(&volume_marker, &want_volume);
     phase(cfg, "Starting the database…");
+    if let Some(credentials) = &credentials { migrate_service_credentials(dk, credentials)?; }
     wait_for_db(dk)?;
 
     // Only sql/03-account.sql seeds the GM, during first database creation.
@@ -1607,6 +1734,11 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
         "login_server_ip: ragnarok-db\n", "ipban_db_ip: ragnarok-db\n",
         "char_server_ip: ragnarok-db\n", "map_server_ip: ragnarok-db\n",
         "web_server_ip: ragnarok-db\n", "log_db_ip: ragnarok-db\n"))?;
+    if let Some(credentials) = &credentials {
+        let file = conf.join("inter_conf.txt");
+        let existing = fs::read_to_string(&file).map_err(|_| "Cannot read generated SQL configuration")?;
+        write_conf(&conf, "inter_conf.txt", &format!("{existing}{}", credentials.inter_config()))?;
+    }
     // The address char and map hand the client to reconnect to. This is the
     // one that actually decides whether a LAN player can play: everything can
     // be bound wide and reachable, and the client will still be told to go to
@@ -1676,7 +1808,8 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     // filling it, so the last line is the whole answer rather than an addition.
     write_conf(&conf, "char_conf.txt",
         &format!("login_ip: ragnarok-login\nchar_ip: {advertise}\npincode_enabled: no\n\
-                  {start_point}\n{}", conf_lines(&mods, "char_conf.txt")))?;
+                  {start_point}\n{}{}", conf_lines(&mods, "char_conf.txt"),
+                  credentials.as_ref().map(|c| format!("userid: s1\npasswd: {}\n", c.interserver)).unwrap_or_default()))?;
 
     let product = if cfg!(target_os = "macos") { "RagnarokMac" }
         else if cfg!(windows) { "RagnarokWindows" }
@@ -1685,8 +1818,9 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     write_conf(&conf, "motd.txt",
         &format!("Welcome to {product} Offline! Please report any bugs on Github\n"))?;
     write_conf(&conf, "map_conf.txt",
-        &format!("char_ip: ragnarok-char\nmap_ip: {advertise}\nmotd_txt: conf/import/motd.txt\n{}{}{}",
-                 conf_lines(&mods, "map_conf.txt"), mods.map_lines, mods.npc_lines))?;
+        &format!("char_ip: ragnarok-char\nmap_ip: {advertise}\nmotd_txt: conf/import/motd.txt\n{}{}{}{}",
+                 conf_lines(&mods, "map_conf.txt"), mods.map_lines, mods.npc_lines,
+                 credentials.as_ref().map(|c| format!("userid: s1\npasswd: {}\n", c.interserver)).unwrap_or_default()))?;
 
     let endpoint = format!(
         "{{\"host\":\"{advertise}\",\"login\":6900,\"char\":6121,\"map\":5121}}\n");
@@ -1699,6 +1833,7 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
         let _ = fs::write(web.join("endpoint.json"), &endpoint);
     }
 
+    if credentials.is_some() { finish_game_config(cfg)?; }
     prepare_kafra_scripts(cfg, dk);
     phase(cfg, "Starting the login, character and map servers…");
     // login and web are era-independent -- neither src/login nor src/web
@@ -1726,12 +1861,13 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
 
 pub fn down(cfg: &Config, dk: &Docker) -> Result<(), String> {
     let _lock = Lock::acquire(cfg)?;
-    // Game servers hold no state, so killing them is fine. The database does:
-    // stop it gracefully so InnoDB closes cleanly rather than recovering.
+    stop_game_services(dk)?;
     for c in SERVERS {
         dk.remove_container(c);
     }
-    dk.quiet(["stop", "-t", "10", DB_CONTAINER]);
+    if dk.is_running(DB_CONTAINER) && (dk.output(["stop", "-t", "30", DB_CONTAINER]).is_err() || dk.is_running(DB_CONTAINER)) {
+        return Err("Could not stop the database cleanly; the VM was left running to protect the save.".into());
+    }
     dk.remove_container(DB_CONTAINER);
 
     // And the microVM itself, last -- after the database has closed cleanly,
@@ -1770,16 +1906,22 @@ pub fn status(dk: &Docker) {
 }
 
 pub fn backup(cfg: &Config, dk: &Docker, dest: &str) -> Result<(), String> {
+    crate::accounts::verify_era(cfg, dk, crate::service_credentials::era(cfg))?;
+    crate::accounts::with_servers_stopped(dk, || backup_snapshot(cfg, dk, dest))
+}
+
+fn backup_snapshot(cfg: &Config, dk: &Docker, dest: &str) -> Result<(), String> {
     let backups = cfg.state.join("backups");
     fs::create_dir_all(&backups).map_err(|e| e.to_string())?;
     let tmp = format!("ragnarokmac-{}.sql", std::process::id());
 
-    // --single-transaction keeps the server writable during the dump, which
-    // matters because the player may well be logged in while taking one.
+    crate::private_fs::directory(&backups)?;
+    // Players have been saved and game services stopped. This also makes the
+    // mixed-engine rAthena tables consistent; --single-transaction alone would
+    // only protect InnoDB, not all of the schema.
     dk.output([
         "exec", DB_CONTAINER, "sh", "-c",
-        &format!("mariadb-dump -uragnarok -pragnarok --single-transaction --routines \
-                  --databases ragnarok > /backups/{tmp}"),
+        &format!("umask 077; {} --single-transaction --routines --databases ragnarok > /backups/{tmp}", dk.database_client("mariadb-dump")?),
     ])
     .map_err(|_| "the database did not produce a dump (is the server running?)".to_string())?;
 
@@ -1793,6 +1935,8 @@ pub fn backup(cfg: &Config, dk: &Docker, dest: &str) -> Result<(), String> {
         let _ = fs::remove_file(&staged);
         return Err("the dump came out empty".into());
     }
+    crate::private_fs::protect(&staged, false)?;
+    if Path::new(dest).exists() { crate::private_fs::protect(Path::new(dest), false)?; }
     fs::rename(&staged, dest)
         .or_else(|_| fs::copy(&staged, dest).map(|_| ()))
         .map_err(|e| format!("could not write {dest}: {e}"))?;
@@ -1806,11 +1950,17 @@ pub fn restore(cfg: &Config, dk: &Docker, src: &str) -> Result<(), String> {
     if !Path::new(src).is_file() {
         return Err(format!("no such backup: {src}"));
     }
+    crate::accounts::verify_era(cfg, dk, crate::service_credentials::era(cfg))?;
+    stop_game_services(dk)?;
     let backups = cfg.state.join("backups");
-    fs::create_dir_all(&backups).map_err(|e| e.to_string())?;
+    crate::private_fs::directory(&backups)?;
+    let safety = backups.join(format!("before-restore-{}-{}.sql", crate::service_credentials::era(cfg), crate::private_fs::random_hex(8)?));
+    backup_snapshot(cfg, dk, &safety.to_string_lossy())?;
     let tmp = format!("restore-{}.sql", std::process::id());
     let staged = backups.join(&tmp);
+    if staged.exists() { crate::private_fs::protect(&staged, false)?; }
     fs::copy(src, &staged).map_err(|e| format!("staging the backup: {e}"))?;
+    crate::private_fs::protect(&staged, false)?;
     if cfg!(windows) {
         dk.copy_into(DB_CONTAINER, &backups, "/backups")?;
     }
@@ -1818,12 +1968,17 @@ pub fn restore(cfg: &Config, dk: &Docker, src: &str) -> Result<(), String> {
     // wholesale rather than merging into whatever is there now.
     let r = dk.output([
         "exec", DB_CONTAINER, "sh", "-c",
-        &format!("mariadb -uragnarok -pragnarok < /backups/{tmp}"),
+        &format!("{} < /backups/{tmp}", dk.database_client("mariadb")?),
     ]);
     let _ = fs::remove_file(&staged);
     dk.quiet(["exec", DB_CONTAINER, "rm", "-f", &format!("/backups/{tmp}")]);
-    r.map_err(|_| "restore failed; the database is unchanged".to_string())?;
-    println!("restored from {src}");
+    r.map_err(|_| "Restore failed and may have partially changed the database. Keep game services stopped and restore a verified backup.".to_string())?;
+    if let Some(credentials) = crate::service_credentials::load(&cfg.state, crate::service_credentials::era(cfg))? {
+        // An older dump may carry the old interserver login. Restore the
+        // managed service row before any subsequent player reconnect.
+        migrate_service_credentials(dk, &credentials)?;
+    }
+    println!("restored from {src}; game services are stopped. Restart the server to reconnect. A pre-restore backup was preserved.");
     Ok(())
 }
 

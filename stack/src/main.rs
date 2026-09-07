@@ -20,6 +20,8 @@ mod mapcache;
 mod mods;
 mod process_identity;
 mod registration;
+mod private_fs;
+mod service_credentials;
 mod operation_lock;
 
 use config::Config;
@@ -28,7 +30,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process::exit;
 
-const USAGE: &str = "usage: ragnarok-stack mods|mod-enable NAME|mod-disable NAME|up [--lan] [--ram MiB]|down|repair [--lan] [--ram MiB]|status|logs [service] [tail]\n\
+const USAGE: &str = "usage: ragnarok-stack secure-services [--lan] [--ram MiB]|mods|mod-enable NAME|mod-disable NAME|up [--lan] [--ram MiB]|down|repair [--lan] [--ram MiB]|status|logs [service] [tail]\n\
                      \x20      backup <file>|restore <file>\n\
                      \x20      accounts (private JSON request on stdin)\n\
                      \x20      link-assets <data.grf> [rdata.grf] [official_data.grf] [bgm-dir]";
@@ -79,8 +81,8 @@ fn main() {
         Ok(c) => c,
         Err(e) => fail(verb, &e),
     };
-    let dk = Docker::new(cfg.docker.clone(), cfg.nebula_home.clone());
-    let _operation = if matches!(verb, "up" | "down" | "repair" | "backup" | "restore" | "accounts") {
+    let dk = Docker::new(cfg.docker.clone(), cfg.nebula_home.clone(), cfg.state.clone());
+    let _operation = if matches!(verb, "up" | "down" | "repair" | "backup" | "restore" | "accounts" | "secure-services") {
         match operation_lock::acquire(&cfg.state) {
             Ok(lock) => Some(lock),
             Err(error) => fail(verb, &error),
@@ -108,6 +110,7 @@ fn main() {
             }
             Ok(())
         },
+        "secure-services" => cmds::secure_services(&cfg, &dk, lan, ram_mib),
         "up" => cmds::up(&cfg, &dk, lan, ram_mib),
         "down" => cmds::down(&cfg, &dk),
         "repair" => cmds::repair(&cfg, &dk, lan, ram_mib),

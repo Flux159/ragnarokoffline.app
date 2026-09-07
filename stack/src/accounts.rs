@@ -89,7 +89,7 @@ fn verify_password_format(cfg: &Config) -> Result<(), String> {
     Ok(())
 }
 
-fn verify_era(cfg: &Config, dk: &Docker, era: &str) -> Result<(), String> {
+pub(crate) fn verify_era(cfg: &Config, dk: &Docker, era: &str) -> Result<(), String> {
     let volume = match era {
         "renewal" => "ragnarokmac-db",
         "prerenewal" => "ragnarokmac-db-prere",
@@ -166,7 +166,7 @@ fn list(dk: &Docker, era: &str) -> Result<String, String> {
 /// Stop all game sessions before writing: rAthena can save an in-memory login
 /// record and overwrite a concurrent password change. Restart only the services
 /// that were running. The database and all account/character IDs stay intact.
-fn with_servers_stopped<T>(
+pub(crate) fn with_servers_stopped<T>(
     dk: &Docker,
     operation: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {

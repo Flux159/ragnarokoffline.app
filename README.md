@@ -73,6 +73,12 @@ and passwords themselves remain separate for each era. Local/LAN installs retain
 login signup until you change this setting. Internet sharing is still under
 development and requires additional access and credential safeguards.
 
+For internal server passwords, **Settings → Accounts → Secure internal server
+credentials** saves a backup and replaces the selected era’s shared service
+credentials. Game logins and characters are preserved. See
+[managed internal credentials](docs/SERVICE_CREDENTIALS.md) for persistence and
+recovery; internet access still requires additional safeguards.
+
 Ordinary accounts have almost no `@` commands — rAthena keeps `@autoloot` and
 `@showexp` for GMs. Settings → Mods → **player-commands** gives player characters some common commands.
 
