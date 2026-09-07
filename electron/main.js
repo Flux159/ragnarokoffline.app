@@ -15,6 +15,10 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn, execFile } = require('child_process');
+const { parseJoinAddress, GAME_PATH } = require('./join-address');
+const { probeHost } = require('./host-probe');
+const { JoinSession } = require('./join-session');
+const joinSession = new JoinSession();
 
 // Windows ships every payload binary with a .exe suffix, which the embed kit
 // and our own build both produce correctly -- it was only ever this side that
@@ -555,8 +559,7 @@ async function assetsStart() {
 			AI_PATH: readIfExists(path.join(stateDir(), 'asset-config/ai.path')).trim(),
 			ENABLE_STATIC_SERVE: 'true', ENABLE_WSPROXY: 'true',
 			ROBROWSER_PATH: path.resolve(root, 'vendor/roBrowserLegacy/dist/Web'),
-			WS_ALLOWED_TARGETS: localHostnames()
-				.flatMap(h => [`${h}:6900`, `${h}:6121`, `${h}:5121`]).sort().join(','),
+			WS_ALLOWED_TARGETS: proxyTargets(client).sort().join(','),
 			DATA_OVERRIDE_PATH: path.resolve(translationRoot(), 'data'),
 			ENABLE_COMPRESSION: process.env.ENABLE_COMPRESSION || 'true',
 			CACHE_MAX_FILES: process.env.CACHE_MAX_FILES || '5000',
@@ -623,6 +626,10 @@ function getClientPaths() {
 		saved = JSON.parse(fs.readFileSync(clientConfigPath(), 'utf8'));
 	} catch { /* no config yet */ }
 	const out = { ...DEFAULT_CLIENT, ...saved };
+	if (out.join_host) {
+		try { out.join_host = joinSession.remember(out.join_host); }
+		catch { out.join_host = ''; }
+	}
 	// Only when nothing has been chosen. A value in the file is the player's,
 	// including one they set on a machine they have since upgraded.
 	if (!Number.isFinite(Number(out.vm_ram_mib)) || Number(out.vm_ram_mib) <= 0) {
@@ -658,138 +665,38 @@ function advertiseHost() {
 	return '127.0.0.1';
 }
 
-// Every name by which a browser could have reached this machine.
-//
-// The proxy matches its allow-list against the literal "host:port" the client
-// asks for, and Config.local.js derives that host from location.hostname --
-// whatever the player typed in the address bar. Loopback plus the advertised
-// address is not enough: a machine on wifi and ethernet at once has two
-// addresses on the same subnet, lan_ip() advertises only the one the routing
-// table prefers, and a browser pointed at the other one is refused with
-// "failed to connect to server" and the reason only in assets.log. Same for
-// "localhost" and for the mDNS name, both of which are the obvious things to
-// type at a machine that is sitting in front of you.
-//
-// This does not widen what the proxy can reach -- every entry is an address
-// this machine already answers on, and only the three game ports are listed --
-// it stops the allow-list disagreeing with the way the player got here.
-function localHostnames() {
-	const names = new Set(['127.0.0.1', 'localhost', '::1', advertiseHost()]);
-	for (const addrs of Object.values(os.networkInterfaces())) {
-		for (const a of addrs || []) {
-			// Node 18 reports family as a string, older ones as a number.
-			if (a.family === 'IPv4' || a.family === 4) names.add(a.address);
-		}
-	}
-	// Browsers lowercase the hostname; macOS does not have to. os.hostname()
-	// answers whatever the DHCP domain made it ("host.lan"), so the mDNS name
-	// is built from the first label rather than by appending to the whole
-	// thing, which would produce host.lan.local.
-	const h = (os.hostname() || '').toLowerCase();
-	if (h) {
-		names.add(h);
-		names.add(`${h.split('.')[0]}.local`);
-	}
-	return [...names].filter(Boolean);
+// Login always names the host-side proxy's loopback. rAthena returns its
+// configured character/map address; keep precisely those three destinations.
+function proxyTargets(client) {
+	const backend = client.lan ? advertiseHost() : '127.0.0.1';
+	return ['127.0.0.1:6900', `${backend}:6121`, `${backend}:5121`];
 }
 
-// Why a host could not be reached, in words rather than in a code.
-//
-// Node reports these as "connect ECONNREFUSED 192.168.1.20:3338", and a player
-// who has been handed an address by a friend cannot do anything with that.
-// Each of these is a different problem with a different fix, which is why they
-// are told apart here instead of being flattened into one "could not connect".
-function whyUnreachable(e) {
-	switch (e.code) {
-		case 'ECONNREFUSED':
-			return 'nothing is listening there. The host has to start their server, ' +
-				'with "Let friends join" switched on, before anyone can connect.';
-		case 'ENOTFOUND':
-		case 'EAI_AGAIN':
-			return 'that name could not be looked up. Check the address for a typo.';
-		case 'EHOSTUNREACH':
-		case 'ENETUNREACH':
-			return 'that machine cannot be reached from this network. Joining works ' +
-				'over a network you are both on.';
-		case 'ECONNRESET':
-			return 'the connection was closed before an answer came back. Something ' +
-				'is listening on that port, but it is not a Ragnarok Offline host.';
-		case 'ETIMEDOUT':
-			return 'it did not answer. Check the address, and that the host is running.';
-		default:
-			return e.message;
-	}
-}
-
-// The reason is kept beside the sentence as well as in it: a dialog that has
-// already named the host in its headline wants the reason alone, and a page
-// with one line to spend wants the whole thing.
-function unreachable(url, reason) {
-	const e = new Error(`Could not connect to ${url}: ${reason}`);
-	e.reason = reason;
-	return e;
-}
-
-// Confirm a host is actually serving before a window is pointed at it, so an
-// address typo or an offline friend produces a sentence rather than a blank
-// window that never loads.
-function probeHost(url) {
-	return new Promise((resolve, reject) => {
-		const req = require('http').get(url, { timeout: 8000 }, res => {
-			res.resume();
-			// Any HTTP answer means something is listening and speaking HTTP,
-			// which is all this needs to establish.
-			resolve();
-		});
-		req.on('timeout', () => {
-			req.destroy();
-			reject(unreachable(url,
-				'it did not answer within 8 seconds. Check that the host is running, ' +
-				'and that you are both on the same network.'));
-		});
-		req.on('error', e => reject(unreachable(url, whyUnreachable(e))));
-	});
-}
-
-// The client's entry point on an asset server. The root redirects here (see
-// config/index.html), but the windows we open ourselves go straight to it
-// rather than through the hop. Defined once so the local and remote paths
-// cannot drift.
-const GAME_PATH = '/api.html?app=ONLINE';
-
-// The one address a host gives out. A whole URL, because it has to survive
-// being pasted into a browser as well as into the join box, and because
-// "http://host:3338/" reads as a link where "host:3338" reads as a riddle.
+// One public web origin; legacy LAN addresses are normalized by join-address.
 function serveUrl(host) {
-	return `http://${host}:3338/`;
+	const authority = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+	return `http://${authority}:3338/`;
+}
+function joinUrl(hostSpec) { return parseJoinAddress(hostSpec).origin; }
+
+async function prepareJoin(next) {
+	const origin = joinSession.remember(next.join_host);
+	const reached = await probeHost(origin);
+	await stopLocalHostForJoin();
+	joinSession.retarget(origin, reached.origin);
+	// An HTTP-to-HTTPS redirect is resolved before the game gets an invite.
+	// The saved host and navigation guard then agree on the secure origin.
+	fs.writeFileSync(clientConfigPath(), JSON.stringify({ ...next, join_host: reached.origin }, null, 2));
+	return reached;
 }
 
-// Whatever a player pastes, reduced to a base URL.
-//
-// The host copies a link, but what arrives in the box is anything: the bare
-// address, an address:port, the link itself, or the full game URL with
-// /api.html?app=ONLINE still on the end -- which callers would then append
-// GAME_PATH to a second time. Parsing and keeping only the authority means all
-// of those are the same input. Returned as a base URL: callers append
-// GAME_PATH when they want the game, and probe the base when they only want to
-// know it is up.
-function joinUrl(hostSpec) {
-	const raw = String(hostSpec || '').trim();
-	if (!raw) return '';
-	// URL wants a scheme, and reads a bare "host:3338" as one -- the port
-	// becomes the protocol -- so anything without one is given http.
-	let u;
-	try {
-		u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`);
-	} catch {
-		return '';
-	}
-	if (!u.hostname) return '';
-	// u.port is empty for a URL that named no port *and* for one that named the
-	// scheme's default, but a player who typed :80 meant :80, so the raw string
-	// decides rather than the parse.
-	const port = u.port || (/:\d+(?:\/|$|\?)/.test(raw) ? '80' : '3338');
-	return `http://${u.hostname}:${port}`;
+async function stopLocalHostForJoin() {
+	const hadAssets = assetServer.running;
+	await assetsStop();
+	// The first-run Join path has no runtime to stop. An existing host must
+	// finish shutting down before its saved mode can say it is only joining.
+	if (hadAssets || fs.existsSync(path.join(dataRoot(), 'nebula/run/docker.sock')))
+		await runStack(['down']);
 }
 
 // rdata.grf is not required. It was a renewal overlay on an older base client,
@@ -1038,6 +945,7 @@ async function saveSettings(settings) {
 	// Restarting RemoteClient alone does not change either. Rebuild on Apply,
 	// including retries after a partially completed era switch or mod change.
 	const client = getClientPaths();
+	if (client.mode === 'join') return 'Settings saved for your own server. Joining starts no local server.';
 	const cycleAssets = assetServer.running;
 	if (cycleAssets) {
 		appLog('applying settings: stopping the asset server before rebuilding');
@@ -1221,6 +1129,28 @@ function makeWindow(id, file, opts) {
 	// someone navigating away from a tab, and quitting runs the same teardown
 	// either way.
 	win.webContents.on('will-prevent-unload', e => e.preventDefault());
+	// Remote game pages stay on their selected web origin. In particular a
+	// redirect must not downgrade HTTPS, forward an inherited invite fragment
+	// to another origin, or navigate into a privileged local Settings file.
+	if (id === 'game') {
+		const guard = (event, legacyUrl) => {
+			const current = getClientPaths();
+			const allowed = current.mode === 'join' && current.join_host
+				? joinUrl(current.join_host) : 'http://127.0.0.1:3338';
+			let target;
+			try { target = new URL(event.url || legacyUrl); } catch { event.preventDefault(); return; }
+			if (target.origin !== allowed || target.username || target.password) {
+				event.preventDefault();
+				appLog('blocked game navigation outside the selected host origin');
+			}
+		};
+		win.webContents.on('will-navigate', guard);
+		win.webContents.on('will-redirect', guard);
+		win.webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+			if (isMainFrame) joinSession.exchanged(url);
+		});
+		win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+	}
 	// Everything the game page logs, written to client.log.
 	//
 	// The client is where the failures we cannot see happen. A player reported
@@ -1677,7 +1607,7 @@ const handlers = {
 		if (fs.existsSync(cfgToml)) {
 			add('nebula/config.toml', fs.readFileSync(cfgToml, 'utf8'));
 		}
-		return lines.join('\n');
+		return joinSession.redact(lines.join('\n'));
 	},
 
 	// Straight to the clipboard, because the destination is a text box on
@@ -1724,10 +1654,9 @@ const handlers = {
 		// address fails here with something a player can act on rather than as
 		// a blank window later.
 		if (saved.mode === 'join') {
-			const url = joinUrl(saved.join_host);
 			fs.mkdirSync(stateDir(), { recursive: true });
 			fs.writeFileSync(path.join(stateDir(), 'phase'), `Connecting to ${saved.join_host}…\n`);
-			await probeHost(url);
+			await prepareJoin(saved);
 			fs.writeFileSync(path.join(stateDir(), 'phase'), 'Ready\n');
 			return 'joined';
 		}
@@ -1782,11 +1711,7 @@ const handlers = {
 			// A joining player supplies an address and nothing else -- no GRFs
 			// to validate, and nothing to link, because the host serves both
 			// the client and its assets.
-			const url = joinUrl(next.join_host);
-			if (!url) throw new Error('Enter the address your friend gave you.');
-			await probeHost(url);
-			next.join_host = url.replace(/^http:\/\//, '');
-			fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
+			await prepareJoin(next);
 			return 'joined';
 		}
 		if (!fs.existsSync(next.data_grf)) throw new Error('data.grf is not a file');
@@ -1817,7 +1742,8 @@ const handlers = {
 		if (lan !== undefined) next.lan = !!lan;
 		// Provoke the macOS prompt here, next to the switch that needs it.
 		if (lan === true && !prev.lan) await nudgeLocalNetworkPermission();
-		if (join_host !== undefined) next.join_host = String(join_host).trim();
+		if (join_host !== undefined) next.join_host = join_host ? joinSession.remember(join_host) : '';
+		if (mode === 'join' && prev.mode !== 'join') await stopLocalHostForJoin();
 		fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
 		// Before anything slow: the mode has already changed, and leaving the
 		// window claiming (Local) over a server that is about to stop is the
@@ -1831,14 +1757,6 @@ const handlers = {
 		//
 		// The database is untouched: it lives in a volume that outlives the
 		// containers, so switching back to hosting finds the same characters.
-		if (mode === 'join' && prev.mode !== 'join') {
-			await assetsStop();
-			try {
-				await runStack(['down']);
-			} catch {
-				/* nothing was running */
-			}
-		}
 		return next;
 	},
 	scan_client_dir: ({ dir }) => scanClientDir(dir),
@@ -1908,7 +1826,7 @@ const handlers = {
 		// race for no gain.
 		if (c.mode !== 'join') await dropStaleClientCache();
 		const win = openGame();
-		win.loadURL(base + GAME_PATH);
+		await win.loadURL(c.mode === 'join' ? joinSession.url(base) : base + GAME_PATH);
 		win.setTitle(gameTitle());
 	},
 
@@ -1954,6 +1872,8 @@ function clientLogStart() {
 const CLIENT_LOG_LEVELS = ['verbose', 'info', 'warning', 'error'];
 let clientLogBytes = 0;
 function clientLog(level, text, line, src) {
+	text = joinSession.redact(text);
+	src = joinSession.redact(src);
 	// roBrowser logs a line per file it loads, and the DB alone is hundreds.
 	// That volume is worth keeping -- comparing the loads that started against
 	// the ones that finished is exactly how a stalled database is spotted --
@@ -1974,6 +1894,7 @@ function clientLog(level, text, line, src) {
 }
 
 function appLog(line) {
+	line = joinSession.redact(line);
 	try {
 		const dir = stateDir();
 		fs.mkdirSync(dir, { recursive: true });
@@ -1993,8 +1914,8 @@ function appLog(line) {
 // arbitrary path to write to.
 //
 // So the bridge is split by where the page came from. The app's own windows are
-// loaded with `loadFile`, so they are `file://` and get everything. The game is
-// loaded with `loadURL`, so it is `http://` and gets only what is on this list.
+// loaded from three exact bundled files and own the controls. The game is
+// loaded over HTTP or HTTPS and gets only what is on this list.
 //
 // It is empty today because the game page needs nothing. Adding a name here is
 // a decision about what a page served by a stranger may do to this machine —
@@ -2002,14 +1923,28 @@ function appLog(line) {
 const GAME_PAGE_HANDLERS = new Set([]);
 // Includes settings writes before their supervisor call: an era marker must
 // not change halfway through an account operation. Read-only status stays live.
-const SERVER_OPERATIONS = new Set(['accounts', 'save_settings', 'set_mode', 'start_stack',
+const SERVER_OPERATIONS = new Set(['accounts', 'save_settings', 'set_mode', 'set_client_paths', 'start_stack',
 	'stack_up', 'stack_down', 'stack_repair', 'db_backup', 'db_restore']);
 let serverOperationQueue = Promise.resolve();
+function queueServerOperation(operation) {
+	if (tearingDown) return Promise.reject(new Error('The app is quitting; wait until the next launch.'));
+	const pending = serverOperationQueue.then(operation);
+	serverOperationQueue = pending.catch(() => {});
+	return pending;
+}
 
-/// Where an IPC call came from. `file://` means one of our own pages.
+// Only our exact bundled top-level pages own the host controls. A generic
+// file:// check would also grant them to any other local document.
 function callerIsOwnPage(event) {
 	const url = (event && event.senderFrame && event.senderFrame.url) || '';
-	return url.startsWith('file://');
+	if (!event || !event.sender || event.senderFrame !== event.sender.mainFrame) return false;
+	try {
+		const parsed = new URL(url);
+		if (parsed.protocol !== 'file:') return false;
+		const filename = require('url').fileURLToPath(parsed);
+		return ['index.html', 'setup.html', 'settings.html']
+			.some(name => filename === path.join(__dirname, '..', 'src', name));
+	} catch { return false; }
 }
 
 ipcMain.handle('invoke', async (event, name, args) => {
@@ -2022,10 +1957,7 @@ ipcMain.handle('invoke', async (event, name, args) => {
 	if (!fn) throw new Error(`unknown command: ${name}`);
 	try {
 		if (SERVER_OPERATIONS.has(name)) {
-			if (tearingDown) throw new Error('The app is quitting; wait until the next launch.');
-			const operation = serverOperationQueue.then(() => fn(args || {}));
-			serverOperationQueue = operation.catch(() => {});
-			return await operation;
+			return await queueServerOperation(() => fn(args || {}));
 		}
 		return await fn(args || {});
 	} catch (e) {
@@ -2196,7 +2128,7 @@ app.whenReady().then(() => {
 	// "cannot be reached" page, which says nothing about which host or why.
 	const c = getClientPaths();
 	if (c.mode === 'join' && c.join_host) {
-		probeHost(joinUrl(c.join_host))
+		queueServerOperation(() => prepareJoin(c))
 			.then(() => openGame())
 			.catch(err => {
 				dialog.showMessageBox({

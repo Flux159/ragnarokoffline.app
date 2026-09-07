@@ -15,15 +15,10 @@ window.ROConfigLocal = {
 		{
 			display: 'Ragnarok Offline',
 			desc: 'local rAthena',
-			// Whoever served this page is the server to play on.
-			//
-			// Hardcoding 127.0.0.1 works only when the player and the server
-			// are the same machine. A joining player downloads this file from
-			// the host and would then connect to their own loopback, finding
-			// nothing -- and the proxy would refuse the target anyway, since
-			// its allow-list carries the host's addresses, not the guest's.
-			// location is the one thing that is always correct for both.
-			address: location.hostname,
+			// This is a TCP destination for the host-side WebSocket proxy,
+			// not the browser's own loopback. A public web hostname must never
+			// become a :6900 dial target. The proxy has an exact local allowlist.
+			address: '127.0.0.1',
 			port: 6900,
 			version: 55,
 			// windows-949, not windows-1252. langtype picks the text codepage,
@@ -37,7 +32,7 @@ window.ROConfigLocal = {
 			packetKeys: false,
 			// location.host, so the port comes along: the proxy is the same
 			// origin that served the page.
-			socketProxy: 'ws://' + location.host + '/ws/',
+			socketProxy: (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/',
 			remoteClient: '/',
 			adminList: [2000000]
 		}

@@ -105,6 +105,10 @@ their owners.
 Joining a friend's server does not require you to download assets. On the setup
 screen, just click **Join a friend** and paste the link that your friend sent.
 
+Full links keep their HTTP or HTTPS scheme and port. A bare LAN address such as
+`192.168.1.20` uses port 3338. HTTPS certificate failures must be fixed by the
+host; the app does not bypass certificate verification.
+
 <img src="docs/assets/joinafriend.png" alt="First-run setup screen on the Join a friend tab, asking for the host's server address" width="640">
 
 The host serves the client and the artwork, so joining starts in seconds instead

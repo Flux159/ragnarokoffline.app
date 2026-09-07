@@ -102,6 +102,19 @@ async function main() {
       report.screens.push(prefix + '-accounts.png', prefix + '-map.png');
       console.log('Settings era and native game login passed:', era);
     }
+    if (process.env.RO_E2E_JOIN_AT_END === '1') {
+      const host = require('node:http').createServer((_request, response) => response.end('Join fixture'));
+      await new Promise(resolve => host.listen(0, '127.0.0.1', resolve));
+      try {
+        await game.goto('about:blank');
+        await invoke('set_client_paths', { paths: { mode: 'join', join_host: 'http://127.0.0.1:' + host.address().port } });
+        await freePorts();
+        expect(await invoke('save_settings', { settings: await invoke('get_settings') })).toContain('Joining starts no local server');
+        await freePorts();
+        report.hostToJoin = { localServicesStopped: true, settingsDoNotRestartHost: true };
+        console.log('Real host-to-join transition stopped the local world and kept it stopped');
+      } finally { host.closeAllConnections(); await new Promise(resolve => host.close(resolve)); }
+    }
     expect(report.pageErrors).toEqual([]);
     console.log('Era Settings/game checks passed. Evidence:', out);
   } finally {

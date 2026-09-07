@@ -255,7 +255,7 @@ $('save').onclick = async () => {
   $('msg').className = 'msg';
   const joining = mode === 'join';
   $('msg').textContent = joining
-    ? `Contacting ${$('join_host').value.trim()}…`
+    ? 'Contacting your friend’s host…'
     : 'Linking your client…';
   try {
     await invoke('set_client_paths', {

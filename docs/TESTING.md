@@ -297,3 +297,39 @@ services before direct fixture changes, and never run these cases on player data
 Check independent first-era initialization and preservation in both directions.
 Full packaged payloads and internet-mode safeguards remain release gates; these
 account tests alone do not close issue #4.
+
+## HTTPS join transport (opt-in)
+
+`node tests/e2e/join-settings.cjs` launches the source shell against disposable
+loopback HTTP and HTTPS fixtures, without a VM. It checks invite-required
+responses, fragment handoff/clearing, saved host origins, log redaction, game
+IPC denial, and blocked navigation to other origins. Applying Settings while
+joining must not start a local server. The test has its own temporary home and
+Chromium profile; it never uses a player's save.
+
+With a verified disposable renewal world already running and serving assets:
+
+```sh
+RO_E2E_WORLD=/absolute/path/to/disposable-world node tests/e2e/https-game.cjs
+```
+
+The game test sends the built client through a loopback TLS terminator to the
+actual Rust asset/WS proxy and rAthena. It requires the private test GM credential
+file described above and a playable slot 1. It verifies all three native login,
+character and map WS connections, host-side loopback targets, server-acknowledged
+movement, root-link fragment preservation, and no insecure HTTP requests from the
+HTTPS page. Screenshots/reports are written below the world; no credential or
+packet-frame traces are recorded. The temporary TLS listener closes on completion;
+the externally owned game world remains running.
+
+Both TLS integration fixtures use the public test certificate in
+`tests/fixtures/tls/`. Node trusts that exact fixture only in the test child;
+Chromium receives an exact SPKI exception for it. Neither alters a system trust
+store. These establish local transport behavior, **not** trusted public-certificate,
+Cloudflare/ngrok, or external-network acceptance. Unit tests separately prove
+rejection of an untrusted certificate and HTTPS-to-HTTP downgrade. Fixture keys
+are never part of the application payload.
+
+To also test a real host stopping when it becomes a joiner, run the stopped-world
+era harness above with `RO_E2E_JOIN_AT_END=1`. It verifies that all local game and
+engine ports close, and that applying Settings in Join mode keeps them closed.
