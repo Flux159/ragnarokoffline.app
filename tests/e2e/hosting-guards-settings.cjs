@@ -254,11 +254,19 @@ async function main() {
           && !(report.nativeTraces || []).some(trace => trace.era === era)) {
         await game.goto('about:blank');
         const before = JSON.parse(docker(['inspect', 'ragnarok-map']).stdout)[0];
-        expect(docker(['kill', '--signal', 'SEGV', 'ragnarok-map']).status).toBe(0);
+        // The pinned slim runtime accepts numeric signals, but silently maps
+        // the unsupported SEGV name to SIGTERM. Use Linux SIGSEGV explicitly.
+        expect(docker(['kill', '--signal', '11', 'ragnarok-map']).status).toBe(0);
         await expect.poll(() => {
           const value = docker(['inspect', '-f', '{{.State.Status}}', 'ragnarok-map']);
           return value.status === 0 ? value.stdout.trim() : 'unknown';
         }, { timeout: 60000 }).toBe('exited');
+        const after = JSON.parse(docker(['inspect', 'ragnarok-map']).stdout)[0];
+        // Retain only bounded, non-secret incident identity if capture fails.
+        report.nativeSignalAttempts = [...(report.nativeSignalAttempts || []), {
+          era, signal: 11, container: before.Id, image: before.Image,
+          exitCode: after.State.ExitCode, oomKilled: after.State.OOMKilled,
+        }];
         const reportsDir = path.join(state, 'crashes/reports');
         let captured;
         await expect.poll(() => {
@@ -275,12 +283,20 @@ async function main() {
         }, { timeout: 90000 }).toBe(true);
         expect(captured.metadata.backtraceAvailable).toBe(true);
         expect(captured.metadata.image).toBe(before.Image);
-        expect(captured.body).toContain('RAGNAROK_CRASH_FRAME index=0x0 ');
-        expect(captured.body).toContain('main_offset=');
+        expect(captured.body.includes('RAGNAROK_CRASH_FRAME index=0x0 ')).toBe(true);
+        expect(captured.body.includes('RAGNAROK_CRASH_TRACE v1 signal=0xb ')).toBe(true);
+        // An external signal can interrupt a libc syscall, and unwinding may
+        // stop there. Main-image frames/source lookup are asserted by the
+        // image's deliberate in-process fault fixture, not guaranteed here.
+        const frames = captured.body.split('\n').filter(line => line.includes('RAGNAROK_CRASH_FRAME '));
+        expect(frames.length).toBeGreaterThan(0);
+        expect(frames.length).toBeLessThanOrEqual(32);
         expect(captured.body.indexOf('RAGNAROK_CRASH_TRACE v1')).toBeLessThan(
           captured.body.indexOf('Received a crash signal'));
         report.nativeTraces = [...(report.nativeTraces || []), { era,
-          artifact: captured.name, metadata: captured.metadata, injectedSignal: true }];
+          artifact: captured.name, metadata: captured.metadata, frames,
+          mainImageFrameAvailable: frames.some(line => line.includes('main_offset=')),
+          injectedSignal: true }];
         await invoke('stack_up');
         await verifyWorld();
         console.log('Injected rAthena signal retained native frames before emergency-save handler:', era);

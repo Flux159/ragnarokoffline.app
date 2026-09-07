@@ -74,3 +74,18 @@ node tests/e2e/crash-capture.cjs
 It verifies free ports, starts only that world's VM, refuses existing world
 containers, runs the faulting shell in the existing server image, and stops the
 VM after preserving its report. It never starts MariaDB or real game servers.
+
+To exercise the native handler inside both real rAthena eras, the Settings/game
+acceptance fixture also accepts `RO_E2E_NATIVE_CRASH_TRACE=1`, alongside its
+required `RO_E2E_WORLD` and `RO_E2E_CLIENT_JSON`. Use a stopped, marked disposable
+world with the new server image and matching supervisor. After logging into each
+era, it injects Linux signal 11 into its own map container, checks that native
+frames precede the emergency-save message in the incident report, and restarts
+the world before continuing. The final cleanup stops the owned world and
+restores its original selection. Existing account credentials are preserved.
+
+The numeric signal is intentional: the pinned slim runtime does not recognize
+the name `SEGV` and falls back to SIGTERM. A clean shutdown from that named
+signal does not test the crash handler. The fixture records image/container
+identity and observed exit status even if incident capture fails. This remains
+an injected-signal acceptance test, not a reproduction of issue #16.
