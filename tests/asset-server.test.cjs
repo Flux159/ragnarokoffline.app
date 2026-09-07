@@ -21,13 +21,17 @@ async function freePort() {
 async function fixture(t, mode = '') {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ro-owner-'));
 	const server = new AssetServer({ startTimeout: 1000, stopTimeout: 250 });
+	const servers = [server];
 	const options = {
 		executable: process.execPath, args: [path.join(__dirname, 'fixtures/asset-process.cjs')],
 		cwd: dir, stateRoot: dir,
 		environment: { PORT: String(await freePort()), FIXTURE_MODE: mode },
 	};
-	t.after(async () => { await server.stop(); fs.rmSync(dir, { recursive: true, force: true }); });
-	return { server, options, dir };
+	t.after(async () => {
+		for (const owned of servers.reverse()) await owned.stop();
+		await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+	});
+	return { server, options, dir, own: owned => servers.push(owned) };
 }
 
 test('OS identity includes the current process creation time and executable', async () => {
@@ -96,10 +100,10 @@ test('configuration changes replace the process and rotate diagnostic logs', asy
 });
 
 test('a new owner replaces an authenticated orphan instead of adopting it', async t => {
-	const { server, options } = await fixture(t, 'orphan');
+	const { server, options, own } = await fixture(t, 'orphan');
 	const old = await server.start(options);
 	const replacement = new AssetServer({ stopTimeout: 1000 });
-	t.after(() => replacement.stop());
+	own(replacement);
 	const current = await replacement.start(options);
 	assert.notEqual(current.pid, old.pid);
 	assert.equal(await replacement.ready(), true);
