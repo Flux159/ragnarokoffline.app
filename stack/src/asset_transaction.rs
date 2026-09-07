@@ -10,6 +10,25 @@ use std::path::{Path, PathBuf};
 pub struct Transaction {
     pub stage: PathBuf,
     destinations: Vec<PathBuf>,
+    _lock: fs::File,
+}
+
+fn acquire(state: &Path) -> Result<fs::File, String> {
+    fs::create_dir_all(state).map_err(|e| e.to_string())?;
+    let lock = fs::File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(state.join(".asset-link.lock"))
+        .map_err(|e| e.to_string())?;
+    match lock.try_lock() {
+        Ok(()) => Ok(lock),
+        Err(fs::TryLockError::WouldBlock) => {
+            Err("another asset rebuild is in progress; wait for it to finish and retry".into())
+        }
+        Err(fs::TryLockError::Error(e)) => Err(format!("cannot lock asset state: {e}")),
+    }
 }
 
 fn remove(path: &Path) -> Result<(), String> {
@@ -31,9 +50,11 @@ fn durable_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
 
 impl Transaction {
     pub fn begin(cfg: &Config) -> Result<Self, String> {
+        let lock = acquire(&cfg.state)?;
         let tx = Self {
             stage: cfg.state.join(".asset-update"),
             destinations: vec![cfg.state.join("assets"), cfg.state.join("asset-config")],
+            _lock: lock,
         };
         tx.recover()?;
         fs::create_dir_all(tx.stage.join("new")).map_err(|e| e.to_string())?;
@@ -147,6 +168,7 @@ mod tests {
         let tx = Transaction {
             stage: root.join(".asset-update"),
             destinations: vec![root.join("assets"), root.join("asset-config")],
+            _lock: acquire(&root).unwrap(),
         };
         for dir in [tx.path(0), tx.path(1), tx.stage.join("old")] {
             fs::create_dir_all(dir).unwrap();
@@ -185,7 +207,9 @@ mod tests {
             for dest in &tx.destinations {
                 assert_eq!(fs::read(dest.join("value")).unwrap(), b"previous");
             }
-            fs::remove_dir_all(tx.stage.parent().unwrap()).unwrap();
+            let root = tx.stage.parent().unwrap().to_path_buf();
+            drop(tx);
+            fs::remove_dir_all(root).unwrap();
         }
     }
 
@@ -216,6 +240,59 @@ mod tests {
             b"replacement"
         );
         assert!(!root.join(".asset-update").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn another_rebuild_cannot_enter_until_the_owner_releases_its_lock() {
+        let tx = fixture("exclusive");
+        let root = tx.stage.parent().unwrap().to_path_buf();
+        assert!(acquire(&root).is_err());
+        drop(tx);
+        let next = acquire(&root).unwrap();
+        drop(next);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn lock_holder_child() {
+        use std::io::Read;
+        let Some(root) = std::env::var_os("RAGNAROK_ASSET_LOCK_TEST") else {
+            return;
+        };
+        let _held = acquire(Path::new(&root)).unwrap();
+        println!("ASSET_LOCKED");
+        std::io::stdout().flush().unwrap();
+        // Parent death/pipe closure also bounds a failed parent test.
+        std::io::stdin().read_to_end(&mut Vec::new()).unwrap();
+    }
+
+    #[test]
+    fn process_crash_releases_the_asset_lock_without_removing_the_lock_file() {
+        use std::io::BufRead;
+        use std::process::{Command, Stdio};
+        let root = std::env::temp_dir().join(format!("ro-lock-crash-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "asset_transaction::tests::lock_holder_child",
+                "--nocapture",
+            ])
+            .env("RAGNAROK_ASSET_LOCK_TEST", &root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let ready = std::io::BufReader::new(child.stdout.take().unwrap())
+            .lines()
+            .any(|line| line.unwrap().contains("ASSET_LOCKED"));
+        assert!(ready);
+        assert!(acquire(&root).is_err());
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(root.join(".asset-link.lock").exists());
+        drop(acquire(&root).unwrap());
         fs::remove_dir_all(root).unwrap();
     }
 }

@@ -98,3 +98,7 @@ Generated `Config.local.js` and the landing page now live in `state/assets/`.
 The private manifest and selected directory paths live in `state/asset-config/`.
 The installed web payload is untouched by asset assembly. A rebuild must run
 while RemoteClient is stopped; `.asset-update` records recoverable commits.
+Rebuilds hold a separate OS-managed file lock; a competing CLI rebuild is refused
+and a crashed process releases the lock without an age-based stale-lock guess.
+This uses [standard-library file locking](https://doc.rust-lang.org/std/fs/struct.File.html#method.try_lock)
+and sets the supervisor's minimum Rust version to 1.89 without adding crates.

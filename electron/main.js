@@ -492,6 +492,7 @@ function runStack(rawArgs) {
 
 const { AssetServer, sha256 } = require('./asset-server');
 const assetServer = new AssetServer({ log: message => appLog(message) });
+let assetLinkQueue = Promise.resolve();
 
 function assetsReady() { return assetServer.ready(); }
 
@@ -527,6 +528,7 @@ function cpuDescription() {
 }
 
 async function assetsStart() {
+	await assetLinkQueue;
 	const root = projectRoot();
 	const server = findTool('robrowser-remoteclient');
 	if (!server) throw new Error('the asset server binary is missing from this build');
@@ -799,7 +801,14 @@ function clientComplete(p) {
 	return !!p.data_grf && fs.existsSync(p.data_grf);
 }
 
-async function linkClient(paths) {
+function linkClient(paths) {
+	const selected = { ...paths };
+	const job = assetLinkQueue.then(() => linkClientOwned(selected));
+	assetLinkQueue = job.catch(() => {});
+	return job;
+}
+
+async function linkClientOwned(paths) {
 	await assetServer.prepare(stateDir());
 	const root = projectRoot();
 	// Read each path from *this* process before handing them to bash.
