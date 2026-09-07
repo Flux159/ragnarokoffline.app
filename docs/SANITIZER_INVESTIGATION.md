@@ -139,3 +139,20 @@ complete weapon enum and guards item-script writes. Its source-derived
 reduction reproduces index 16 on the original and checks all weapon types and
 invalid indices after patching. This is a real population-path bounds defect;
 the intermittent logout scenario still needs its own reproduction evidence.
+
+Source `dd39509a16e57666834f404a532403a13a47063d`, containing all four fixes,
+passed both architectures in diagnostic build `34160404547` and normal build
+`34160406889`. The diagnostic ARM64 image
+`202bc00ca59d311214f8d7116d1ca3b684e0855d897ba84dab457a50dd0434e3`
+passed the actual guest synthetic fixture, then completed all 20 extended
+gameplay cycles with mods disabled: five for each era/population combination.
+The recorded exposure was 22:51:01–22:58:24 UTC, with no sanitizer fault,
+browser error or cleanup failure. Positive population counts were required;
+population rows issued stop/100-shell spawn requests as well as map changes,
+script reloads and both native logout and abrupt disconnects.
+
+An earlier run with this same image completed five population-off cycles but
+checked population before the next demand-driven timer tick. It retained zero
+stats and healthy server logs, not a sanitizer finding. The fixture now polls
+for a positive count, checking server health on each attempt. That timing
+failure and the original fourth-fault evidence remain retained separately.
