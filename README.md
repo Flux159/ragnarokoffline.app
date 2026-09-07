@@ -214,7 +214,7 @@ flowchart TB
 Ports are published to `127.0.0.1` unless you turn on
 [LAN hosting](#hosting-and-playing-with-friends-on-your-lan), which binds them to
 your network interface instead. The GRFs stay wherever you keep them —
-the app symlinks them into a server root and reads them where they lie, so a
+the app reads them in place through a private archive manifest, so a
 3.5 GB client is never duplicated.
 
 ### What actually happens when you press play

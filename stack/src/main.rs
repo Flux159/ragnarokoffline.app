@@ -10,6 +10,7 @@
 //! code path, as they always have.
 
 mod assets;
+mod asset_transaction;
 mod cmds;
 mod config;
 mod docker;

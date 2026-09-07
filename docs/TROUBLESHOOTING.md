@@ -7,26 +7,22 @@ Or ask in the [Discord](https://discord.gg/jUYC9dMbu5).
 
 ---
 
-## "Could not link … needs the client and the app data directory on the same drive"
+## Client files on another drive
 
-Windows only, and it means your client folder is on a different drive from where
-the app keeps its data (usually `C:`).
+GRFs and BGM can stay on a different drive from the app and its data directory.
+They are read in place; Developer Mode and administrator privileges are not
+needed. Small translation and mod overlays are copied into app-owned state.
 
-The app does not copy your GRFs — they are gigabytes — it links them. Windows
-allows that in two ways, and both can be unavailable at once: a *hard link*
-cannot cross drives, and a *symlink* needs Developer Mode. A client on `D:` with
-Developer Mode off has neither.
+If a saved client path cannot be read, reconnect the drive and check that its
+drive letter has not changed. Use **Change asset locations** to reselect moved
+files or clear a missing optional archive/BGM selection. An explicitly selected
+missing archive is reported rather than silently dropped from the load order.
 
-Any one of these fixes it:
-
-1. **Move the client folder to your `C:` drive** and pick it again. Simplest, and
-   the one that has worked for people so far.
-2. **Turn on Developer Mode** — Settings → System → For developers → Developer
-   Mode — then pick the folder again.
-3. **Run the app as Administrator** once while selecting the folder.
-
-macOS and Linux are unaffected. Tracked as [#5](https://github.com/Flux159/ragnarokoffline.app/issues/5); the long-term
-fix is to stop linking the GRFs at all.
+Older builds displayed “could not link” or “same drive” errors. Updating and
+reselecting the existing files migrates those selections to the private manifest;
+there is no need to move or duplicate the archives. Asset assembly failures leave
+the previous generation intact. An interrupted commit is recovered on the next
+asset rebuild; reconnect the sources and retry before starting the asset server.
 
 ## Windows: a reboot loop, or the machine restarts on launch
 

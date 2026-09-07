@@ -157,24 +157,9 @@ function unpackTranslationData(root) {
 // predates pre-renewal being packaged.
 const TRANSLATION_ERAS = ['Renewal', 'Pre-Renewal'];
 
-// The translation tree for the era currently selected.
-//
-// Pre-Renewal is an overlay on Renewal, not a replacement -- upstream
-// "supports pre-renewal by overwriting the content of the Renewal folder with
-// the Pre-Renewal one", and the trees show it: 613 files against 67. Serving
-// Pre-Renewal on its own would lose most of the translation and leave the
-// player with untranslated item and quest text.
-//
-// The supervisor does that merge, into the state directory, on every start --
-// one implementation rather than two that can disagree. Renewal needs no merge
-// and comes from the payload. If the merge has not happened yet, Renewal is
-// the safe answer: wrong-era towns, but readable text.
-function translationRoot(root, prerenewal) {
-	if (prerenewal) {
-		const merged = path.join(stateDir(), 'translation');
-		if (fs.existsSync(path.join(merged, 'data'))) return merged;
-	}
-	return path.join(root, 'vendor/ROenglishRE/Translation/Renewal');
+// The supervisor commits the era-specific translation with the asset tree.
+function translationRoot() {
+	return path.join(stateDir(), 'assets/.translation');
 }
 
 // A tar reader that decodes member names as UTF-8, on every platform.
@@ -510,9 +495,6 @@ const assetServer = new AssetServer({ log: message => appLog(message) });
 
 function assetsReady() { return assetServer.ready(); }
 
-// Windows only: the drive letter a path sits on, against the one the app keeps
-// its data on, when they differ. Null everywhere else, for a UNC path, and when
-// they match -- "same drive" is not a question worth asking then.
 // The operating system as a person would name it, plus the number an engineer
 // needs. Windows reports 10.0.x for both 10 and 11, so the build is the only
 // thing that separates them and 22000 is where 11 begins.
@@ -544,15 +526,6 @@ function cpuDescription() {
 	return `${model} (${cpus.length} logical, ${process.arch})`;
 }
 
-function otherDrive(p) {
-	if (process.platform !== 'win32') return null;
-	const of = q => (/^([A-Za-z]):[\\/]/.exec(q || '') || [])[1];
-	const from = of(p);
-	const to = of(dataRoot());
-	if (!from || !to || from.toUpperCase() === to.toUpperCase()) return null;
-	return { from: from.toUpperCase(), to: to.toUpperCase() };
-}
-
 async function assetsStart() {
 	const root = projectRoot();
 	const server = findTool('robrowser-remoteclient');
@@ -575,12 +548,14 @@ async function assetsStart() {
 			CLIENT_PUBLIC_URL: `http://${advertiseHost()}:3338`,
 			NODE_ENV: 'production',
 			SERVER_ROOT: path.resolve(stateDir(), 'assets'),
-			CLIENT_RESPATH: 'resources/', CLIENT_DATAINI: 'DATA.INI',
+			CLIENT_RESPATH: 'resources/', CLIENT_DATAINI: path.resolve(stateDir(), 'asset-config/DATA.INI'),
+			BGM_PATH: readIfExists(path.join(stateDir(), 'asset-config/bgm.path')).trim(),
+			AI_PATH: readIfExists(path.join(stateDir(), 'asset-config/ai.path')).trim(),
 			ENABLE_STATIC_SERVE: 'true', ENABLE_WSPROXY: 'true',
 			ROBROWSER_PATH: path.resolve(root, 'vendor/roBrowserLegacy/dist/Web'),
 			WS_ALLOWED_TARGETS: localHostnames()
 				.flatMap(h => [`${h}:6900`, `${h}:6121`, `${h}:5121`]).sort().join(','),
-			DATA_OVERRIDE_PATH: path.resolve(translationRoot(root, getSettings().prerenewal), 'data'),
+			DATA_OVERRIDE_PATH: path.resolve(translationRoot(), 'data'),
 			ENABLE_COMPRESSION: process.env.ENABLE_COMPRESSION || 'true',
 			CACHE_MAX_FILES: process.env.CACHE_MAX_FILES || '5000',
 			CACHE_MAX_MEMORY_MB: process.env.CACHE_MAX_MEMORY_MB || '1024',
@@ -591,8 +566,8 @@ async function assetsStart() {
 			GRF_FILENAME_ENCODING: process.env.GRF_FILENAME_ENCODING || 'auto',
 			RAGNAROK_PAYLOAD_VERSION: readIfExists(path.join(root, 'VERSION')).trim(),
 			RAGNAROK_OVERLAY_ID: readIfExists(path.join(stateDir(), 'assets/overlay.id')).trim(),
-			RAGNAROK_MANIFEST_ID: sha256(readIfExists(path.join(stateDir(), 'assets/resources/DATA.INI'))),
-			RAGNAROK_CLIENT_CONFIG_ID: sha256(readIfExists(path.join(root, 'vendor/roBrowserLegacy/dist/Web/Config.local.js'))),
+			RAGNAROK_MANIFEST_ID: sha256(readIfExists(path.join(stateDir(), 'asset-config/DATA.INI'))),
+			RAGNAROK_CLIENT_CONFIG_ID: sha256(readIfExists(path.join(stateDir(), 'assets/Config.local.js'))),
 			RAGNAROK_ASSET_SOURCES_ID: sha256(JSON.stringify(sources)),
 		},
 	});
@@ -861,20 +836,6 @@ async function linkClient(paths) {
 			if (e.code === 'ENOENT') {
 				hint = `${label} is no longer at that location. If it is on a removable ` +
 					'or network drive, connect it; if it moved, choose it again.';
-				// Reconnecting is only half an answer when the drive was never
-				// the same one. Windows cannot link across volumes without
-				// Developer Mode, so a player who plugs the drive back in hits
-				// the linking error next -- say both now rather than in two
-				// rounds. Same advice link_file gives, from the one place that
-				// still knows the path.
-				const other = otherDrive(p);
-				if (other) {
-					hint += ` It is also on the ${other.from}: drive while this app keeps ` +
-						`its data on ${other.to}:, and Windows cannot link files between ` +
-						`drives -- so move or copy it to ${other.to}: and choose it again. ` +
-						'(Turning on Developer Mode in Settings, System, For developers ' +
-						'is the alternative.)';
-				}
 				if (optional) {
 					hint += ` ${label} is optional -- Change asset locations has an ` +
 						'x beside it to forget it, and the game runs without it.';
@@ -1762,7 +1723,7 @@ const handlers = {
 	db_restore: ({ path: p }) => runStack(['restore', p]),
 
 	// Re-link the client every start: a freshly materialised runtime has no GRF
-	// symlinks or DATA.INI in it yet, and only the setup window writes those.
+	// generated assets or a private archive manifest yet, and only the setup window writes those.
 	start_stack: async () => {
 		const saved = getClientPaths();
 		// Joining runs no engine, no containers and no asset server: the host
