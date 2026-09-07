@@ -55,7 +55,7 @@ function destination(position, vector) {
     return null;
 }
 
-const WINDOWS = new Set(['Inventory', 'Equipment', 'SkillList', 'Quest', 'WorldMap', 'PartyFriends', 'WinStats']);
+const WINDOWS = new Set(['Inventory', 'Equipment', 'SkillList', 'Quest', 'WorldMap', 'PartyFriends', 'WinStats', 'Storage']);
 function component(name) {
     // UIManager resolves version aliases (Inventory -> InventoryV3, etc.).
     try { return UIManager.getComponent(name); } catch { return null; }
@@ -71,9 +71,30 @@ function action(name, value) {
     }
     if (name === 'window' && WINDOWS.has(value?.name)) {
         const windowUI = component(value.name);
+        if (value.open && visible(windowUI)) {
+            Runtime.movement.clear('window');
+            windowUI.focus();
+            return true;
+        }
         if (!windowUI?.onShortCut) return false;
         Runtime.movement.clear('window');
         windowUI.onShortCut({ cmd: 'TOGGLE' });
+        return true;
+    }
+    if (name === 'storage:transfer' && Number.isInteger(value?.index)) {
+        const storage = component('Storage');
+        if (!visible(storage)) return false;
+        const deposit = value.direction === 'deposit';
+        if (!deposit && value.direction !== 'withdraw') return false;
+        const item = (deposit ? component('Inventory') : storage)?.getItemByIndex(value.index);
+        if (!item || (deposit && item.WearState)) return false;
+        const maximum = item.count || 1;
+        const count = value.count === 'all' ? maximum : value.count;
+        if (!Number.isInteger(count) || count < 1 || count > maximum) return false;
+        // These are the same callbacks used after the native drag quantity
+        // dialog; the server still authorizes and acknowledges the transfer.
+        if (deposit) storage.reqAddItem(item.index, count);
+        else storage.reqRemoveItem(item.index, count);
         return true;
     }
     if (name === 'shortcut' && Number.isInteger(value?.index) && value.index >= 0 && value.index < 36) {

@@ -21,10 +21,12 @@ const touch = navigator.maxTouchPoints > 0 || "ontouchstart" in window;
 export const phoneLayout =
   available && (mode === "on" || (mode === "auto" && small && touch));
 export function geometryKey(key, defaults) {
+  // NpcStore creates nested per-shop geometry lazily from an empty default.
   return phoneLayout &&
-    defaults &&
-    Object.hasOwn(defaults, "x") &&
-    Object.hasOwn(defaults, "y")
+    (key === "NpcStore" ||
+      (defaults &&
+        Object.hasOwn(defaults, "x") &&
+        Object.hasOwn(defaults, "y")))
     ? `ragnarok:phone:${key}`
     : key;
 }

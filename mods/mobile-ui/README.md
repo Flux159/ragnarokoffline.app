@@ -1,44 +1,34 @@
 # mobile-ui
 
-Ships with the app and is on by default. It is also the shortest complete
-example of the `client/` layer, so it is worth reading even if you never touch
-a phone.
+Bundled and enabled by default. **Display → Phone layout** offers Auto, On and
+Off. Auto selects touch screens with a shorter side of at most 900 pixels.
+Changing layout reloads the client; control size (85–125%) applies immediately.
+Phone and desktop window positions are saved separately in each browser.
 
-## What it does
+The phone layout provides a compact HP/SP display, native movement joystick,
+Attack/Talk/Pickup buttons, four native shortcuts and a game menu. Login,
+character selection/creation, inventory, equipment, skills, quests and NPC
+windows get touch controls. Tap an item or skill before using its action
+buttons. Inventory and skills can assign F1–F4 without dragging.
 
-On a touch device with a screen under 900 points on its short side:
+When storage is open, select an item and use Deposit/Withdraw with a quantity,
+or Deposit all/Withdraw all. Open inventory and Back to storage bring the
+respective panel forward. The server still authorizes each transfer; the
+request message is not a success acknowledgement. Shops use Add selected,
+the native quantity dialog, then Buy or Sell; Remove selected edits the cart.
 
-- sets a real `viewport` meta, so the browser stops pretending to be 980px wide
-  and scaling the whole canvas down to fit
-- stops the page from panning, pinch-zooming and text-selecting under a drag,
-  which is otherwise what a swipe does instead of moving your character
-- brings buttons up to a 44px touch target
-- sets login inputs to 16px, because iOS Safari zooms the page when it focuses
-  anything smaller and does not zoom back out
-- keeps the game clear of the notch and the home indicator
+Viewport and safe-area handling keep controls within the visible game. Small
+touch devices retain a real viewport even with the phone layout Off. Default
+desktop mode preserves the native layout. Physical phone keyboard/orientation
+behavior and complete gameplay coverage remain release gates; see
+[testing](../../docs/TESTING.md).
 
-On a desktop it does nothing at all.
+The ES module exports `default(params, api)`. Client API 1 supplies scoped
+component append/remove events, native actions, input suspension, preferences
+and cleanup. Styles are attached inside each native component's shadow root;
+there is no document-wide MutationObserver. See
+[the API contract](../../docs/MODDING.md#client-api-1).
 
-## What to look at first
-
-`client/index.js`, and specifically two things:
-
-**The default export is a function.** The plugin manager `import()`s the file
-and calls `module.default(params)`. A plugin written as `define(function(){…})`
-— the form older roBrowser plugins use, and the form this mod itself used until
-0.2.0 — throws on import, gets caught, and is reported to a console that the
-client has muted. It loads, it does nothing, and nothing says so.
-
-**Shadow roots need the stylesheet handed to them.** Every roBrowser window is
-a custom element with its own shadow root, and a `<style>` in the document head
-does not cross that boundary. The plugin builds one `CSSStyleSheet` and adopts
-it into each shadow root as it appears, with a `MutationObserver` to catch the
-windows created later. This is the part to copy if you want to restyle the
-interface rather than the page.
-
-## Related
-
-Issue [#6](https://github.com/Flux159/ragnarokoffline.app/issues/6) also asks
-for WASD movement and controller support. Keyboard movement is already built
-into the client (`patches/KeyboardMove.js`); a controller mod would be another
-`client/` plugin, and would start from the same two facts above.
+Keyboard movement is provided by the separate `wasd-movement` mod and shares
+movement ownership with the native joystick. Controller support remains future
+work; it is not implemented by this mod.

@@ -130,3 +130,22 @@ edit('UI/Components/WinStats/WinStatsCommon.js', "import DB from 'DB/DBManager.j
      "import { phoneLayout } from 'Plugins/Ragnarok/LayoutProfile.mjs';\nimport DB from 'DB/DBManager.js';")
 edit('UI/Components/WinStats/WinStatsCommon.js', '\tComponent.embed = function embed(anchorHost) {\n',
      '\tComponent.embed = function embed(anchorHost) {\n\t\tif (phoneLayout) return;\n')
+
+# Phone CSS offsets native focus ordering above the HUD, without flattening all
+# panels to the same layer or observing style mutations from a plugin.
+edit('UI/GUIComponent.js', '\t\t\tcomp._host.style.zIndex = value;\n',
+     "\t\t\tcomp._host.style.zIndex = value;\n\t\t\tcomp._host.style.setProperty('--ro-native-z', String(value));\n")
+
+# Native data lookup for validated storage actions. The plugin API returns no
+# mutable inventory/storage objects; the adapter alone uses this method.
+edit('UI/Components/Storage/StorageCommon.js', '\tconst _list = [];\n',
+     '\tconst _list = [];\n\tComponent.getItemByIndex = index => _list.find(item => item.index === index);\n')
+
+# The app phone toolbar intentionally selects a shop item without requiring a
+# preceding map touch to enable the upstream touch-device detector.
+edit('UI/Components/NpcStore/NpcStore.js', "import DB from 'DB/DBManager.js';",
+     "import { phoneLayout } from 'Plugins/Ragnarok/LayoutProfile.mjs';\nimport DB from 'DB/DBManager.js';")
+edit('UI/Components/NpcStore/NpcStore.js', '&& !Session.isTouchDevice) {',
+     '&& !Session.isTouchDevice && !phoneLayout) {')
+edit('UI/Components/InputBox/InputBox.js', '\tthis.isPersistent = !!isPersistent;\n',
+     "\tthis.isPersistent = !!isPersistent;\n\tconst entry = this.getRoot().querySelector('input');\n\tif (entry) entry.inputMode = ['number', 'price'].includes(type) ? 'numeric' : '';\n")

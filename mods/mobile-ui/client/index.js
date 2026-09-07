@@ -1,4 +1,5 @@
 import { componentStyle } from "./styles.js";
+import { attachCommerce } from "./commerce.js";
 
 function readLayout(api) {
   const value = api.preferences.get("layout", {});
@@ -85,7 +86,7 @@ export default function mobileUI(parameters, api) {
   if (phone) {
     const pageStyle = document.createElement("style");
     pageStyle.textContent =
-      'html,body{overflow:clip!important;width:100%;height:100%;margin:0}.cursor{display:none!important}.ro-background{background-size:cover!important;background-position:center!important}.ro-background[data-ro-tiled="true"]{width:max(100vw,calc(100vh * 4 / 3))!important;height:max(100vh,calc(100vw * 3 / 4))!important;left:50%!important;top:50%!important;transform:translate(-50%,-50%)}';
+      'html,body{overflow:clip!important;width:100%;height:100%;margin:0}.win_popup_overlay{z-index:4999!important;background:#0005}.cursor{display:none!important}.ro-background{background-size:cover!important;background-position:center!important}.ro-background[data-ro-tiled="true"]{width:max(100vw,calc(100vh * 4 / 3))!important;height:max(100vh,calc(100vw * 3 / 4))!important;left:50%!important;top:50%!important;transform:translate(-50%,-50%)}';
     document.head.append(pageStyle);
     api.cleanup(() => pageStyle.remove());
   }
@@ -149,7 +150,7 @@ export default function mobileUI(parameters, api) {
   <div class="skills" aria-label="Quick shortcuts">${[1, 2, 3, 4].map((n) => `<button data-shortcut="${n - 1}" aria-label="Use shortcut ${n}">F${n}</button>`).join("")}</div>
   <div class="actions"><button id="attack">Attack</button><button id="interact">Talk</button><button id="pickup">Pick up</button></div>
   <nav class="menu" aria-label="Game menu" hidden>
-   ${["Inventory", "Equipment", "Skills", "Quests", "Stats", "Map", "Friends", "Chat", "Target", "Display", "Game options", "Close"].map((name) => `<button data-menu="${name}">${name}</button>`).join("")}
+   ${["Inventory", "Equipment", "Skills", "Quests", "Stats", "Map", "Friends", "Storage", "Chat", "Target", "Display", "Game options", "Close"].map((name) => `<button data-menu="${name}">${name}</button>`).join("")}
   </nav>
  </div>
  <button id="displayButton" aria-haspopup="dialog">Display</button>
@@ -218,7 +219,15 @@ export default function mobileUI(parameters, api) {
     if (save()) location.reload();
   });
   const menu = root.querySelector(".menu");
+  let releaseMenu = null;
+  api.cleanup(() => releaseMenu?.());
   const toggleMenu = (value) => {
+    releaseMenu?.();
+    releaseMenu = null;
+    if (value) {
+      releaseMenu = api.input.suspend();
+      host.style.zIndex = "4600";
+    } else host.style.removeProperty("z-index");
     menu.hidden = !value;
     root
       .querySelector("#menuButton")
@@ -267,8 +276,10 @@ export default function mobileUI(parameters, api) {
         Stats: "WinStats",
         Map: "WorldMap",
         Friends: "PartyFriends",
+        Storage: "Storage",
       };
-      if (windows[name]) api.actions.perform("window", { name: windows[name] });
+      if (windows[name])
+        api.actions.perform("window", { name: windows[name], open: true });
     });
   const setPlaying = (playing) => {
     root.querySelector(".hud").hidden = !phone || !playing;
@@ -283,6 +294,20 @@ export default function mobileUI(parameters, api) {
     const state = api.snapshot(),
       player = state.player;
     if (!state.map || !player) return;
+    const storage = components.get("Storage");
+    const storageOpen = Boolean(
+      storage?.host.isConnected &&
+      storage.host.getClientRects().length &&
+      getComputedStyle(storage.host).display !== "none",
+    );
+    root.querySelector('[data-menu="Storage"]').hidden = !storageOpen;
+    for (const [name, component] of components)
+      if (/^Inventory/.test(name)) {
+        const controls = component.root.querySelector(".ro-storage-controls");
+        if (controls) controls.hidden = !storageOpen;
+        const itemActions = component.root.querySelector(".ro-item-actions");
+        if (itemActions) itemActions.hidden = storageOpen;
+      }
     for (const [key, maxKey, label] of [
       ["hp", "maxHp", "HP"],
       ["sp", "maxSp", "SP"],
@@ -354,7 +379,9 @@ export default function mobileUI(parameters, api) {
         attribute(node, "tabindex", "0");
       }
     };
-    let css = componentStyle(name);
+    let css = componentStyle(
+      ui.querySelector("#win_popup") ? "WinPopup" : name,
+    );
     if (name === "ChatBox")
       css +=
         ":host{display:none!important;}:host([data-ro-chat-open]){display:block!important;}";
@@ -381,6 +408,10 @@ export default function mobileUI(parameters, api) {
     // browser scrolling instead of global touch-action:none.
     for (const event of ["touchstart", "touchmove", "touchend", "touchcancel"])
       on(ui, event, (e) => e.stopPropagation());
+    // Native hover-based Mouse.intersect can be stale during fast touch taps.
+    // Keep compatibility mousedown inside the GUI after its own focus/drag
+    // handlers run. Mouseup still reaches the global drag/walk cleanup.
+    on(element, "mousedown", (event) => event.stopPropagation());
     if (name === "MobileUI") {
       const base = ui.querySelector("#joystickBase");
       attribute(base, "aria-label", "Movement joystick");
@@ -518,7 +549,7 @@ export default function mobileUI(parameters, api) {
     if (/^(Inventory|Equipment|SkillList)/.test(name)) {
       let selected = null;
       const toolbar = document.createElement("div");
-      toolbar.className = "ro-mobile-toolbar";
+      toolbar.className = "ro-mobile-toolbar ro-item-actions";
       const skills = /^SkillList/.test(name);
       const use = button(
         /^Equipment/.test(name)
@@ -589,6 +620,9 @@ export default function mobileUI(parameters, api) {
       [".btns .ok", "OK"],
     ])
       label(ui.querySelector(selector), text);
+    cleanups.push(
+      attachCommerce({ component, api, on, add, button, label, attribute }),
+    );
     owned.set(element, () => {
       for (const cleanup of cleanups.reverse()) cleanup();
       if (components.get(name)?.host === element) components.delete(name);

@@ -7,15 +7,77 @@ export const buttonStyle = `
 }
 ui-button[aria-label] {width:auto!important;white-space:nowrap;}
 .ro-mobile-toolbar {display:flex;gap:6px;padding:8px;flex-wrap:wrap;background:#efe4ca;position:sticky;bottom:0;z-index:20;}
+.ro-mobile-toolbar[hidden]{display:none!important;}
+.ro-mobile-toolbar input[type=number]{width:80px!important;min-height:44px;font:16px system-ui;box-sizing:border-box;}
 .ro-mobile-selected {outline:2px solid #e0ad46!important;outline-offset:-2px;}
 `;
 const safePanel = `
 :host {position:fixed!important;left:max(8px,env(safe-area-inset-left))!important;top:calc(var(--ro-view-top,0px) + 60px)!important;
  max-width:calc(var(--ro-view-width,100vw) - 16px)!important;max-height:calc(var(--ro-view-height,100dvh) - 80px)!important;
- box-sizing:border-box;overflow:auto!important;overscroll-behavior:contain;touch-action:pan-x pan-y;font-size:14px!important;z-index:4000!important;}
+ box-sizing:border-box;overflow:auto!important;overscroll-behavior:contain;touch-action:pan-x pan-y;font-size:14px!important;z-index:calc(4000 + var(--ro-native-z,50))!important;}
 input[type=text],input[type=password],input[type=number],textarea,select {font-size:16px!important;min-height:44px;box-sizing:border-box;}
 `;
 export function componentStyle(name) {
+  if (name === "WinPopup")
+    return `${safePanel}${buttonStyle}
+:host{width:min(360px,calc(var(--ro-view-width,100vw) - 16px))!important;height:auto!important;z-index:5100!important;}
+#win_popup{position:relative!important;width:100%!important;height:auto!important;background:#fff7e8!important;border:1px solid #b4a27e;border-radius:8px;padding:12px;box-sizing:border-box;}
+#win_popup .container,#win_popup .buttonscontainer,#win_popup .btns{position:static!important;width:100%!important;height:auto!important;}
+#win_popup .text{font:16px/1.4 system-ui;padding:4px 0 16px;}
+#win_popup .btns{display:flex;flex-wrap:wrap;gap:6px;}
+#win_popup .btn{position:static!important;flex:1;width:auto!important;margin:0!important;}
+`;
+  if (name === "InputBox")
+    return `${safePanel}${buttonStyle}
+:host{width:min(320px,calc(var(--ro-view-width,100vw) - 16px))!important;height:auto!important;z-index:5100!important;top:calc(var(--ro-view-top,0px) + 72px)!important;}
+#inputbox,#inputbox .border{width:100%!important;height:auto!important;box-sizing:border-box;padding:12px;}
+#inputbox .text{width:100%!important;height:auto!important;font:16px/1.4 system-ui;margin-bottom:8px;}
+#inputbox input{width:100%!important;height:44px!important;padding:8px;margin:0;box-sizing:border-box;}
+#inputbox ui-button{position:static!important;display:block!important;margin-top:8px;}
+`;
+  if (name === "Storage")
+    return `${safePanel}${buttonStyle}
+:host{width:min(420px,calc(var(--ro-view-width,100vw) - 16px))!important;height:auto!important;}
+.ui-component-root{display:flex;flex-direction:column;height:auto!important;}
+#Storage{position:relative!important;width:100%!important;background:#fff7e8;}
+#Storage .titlebar{height:44px!important;display:flex;align-items:center;}
+#Storage .titlebar .text{font:16px system-ui!important;width:auto!important;}
+#Storage .panel table,#Storage .panel tbody,#Storage .panel tr,#Storage .panel td,#Storage .footer{display:block;width:100%!important;box-sizing:border-box;height:auto!important;}
+#Storage .tabs{display:flex!important;flex-wrap:wrap;gap:4px;background:none!important;border:0!important;padding:4px;}
+#Storage .tabs button{flex:1 0 auto;width:auto!important;min-width:44px!important;min-height:44px!important;height:auto!important;}
+#Storage .container{padding:0!important;border:0!important;}
+#Storage .content{width:100%!important;height:220px!important;min-height:100px!important;max-height:32vh;overflow:auto!important;background-image:none!important;background-color:#fff7e8;}
+#Storage .content .item{position:relative!important;display:flex!important;align-items:center;width:100%!important;min-height:48px;box-sizing:border-box;border-bottom:1px solid #d6c7a7;}
+#Storage .content .icon{position:static!important;min-width:32px!important;width:32px!important;height:32px!important;background-position:center;background-repeat:no-repeat;}
+#Storage .content .name,#Storage .content .amount{position:static!important;font:14px system-ui!important;width:auto!important;height:auto!important;margin:0 6px;}
+#Storage .filter-buttons,#Storage .extend,#Storage .item_num{display:none!important;}
+#Storage .footer{padding:8px;background:#efe4ca!important;}
+#Storage .footer .search-container{position:static!important;width:100%!important;display:flex;gap:4px;height:auto!important;padding:0!important;box-sizing:border-box;}
+#Storage .search-input{flex:1;width:0!important;min-width:0;}
+#Storage .search-button{margin:0!important;flex:none;}
+#Storage .footer .close{position:static!important;display:block;margin-top:8px;}
+`;
+  if (name === "NpcStore")
+    return `${safePanel}${buttonStyle}
+:host{width:min(640px,calc(var(--ro-view-width,100vw) - 16px))!important;height:auto!important;}
+.ui-component-root{height:auto!important;}
+#NpcStore{position:relative!important;width:100%!important;height:auto!important;display:flex;flex-direction:column;gap:8px;}
+#NpcStore > div{position:relative!important;inset:auto!important;width:100%!important;height:auto!important;box-sizing:border-box;background:#fff7e8;border:1px solid #bdac86;}
+#NpcStore .titlebar > ui-image,#NpcStore .footer > ui-image{display:none!important;}
+#NpcStore .titlebar,#NpcStore .footer{background-image:none!important;background-color:#e9dec5!important;}
+#NpcStore .titlebar{background:#e9dec5;height:auto!important;min-height:36px;display:flex;align-items:center;font:16px system-ui;}
+#NpcStore .titlebar .text{position:static!important;white-space:normal;padding:6px;}
+#NpcStore .container{padding:0!important;border:0!important;}
+#NpcStore .container > ui-image,#NpcStore .resize{display:none!important;}
+#NpcStore .content{height:160px!important;min-height:60px;max-height:25vh;overflow:auto!important;background-image:none!important;}
+#NpcStore .OutputWindow .content{height:100px!important;max-height:20vh;}
+#NpcStore .content .item{min-height:48px;box-sizing:border-box;border-bottom:1px solid #d5c7a7;}
+#NpcStore .content .item .name{width:calc(100% - 145px)!important;white-space:normal;font:14px/1.3 system-ui;top:8px!important;}
+#NpcStore .footer{height:auto!important;min-height:32px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:6px;box-sizing:border-box;}
+#NpcStore .footer .btn{position:static!important;min-height:44px!important;}
+#NpcStore .footer .total{position:static!important;width:100%;font:14px system-ui;}
+#NpcStore .selectall{min-width:44px;min-height:44px;}
+`;
   if (name === "Escape")
     return `${safePanel}${buttonStyle}
 :host{width:min(340px,calc(var(--ro-view-width,100vw) - 16px))!important;height:auto!important;}
@@ -165,7 +227,7 @@ export function componentStyle(name) {
 `;
   if (name === "NpcBox")
     return `${safePanel}${buttonStyle}
-:host {width:calc(var(--ro-view-width,100vw) - 16px)!important;height:auto!important;top:calc(var(--ro-view-top,0px) + 72px)!important;z-index:5000!important;}
+:host {width:calc(var(--ro-view-width,100vw) - 16px)!important;height:auto!important;top:calc(var(--ro-view-top,0px) + 72px)!important;z-index:calc(4000 + var(--ro-native-z,50))!important;}
 #NpcBox,#NpcBox .border {position:relative!important;width:auto!important;height:auto!important;box-sizing:border-box;}
 #NpcBox .content {width:auto!important;height:auto!important;min-height:100px;max-height:30vh!important;font:16px/1.5 system-ui!important;overflow:auto;}
 #NpcBox .btns {position:relative!important;inset:auto!important;display:flex;justify-content:flex-end;gap:8px;padding-top:8px;}
@@ -173,7 +235,7 @@ export function componentStyle(name) {
 `;
   if (name === "NpcMenu")
     return `${safePanel}${buttonStyle}
-:host {width:calc(var(--ro-view-width,100vw) - 16px)!important;height:auto!important;top:calc(var(--ro-view-top,0px) + var(--ro-view-height,100dvh) * .48)!important;z-index:5100!important;}
+:host {width:calc(var(--ro-view-width,100vw) - 16px)!important;height:auto!important;top:calc(var(--ro-view-top,0px) + var(--ro-view-height,100dvh) * .48)!important;z-index:calc(4000 + var(--ro-native-z,50))!important;}
 #NpcMenu,#NpcMenu .container {position:relative!important;width:auto!important;height:auto!important;box-sizing:border-box;}
 #NpcMenu .middle {max-height:24vh;overflow:auto;}
 #NpcMenu .title,#NpcMenu .content {width:auto!important;height:auto!important;font:16px/1.4 system-ui;}
@@ -182,7 +244,7 @@ export function componentStyle(name) {
 `;
   if (/^Inventory/.test(name))
     return `${safePanel}${buttonStyle}
-:host {width:min(420px,calc(var(--ro-view-width,100vw) - 16px))!important;height:auto!important;z-index:4000!important;}
+:host {width:min(420px,calc(var(--ro-view-width,100vw) - 16px))!important;height:auto!important;z-index:calc(4000 + var(--ro-native-z,50))!important;}
 #InventoryV3 {height:auto!important;min-height:260px;}
 #InventoryV3 .titlebar{min-height:44px!important;height:auto!important;display:flex;align-items:center;justify-content:space-between;}
 #InventoryV3 .titlebar .close{width:64px!important;min-height:44px!important;}
@@ -203,7 +265,7 @@ export function componentStyle(name) {
       name,
     )
   )
-    return `${safePanel}${buttonStyle}
+    return `${safePanel}${buttonStyle}${/^Win(Prompt|MSG|Error|Popup)/.test(name) ? ":host{z-index:5100!important;}" : ""}
 .ui-component-root {min-width:0;}
 .titlebar {min-height:44px!important;height:auto!important;position:sticky!important;top:0;z-index:30;}
 .titlebar .close,.titlebar .base,.titlebar .toggle {min-height:44px!important;min-width:44px!important;background-size:auto!important;}

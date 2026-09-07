@@ -203,7 +203,21 @@ suspension in Display, saved size, Off/On reloads, separate geometry banks and
 the legacy first-touch detector respecting Off. It seeds only a browser window
 preference; gameplay still uses the real server.
 
-Full combat, shop/storage transactions, NPC/quest flows and
+`mobile-commerce.spec.cjs` uses portrait and landscape phone profiles with an
+ordinary NPC tool dealer and real GM fixture commands in the disposable world.
+It rejects an excessive deposit quantity, verifies item conservation across
+quantity and whole-stack deposit/withdraw operations, checks server-confirmed
+inventory and Zeny changes for buying/selling, and checks the shop's separate
+phone preference bank. It also exercises rapid native-panel taps near NPCs,
+which must not click through into the map. The fixture adds Red Potions/Zeny
+to the test character, restores those amounts after a successful run, and uses
+the pinned renewal dealer at `prt_in (126,76)`;
+run it with a GM account and the renewal test world. Screenshots and traces are
+recorded after login. Run with the same `RO_E2E_WORLD` and `RO_E2E_BUILD` settings
+as the other suites, using `node node_modules/@playwright/test/cli.js test
+mobile-commerce.spec.cjs`.
+
+Full combat, player vending and remaining NPC/quest flows, plus
 orientation/keyboard transitions, death/IME/background gameplay cases, Firefox,
 packaged Electron and physical Android/iPhone testing remain release gates for
 issue #6. Chromium device emulation is not a physical Safari/Android pass.

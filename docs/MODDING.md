@@ -561,11 +561,15 @@ It is a supported interface, not a sandbox for untrusted JavaScript.
 | `api.movement.register(name, onCancel)` | Returns `begin(x,y)`, `update(x,y)`, `end()`, `dispose()`. Screen-up is positive Y. Only a deliberate `begin` can take ownership; a stale `update` cannot. |
 | `api.input.state()` / `.shortcutConflict(keyCode)` | Read input eligibility and the active native battle-shortcut mapping. |
 | `api.input.suspend()` | Suspend movement while showing a plugin dialog. Returns an idempotent release function, also released at disposal. |
-| `api.actions.perform(name, payload)` | Native actions: `attack`, `target` (toggle auto-target), `interact`, `pickup`, `menu` (game options), `shortcut` with `{ index: 0…35 }`, `shortcut:assign` (below), or `window` with an allowed `{ name }`. Returns whether the action was dispatched, not whether the server accepted it. |
+| `api.actions.perform(name, payload)` | Native actions: `attack`, `target` (toggle auto-target), `interact`, `pickup`, `menu` (game options), `shortcut` with `{ index: 0…35 }`, `shortcut:assign` and `storage:transfer` (below), or `window` with an allowed `{ name }`. Returns whether the action was dispatched, not whether the server accepted it. |
 | `api.cleanup(fn)` | Register idempotent cleanup immediately after allocating a resource. The returned function can release it early. Runs on failure, scope replacement and page teardown. |
 
 Allowed window actions currently cover Inventory, Equipment, SkillList, Quest,
-WorldMap, PartyFriends and WinStats. Map and connection events clear movement;
+WorldMap, PartyFriends, WinStats and already-open Storage. Set `{ name, open: true }`
+to focus an existing window instead of toggling it closed. Storage must first be
+opened by the server; this action cannot create a storage session.
+
+Map and connection events clear movement;
 blur, hidden page, text entry, IME and modal UI also cancel it. Directional
 requests use native pathfinding and packets, with a 180 ms cadence and at most
 three path steps per destination. The server remains authoritative.
@@ -574,6 +578,13 @@ three path steps per destination. The server remains authoritative.
 For items, `id` is a current inventory **index**, not the item type ID; for skills
 it is the learned skill ID. The adapter validates the live item/learned level and
 uses the native shortcut assignment callbacks, including server persistence.
+
+`storage:transfer` accepts `{ direction: 'deposit' | 'withdraw', index, count }`.
+The index belongs to the live source inventory/storage list. Count must be a
+positive integer within the available stack or `'all'`. The adapter requires
+an open storage session, rejects equipped deposits, and invokes native storage
+callbacks. A `true` result means a request was sent; only the server's item
+updates establish success. The mobile controls show “Transfer requested.”
 
 Host mod enable/disable still requires the normal reload. Arbitrary older
 plugins cannot be safely hot-unloaded if they never registered cleanup. The
@@ -588,7 +599,10 @@ Geometry preferences use a separate phone key selected before UI initialization,
 so a mode change cannot save phone coordinates into the desktop preferences.
 The phone HUD retains the native joystick, action handlers and shortcuts. Tap
 an inventory/equipment/skill entry, then its explicit action button; F1–F4 can
-be assigned from the inventory and skills toolbars.
+be assigned from the inventory and skills toolbars. Storage adds quantity and
+whole-stack deposit/withdraw controls, with explicit focus buttons between it
+and inventory. Shops reuse the native buy/sell selection, quantity dialog and
+transaction callbacks. Their nested geometry also has a separate phone bank.
 
 ---
 
