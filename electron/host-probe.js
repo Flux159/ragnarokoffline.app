@@ -40,7 +40,7 @@ function probeHost(address, { timeoutMs = 8000 } = {}) {
     const timer = setTimeout(() => finish(failure(origin, 'the host did not answer in time. Check the link and try again.')), timeoutMs);
     function get(url, redirects) {
       const transport = url.protocol === 'https:' ? https : http;
-      const current = transport.get(url, { maxHeaderSize: 16 * 1024, agent: false }, response => {
+      const current = transport.get(url, { maxHeaderSize: 16 * 1024, agent: false, rejectUnauthorized: true }, response => {
         const status = response.statusCode;
         response.destroy();
         if ([301, 302, 303, 307, 308].includes(status)) {

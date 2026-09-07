@@ -53,6 +53,9 @@ test('HTTPS rejects untrusted certificates, accepts an explicitly trusted fixtur
   // Trust only this public test CA in an isolated child. The production probe
   // exposes no rejectUnauthorized override and retains hostname validation.
   const source = `require(${JSON.stringify(path.resolve(__dirname, '../electron/host-probe'))}).probeHost(process.argv[1]).then(r=>process.stdout.write(JSON.stringify(r)),e=>{process.stdout.write(e.message);process.exitCode=2;});`;
+  await assert.rejects(promisify(execFile)(process.execPath, ['-e', source, origin], {
+    env: { ...process.env, NODE_EXTRA_CA_CERTS: '', NODE_TLS_REJECT_UNAUTHORIZED: '0' }, timeout: 12000,
+  }), error => /certificate could not be verified/.test(error.stdout));
   const run = (address = origin) => promisify(execFile)(process.execPath, ['-e', source, address], {
     env: { ...process.env, NODE_EXTRA_CA_CERTS: cert }, timeout: 12000,
   });
