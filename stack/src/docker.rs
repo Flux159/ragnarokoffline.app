@@ -122,6 +122,15 @@ impl Docker {
         }
     }
 
+    pub fn load_bundle(&self, bundle: &Path) -> Result<(), String> {
+        let file = fs::File::open(bundle).map_err(|_| "Cannot open the bundled server images")?;
+        let status = self.base().arg("load").stdin(Stdio::from(file))
+            .stdout(Stdio::null()).stderr(Stdio::null()).status()
+            .map_err(|_| "Cannot run the bundled image loader")?;
+        if !status.success() { return Err("Could not load the bundled server images".into()); }
+        Ok(())
+    }
+
     pub fn image_exists(&self, image: &str) -> bool {
         self.quiet(["image", "inspect", image])
     }

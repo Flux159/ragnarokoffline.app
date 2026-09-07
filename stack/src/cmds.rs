@@ -3,7 +3,7 @@
 use crate::config::{data_root, home, lan_ip, Config, DB_CONTAINER, NET, SERVERS};
 use crate::docker::{older_than, Docker, Mount};
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread::sleep;
@@ -1169,37 +1169,38 @@ fn engine_failure_help(reason: &str) -> String {
 /// guards is unforgiving: with no images, `run` falls through to pulling
 /// `ragnarokmac/mariadb` from a registry that has never heard of it, and the
 /// error is about a network we should never have touched.
-fn ensure_images(cfg: &Config, dk: &Docker) -> Result<(), String> {
-    if dk.image_exists(&cfg.image) && dk.image_exists(&cfg.db_image) {
-        return Ok(());
+// Cache identity, not a security signature. Release provenance/checksums
+// authenticate the packaged archive; this detects changed bytes under fixed tags.
+fn image_bundle_fingerprint(mut reader: impl Read) -> Result<String, String> {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    let mut block = [0u8; 64 * 1024];
+    loop {
+        let count = reader.read(&mut block).map_err(|_| "Cannot read the server image bundle")?;
+        if count == 0 { break; }
+        for byte in &block[..count] { hash ^= *byte as u64; hash = hash.wrapping_mul(0x0000_0100_0000_01b3); }
     }
+    Ok(format!("{hash:016x}"))
+}
+
+fn ensure_images(cfg: &Config, dk: &Docker) -> Result<(), String> {
+    let present = dk.image_exists(&cfg.image) && dk.image_exists(&cfg.db_image);
     let bundle = cfg.root.join("dist/images.tar.gz");
     if !bundle.exists() {
+        if present { return Ok(()); }
         return Err(format!("no server images, and no bundle at {}", bundle.display()));
     }
-    // Only announce it when there is one to do: a phase that says "first run
-    // only" on every run trains people to ignore it.
-    phase(cfg, "Loading the server images… (first run only)");
-    // `docker load` reads gzip directly, so this needs no external gunzip —
-    // which is the whole point of not shelling out here.
-    let f = fs::File::open(&bundle).map_err(|e| format!("opening the image bundle: {e}"))?;
-    let st = Command::new(&cfg.docker)
-        .arg("load")
-        .env("NEBULA_HOME", &cfg.nebula_home)
-        .stdin(Stdio::from(f))
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .status()
-        .map_err(|e| format!("running docker load: {e}"))?;
-    if !st.success() {
-        return Err("could not load the bundled server images".into());
-    }
-    // Verify rather than trust the exit status: a partial load leaves the
-    // caller to run an image that is not there.
+    let fingerprint = image_bundle_fingerprint(fs::File::open(&bundle).map_err(|_| "Cannot open the server image bundle")?)?;
+    let identity = format!("v1:{fingerprint}:{}:{}\n", cfg.image, cfg.db_image);
+    let marker = cfg.state.join("image-bundle.id");
+    if present && fs::read_to_string(&marker).ok().as_deref() == Some(identity.as_str()) { return Ok(()); }
+    phase(cfg, "Loading the bundled server images…");
+    // Always use Docker's owned-engine transport, including Windows' loopback
+    // proxy. Existing fixed image tags are replaced when bundled bytes change.
+    dk.load_bundle(&bundle)?;
     if !dk.image_exists(&cfg.image) || !dk.image_exists(&cfg.db_image) {
         return Err(format!("image load did not produce {} and {}", cfg.image, cfg.db_image));
     }
-    Ok(())
+    fs::write(marker, identity).map_err(|_| "Cannot record the loaded server image bundle".to_string())
 }
 
 /// The Kafra teleport prices are hardcoded in the NPC script with no config
@@ -2029,6 +2030,14 @@ fn human(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn changed_image_bytes_invalidate_the_same_tag_cache() {
+        let first = super::image_bundle_fingerprint(&b"same-size-old"[..]).unwrap();
+        let second = super::image_bundle_fingerprint(&b"same-size-new"[..]).unwrap();
+        assert_ne!(first, second);
+        assert_eq!(first, super::image_bundle_fingerprint(&b"same-size-old"[..]).unwrap());
+    }
+
     use super::*;
 
     /// The one contract this file has with another program's prose.
