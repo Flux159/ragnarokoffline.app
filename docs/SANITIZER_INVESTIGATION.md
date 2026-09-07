@@ -123,3 +123,19 @@ skill; the source-macro UBSan reduction fails before and passes after, including
 stored and extrapolated learned levels. The original private game report is
 retained. This is a reproduced login defect, not proof of the intermittent
 logout crash's cause.
+
+Both architectures passed diagnostic build `34158378360` and normal build
+`34158843298` at source `fdaf7b8ef7df95f431a1af3b39466931c0739873`. The patched
+normal ARM64 image completed all 20 extended cycles with mods disabled. The
+diagnostic image passed the guest fixture and five Pre-Renewal/population-off
+cycles, then failed during real population activation: `status.cpp:4353` read
+index 16 from `indexed_bonus.weapon_atk[16]` while a shell equipped a Katar.
+The stack includes `pc_equipitem`, `population_engine_spawn_shell` and the
+autosummon timer. The failed population assertion did not mean population was
+merely slow; the retained server log contains the fatal sanitizer report.
+
+The fourth server patch sizes `weapon_atk` and `weapon_damage_rate` from the
+complete weapon enum and guards item-script writes. Its source-derived
+reduction reproduces index 16 on the original and checks all weapon types and
+invalid indices after patching. This is a real population-path bounds defect;
+the intermittent logout scenario still needs its own reproduction evidence.

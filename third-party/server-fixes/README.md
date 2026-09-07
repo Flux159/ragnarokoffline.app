@@ -20,3 +20,11 @@ maximum. The actual function has a separate UBSan reduction covering both bounds
 shared accessor indexes a level table. Native character login asks for SP at
 level zero while constructing the skill list; the previous macro read index -1.
 Stored and extrapolated learned levels retain their existing behavior.
+
+`0004-weapon-bonus-bounds.patch` sizes both weapon bonus arrays from the existing
+weapon enum (moved before the player structure) and checks item-script indices.
+The fixed diagnostic image reached a real Pre-Renewal population spawn, where
+equipping a Katar read index 16 from the old 16-element array. Later weapon types
+also exceeded that array, including the damage bonus used by combat.
+`verify-weapon-bounds.py` reproduces the actual declaration/setter/status-read
+fault and checks every weapon type plus invalid script indices after patching.

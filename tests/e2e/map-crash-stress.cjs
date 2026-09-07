@@ -221,7 +221,7 @@ async function main() {
           if (population) {
             await command('@populate stats', 'Active / created / errors');
             row.populationStats = await chatText();
-            if (!/Active \/ created \/ errors\s*:\s*[1-9]/.test(row.populationStats)) throw Error('Population did not actually spawn');
+            if (!/Active \/ created \/ errors\s*:\s*[1-9]/.test(row.populationStats)) { await healthy(); throw Error('Population did not actually spawn'); }
           }
           await command('@warp prt_fild08 170 200');
           await expect.poll(async () => (await snapshot(game)).map, { timeout: 60000 }).toMatch(/^prt_fild08/);
