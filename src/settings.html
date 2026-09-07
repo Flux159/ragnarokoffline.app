@@ -131,6 +131,10 @@
     </div>
 
     <div id="mp-host">
+      <label class="row" for="mp-internet-setup">
+        <span class="name" style="width:auto">Set up sharing over the internet (non-LAN)</span>
+        <input type="checkbox" id="mp-internet-setup" aria-controls="internet-hosting" aria-expanded="false" />
+      </label>
       <div class="row">
         <span class="name">Let other machines connect</span>
         <input type="checkbox" id="mp-lan" />
@@ -202,7 +206,13 @@
     <p class="note">Create an ordinary player account with the password entered above.
       Use 4–23 letters, numbers, underscores or hyphens, without an _M or _F suffix.</p>
     <button id="account-create" class="ghost" disabled>Create friend account</button>
-    <hr />
+  </div>
+
+  <section id="internet-hosting" hidden aria-labelledby="internet-hosting-heading">
+    <h2 id="internet-hosting-heading">Internet sharing</h2>
+    <div class="panel">
+    <p class="note">Set up accounts before inviting friends outside your local network.
+      This setup does not open a public link.</p>
     <p class="note">Replace this era’s shared internal server passwords with unique credentials.
       This saves a backup and disconnects players while the server restarts. Game account
       passwords and characters are preserved. Keep the app’s private state with your save.</p>
@@ -211,7 +221,8 @@
     <div class="actions"><button id="hosting-check" class="ghost">Check internet account safeguards</button></div>
     <ul class="note" id="hosting-checks" aria-live="polite"></ul>
     <p class="note" id="hosting-readiness">Internet sharing also requires protected access and a configured connector; these account checks do not enable a public link.</p>
-  </div>
+    </div>
+  </section>
 
   <h2>Save data</h2>
   <div class="card">
@@ -327,12 +338,29 @@ async function refreshMode() {
   $('mp-host-addr').value = m.join_host || '';
   $('mp-host').style.display = m.mode === 'host' ? '' : 'none';
   $('mp-join').style.display = m.mode === 'join' ? '' : 'none';
+  paintInternetSetup(m.mode);
   // Only known once the server has started with LAN on: the address comes from
   // what the supervisor actually advertised, not a second guess made here.
   $('mp-addr').textContent = m.join_address
     || (m.lan ? 'starts with the server' : 'not shared');
   paintRegistration(await invoke('get_settings'));
 }
+
+// This is a Settings disclosure, not a listener or hosting-policy switch.
+// Keep local/LAN play uncluttered and never open access by revealing controls.
+let internetSetup = false;
+try { internetSetup = localStorage.getItem('internet-sharing-setup') === 'true'; } catch {}
+function paintInternetSetup(mode = $('mp-mode').value) {
+  const visible = mode === 'host' && internetSetup;
+  $('mp-internet-setup').checked = internetSetup;
+  $('mp-internet-setup').setAttribute('aria-expanded', String(visible));
+  $('internet-hosting').hidden = !visible;
+}
+$('mp-internet-setup').onchange = () => {
+  internetSetup = $('mp-internet-setup').checked;
+  try { localStorage.setItem('internet-sharing-setup', String(internetSetup)); } catch {}
+  paintInternetSetup();
+};
 
 function paintRegistration(settings) {
   const required = ['friends', 'public'].includes(settings.hosting_scope);
