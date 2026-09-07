@@ -79,7 +79,9 @@ function control(identity, secret, action, timeout = 2000) {
 function portBusy(port) {
 	return new Promise((resolve, reject) => {
 		const socket = net.connect({ host: '127.0.0.1', port });
-		const timer = setTimeout(() => { socket.destroy(); reject(new Error(`Port ${port} did not respond; cannot establish whether it is free.`)); }, 1000);
+		// A closed loopback port can take more than a second to report refusal
+		// on Windows. Keep a bounded wait, and never treat silence as free.
+		const timer = setTimeout(() => { socket.destroy(); reject(new Error(`Port ${port} did not respond; cannot establish whether it is free.`)); }, 5000);
 		const finish = value => { clearTimeout(timer); socket.destroy(); resolve(value); };
 		socket.on('connect', () => finish(true));
 		socket.on('error', error => {
