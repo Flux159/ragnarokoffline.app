@@ -6,7 +6,7 @@ const { spawn } = require("node:child_process");
 function runAccounts(binary, options, request) {
   if (
     !request ||
-    !["list", "create", "password", "disable", "enable"].includes(
+    !["list", "create", "invite-create", "password", "disable", "enable"].includes(
       request.action,
     ) ||
     !["renewal", "prerenewal"].includes(request.era)

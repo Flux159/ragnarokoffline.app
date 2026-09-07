@@ -10,7 +10,7 @@
 // sprites render doubled on WebKit (roBrowserLegacy #1350). One engine
 // everywhere is worth ~60 MB of download.
 //
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell, clipboard, screen, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, clipboard, screen, session, safeStorage, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -19,6 +19,40 @@ const { parseJoinAddress, GAME_PATH } = require('./join-address');
 const { probeHost } = require('./host-probe');
 const { JoinSession } = require('./join-session');
 const joinSession = new JoinSession();
+let sharing, sharingSecrets;
+let sharingStartRequest = 0;
+function getSharingSecrets() {
+    return sharingSecrets ||= new (require('./sharing/secrets').SharingSecrets)(path.join(dataRoot(), 'sharing'), safeStorage);
+}
+function getSharing() {
+    return sharing ||= new (require('./sharing/controller').SharingController)({
+        directory: path.join(dataRoot(), 'sharing'),
+        guard: async () => {
+            const client = getClientPaths();
+            if (client.mode !== 'host' || client.hosting_scope !== 'friends' || client.lan || !assetServer.running || !(await assetsReady())) throw Error('Start your own server in friends mode before sharing.');
+            const checked = JSON.parse(await runStack(['sharing-check']));
+            if (!checked.backendReady) throw Error('The server is not ready for friends.');
+            // Configuration checks above verify each published container port.
+            // Also reject a reachable listener on any current LAN interface.
+            const net = require('node:net');
+            const addresses = Object.values(os.networkInterfaces()).flat().filter(info => info && !info.internal && info.family === 'IPv4');
+            for (const info of addresses) for (const port of [3338, 6900, 6121, 5121]) {
+                await new Promise((resolve, reject) => {
+                    const socket = net.connect({ host: info.address, port });
+                    socket.once('connect', () => { socket.destroy(); reject(Error('A game or management port is reachable on the LAN. Turn off LAN hosting and restart before sharing.')); });
+                    socket.once('error', error => ['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'EACCES'].includes(error.code) ? resolve() : reject(Error('Could not verify private game listeners.')));
+                    socket.setTimeout(1000, () => { socket.destroy(); reject(Error('Could not verify private game listeners.')); });
+                });
+            }
+        },
+        register: (request, stillInvited) => queueServerOperation(async () => {
+            if (!stillInvited() || !sharing?.gateway || !['sharing', 'connecting', 'reconnecting'].includes(sharing.state)) throw Error('Sharing stopped');
+            const era = getSettings().prerenewal ? 'prerenewal' : 'renewal';
+            return require('./accounts').runAccounts(stackBin(), stackEnv(), { ...request, action: 'invite-create', era });
+        }),
+    });
+}
+
 
 // Windows ships every payload binary with a .exe suffix, which the embed kit
 // and our own build both produce correctly -- it was only ever this side that
@@ -427,7 +461,11 @@ function withEngineFlags(args) {
 	return out;
 }
 
-function runStack(rawArgs) {
+async function runStack(rawArgs) {
+    if (sharing && ['up', 'down', 'repair', 'restore', 'secure-services'].includes(rawArgs[0])) await sharing.stop();
+    return runStackProcess(rawArgs);
+}
+function runStackProcess(rawArgs) {
 	const args = withEngineFlags(rawArgs);
 	return new Promise((resolve, reject) => {
 		const root = projectRoot();
@@ -579,7 +617,7 @@ async function assetsStart() {
 	});
 }
 
-function assetsStop() { return assetServer.stop(); }
+async function assetsStop() { if (sharing) await sharing.stop(); return assetServer.stop(); }
 
 // ---------------------------------------------------------------------------
 // Client paths and settings
@@ -1665,6 +1703,47 @@ const handlers = {
 		return output.match(/^Internal service credentials secured for (?:renewal|prerenewal)\..*$/m)?.[0]
 			|| 'Internal service credentials secured. Player accounts and characters were preserved.';
 	},
+    sharing_token_help: () => shell.openExternal('https://dash.cloudflare.com/profile/api-tokens'),
+    sharing_status: () => {
+        const saved = getSharingSecrets().load();
+        return { configured: !!saved, ...getSharing().status(), hostname: saved?.hostname || '' };
+    },
+    sharing_connect: async request => {
+        if (getClientPaths().mode !== 'host') throw Error('Cloudflare setup belongs to your own server.');
+        const secrets = getSharingSecrets(); secrets.requireStorage();
+        if (secrets.load()) throw Error('Cloudflare is already connected. Forget the saved setup before choosing another hostname.');
+        await require('./sharing/helper').ensureHelper(path.join(dataRoot(), 'sharing/helpers'));
+        const saved = await require('./sharing/cloudflare').provision(request);
+        try { secrets.save(saved); }
+        catch {
+            const api = require('./sharing/cloudflare').api;
+            try {
+                await api(request.apiToken, 'DELETE', `/zones/${saved.zoneId}/dns_records/${saved.dnsRecordId}`);
+                await api(request.apiToken, 'DELETE', `/accounts/${saved.accountId}/cfd_tunnel/${saved.tunnelId}`);
+            } catch { throw Error('Could not save setup or remove its Cloudflare records. Remove this hostname and its Ragnarok Offline tunnel in Cloudflare before retrying.'); }
+            throw Error('Could not save Cloudflare setup. Check your secure password storage and disk permissions.');
+        }
+        return { hostname: saved.hostname };
+    },
+    sharing_start: async () => {
+        const request = ++sharingStartRequest;
+        if (getClientPaths().mode !== 'host') throw Error('Start your own server before sharing.');
+        const saved = getSharingSecrets().load(); if (!saved) throw Error('Connect Cloudflare first.');
+        // The existing mandatory account safeguards remain in force. Never
+        // turn packet-level _M/_F signup back on for invited web users.
+        const policy = JSON.parse(await runStack(['hosting-check']));
+        const missing = policy.checks.filter(check => check.id !== 'registration' && !check.passed);
+        if (missing.length) throw Error(missing.map(check => check.detail).join(' '));
+        await saveSettings({ hosting_scope: 'friends', open_registration: false });
+        await assetsStart();
+        if (request !== sharingStartRequest) return getSharing().status();
+        await getSharing().start(saved);
+        return getSharing().status();
+    },
+    sharing_stop: async () => { ++sharingStartRequest; await getSharing().stop(); return getSharing().status(); },
+    sharing_copy: () => { clipboard.writeText(getSharing().invitation()); return 'Invitation copied. It expires after eight hours or when sharing stops.'; },
+    sharing_replace: () => { getSharing().replaceInvitation(); return 'Previous invitations and connected friends were disconnected. Copy a new link to invite them again.'; },
+    sharing_forget: async () => { await getSharing().stop(); getSharingSecrets().forget(); return 'Saved credentials removed. The hostname and stopped tunnel remain in your Cloudflare account for you to remove there.'; },
 	hosting_check: async () => {
 		if (getClientPaths().mode !== 'host') throw new Error('Hosting checks belong to your own server.');
 		return JSON.parse(await runStack(['hosting-check']));
@@ -1974,7 +2053,7 @@ function appLog(line) {
 const GAME_PAGE_HANDLERS = new Set([]);
 // Includes settings writes before their supervisor call: an era marker must
 // not change halfway through an account operation. Read-only status stays live.
-const SERVER_OPERATIONS = new Set(['accounts', 'hosting_check', 'save_settings', 'set_mode', 'set_client_paths', 'start_stack',
+const SERVER_OPERATIONS = new Set(['sharing_connect', 'sharing_start', 'sharing_forget', 'accounts', 'hosting_check', 'save_settings', 'set_mode', 'set_client_paths', 'start_stack',
 	'stack_up', 'stack_down', 'stack_repair', 'secure_services', 'db_backup', 'db_restore']);
 let serverOperationQueue = Promise.resolve();
 function queueServerOperation(operation) {
@@ -2008,7 +2087,10 @@ ipcMain.handle('invoke', async (event, name, args) => {
 	if (!fn) throw new Error(`unknown command: ${name}`);
 	try {
 		if (SERVER_OPERATIONS.has(name)) {
-			return await queueServerOperation(() => fn(args || {}));
+			return await queueServerOperation(async () => {
+                if (sharing && ((name === 'accounts' && args?.action !== 'list') || ['set_mode', 'set_client_paths', 'save_settings', 'stack_repair', 'secure_services', 'db_restore'].includes(name))) await sharing.stop();
+                return fn(args || {});
+            });
 		}
 		return await fn(args || {});
 	} catch (e) {
@@ -2062,6 +2144,7 @@ const crashMonitor = new (require('./crash-monitor').CrashMonitor)({
 		? runStack(['capture-crashes']) : ''),
 	log: message => appLog(message),
 	onCrash: services => {
+        if (sharing) sharing.stop().catch(() => {});
 		const label = services.includes('map') ? 'Map server' : 'Game server';
 		showGameFailure(windows.game, `${label} stopped unexpectedly. A private crash report was saved. Retry to restart the server and log in again.`);
 	},
@@ -2090,6 +2173,8 @@ function stackEnv() {
 // responding until the containers finished stopping. Quitting must stay
 // responsive even though the work behind it is slow.
 async function teardownAsync() {
+    ++sharingStartRequest;
+    if (sharing) await sharing.stop();
 	await serverOperationQueue;
 	try { await assetsStop(); } catch (error) { appLog(`asset shutdown failed: ${error.message}`); }
 	// A joining player started no engine and no containers, so there is
@@ -2112,6 +2197,7 @@ async function teardownAsync() {
 // by the OS and there is no guarantee the event loop runs again, so there is
 // nothing to await with.
 function teardownSync() {
+    if (sharing?.child) sharing.child.kill();
 	assetServer.stopSync();
 	if (getClientPaths().mode === 'join') return;
 	try {
@@ -2180,6 +2266,7 @@ if (!app.requestSingleInstanceLock()) {
 
 app.whenReady().then(() => {
 	crashMonitor.start();
+    powerMonitor.on('suspend', () => { if (sharing) sharing.stop().catch(() => {}); });
 	// Before anything reads a path: an existing install still has its data
 	// under the old folder name.
 	migrateDataRoot();

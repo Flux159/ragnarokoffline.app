@@ -94,6 +94,7 @@ cp "$DOCKER_SLIM_BIN" "$PAYLOAD/bin/docker-slim$EXE"
 cp "$DOCKER_SLIM_BIN.source-commit" "$PAYLOAD/bin/docker-slim.source-commit"
 sha256_of "$PAYLOAD/bin/docker-slim$EXE" > "$PAYLOAD/bin/docker-slim.sha256"
 mkdir -p "$PAYLOAD/licenses"
+cp "$ROOT/third-party/cloudflared/LICENSE" "$PAYLOAD/licenses/cloudflared-LICENSE"
 cp "$DOCKER_SLIM_BIN.LICENSE" "$PAYLOAD/licenses/nebula-docker-slim-LICENSE"
 # libkrun, which nebula loads from ../lib next to bin/. Only on Linux and
 # Windows: macOS drives the microVM through Virtualization.framework instead,

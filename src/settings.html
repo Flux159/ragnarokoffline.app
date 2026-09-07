@@ -177,16 +177,41 @@
   <section id="internet-hosting" hidden aria-labelledby="internet-hosting-heading">
     <h2 id="internet-hosting-heading">Internet sharing</h2>
     <div class="panel">
-    <p class="note">Set up accounts before inviting friends outside your local network.
-      This setup does not open a public link.</p>
-    <p class="note">Replace this era’s shared internal server passwords with unique credentials.
-      This saves a backup and disconnects players while the server restarts. Game account
-      passwords and characters are preserved. Keep the app’s private state with your save.</p>
-    <button id="secure-services" class="ghost">Secure internal server credentials</button>
+    <p class="note">Share this running world with friends outside your local network.
+      Prepare the account safeguards once, connect Cloudflare, then choose Share with friends.</p>
+    <p class="note">This one-time preparation protects the server and saves a backup. Players disconnect
+      briefly while it restarts. Existing game accounts and characters are preserved.</p>
+    <button id="secure-services" class="ghost">Prepare server for friends</button>
     <p class="note" id="services-status" role="status" aria-live="polite"></p>
     <div class="actions"><button id="hosting-check" class="ghost">Check internet account safeguards</button></div>
     <ul class="note" id="hosting-checks" aria-live="polite"></ul>
-    <p class="note" id="hosting-readiness">Internet sharing also requires protected access and a configured connector; these account checks do not enable a public link.</p>
+    <p class="note" id="hosting-readiness">Check the account safeguards if sharing asks you to prepare the server. Connect Cloudflare below, then choose Share with friends.</p>
+    </div>
+    <div class="panel">
+      <h3>Play together over the internet</h3>
+      <p class="note">Your friends open an invitation in their browser and join your server. They do not install the app. Keep this computer awake and the app open while playing together.</p>
+      <div id="cloudflare-setup">
+        <label><span>Game hostname</span><input id="sharing-hostname" placeholder="play.yourdomain.com" autocapitalize="off" spellcheck="false" /></label>
+        <label><span>Cloudflare API token</span><input id="sharing-token" type="password" autocomplete="off" spellcheck="false" /></label>
+        <p class="note">Use an unused hostname on an active Cloudflare domain. Create a scoped API token with <strong>Zone → Zone → Read</strong>, <strong>Zone → DNS → Edit</strong> for that domain and <strong>Account → Cloudflare Tunnel → Edit</strong> for its account. This is an API token, not a tunnel run token.</p>
+        <p class="note">Connect creates a dedicated tunnel and DNS record. The API token is used only during setup; the app saves the tunnel credential in your operating system’s secure password storage. The Cloudflare helper downloads automatically.</p>
+        <button id="sharing-token-help" class="ghost">Open Cloudflare token setup</button>
+        <button id="sharing-connect">Connect Cloudflare</button>
+      </div>
+      <p id="sharing-configured" class="note" hidden></p>
+      <div class="actions">
+        <button id="sharing-start" disabled>Share with friends</button>
+        <button id="sharing-copy" class="ghost" disabled>Copy invitation link</button>
+        <button id="sharing-stop" class="ghost" disabled>Stop sharing</button>
+      </div>
+      <p id="sharing-state" class="note" role="status" aria-live="polite">Sharing is off.</p>
+      <p id="sharing-feedback" class="note" role="status" aria-live="polite"></p>
+      <p class="note">An invitation lasts eight hours and lets up to 32 friend browsers connect. Invited friends can create an ordinary game account. Stop sharing disconnects friends without stopping your local game. Starting sharing applies the protected account policy and restarts game services once.</p>
+      <details><summary>Manage invitations and connection</summary>
+        <button id="sharing-replace" class="ghost" disabled>Disconnect friends and replace invitation</button>
+        <button id="sharing-forget" class="ghost" disabled>Forget saved Cloudflare connection</button>
+        <p class="note">Forgetting removes the saved credential. Remove the stopped tunnel and DNS record separately in your Cloudflare dashboard.</p>
+      </details>
     </div>
   </section>
 
@@ -361,6 +386,7 @@ $('mp-internet-setup').onchange = () => {
   internetSetup = $('mp-internet-setup').checked;
   try { localStorage.setItem('internet-sharing-setup', String(internetSetup)); } catch {}
   paintInternetSetup();
+  refreshSharing();
 };
 
 function paintRegistration(settings) {
@@ -745,6 +771,43 @@ $('mods-apply').onclick = () => withButton('mods-apply', 'Applying…', 'Apply',
   return 'Mods applied. Restart the app for client-side changes.';
 });
 
+let sharingBusy = false;
+async function refreshSharing() {
+  if ($('internet-hosting').hidden) return;
+  try {
+    const state = await invoke('sharing_status');
+    $('cloudflare-setup').hidden = state.configured;
+    $('sharing-configured').hidden = !state.configured;
+    $('sharing-configured').textContent = state.configured ? `Cloudflare connected: ${state.hostname}` : '';
+    $('sharing-start').disabled = sharingBusy || !state.configured || !['stopped', 'failed'].includes(state.state);
+    $('sharing-connect').disabled = sharingBusy;
+    $('sharing-copy').disabled = state.state !== 'sharing';
+    $('sharing-stop').disabled = !sharingBusy && ['stopped', 'failed'].includes(state.state);
+    $('sharing-replace').disabled = !['sharing', 'reconnecting'].includes(state.state);
+    $('sharing-forget').disabled = sharingBusy || !state.configured;
+    $('sharing-state').textContent = state.message || 'Sharing is off.';
+    if (state.expires && state.state === 'sharing') $('sharing-state').textContent += ` Invitation expires ${new Date(state.expires).toLocaleTimeString()}. ${state.connectedFriends} friend browser(s) connected.`;
+  } catch (error) { $('sharing-state').textContent = error.message || String(error); }
+}
+async function sharingAction(name, request) {
+  sharingBusy = true; $('sharing-feedback').textContent = name === 'sharing_connect' ? 'Connecting Cloudflare…' : name === 'sharing_start' ? 'Preparing your world and starting sharing…' : '';
+  await refreshSharing();
+  try {
+    const result = await invoke(name, request);
+    $('sharing-feedback').textContent = typeof result === 'string' ? result : name === 'sharing_connect' ? 'Cloudflare connected. Choose Share with friends when your server is ready.' : '';
+  } catch (error) { $('sharing-feedback').textContent = error.message || String(error); }
+  finally { sharingBusy = false; $('sharing-token').value = ''; await refreshSharing(); }
+}
+$('sharing-connect').onclick = () => sharingAction('sharing_connect', { publicHostname: $('sharing-hostname').value, apiToken: $('sharing-token').value });
+$('sharing-start').onclick = () => sharingAction('sharing_start');
+$('sharing-stop').onclick = () => sharingAction('sharing_stop');
+$('sharing-copy').onclick = () => sharingAction('sharing_copy');
+$('sharing-replace').onclick = () => sharingAction('sharing_replace');
+$('sharing-forget').onclick = () => sharingAction('sharing_forget');
+$('sharing-token-help').onclick = () => invoke('sharing_token_help');
+setInterval(refreshSharing, 3000);
+refreshSharing();
+
 $('secure-services').onclick = async () => {
   const button = $('secure-services');
   button.disabled = true;
@@ -766,7 +829,7 @@ $('hosting-check').onclick = async () => {
       item.textContent = `${check.passed ? 'Passed' : 'Needs attention'}: ${check.detail}`;
       $('hosting-checks').appendChild(item);
     }
-    $('hosting-readiness').textContent = `${report.era === 'renewal' ? 'Renewal' : 'Pre-renewal'} (${report.scope}). ${report.remaining}`;
+    $('hosting-readiness').textContent = `${report.era === 'renewal' ? 'Renewal' : 'Pre-renewal'} (${report.scope}). ${report.accountPolicyReady ? 'Account safeguards passed. Connect Cloudflare and choose Share with friends to make an invitation.' : 'Complete the items above before sharing.'}`;
   } catch (error) { $('hosting-readiness').textContent = String(error); }
   finally { button.disabled = false; }
 };

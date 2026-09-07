@@ -70,19 +70,18 @@ This disables `_M` / `_F` signup while existing accounts keep working. Create
 ordinary accounts with **Create friend account** in the same panel. The account
 creation policy applies to both eras and survives Repair and era changes; accounts
 and passwords themselves remain separate for each era. Local/LAN installs retain
-login signup until you change this setting. Internet sharing is still under
-development and requires additional access and credential safeguards.
+login signup until you change this setting. For friends outside your LAN, use
+[Cloudflare browser invitations](docs/FRIENDS_SHARING.md).
 
-For internal server passwords, **Settings → Accounts → Secure internal server
-credentials** saves a backup and replaces the selected era’s shared service
+For internal server passwords, **Settings → Internet sharing → Prepare server for friends** saves a backup and replaces the selected era’s shared service
 credentials. Game logins and characters are preserved. See
 [managed internal credentials](docs/SERVICE_CREDENTIALS.md) for persistence and
-recovery; internet access still requires additional safeguards.
+recovery. Sharing also checks account permissions and private game listeners.
 
 **Check internet account safeguards** in that panel reports the selected era's
 account-policy checks. It does not publish a link. See the
 [hosting policy contract](docs/HOSTING_POLICY.md) for mandatory internet defaults
-and the remaining access-protection requirements.
+and the [browser sharing guide](docs/FRIENDS_SHARING.md).
 
 Ordinary accounts have almost no `@` commands — rAthena keeps `@autoloot` and
 `@showexp` for GMs. Settings → Mods → **player-commands** gives player characters some common commands.
@@ -93,6 +92,13 @@ hunting in the fields, standing around town, running vending stalls you can
 actually buy from. See [Filling the world](#filling-the-world) below.
 
 ---
+
+## Sharing with friends over the internet
+
+Use **Settings → Multiplayer → Set up sharing over the internet**, connect your
+Cloudflare domain once, then choose **Share with friends → Copy invitation link**.
+Friends open the HTTPS link in their browser and play on your running world.
+See [setup, invitation expiry and Stop sharing](docs/FRIENDS_SHARING.md).
 
 ## Hosting and playing with friends on your LAN
 
@@ -134,7 +140,8 @@ host; the app does not bypass certificate verification.
 The host serves the client and the artwork, so joining starts in seconds instead
 of the few minutes a first run takes. You make your own character on their
 server: on the login screen, add `_M` or `_F` to the end of a new username and
-that account is created as you log in.
+that account is created as you log in, if the host allows signup. Internet
+invitations instead offer account creation before entering the game.
 
 ### Joining from a browser, with nothing installed
 

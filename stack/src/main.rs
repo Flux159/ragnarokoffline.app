@@ -84,7 +84,7 @@ fn main() {
         Err(e) => fail(verb, &e),
     };
     let dk = Docker::new(cfg.docker.clone(), cfg.nebula_home.clone(), cfg.state.clone());
-    let _operation = if matches!(verb, "up" | "down" | "repair" | "backup" | "restore" | "accounts" | "secure-services" | "hosting-check" | "capture-crashes") {
+    let _operation = if matches!(verb, "up" | "down" | "repair" | "backup" | "restore" | "accounts" | "secure-services" | "hosting-check" | "sharing-check" | "capture-crashes") {
         match operation_lock::acquire(&cfg.state) {
             Ok(lock) => Some(lock),
             Err(error) => fail(verb, &error),
@@ -107,6 +107,7 @@ fn main() {
 
     let result = match verb {
         "capture-crashes" => crashes::command(&cfg, &dk),
+        "sharing-check" => hosting::sharing_check(&cfg, &dk).map(|report| println!("{report}")),
         "hosting-check" => hosting::check(&cfg, &dk, lan).map(|report| println!("{report}")),
         "accounts" => {
             if let Err(error) = accounts::run(&cfg, &dk) {

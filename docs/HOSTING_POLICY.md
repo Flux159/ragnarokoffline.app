@@ -8,10 +8,11 @@ JSON report. Both use the supervisor operation lock and verify the running era's
 actual database volume. Remote game pages cannot invoke the owner action.
 
 An account-policy pass is **not permission to publish the server**. The report
-keeps `publicationReady: false`: authenticated HTTP/WS access, effective privilege
-and listener audits, and a validated connector remain required. Friends/Public
-sharing controls are not exposed as ready in Settings yet. There is no tunnel or
-public registration service in this change.
+keeps `publicationReady: false` because it only checks account policy. The
+separate `sharing-check` audits running listeners and privileges, and the
+[Cloudflare sharing controller](FRIENDS_SHARING.md) verifies the protected public
+HTTPS/WSS path before enabling Copy invitation. Public-server mode remains
+unimplemented; the supported internet mode is invited friends.
 
 ## Mandatory policy
 
@@ -22,8 +23,8 @@ hosting is local. No legacy setting implicitly enables internet mode. The existi
 LAN checkbox now writes the explicit local/LAN scope. Invalid scope or legacy LAN
 values fail closed rather than exposing a listener through truthy coercion.
 
-Friends/Public currently provide the game-side preparation contract for upcoming
-sharing controls. They force `new_account: no` after mod assembly on every startup,
+Friends/Public provide the game-side policy contract; friends mode additionally
+has a protected Cloudflare connector. They force `new_account: no` after mod assembly on every startup,
 Repair and era switch, even if `open_registration` remains true. Settings shows
 the effective owner-only policy and disables the conflicting signup control;
 the saved Local/LAN preference survives unrelated edits. Internet scopes keep the

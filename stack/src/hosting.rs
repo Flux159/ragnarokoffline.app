@@ -213,9 +213,67 @@ pub fn check(cfg: &Config, dk: &Docker, legacy_lan: bool) -> Result<String, Stri
     Ok(format!("{{\"era\":{},\"scope\":{},\"accountPolicyReady\":{passed},\"publicationReady\":false,\"checks\":[{}],\"remaining\":\"Internet access protection, effective privilege and listener checks, and a validated connector are still required. No public link is enabled.\"}}", json::quote(era), json::quote(scope.name()), rows.join(",")))
 }
 
+// Verify the running containers, not just the saved LAN toggle. The gateway
+// is the only origin a connector is allowed to publish.
+fn bindings_safe(container: &Value, port: Option<&str>) -> bool {
+    if container.get("State").and_then(|v| v.str("Status")) != Some("running") { return false; }
+    let bindings = container.get("HostConfig").and_then(|v| v.get("PortBindings"));
+    match (port, bindings) {
+        (None, Some(Value::Null)) => true,
+        (None, Some(Value::Object(values))) => values.is_empty(),
+        (Some(port), Some(Value::Object(values))) if values.len() == 1 => {
+            match values.get(&format!("{port}/tcp")) {
+                Some(Value::Array(entries)) if entries.len() == 1 => entries[0].str("HostIp") == Some("127.0.0.1") && entries[0].str("HostPort") == Some(port),
+                _ => false,
+            }
+        },
+        _ => false,
+    }
+}
+
+pub fn sharing_check(cfg: &Config, dk: &Docker) -> Result<String, String> {
+    if Scope::load(cfg, false)? != Scope::Friends { return Err("Choose friends hosting before sharing".into()); }
+    let era = service_credentials::era(cfg);
+    accounts::verify_era(cfg, dk, era)?;
+    require_game_policy(cfg, dk)?;
+    for (name, port) in [("ragnarok-db", None), ("ragnarok-login", Some("6900")), ("ragnarok-char", Some("6121")), ("ragnarok-map", Some("5121"))] {
+        let inspected = dk.output(["inspect", name])?;
+        let Value::Array(values) = json::parse(&inspected).map_err(|_| "Cannot verify game listeners")? else { return Err("Cannot verify game listeners".into()); };
+        if values.len() != 1 || !bindings_safe(&values[0], port) { return Err("Game listeners are not private. Restart in friends mode before sharing.".into()); }
+    }
+    // App mods may replace imported command permissions. Restrict friends to
+    // the pinned defaults until a separate privilege-aware mod policy exists.
+    for name in ["groups.yml", "atcommands.yml"] {
+        if cfg.state.join("conf").join(name).exists() { return Err("Disable mods that change account commands or permissions, then restart before sharing.".into()); }
+    }
+    let expected = [("/rathena/conf/groups.yml", "cf614b85dfdae0a165f9ba59da6ec060a914df504c6cd086378aa3216943293a"),
+        ("/rathena/conf/atcommands.yml", "c97bfd2f874ab3503e5191ae388ea9b29fd8d1991a6f76e8d764529207a13f8e")];
+    for (file, hash) in expected {
+        let actual = dk.output(["exec", "ragnarok-map", "sha256sum", file])?;
+        if actual.split_whitespace().next() != Some(hash) { return Err("The running server's account permissions differ from the pinned defaults. Use the bundled server before sharing.".into()); }
+    }
+    let engine = std::fs::read_to_string(cfg.nebula_home.join("config.toml")).map_err(|_| "Cannot verify engine publication settings")?;
+    let public: Vec<_> = engine.lines().map(|line| line.split('#').next().unwrap_or("").trim()).filter_map(|line| line.split_once('=')).filter(|(key, _)| key.trim() == "allow_public_publish").collect();
+    if public.len() != 1 || public[0].1.trim() != "false" { return Err("The engine still allows public port publication. Restart in friends mode before sharing.".into()); }
+    Ok(format!("{{\"era\":{},\"backendReady\":true}}", json::quote(era)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn sharing_rejects_wildcard_extra_or_stopped_bindings() {
+        fn parse(text: &str) -> Value { json::parse(text).unwrap() }
+        let private = r#"{"State":{"Status":"running"},"HostConfig":{"PortBindings":{"6900/tcp":[{"HostIp":"127.0.0.1","HostPort":"6900"}]}}}"#;
+        assert!(bindings_safe(&parse(private), Some("6900")));
+        assert!(!bindings_safe(&parse(&private.replace("127.0.0.1", "0.0.0.0")), Some("6900")));
+        assert!(!bindings_safe(&parse(&private.replace("running", "exited")), Some("6900")));
+        assert!(!bindings_safe(&parse(private), Some("6121")));
+        assert!(!bindings_safe(&parse(private), None));
+        assert!(bindings_safe(&parse(r#"{"State":{"Status":"running"},"HostConfig":{"PortBindings":{}}}"#), None));
+        assert!(!bindings_safe(&parse(r#"{"State":{"Status":"running"}}"#), None));
+    }
+
     #[test]
     fn scope_migration_never_enables_internet_implicitly() {
         let old = json::parse("{}").unwrap();

@@ -294,11 +294,11 @@ pub fn run(cfg: &Config, dk: &Docker) -> Result<(), String> {
         println!("{}", list(dk, era)?);
         return Ok(());
     }
-    if action == "password" || action == "create" {
+    if action == "password" || action == "create" || action == "invite-create" {
         verify_password_format(cfg)?;
     }
     let sql = match action {
-        "create" => {
+        "create" | "invite-create" => {
             let name = field(&request, "username")?;
             username(name)?;
             let pass = password(&request)?;
@@ -321,15 +321,27 @@ pub fn run(cfg: &Config, dk: &Docker) -> Result<(), String> {
         }
         _ => return Err("Unknown account action".into()),
     };
-    with_servers_stopped(cfg, dk, || {
-        // Recheck after shutdown, before touching any records.
+    let update = || {
+        // Recheck immediately before touching any records.
         verify_era(cfg, dk, era)?;
         let output = dk.private_sql(&sql)?;
         if output.trim() != "1" {
             return Err("No account changed. The name may already exist, the value may be unchanged, or the account changed. Refresh Accounts.".into());
         }
         Ok(())
-    })?;
+    };
+    if action == "invite-create" {
+        // The invited-player path only INSERTs a new group-0 row. It cannot
+        // change a loaded account, so friends joining need not disconnect the
+        // host or other players. Owner mutations retain their stop/save guard.
+        if crate::hosting::Scope::load(cfg, false)? != crate::hosting::Scope::Friends {
+            return Err("Invited accounts require internet friends mode".into());
+        }
+        crate::hosting::require_game_policy(cfg, dk)?;
+        update()?;
+    } else {
+        with_servers_stopped(cfg, dk, update)?;
+    }
     println!("{{\"era\":{},\"updated\":true}}", json::quote(era));
     Ok(())
 }
