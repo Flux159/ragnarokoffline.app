@@ -45,6 +45,57 @@ pub fn random_token(length: usize) -> Result<String, String> {
         .collect())
 }
 
+fn new_file(path: &Path) -> Result<File, String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(|_| ERROR.into())
+    }
+    #[cfg(windows)]
+    {
+        windows::new_file(path)
+    }
+}
+
+/// Export through a private adjacent temporary file. The source and destination
+/// may be on different drives. Never inherit public destination ACLs, truncate
+/// an old backup in place, or change permissions on the user's chosen folder.
+pub fn export_file(source: &Path, destination: &Path) -> Result<(), String> {
+    let parent = destination
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let temporary = parent.join(format!(".ragnarok-backup-{}.tmp", random_hex(12)?));
+    let result = (|| {
+        let mut input = File::open(source).map_err(|_| "Cannot read the staged backup")?;
+        let mut output = new_file(&temporary)?;
+        std::io::copy(&mut input, &mut output)
+            .and_then(|_| output.sync_all())
+            .map_err(|_| "Cannot write the private backup export")?;
+        drop(output);
+        #[cfg(unix)]
+        {
+            fs::rename(&temporary, destination)
+                .map_err(|_| "Cannot replace the selected backup")?;
+            File::open(parent)
+                .and_then(|file| file.sync_all())
+                .map_err(|_| "Cannot sync the backup destination")?;
+        }
+        #[cfg(windows)]
+        windows::replace(&temporary, destination)?;
+        Ok(())
+    })();
+    if temporary.exists() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
 fn metadata(path: &Path) -> Result<fs::Metadata, String> {
     let info = fs::symlink_metadata(path).map_err(|_| ERROR)?;
     if info.file_type().is_symlink() {
@@ -125,15 +176,8 @@ pub fn create(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let parent = path.parent().ok_or(ERROR)?;
     directory(parent)?;
     let temporary = parent.join(format!(".private-{}.tmp", random_hex(12)?));
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
     let result = (|| {
-        let mut file = options.open(&temporary).map_err(|_| ERROR)?;
+        let mut file = new_file(&temporary)?;
         protect(&temporary, false)?;
         file.write_all(bytes)
             .and_then(|_| file.sync_all())
@@ -185,6 +229,16 @@ mod windows {
         fn CloseHandle(handle: Handle) -> i32;
         fn LocalFree(memory: Handle) -> Handle;
         fn GetFileInformationByHandle(file: Handle, information: *mut FileInfo) -> i32;
+        fn CreateFileW(
+            name: *const u16,
+            access: u32,
+            share: u32,
+            security: *const SecurityAttributes,
+            disposition: u32,
+            flags: u32,
+            template: Handle,
+        ) -> Handle;
+        fn MoveFileExW(source: *const u16, destination: *const u16, flags: u32) -> i32;
     }
     #[link(name = "advapi32")]
     unsafe extern "system" {
@@ -303,26 +357,75 @@ mod windows {
         }
     }
 
-    pub fn protect(path: &Path, directory: bool) -> Result<(), String> {
+    fn descriptor(directory: bool) -> Result<Local, String> {
         let sid = current_sid()?;
         let flags = if directory { "OICI" } else { "" };
-        let descriptor: Vec<u16> = format!("O:{sid}D:P(A;{flags};FA;;;{sid})(A;{flags};FA;;;SY)")
+        let text: Vec<u16> = format!("O:{sid}D:P(A;{flags};FA;;;{sid})(A;{flags};FA;;;SY)")
             .encode_utf16()
             .chain(Some(0))
             .collect();
-        let mut name: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-        unsafe {
-            let mut sd = null_mut();
-            if ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                descriptor.as_ptr(),
+        let mut sd = null_mut();
+        if unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                text.as_ptr(),
                 1,
                 &mut sd,
                 null_mut(),
-            ) == 0
-            {
-                return Err(ERROR.into());
-            }
-            let sd = Local(sd);
+            )
+        } == 0
+        {
+            return Err(ERROR.into());
+        }
+        Ok(Local(sd))
+    }
+
+    #[repr(C)]
+    struct SecurityAttributes {
+        length: u32,
+        descriptor: Handle,
+        inherit: i32,
+    }
+    pub fn new_file(path: &Path) -> Result<std::fs::File, String> {
+        use std::os::windows::io::FromRawHandle;
+        let sd = descriptor(false)?;
+        let attributes = SecurityAttributes {
+            length: std::mem::size_of::<SecurityAttributes>() as u32,
+            descriptor: sd.0,
+            inherit: 0,
+        };
+        let name: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        let handle = unsafe {
+            CreateFileW(
+                name.as_ptr(),
+                0xc0000000,
+                7,
+                &attributes,
+                1,
+                0x80,
+                null_mut(),
+            )
+        };
+        if handle == (-1isize as Handle) {
+            return Err(ERROR.into());
+        }
+        Ok(unsafe { std::fs::File::from_raw_handle(handle) })
+    }
+    pub fn replace(source: &Path, destination: &Path) -> Result<(), String> {
+        let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+        let destination: Vec<u16> = destination
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
+        if unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), 9) } == 0 {
+            return Err("Cannot replace the selected backup".into());
+        }
+        Ok(())
+    }
+    pub fn protect(path: &Path, directory: bool) -> Result<(), String> {
+        let sd = descriptor(directory)?;
+        let mut name: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        unsafe {
             let (mut owner, mut acl) = (null_mut(), null_mut());
             let (mut defaulted, mut present) = (0, 0);
             if GetSecurityDescriptorOwner(sd.0, &mut owner, &mut defaulted) == 0
@@ -378,6 +481,21 @@ mod tests {
         }
         fs::remove_file(&file).unwrap();
         fs::remove_dir(&path).unwrap();
+    }
+    #[test]
+    fn exports_replace_existing_files_without_changing_the_destination_directory() {
+        let root = std::env::temp_dir().join(format!("ro-export-{}", random_hex(12).unwrap()));
+        directory(&root).unwrap();
+        let source = root.join("source");
+        create(&source, b"example-private-backup").unwrap();
+        let destination = root.join("export");
+        fs::write(&destination, "old contents").unwrap();
+        export_file(&source, &destination).unwrap();
+        assert_eq!(read(&destination, 100).unwrap(), "example-private-backup");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 2);
+        fs::remove_file(source).unwrap();
+        fs::remove_file(destination).unwrap();
+        fs::remove_dir(root).unwrap();
     }
     #[cfg(unix)]
     #[test]

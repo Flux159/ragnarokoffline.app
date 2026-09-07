@@ -1913,7 +1913,7 @@ pub fn backup(cfg: &Config, dk: &Docker, dest: &str) -> Result<(), String> {
 fn backup_snapshot(cfg: &Config, dk: &Docker, dest: &str) -> Result<(), String> {
     let backups = cfg.state.join("backups");
     fs::create_dir_all(&backups).map_err(|e| e.to_string())?;
-    let tmp = format!("ragnarokmac-{}.sql", std::process::id());
+    let tmp = format!("ragnarokmac-{}-{}.sql", std::process::id(), crate::private_fs::random_hex(12)?);
 
     crate::private_fs::directory(&backups)?;
     // Players have been saved and game services stopped. This also makes the
@@ -1936,10 +1936,10 @@ fn backup_snapshot(cfg: &Config, dk: &Docker, dest: &str) -> Result<(), String> 
         return Err("the dump came out empty".into());
     }
     crate::private_fs::protect(&staged, false)?;
-    if Path::new(dest).exists() { crate::private_fs::protect(Path::new(dest), false)?; }
-    fs::rename(&staged, dest)
-        .or_else(|_| fs::copy(&staged, dest).map(|_| ()))
-        .map_err(|e| format!("could not write {dest}: {e}"))?;
+    if fs::canonicalize(&staged).ok() == fs::canonicalize(dest).ok() {
+        return Err("Choose a backup destination outside the internal staging file".into());
+    }
+    crate::private_fs::export_file(&staged, Path::new(dest))?;
     let _ = fs::remove_file(&staged);
     dk.quiet(["exec", DB_CONTAINER, "rm", "-f", &format!("/backups/{tmp}")]);
     println!("wrote {dest} ({})", human(size));
@@ -1956,7 +1956,7 @@ pub fn restore(cfg: &Config, dk: &Docker, src: &str) -> Result<(), String> {
     crate::private_fs::directory(&backups)?;
     let safety = backups.join(format!("before-restore-{}-{}.sql", crate::service_credentials::era(cfg), crate::private_fs::random_hex(8)?));
     backup_snapshot(cfg, dk, &safety.to_string_lossy())?;
-    let tmp = format!("restore-{}.sql", std::process::id());
+    let tmp = format!("restore-{}-{}.sql", std::process::id(), crate::private_fs::random_hex(12)?);
     let staged = backups.join(&tmp);
     if staged.exists() { crate::private_fs::protect(&staged, false)?; }
     fs::copy(src, &staged).map_err(|e| format!("staging the backup: {e}"))?;
