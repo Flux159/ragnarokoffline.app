@@ -54,7 +54,12 @@ fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let verb = args.first().map(String::as_str).unwrap_or("status");
 
-    let cfg = match Config::load(project_root()) {
+    let loaded = if verb == "link-assets" {
+        Config::load_for_assets(project_root())
+    } else {
+        Config::load(project_root())
+    };
+    let cfg = match loaded {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{e}");

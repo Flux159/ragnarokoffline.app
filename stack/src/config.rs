@@ -92,6 +92,16 @@ fn app_version(root: &Path) -> Option<String> {
 
 impl Config {
     pub fn load(root: PathBuf) -> Result<Config, String> {
+        Self::load_inner(root, true)
+    }
+
+    /// Asset assembly is host filesystem work and must also run before the
+    /// VM tooling is installed. It never invokes the Docker client.
+    pub fn load_for_assets(root: PathBuf) -> Result<Config, String> {
+        Self::load_inner(root, false)
+    }
+
+    fn load_inner(root: PathBuf, require_docker: bool) -> Result<Config, String> {
         let state = env::var_os("RAGNAROKMAC_STATE")
             .map(PathBuf::from)
             .unwrap_or_else(|| root.join(".ragnarokmac"));
@@ -114,8 +124,11 @@ impl Config {
             .filter(|p| p.exists())
             .unwrap_or_else(|| root.join(format!("bin/nebula{EXE}")));
 
-        let docker = resolve_docker(&root)
-            .ok_or_else(|| "no docker client found (bundled or installed)".to_string())?;
+        let docker = match resolve_docker(&root) {
+            Some(path) => path,
+            None if require_docker => return Err("no docker client found (bundled or installed)".into()),
+            None => root.join(format!("bin/docker-slim{EXE}")),
+        };
 
         Ok(Config {
             app_version: app_version(&root),
