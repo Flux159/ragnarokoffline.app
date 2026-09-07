@@ -4,6 +4,7 @@ import Runtime from './ExtensionRuntime.mjs';
 import Session from 'Engine/SessionStorage.js';
 import Camera from 'Renderer/Camera.js';
 import Renderer from 'Renderer/Renderer.js';
+import EntityManager from 'Renderer/EntityManager.js';
 import Altitude from 'Renderer/Map/Altitude.js';
 import PathFinding from 'Utils/PathFinding.js';
 import MapControl from 'Controls/MapControl.js';
@@ -27,7 +28,7 @@ function inputState() {
     // while idle. It is not a declaration that the component is a modal.
     const capturing = Object.values(UIManager.components).some(component =>
         (component.isCapturing || component.mouseMode === 2 ||
-            ['ShortCuts', 'WorldMap', 'SkillTargetSelection', 'CaptchaAnswer', 'CaptchaSelector', 'CaptchaUpload'].includes(component.name)) && visible(component));
+            ['Escape', 'ShortCuts', 'WorldMap', 'SkillTargetSelection', 'CaptchaAnswer', 'CaptchaSelector', 'CaptchaUpload'].includes(component.name)) && visible(component));
     const battle = UIManager.components.ChatBox?.getRoot()?.querySelector('.battlemode');
     return {
         canMove: Boolean(player && Runtime.movement.snapshot().active && !document.hidden && !composing && !editing &&
@@ -61,6 +62,13 @@ function component(name) {
 }
 function action(name, value) {
     if (!Runtime.movement.snapshot().active || Session.FreezeUI) return false;
+    if (name === 'menu') {
+        const menu = component('Escape');
+        if (!menu?.onKeyDown) return false;
+        Runtime.movement.clear('menu');
+        menu.onKeyDown({ key: 'Escape', which: KEYS.ESCAPE });
+        return true;
+    }
     if (name === 'window' && WINDOWS.has(value?.name)) {
         const windowUI = component(value.name);
         if (!windowUI?.onShortCut) return false;
@@ -73,6 +81,28 @@ function action(name, value) {
         if (!shortcuts?.onShortCut) return false;
         shortcuts.onShortCut({ cmd: `EXECUTE${value.index}` });
         return true;
+    }
+    if (name === 'shortcut:assign' && Number.isInteger(value?.slot) && value.slot >= 0 && value.slot < 36 && Number.isInteger(value?.id)) {
+        const shortcuts = component('ShortCut');
+        if (!shortcuts) return false;
+        const row = Math.floor(value.slot / 9);
+        if (value.kind === 'item') {
+            const item = component('Inventory')?.getItemByIndex(value.id);
+            if (!item) return false;
+            shortcuts.removeElement(false, item.ITID, row);
+            shortcuts.addElement(value.slot, false, item.ITID, 0);
+            shortcuts.onChange(value.slot, false, item.ITID, 0);
+            return true;
+        }
+        if (value.kind === 'skill') {
+            const skill = shortcuts.getSkillById(value.id);
+            if (!skill || skill.level < 1) return false;
+            const level = Math.max(1, Math.min(skill.level, skill.selectedLevel || skill.level));
+            shortcuts.removeElement(true, skill.SKID, row, level);
+            shortcuts.addElement(value.slot, true, skill.SKID, level);
+            shortcuts.onChange(value.slot, true, skill.SKID, level);
+            return true;
+        }
     }
     const buttons = { attack: '#attackButton', target: '#toggleAutoTargetButton', interact: '#talktonpcButton', pickup: '#pickupButton' };
     if (Object.hasOwn(buttons, name)) {
@@ -102,10 +132,12 @@ export function init() {
         },
         snapshot() {
             const player = Session.Entity;
+            const target = EntityManager.getFocusEntity();
             return { packetVersion: PACKETVER.value, input: inputState(),
                 player: player ? { id: player.GID, position: Array.from(player.position).slice(0, 2), action: player.action,
                     hp: player.life.hp, maxHp: player.life.hp_max, sp: player.life.sp, maxSp: player.life.sp_max } : null,
-                camera: { direction: Camera.direction } };
+                camera: { direction: Camera.direction },
+                target: target ? { id: target.GID, name: target.display?.name || '', hp: target.life?.hp, maxHp: target.life?.hp_max } : null };
         },
         action,
     });

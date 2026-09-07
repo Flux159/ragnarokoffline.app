@@ -555,13 +555,13 @@ It is a supported interface, not a sandbox for untrusted JavaScript.
 | API | Contract |
 | --- | --- |
 | `api.on(event, listener, { replay: true })` | Returns an unsubscribe function; subscriptions also end at disposal. Events: `map:enter`, `map:leave`, `connection`, `ui:append`, `ui:remove`, `movement:clear`, `preferences:change`. |
-| `api.snapshot()` | Frozen copy of map, connection, player position/HP/SP, camera, packet version and movement counters. Server movement acknowledgements are read-only evidence. |
+| `api.snapshot()` | Frozen copy of map, connection, player position/HP/SP, selected target identity/name/HP, camera, packet version and movement counters. Server movement acknowledgements are read-only evidence. |
 | `api.components.current()` | Mounted `{ name, root, host }` descriptors. DOM references support styling; do not retain detached components after `ui:remove`. |
 | `api.preferences.get(key, fallback)` / `.set(key, value)` | JSON values isolated by plugin, browser and server origin. Storage failure is reported by `set`. Do not store secrets. |
 | `api.movement.register(name, onCancel)` | Returns `begin(x,y)`, `update(x,y)`, `end()`, `dispose()`. Screen-up is positive Y. Only a deliberate `begin` can take ownership; a stale `update` cannot. |
 | `api.input.state()` / `.shortcutConflict(keyCode)` | Read input eligibility and the active native battle-shortcut mapping. |
 | `api.input.suspend()` | Suspend movement while showing a plugin dialog. Returns an idempotent release function, also released at disposal. |
-| `api.actions.perform(name, payload)` | Native actions: `attack`, `target` (toggle auto-target), `interact`, `pickup`, `shortcut` with `{ index: 0…35 }`, or `window` with an allowed `{ name }`. Returns whether the action was dispatched, not whether the server accepted it. |
+| `api.actions.perform(name, payload)` | Native actions: `attack`, `target` (toggle auto-target), `interact`, `pickup`, `menu` (game options), `shortcut` with `{ index: 0…35 }`, `shortcut:assign` (below), or `window` with an allowed `{ name }`. Returns whether the action was dispatched, not whether the server accepted it. |
 | `api.cleanup(fn)` | Register idempotent cleanup immediately after allocating a resource. The returned function can release it early. Runs on failure, scope replacement and page teardown. |
 
 Allowed window actions currently cover Inventory, Equipment, SkillList, Quest,
@@ -570,10 +570,25 @@ blur, hidden page, text entry, IME and modal UI also cancel it. Directional
 requests use native pathfinding and packets, with a 180 ms cadence and at most
 three path steps per destination. The server remains authoritative.
 
+`shortcut:assign` accepts `{ slot: 0…35, kind: 'item' | 'skill', id }`.
+For items, `id` is a current inventory **index**, not the item type ID; for skills
+it is the learned skill ID. The adapter validates the live item/learned level and
+uses the native shortcut assignment callbacks, including server persistence.
+
 Host mod enable/disable still requires the normal reload. Arbitrary older
 plugins cannot be safely hot-unloaded if they never registered cleanup. The
 in-game **Controls** button from [`wasd-movement`](../mods/wasd-movement) offers
 per-browser activation, rebinding, arrows and battle-shortcut priority.
+
+The bundled `mobile-ui` mod provides **Display** settings before login and under
+the phone's in-game **Menu**. Auto selects a phone layout on a touch-capable
+screen whose shorter side is at most 900 pixels. On/Off overrides that choice.
+Mode changes reload the client; control size changes apply immediately.
+Geometry preferences use a separate phone key selected before UI initialization,
+so a mode change cannot save phone coordinates into the desktop preferences.
+The phone HUD retains the native joystick, action handlers and shortcuts. Tap
+an inventory/equipment/skill entry, then its explicit action button; F1–F4 can
+be assigned from the inventory and skills toolbars.
 
 ---
 

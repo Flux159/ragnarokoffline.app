@@ -44,5 +44,10 @@ export function attachJoystick(base, thumb, movement) {
     }
     // Suppress the compatibility mouse event that would start camera/map input.
     base.addEventListener('mousedown', event => { event.preventDefault(); event.stopPropagation(); }, { signal });
+    // Pointer capture does not stop the compatibility TouchEvent from reaching
+    // the legacy whole-window camera gesture handler.
+    for (const type of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) {
+        base.addEventListener(type, event => event.stopPropagation(), { signal });
+    }
     return () => { source.dispose(); reset(); controller.abort(); };
 }

@@ -159,7 +159,10 @@ npm run test:e2e
 ```
 
 Optional `RO_E2E_ACCOUNT` and `RO_E2E_PASSWORD` select another disposable test
-account. The harness authenticates the private asset ownership control endpoint,
+GM account. Keep a playable character in slot 1 and slot 3 empty. The layout
+suite opens creation in the empty slot and cancels; the two-thumb suite uses a
+real `@warp prontera 150 180` command to start on a repeatable walkable path.
+The harness authenticates the private asset ownership control endpoint,
 checks the executable hash and OS process identity, then uses the actual login
 UI. It never records authentication fill actions or raw WebSocket frames.
 Tracing starts after login/map entry. Reports include browser/packet versions,
@@ -180,6 +183,27 @@ Current automated coverage: desktop login/relogin, W/A/S/D and arrows, actual
 server movement, release, chat typing, per-browser disable/persistence and
 stable source counts after reload. Unit tests additionally cover diagonals,
 opposing directions, camera rotation, input ownership, cancellation, shortcut
-priority and plugin cleanup/timeouts. The mobile viewport/two-thumb tests, real
-phone testing, warp/death/IME/hidden-tab gameplay cases and previous-version
-screenshot matrix remain release gates for issue #6.
+priority and plugin cleanup/timeouts.
+
+`mobile.spec.cjs` uses Chromium CDP multi-touch input with distinct pointer IDs,
+checks both release orders and cancellation, and verifies exactly one delivery
+to the native attack handler. It also requires server movement acknowledgements
+and unchanged camera direction; dispatching an attack with no nearby monster
+does not establish combat correctness.
+
+`mobile-layout.spec.cjs` captures desktop, two phone portrait sizes, their
+landscape sizes and tablet. It exercises tap login/selection, creation-screen
+access, map and inventory; it checks viewport bounds and primary target sizes.
+Review the screenshots as well as assertions. Run a subset with
+`npx playwright test mobile.spec.cjs` or `mobile-layout.spec.cjs` while the owned
+test world is running.
+
+`mobile-preferences.spec.cjs` checks 125% controls without overlap, input
+suspension in Display, saved size, Off/On reloads, separate geometry banks and
+the legacy first-touch detector respecting Off. It seeds only a browser window
+preference; gameplay still uses the real server.
+
+Full combat, shop/storage transactions, NPC/quest flows and
+orientation/keyboard transitions, death/IME/background gameplay cases, Firefox,
+packaged Electron and physical Android/iPhone testing remain release gates for
+issue #6. Chromium device emulation is not a physical Safari/Android pass.

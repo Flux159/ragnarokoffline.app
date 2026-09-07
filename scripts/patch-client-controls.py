@@ -103,3 +103,30 @@ edit('UI/Components/MobileUI/MobileUI.js', 'MobileUI.onAppend = function onAppen
 edit('UI/Components/MobileUI/MobileUI.js', 'MobileUI.onRemove = function onRemove() {\n',
      'MobileUI.onRemove = function onRemove() {\n\tstopJoystick();\n')
 print('installed client extension API and shared movement hooks')
+
+# Phone windows keep their own geometry. Keep legacy desktop keys unchanged.
+edit('Core/Preferences.js', 'const Storage = {',
+     "import { geometryKey } from 'Plugins/Ragnarok/LayoutProfile.mjs';\n\nconst Storage = {")
+edit('Core/Preferences.js', '\tstatic get(key, def, version) {\n',
+     '\tstatic get(key, def, version) {\n\t\tkey = geometryKey(key, def);\n')
+
+# The old first-touch detector can reveal the native HUD after a player opted
+# out. Use the profile selected before login for app-hosted mobile-ui sessions.
+edit('UI/Components/MobileUI/MobileUI.js', "import { attachJoystick } from 'Plugins/Ragnarok/PointerJoystick.mjs';",
+     "import { attachJoystick } from 'Plugins/Ragnarok/PointerJoystick.mjs';\n"
+     "import { phoneLayout, mobileModAvailable } from 'Plugins/Ragnarok/LayoutProfile.mjs';")
+edit('UI/Components/MobileUI/MobileUI.js', '\tif (Session.isTouchDevice) {\n',
+     '\tif (mobileModAvailable ? phoneLayout : Session.isTouchDevice) {\n')
+edit('UI/Components/MobileUI/MobileUI.js', 'MobileUI.show = function show() {\n',
+     'MobileUI.show = function show() {\n\tif (mobileModAvailable && !phoneLayout) return;\n')
+edit('UI/Background.js', "const _container = document.createElement('div');",
+     "const _container = document.createElement('div');\n_container.className = 'ro-background';")
+edit('UI/Background.js', '\tstatic setImage(filename, callback) {\n',
+     "\tstatic setImage(filename, callback) {\n\t\t_container.dataset.roTiled = String(Array.isArray(filename));\n")
+
+# Phone Stats is opened separately from the menu. Desktop Equipment's extra
+# embedded Stats host would otherwise cover the phone equipment controls.
+edit('UI/Components/WinStats/WinStatsCommon.js', "import DB from 'DB/DBManager.js';",
+     "import { phoneLayout } from 'Plugins/Ragnarok/LayoutProfile.mjs';\nimport DB from 'DB/DBManager.js';")
+edit('UI/Components/WinStats/WinStatsCommon.js', '\tComponent.embed = function embed(anchorHost) {\n',
+     '\tComponent.embed = function embed(anchorHost) {\n\t\tif (phoneLayout) return;\n')
