@@ -57,6 +57,8 @@ def start(label, directory, env, volume=None, init_dir=None):
         docker('volume', 'create', volume)
         volumes.append(volume)
     containers.append(name)
+    # Test-only ptrace capability permits reading our mysqld /proc environment
+    # after its uid drop. Production containers do not receive this capability.
     args = ['run', '-d', '--name', name, '--network', 'none', '--cap-add', 'SYS_PTRACE', '-v', volume + ':/var/lib/mysql',
             '-v', str(directory) + ':/run/test-secrets:ro']
     if init_dir is not None:
@@ -100,7 +102,7 @@ def check_no_secret_output(name, passwords):
     output = docker('logs', name)
     captured = output.stdout + output.stderr
     inspected = docker('inspect', name).stdout
-    processes = docker('top', name, '-eo', 'args').stdout
+    processes = docker('top', name, '-eo', 'pid,args').stdout
     environment = docker('exec', name, 'sh', '-c', 'cat /proc/1/environ').stdout
     # Include unique suffixes so SQL/option-file escaping cannot hide leakage.
     passwords = passwords + [password[-33:-1] for password in passwords]
