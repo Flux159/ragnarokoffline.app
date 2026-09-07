@@ -16,20 +16,32 @@ static volatile sig_atomic_t handling = 0;
 alignas(16) static unsigned char alternate_stack[128 * 1024];
 static uintptr_t executable_base = 0, executable_begin = 0, executable_end = 0;
 
-// Called at startup, outside signal handling. The first ELF object is the main
-// executable; retain its load bias so PIE addresses can be symbolized offline.
+// Record executable ELF ranges at startup, outside signal handling. Reject
+// guessed frames outside those mappings instead of printing stack data as PCs.
+struct Range { uintptr_t begin, end; };
+static Range executable_ranges[64];
+static size_t range_count = 0;
+static bool first_object = true;
 static int find_executable(dl_phdr_info* info, size_t, void*) {
-    executable_base = info->dlpi_addr;
-    executable_begin = UINTPTR_MAX;
+    if (first_object) { executable_base = info->dlpi_addr; executable_begin = UINTPTR_MAX; }
     for (unsigned n = 0; n < info->dlpi_phnum; ++n) {
         const auto& ph = info->dlpi_phdr[n];
         if (ph.p_type != PT_LOAD) continue;
         const uintptr_t begin = info->dlpi_addr + ph.p_vaddr;
         const uintptr_t end = begin + ph.p_memsz;
-        if (begin < executable_begin) executable_begin = begin;
-        if (end > executable_end) executable_end = end;
+        if (first_object) {
+            if (begin < executable_begin) executable_begin = begin;
+            if (end > executable_end) executable_end = end;
+        }
+        if ((ph.p_flags & PF_X) && range_count < 64) executable_ranges[range_count++] = {begin, end};
     }
-    return 1;
+    first_object = false;
+    return 0;
+}
+static bool mapped_instruction(uintptr_t ip) {
+    for (size_t n = 0; n < range_count; ++n)
+        if (ip >= executable_ranges[n].begin && ip < executable_ranges[n].end) return true;
+    return false;
 }
 struct Line {
     char data[512]; size_t used = 0;
@@ -68,6 +80,7 @@ static void handler(int signal, siginfo_t* info, void* context) {
         for (unsigned frame = 0; frame < 32; ++frame) {
             unw_word_t ip = 0, offset = 0;
             if (unw_get_reg(&cursor, UNW_REG_IP, &ip) < 0) break;
+            if (frame > 0 && !mapped_instruction(ip)) { step = -1; break; }
             Line line; line.text("RAGNAROK_CRASH_FRAME index="); line.hex(frame);
             line.text(" pc="); line.hex(ip);
             if (ip >= executable_begin && ip < executable_end) { line.text(" main_offset="); line.hex(ip - executable_base); }
