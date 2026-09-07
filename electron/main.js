@@ -505,24 +505,10 @@ function runStack(rawArgs) {
 // Asset server
 // ---------------------------------------------------------------------------
 
-let assetsChild = null;
+const { AssetServer, sha256 } = require('./asset-server');
+const assetServer = new AssetServer({ log: message => appLog(message) });
 
-function assetsReady() {
-	return new Promise(resolve => {
-		const req = require('http').get(
-			{ host: '127.0.0.1', port: 3338, path: '/api/health', timeout: 2000 },
-			res => {
-				res.resume();
-				resolve(res.statusCode === 200);
-			}
-		);
-		req.on('error', () => resolve(false));
-		req.on('timeout', () => {
-			req.destroy();
-			resolve(false);
-		});
-	});
-}
+function assetsReady() { return assetServer.ready(); }
 
 // Windows only: the drive letter a path sits on, against the one the app keeps
 // its data on, when they differ. Null everywhere else, for a UNC path, and when
@@ -568,74 +554,51 @@ function otherDrive(p) {
 }
 
 async function assetsStart() {
-	if (await assetsReady()) return;
 	const root = projectRoot();
 	const server = findTool('robrowser-remoteclient');
 	if (!server) throw new Error('the asset server binary is missing from this build');
-
-	const logPath = path.join(stateDir(), 'assets.log');
-	fs.mkdirSync(stateDir(), { recursive: true });
-	// Truncated on start, appended to by both streams: this log is where a
-	// failed asset request or a rejected proxy target shows up.
-	const log = fs.openSync(logPath, 'w');
-
-	assetsChild = spawn(server, [], {
-		cwd: root,
-		env: {
-			...process.env,
-			PATH: toolPath(),
-			PORT: '3338',
+	const client = getClientPaths();
+	const sources = ['data_grf', 'rdata_grf', 'official_grf', 'bgm_dir'].map(key => {
+		const filename = client[key] || '';
+		try {
+			const stat = fs.statSync(filename);
+			return [key, filename, stat.size, stat.mtimeMs];
+		} catch { return [key, filename, 'missing']; }
+	});
+	// Pass every RemoteClient setting explicitly, so .env/default changes
+	// cannot create a different effective server behind the same fingerprint.
+	return assetServer.start({
+		executable: server, cwd: root, stateRoot: stateDir(),
+		environment: {
+			PATH: toolPath(), PORT: '3338',
+			HOST: client.lan ? '0.0.0.0' : '127.0.0.1',
 			CLIENT_PUBLIC_URL: `http://${advertiseHost()}:3338`,
 			NODE_ENV: 'production',
-			SERVER_ROOT: path.join(stateDir(), 'assets'),
-			CLIENT_RESPATH: 'resources/',
-			CLIENT_DATAINI: 'DATA.INI',
-			ENABLE_STATIC_SERVE: 'true',
-			ROBROWSER_PATH: path.join(root, 'vendor/roBrowserLegacy/dist/Web'),
-			ENABLE_WSPROXY: 'true',
-			// The proxy refuses anything not listed, so a LAN host must allow
-			// its own routable address as well as loopback -- a joining client
-			// asks the proxy to reach the address the char-server handed it,
-			// which is the LAN one, and the login address the page it loaded
-			// was served from, which is whatever they typed.
+			SERVER_ROOT: path.resolve(stateDir(), 'assets'),
+			CLIENT_RESPATH: 'resources/', CLIENT_DATAINI: 'DATA.INI',
+			ENABLE_STATIC_SERVE: 'true', ENABLE_WSPROXY: 'true',
+			ROBROWSER_PATH: path.resolve(root, 'vendor/roBrowserLegacy/dist/Web'),
 			WS_ALLOWED_TARGETS: localHostnames()
-				.flatMap(h => [`${h}:6900`, `${h}:6121`, `${h}:5121`])
-				.join(','),
-			DATA_OVERRIDE_PATH: path.join(
-				translationRoot(root, getSettings().prerenewal),
-				'data',
-			),
+				.flatMap(h => [`${h}:6900`, `${h}:6121`, `${h}:5121`]).sort().join(','),
+			DATA_OVERRIDE_PATH: path.resolve(translationRoot(root, getSettings().prerenewal), 'data'),
+			ENABLE_COMPRESSION: process.env.ENABLE_COMPRESSION || 'true',
+			CACHE_MAX_FILES: process.env.CACHE_MAX_FILES || '5000',
+			CACHE_MAX_MEMORY_MB: process.env.CACHE_MAX_MEMORY_MB || '1024',
+			CACHE_WARM_UP: process.env.CACHE_WARM_UP || 'false',
+			CACHE_WARM_UP_LIMIT: process.env.CACHE_WARM_UP_LIMIT || '500',
+			CLIENT_ENABLESEARCH: process.env.CLIENT_ENABLESEARCH || 'true',
+			CLIENT_AUTOEXTRACT: process.env.CLIENT_AUTOEXTRACT || 'true',
+			GRF_FILENAME_ENCODING: process.env.GRF_FILENAME_ENCODING || 'auto',
+			RAGNAROK_PAYLOAD_VERSION: readIfExists(path.join(root, 'VERSION')).trim(),
+			RAGNAROK_OVERLAY_ID: readIfExists(path.join(stateDir(), 'assets/overlay.id')).trim(),
+			RAGNAROK_MANIFEST_ID: sha256(readIfExists(path.join(stateDir(), 'assets/resources/DATA.INI'))),
+			RAGNAROK_CLIENT_CONFIG_ID: sha256(readIfExists(path.join(root, 'vendor/roBrowserLegacy/dist/Web/Config.local.js'))),
+			RAGNAROK_ASSET_SOURCES_ID: sha256(JSON.stringify(sources)),
 		},
-		stdio: ['ignore', log, log],
-		detached: false,
-	});
-	assetsChild.on('exit', () => {
-		assetsChild = null;
 	});
 }
 
-function assetsStop() {
-	if (assetsChild) {
-		try {
-			assetsChild.kill();
-		} catch {
-			/* already gone */
-		}
-		assetsChild = null;
-	}
-	// A previous run may have left one behind with no handle to kill. pkill
-	// does not exist on Windows, so each platform gets the tool it has.
-	try {
-		const { execFileSync } = require('child_process');
-		if (process.platform === 'win32') {
-			execFileSync('taskkill', ['/F', '/IM', 'robrowser-remoteclient.exe'], { stdio: 'ignore' });
-		} else {
-			execFileSync('pkill', ['-f', 'robrowser-remoteclient'], { stdio: 'ignore' });
-		}
-	} catch {
-		/* nothing matched */
-	}
-}
+function assetsStop() { return assetServer.stop(); }
 
 // ---------------------------------------------------------------------------
 // Client paths and settings
@@ -861,7 +824,8 @@ function clientComplete(p) {
 	return !!p.data_grf && fs.existsSync(p.data_grf);
 }
 
-function linkClient(paths) {
+async function linkClient(paths) {
+	await assetServer.prepare(stateDir());
 	const root = projectRoot();
 	// Read each path from *this* process before handing them to bash.
 	//
@@ -1104,8 +1068,7 @@ async function saveSettings(settings) {
 	// Cycle the asset server around the supervisor, not after it.
 	//
 	// Two reasons, and the order matters for the second. It resolves the
-	// era's translation tree once, when it spawns, and assetsStart() returns
-	// early while one is already answering -- so without this the servers
+	// era's translation tree once, when it spawns -- so without this the servers
 	// restart and the player is still served the previous era's maps, which
 	// for pre-renewal is a different Prontera, not different wording.
 	//
@@ -1118,10 +1081,10 @@ async function saveSettings(settings) {
 	//
 	// Only when the era actually changed, and only if one is running: a
 	// joining player has no asset server and should not be given one.
-	const cycleAssets = eraChanged && !!assetsChild;
+	const cycleAssets = eraChanged && assetServer.running;
 	if (cycleAssets) {
 		appLog('era changed: stopping the asset server before the rebuild');
-		assetsStop();
+		await assetsStop();
 	}
 
 	const out = await runStack(['up']);
@@ -1915,7 +1878,7 @@ const handlers = {
 		// The database is untouched: it lives in a volume that outlives the
 		// containers, so switching back to hosting finds the same characters.
 		if (mode === 'join' && prev.mode !== 'join') {
-			assetsStop();
+			await assetsStop();
 			try {
 				await runStack(['down']);
 			} catch {
@@ -2164,8 +2127,8 @@ function stackEnv() {
 // the whole app — the window stopped redrawing and the Dock showed it as not
 // responding until the containers finished stopping. Quitting must stay
 // responsive even though the work behind it is slow.
-function teardownAsync() {
-	assetsStop();
+async function teardownAsync() {
+	try { await assetsStop(); } catch (error) { appLog(`asset shutdown failed: ${error.message}`); }
 	// A joining player started no engine and no containers, so there is
 	// nothing to stop -- and `down` would spend its timeout talking to a
 	// docker socket that was never created.
@@ -2186,7 +2149,7 @@ function teardownAsync() {
 // by the OS and there is no guarantee the event loop runs again, so there is
 // nothing to await with.
 function teardownSync() {
-	assetsStop();
+	assetServer.stopSync();
 	if (getClientPaths().mode === 'join') return;
 	try {
 		const { cwd, env } = stackEnv();

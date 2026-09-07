@@ -164,3 +164,15 @@ can copy.
 Turn down **How busy** in Settings, or switch off **Fake players** entirely. The
 AI characters are the only part of the server that costs meaningful CPU, and the
 game itself runs on very little.
+## An asset server is already using port 3338
+
+The app will not reuse or stop a server it cannot identify as its own. Quit
+any other Ragnarok Offline copy completely, then retry. A legacy orphan from
+an older build may need to be stopped by its exact PID; include the port-conflict
+message and `state/assets.log` in a report if you need help identifying it.
+Do not kill every process matching an executable name or command-line pattern.
+
+New builds authenticate their managed child and shut it down when the shell
+exits or crashes. The log's launch header records the executable fingerprint,
+configuration fingerprint and process ID; older logs are retained as
+`assets.log.1` through `.3`.

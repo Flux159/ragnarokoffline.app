@@ -173,10 +173,8 @@ jobs:
         with:
           node-version: 22
 
-      # The one thing this workflow compiles. stack/ is a small dependency-free
-      # crate, so a cached build is under a minute; it is built per-platform
-      # here rather than fetched, because unlike nebula and the asset server it
-      # is our own code in this repo.
+      # Build the supervisor here, and the exact RemoteClient source pin below.
+      # Source pinning also supports coordinated, unmerged dependency PRs.
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -225,15 +223,14 @@ jobs:
             echo "DOCKER_SLIM_BIN=$(ls /tmp/clis/docker-slim*)" >> "$GITHUB_ENV"
           fi
 
-          # Pinned to this platform's binary. A `robrowser-remoteclient-*` glob
-          # matches all three and copies whichever the shell lists last.
-          bin=robrowser-remoteclient-${{ matrix.triple }}
+          # The shell and asset-server lifecycle protocol move together.
+          # Build the immutable source pin, including dependency PR commits,
+          # instead of silently downloading whichever release is latest.
+          bash scripts/build-remoteclient.sh
+          bin="$PWD/bin/robrowser-remoteclient"
           [ "${{ matrix.platform }}" = "win" ] && bin="$bin.exe"
-          gh release download --repo Flux159/roBrowserLegacy-RemoteClient-Rust \
-             --pattern "$bin" --dir /tmp
-          chmod +x "/tmp/$bin" || true
           echo "NEBULA_EMBED_KIT=/tmp/kit" >> "$GITHUB_ENV"
-          echo "REMOTECLIENT_BIN=/tmp/$bin" >> "$GITHUB_ENV"
+          echo "REMOTECLIENT_BIN=$bin" >> "$GITHUB_ENV"
         shell: bash
 
       # Built by images.yml on native Linux runners and fetched by its rolling

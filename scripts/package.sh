@@ -128,8 +128,23 @@ sha256_of "$PAYLOAD/bin/ragnarok-stack$EXE" > "$PAYLOAD/bin/ragnarok-stack.sha25
 
 # The asset server: one 1.7 MB static binary in place of a 106 MB Node runtime
 # plus its dependency tree.
-cp "${REMOTECLIENT_BIN:-${REMOTECLIENT_SRC:-$HOME/Projects/roBrowserLegacy-RemoteClient-Rust}/target/release/robrowser-remoteclient$EXE}" \
-   "$PAYLOAD/bin/robrowser-remoteclient$EXE"
+if [ -z "${REMOTECLIENT_BIN:-}" ]; then
+    bash "$ROOT/scripts/build-remoteclient.sh"
+    REMOTECLIENT_BIN="$ROOT/bin/robrowser-remoteclient$EXE"
+fi
+# A stale sibling binary used to be silently packaged. Validate the contract
+# before copying any helper; an explicit override is useful for test builds.
+node - "$REMOTECLIENT_BIN" <<'JS'
+const result = require('child_process').spawnSync(process.argv[2], ['--capabilities'], { encoding: 'utf8', timeout: 10000 });
+if (result.error || result.status !== 0 || JSON.parse(result.stdout).managedProtocol !== 1) {
+    throw new Error('RemoteClient must support managed protocol 1; run scripts/build-remoteclient.sh');
+}
+JS
+cp "$REMOTECLIENT_BIN" "$PAYLOAD/bin/robrowser-remoteclient$EXE"
+sha256_of "$PAYLOAD/bin/robrowser-remoteclient$EXE" > "$PAYLOAD/bin/robrowser-remoteclient.sha256"
+if [ -f "$REMOTECLIENT_BIN.source-commit" ]; then
+    cp "$REMOTECLIENT_BIN.source-commit" "$PAYLOAD/bin/robrowser-remoteclient.source-commit"
+fi
 
 echo "==> config"
 # No scripts. Everything the app does at runtime is in bin/ragnarok-stack now,
