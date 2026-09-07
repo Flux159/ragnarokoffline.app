@@ -247,6 +247,45 @@ async function main() {
       await game.screenshot({ path: path.join(out, prefix + '-map.png') });
       report.screens.push(prefix + '-accounts.png', prefix + '-map.png');
       console.log('Mandatory internet policy, rejected signup and native GM game login passed:', era, scope);
+      // Explicit opt-in: validate the new handler inside real rAthena, after
+      // gameplay screenshots. This is injected-signal proof, not reproduction
+      // of the intermittent crash, and runs only in this marked test world.
+      if (process.env.RO_E2E_NATIVE_CRASH_TRACE === '1'
+          && !(report.nativeTraces || []).some(trace => trace.era === era)) {
+        await game.goto('about:blank');
+        const before = JSON.parse(docker(['inspect', 'ragnarok-map']).stdout)[0];
+        expect(docker(['kill', '--signal', 'SEGV', 'ragnarok-map']).status).toBe(0);
+        await expect.poll(() => {
+          const value = docker(['inspect', '-f', '{{.State.Status}}', 'ragnarok-map']);
+          return value.status === 0 ? value.stdout.trim() : 'unknown';
+        }, { timeout: 60000 }).toBe('exited');
+        const reportsDir = path.join(state, 'crashes/reports');
+        let captured;
+        await expect.poll(() => {
+          // The owning shell's monitor may already have captured this incident.
+          spawnSync(path.join(world, 'runtime/bin/ragnarok-stack' + (process.platform === 'win32' ? '.exe' : '')),
+            ['capture-crashes'], { env, encoding: 'utf8', timeout: 60000 });
+          for (const name of fs.existsSync(reportsDir) ? fs.readdirSync(reportsDir) : []) {
+            if (!name.startsWith('incident-') || !name.endsWith('.log')) continue;
+            const body = fs.readFileSync(path.join(reportsDir, name), 'utf8');
+            const metadata = JSON.parse(body.split('\n')[0]);
+            if (metadata.container === before.Id) captured = { metadata, body, name };
+          }
+          return !!captured;
+        }, { timeout: 90000 }).toBe(true);
+        expect(captured.metadata.backtraceAvailable).toBe(true);
+        expect(captured.metadata.image).toBe(before.Image);
+        expect(captured.body).toContain('RAGNAROK_CRASH_FRAME index=0x0 ');
+        expect(captured.body).toContain('main_offset=');
+        expect(captured.body.indexOf('RAGNAROK_CRASH_TRACE v1')).toBeLessThan(
+          captured.body.indexOf('Received a crash signal'));
+        report.nativeTraces = [...(report.nativeTraces || []), { era,
+          artifact: captured.name, metadata: captured.metadata, injectedSignal: true }];
+        await invoke('stack_up');
+        await verifyWorld();
+        console.log('Injected rAthena signal retained native frames before emergency-save handler:', era);
+      }
+
     }
     expect(report.pageErrors).toEqual([]);
     console.log('Hosting guard Settings/game checks passed. Evidence:', out);

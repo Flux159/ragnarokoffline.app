@@ -105,7 +105,9 @@ jobs:
             -t ragnarokmac/debug-symbols /tmp/rathena
           cid=$(docker create ragnarokmac/debug-symbols true)
           mkdir -p native-symbols
-          docker cp "$cid:/." native-symbols/
+          docker cp "$cid:/re" native-symbols/
+          docker cp "$cid:/pre-re" native-symbols/
+          docker cp "$cid:/trace-tests" native-symbols/
           docker rm "$cid" >/dev/null
           printf '%s\n' '${{ github.sha }}' > native-symbols/app-source.txt
           docker image inspect "ragnarokmac/rathena:$PACKETVER" --format '{{.Id}}' > native-symbols/image-id.txt
