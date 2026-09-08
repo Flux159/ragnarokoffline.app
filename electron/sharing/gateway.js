@@ -130,7 +130,12 @@ class FriendGateway {
       if (this.sessions.size >= this.maxSessions) return this.reply(res, 429, { error: 'This host has reached its friend limit.' });
       const value = token();
       this.sessions.set(digest(value), { expires: this.expires, sockets: new Set(), registrations: 0, registering: false, attempts: 0 });
-      return this.reply(res, 200, { ok: true }, undefined, { 'set-cookie': `${COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=${Math.max(0, Math.floor((this.expires - this.now()) / 1000))}` });
+      // An invitation set never to expire has Infinity here, which is not a
+      // cookie value. Browsers cap Max-Age at 400 days anyway, so clamp to
+      // that: the cookie outliving the process is harmless, because a session
+      // is only valid while this gateway is the one holding it.
+      const maxAge = Math.min(400 * 86400, Math.max(0, Math.floor((this.expires - this.now()) / 1000)));
+      return this.reply(res, 200, { ok: true }, undefined, { 'set-cookie': `${COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=${maxAge}` });
     }
     if (req.method === 'GET' && ['/','/api.html?app=ONLINE','/_friend/'].includes(req.url) && (!entry || req.url === '/_friend/')) {
       return this.reply(res, entry ? 200 : 401, fs.readFileSync(path.join(__dirname, 'portal.html')), 'text/html; charset=utf-8', {

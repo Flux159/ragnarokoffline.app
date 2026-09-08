@@ -31,7 +31,13 @@ function getSharingSecrets() {
 function getSharing() {
     return sharing ||= new (require('./sharing/controller').SharingController)({
         directory: path.join(dataRoot(), 'sharing'),
-        lifetime: () => Math.min(30, Math.max(1, Number(getSettings().sharing_invite_days) || 7)) * 24 * 60 * 60 * 1000,
+        // 0 means "until you stop sharing": the gateway treats an infinite
+        // lifetime as never expiring, and stopping or replacing still revokes.
+        lifetime: () => {
+            const days = Number(getSettings().sharing_invite_days);
+            if (days === 0) return Infinity;
+            return Math.min(30, Math.max(1, days || 7)) * 24 * 60 * 60 * 1000;
+        },
         guard: async () => {
             const client = getClientPaths();
             if (client.mode !== 'host' || client.hosting_scope !== 'friends' || client.lan || !assetServer.running || !(await assetsReady())) throw Error('Start your own server in friends mode before sharing.');
@@ -1817,8 +1823,10 @@ const handlers = {
         clipboard.writeText(getSharing().invitation());
         // Say the figure actually in force rather than a number baked into the
         // sentence: this is configurable, and it was never Cloudflare's limit.
-        const days = Math.min(30, Math.max(1, Number(getSettings().sharing_invite_days) || 7));
-        return `Invitation copied. It works for ${days} day${days === 1 ? '' : 's'}, until you replace it, or until you stop sharing.`;
+        const days = Number(getSettings().sharing_invite_days);
+        if (days === 0) return 'Invitation copied. It works until you replace it or stop sharing.';
+        const span = Math.min(30, Math.max(1, days || 7));
+        return `Invitation copied. It works for ${span} day${span === 1 ? '' : 's'}, until you replace it, or until you stop sharing.`;
     },
     sharing_replace: () => { getSharing().replaceInvitation(); return 'Previous invitations and connected friends were disconnected. Copy a new link to invite them again.'; },
     sharing_forget: async () => { await getSharing().stop(); getSharingSecrets().forget(); return 'Saved credentials removed. The hostname and stopped tunnel remain in your Cloudflare account for you to remove there.'; },

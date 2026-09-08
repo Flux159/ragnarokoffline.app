@@ -14,6 +14,10 @@
     background: var(--panel); border: 1px solid var(--line);
     border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;
   }
+  /* A class that sets display beats the user agent's [hidden] rule, so
+     hidden did nothing on a .row -- and every row here sets display:flex.
+     Global, because the next person to hide one should not rediscover it. */
+  [hidden] { display: none !important; }
   .row {
     display: flex; justify-content: space-between; align-items: center;
     padding: 5px 0; border-bottom: 1px solid var(--line);
@@ -169,9 +173,14 @@
         <input type="checkbox" id="mp-lan" />
       </div>
       <div class="row">
-        <span class="name">Your link</span>
+        <span class="name">Your link — on this network</span>
         <span class="state" id="mp-addr">—</span>
         <button id="mp-copy" class="ghost" style="margin-left:10px">Copy</button>
+      </div>
+      <div class="row" id="mp-internet-link-row" hidden>
+        <span class="name">Your link — over the internet</span>
+        <span class="state" id="mp-internet-addr">—</span>
+        <button id="mp-internet-copy" class="ghost" style="margin-left:10px">Copy</button>
       </div>
       <div class="row actions" style="padding-top:10px">
         <button id="mp-restart" class="ghost">Restart server</button>
@@ -240,17 +249,18 @@
       </div>
       <p id="sharing-state" class="note" role="status" aria-live="polite">Sharing is off.</p>
       <p id="sharing-feedback" class="note" role="status" aria-live="polite"></p>
-      <p class="note">An invitation lasts eight hours and lets up to 32 friend browsers connect. Invited friends can create an ordinary game account. Stop sharing disconnects friends without stopping your local game. Starting sharing applies the protected account policy and restarts game services once.</p>
+      <p class="note" id="sharing-lifetime-note">An invitation lets up to 32 friend browsers connect. Invited friends can create an ordinary game account. Stop sharing disconnects friends without stopping your local game. Starting sharing applies the protected account policy and restarts game services once.</p>
       <details><summary>Manage invitations and connection</summary>
         <button id="sharing-replace" class="ghost" disabled>Disconnect friends and replace invitation</button>
         <button id="sharing-forget" class="ghost" disabled>Forget saved Cloudflare connection</button>
         <p class="note">Forgetting removes the saved credential. Remove the stopped tunnel and DNS record separately in your Cloudflare dashboard.</p>
         <p class="note">Copy diagnostics includes the Cloudflare helper version and checksum verification. Keep the app updated: Cloudflare supports helper versions within one year of its most recent release.</p>
         <label><span>Invitation lasts</span>
-      <span class="mult" style="margin-left:auto"><input type="number" class="val num" id="sharing_invite_days" min="1" max="30" step="1"></span>
+      <span class="mult" style="margin-left:auto"><input type="number" class="val num" id="sharing_invite_days" min="0" max="30" step="1"></span>
       <span class="val" style="width:auto; color: var(--dim)">days</span></label>
-    <p class="note">How long a link keeps working, 1–30 days. This is the invitation, not the
-      tunnel: Cloudflare imposes no limit of its own, and a named domain does not change it.
+    <p class="note">How long a link keeps working, in days. <b>0 means it never expires</b> —
+      it lasts until you replace it or stop sharing. This is the invitation, not the tunnel:
+      Cloudflare imposes no limit of its own, and a named domain does not change it.
       <b>Replace invitation</b> revokes every existing link immediately, and stopping sharing
       ends them all. Applies to the next invitation you create.</p>
     <p class="note">Mods that change command permissions — <b>player-commands</b>, for example — apply
@@ -451,10 +461,19 @@ function paintInternetSetup(mode = $('mp-mode').value) {
   $('mp-internet-setup').setAttribute('aria-expanded', String(visible));
   $('internet-hosting').hidden = !visible;
 }
-$('mp-internet-setup').onchange = () => {
+$('mp-internet-setup').onchange = async () => {
   internetSetup = $('mp-internet-setup').checked;
   try { localStorage.setItem('internet-sharing-setup', String(internetSetup)); } catch {}
   paintInternetSetup();
+  // Sharing over the internet with LAN off is a combination nobody wants: the
+  // people you hand a link to are, by definition, not on this machine. Turn it
+  // on as a default when the disclosure is opened -- never off, and never
+  // again once it has been unticked deliberately.
+  if (internetSetup && !$('mp-lan').checked) {
+    await invoke('set_mode', { lan: true });
+    await refreshMode();
+    log('LAN connections turned on for internet sharing. Restart server to apply.');
+  }
   refreshSharing();
 };
 
@@ -464,7 +483,8 @@ function paintRegistration(settings) {
   // public, which showed a policy the saved setting did not actually hold and
   // left no way to change it.
   $('open-registration').value = settings.open_registration === false ? 'owner' : 'open';
-  $('sharing_invite_days').value = String(Math.min(30, Math.max(1, Number(settings.sharing_invite_days) || 7)));
+  $('sharing_invite_days').value = String(inviteDays(settings.sharing_invite_days));
+  paintInviteLifetime(settings.sharing_invite_days);
   $('open-registration').disabled = false;
   $('registration-save').disabled = false;
   $('registration-note').textContent =
@@ -906,6 +926,25 @@ for (const [index, key] of TAB_KEYS.entries()) {
 }
 try { showTab(localStorage.getItem('settings-tab') || 'general'); } catch { showTab('general'); }
 
+// 0 is a real answer here -- "until you stop sharing" -- so it cannot go
+// through the usual `|| default` clamp, which would silently turn it into 7.
+function inviteDays(value) {
+  const days = Number(value);
+  if (days === 0) return 0;
+  return Math.min(30, Math.max(1, days || 7));
+}
+function paintInviteLifetime(days) {
+  const note = $('sharing-lifetime-note');
+  if (!note) return;
+  const span = inviteDays(days);
+  note.textContent = (span === 0
+    ? 'An invitation lasts until you replace it or stop sharing, and lets up to 32 friend browsers connect.'
+    : `An invitation lasts ${span} day${span === 1 ? '' : 's'} and lets up to 32 friend browsers connect.`)
+    + ' Invited friends can create an ordinary game account. Stop sharing disconnects friends'
+    + ' without stopping your local game. Starting sharing applies the protected account policy'
+    + ' and restarts game services once.';
+}
+
 // Status lines that answer a button. A failure has to look like one: these all
 // used to render in the same dim note colour as the explanatory text around
 // them, so a refusal read as the button doing nothing.
@@ -951,9 +990,26 @@ $('mods-apply').onclick = () => withButton('mods-apply', 'Applying…', 'Apply',
   return 'Mods applied. Restart the app for client-side changes.';
 });
 
+// The second half of "Your link": the internet one, beside the LAN one, so
+// both live where somebody looks for a link rather than in two places.
+//
+// The hostname is shown, never the invitation itself. The link carries a
+// bearer token -- anyone holding it is in -- and this window is the thing
+// people screenshot when asking for help. Copy puts the real link on the
+// clipboard without ever painting it on screen.
+function paintInternetLink(state) {
+  const row = $('mp-internet-link-row');
+  if (!row) return;
+  const live = state && state.state === 'sharing' && state.hostname;
+  row.hidden = !live;
+  if (live) $('mp-internet-addr').textContent = state.hostname;
+}
+
 let sharingBusy = false, sharingConfigured = false;
 async function refreshSharing() {
-  if ($('internet-hosting').hidden) return;
+  // Closing the disclosure, or leaving host mode, must also take the internet
+  // link away -- it is in a different panel and would otherwise linger.
+  if ($('internet-hosting').hidden) { paintInternetLink(null); return; }
   try {
     const state = await invoke('sharing_status');
     $('cloudflare-setup').hidden = state.configured;
@@ -969,7 +1025,13 @@ async function refreshSharing() {
     $('sharing-replace').disabled = !['sharing', 'reconnecting'].includes(state.state);
     $('sharing-forget').disabled = sharingBusy || (!state.configured && !state.configurationError);
     setNote('sharing-state', state.message || 'Sharing is off.');
-    if (state.expires && state.state === 'sharing') $('sharing-state').textContent += ` Invitation expires ${new Date(state.expires).toLocaleTimeString()}. ${state.connectedFriends} friend browser(s) connected.`;
+    if (state.state === 'sharing') {
+      const expiry = Number.isFinite(state.expires)
+        ? ` Invitation expires ${new Date(state.expires).toLocaleString()}.`
+        : ' Invitation does not expire.';
+      $('sharing-state').textContent += `${expiry} ${state.connectedFriends} friend browser(s) connected.`;
+    }
+    paintInternetLink(state);
   } catch (error) { setNote('sharing-state', error.message || String(error), 'bad'); }
 }
 async function sharingAction(name, request) {
@@ -985,6 +1047,7 @@ $('sharing-connect').onclick = () => sharingAction('sharing_connect', { publicHo
 $('sharing-start').onclick = () => sharingAction('sharing_start', { useDomain: $('sharing-use-domain').checked });
 $('sharing-stop').onclick = () => sharingAction('sharing_stop');
 $('sharing-copy').onclick = () => sharingAction('sharing_copy');
+$('mp-internet-copy').onclick = () => sharingAction('sharing_copy');
 $('sharing-replace').onclick = () => sharingAction('sharing_replace');
 $('sharing-forget').onclick = () => sharingAction('sharing_forget');
 $('sharing-token-help').onclick = () => invoke('sharing_token_help');
@@ -1046,7 +1109,7 @@ $('save').onclick = async () => {
   settings.max_parameter = Number($('max_parameter').value) || 99;
   settings.free_kafra_warp = $('free_kafra_warp').checked;
   settings.open_registration = $('open-registration').value === 'open';
-  settings.sharing_invite_days = Math.min(30, Math.max(1, Number($('sharing_invite_days').value) || 7));
+  settings.sharing_invite_days = inviteDays($('sharing_invite_days').value);
   settings.prerenewal = eraIsPre;
   settings.zeny_from_mobs = $('zeny_from_mobs').checked;
   $('save').disabled = true;
