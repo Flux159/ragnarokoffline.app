@@ -72,8 +72,8 @@ function quickHostname(child) {
   });
 }
 class SharingController {
-  constructor({ directory, register, guard, onChange = () => {}, lifetime = () => 8 * 60 * 60 * 1000, invite = () => null, onInvite = () => {} }, { helper = ensureHelper, launch = spawn, health = publicHealth, websocket = publicSocket, Gateway = FriendGateway } = {}) {
-    Object.assign(this, { directory, register, guard, onChange, lifetime, invite, onInvite, helper, launch, health, websocket, Gateway }); this.state = 'stopped'; this.generation = 0;
+  constructor({ directory, register, guard, onChange = () => {}, lifetime = () => 8 * 60 * 60 * 1000, invite = () => null, onInvite = () => {}, log = () => {} }, { helper = ensureHelper, launch = spawn, health = publicHealth, websocket = publicSocket, Gateway = FriendGateway } = {}) {
+    Object.assign(this, { directory, register, guard, onChange, lifetime, invite, onInvite, log, helper, launch, health, websocket, Gateway }); this.state = 'stopped'; this.generation = 0;
   }
   status() { return { state: this.state, message: this.message || '', hostname: this.hostname || '', expires: this.gateway?.expires || null, connectedFriends: this.gateway ? [...this.gateway.sessions.values()].filter(entry => entry.sockets.size > 0).length : 0 }; }
   update(state, message = '') { this.state = state; this.message = message; this.onChange(this.status()); }
@@ -84,7 +84,10 @@ class SharingController {
     try {
       await this.guard();
       if (generation !== this.generation) return;
-      const executable = await this.helper(path.join(this.directory, 'helpers'));
+      const executable = await this.helper(path.join(this.directory, 'helpers'), message => {
+        this.log(`helper: ${message}`);
+        if (generation === this.generation) this.update('preparing', message);
+      });
       if (generation !== this.generation) return;
       // Bind the protected gateway before requesting any public hostname.
       // Until Cloudflare assigns it, every Host is rejected by this sentinel.
@@ -108,8 +111,17 @@ class SharingController {
       for (const key of Object.keys(env)) if (env[key] === undefined) delete env[key];
       const args = saved ? ['tunnel', '--config', configPath, '--no-autoupdate', '--loglevel', 'error', 'run', saved.tunnelId]
         : ['tunnel', '--config', configPath, '--no-autoupdate', '--url', 'http://127.0.0.1:' + port, '--metrics', '127.0.0.1:0'];
-      this.child = this.launch(executable, args, { env, stdio: ['ignore', 'ignore', saved ? 'ignore' : 'pipe'], windowsHide: true });
+      this.child = this.launch(executable, args, { env, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
       const child = this.child;
+      // Keep cloudflared's own diagnostics. A named tunnel discarded them
+      // entirely before, so "Cloudflare stopped" was all anyone ever saw.
+      child.stderr?.setEncoding('utf8');
+      child.stderr?.on('data', chunk => {
+        for (const line of String(chunk).split('\n')) {
+          const text = line.trim();
+          if (text) this.log(`cloudflared: ${text}`);
+        }
+      });
       child.once('error', () => this.fail(generation, 'Cloudflare could not start. Try sharing again.'));
       child.once('exit', () => { if (this.child === child) this.fail(generation, 'Cloudflare stopped. Start sharing again to reconnect.'); });
       this.update('connecting', 'Waiting for the public game link…');

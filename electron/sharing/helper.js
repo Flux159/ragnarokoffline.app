@@ -88,15 +88,22 @@ function download(url, redirects = 0) {
     request.on('timeout', () => request.destroy()); request.on('error', () => reject(Error('Could not download the Cloudflare helper.')));
   });
 }
-async function ensureHelper(directory) {
+async function ensureHelper(directory, progress = () => {}) {
   const details = helperDetails(directory);
   const { build, executable } = details;
-  if (!build) throw Error('Cloudflare sharing is not packaged for this platform yet.');
+  if (!build) throw Error(`Cloudflare sharing is not packaged for ${details.platform} yet.`);
   const wanted = build[2] || build[1];
-  if (fs.existsSync(executable) && hash(fs.readFileSync(executable)) === wanted) { recordInstallation(details); return executable; }
+  progress(`Checking the Cloudflare helper (${VERSION}) for ${details.platform}…`);
+  if (fs.existsSync(executable) && hash(fs.readFileSync(executable)) === wanted) {
+    recordInstallation(details);
+    progress('Cloudflare helper already downloaded and verified.');
+    return executable;
+  }
   fs.mkdirSync(path.dirname(executable), { recursive: true, mode: 0o700 });
+  progress(`Downloading the Cloudflare helper (${build[0]}, ${VERSION})…`);
   const archive = await download(`https://github.com/cloudflare/cloudflared/releases/download/${VERSION}/${build[0]}`);
-  if (hash(archive) !== build[1]) throw Error('The Cloudflare helper checksum did not match. Sharing was not started.');
+  progress(`Downloaded ${archive.length} bytes; verifying checksum…`);
+  if (hash(archive) !== build[1]) throw Error('The Cloudflare helper checksum did not match what this build expects. Sharing was not started; nothing was installed.');
   let bytes = archive;
   if (build[0].endsWith('.tgz')) {
     const temporary = executable + '.' + crypto.randomBytes(6).toString('hex') + '.download'; fs.writeFileSync(temporary, archive, { mode: 0o600, flag: 'wx' });
@@ -104,10 +111,11 @@ async function ensureHelper(directory) {
       bytes = await new Promise((resolve, reject) => execFile('/usr/bin/tar', ['-xzOf', temporary, 'cloudflared'], { encoding: 'buffer', maxBuffer: 80 * 1024 * 1024, timeout: 30000 }, (error, stdout) => error ? reject(Error('Could not unpack the Cloudflare helper.')) : resolve(stdout)));
     } finally { fs.rmSync(temporary, { force: true }); }
   }
-  if (hash(bytes) !== wanted) throw Error('The Cloudflare executable checksum did not match.');
+  if (hash(bytes) !== wanted) throw Error('The unpacked Cloudflare executable checksum did not match what this build expects. Sharing was not started; nothing was installed.');
   const temporary = executable + '.' + crypto.randomBytes(6).toString('hex') + '.new'; fs.writeFileSync(temporary, bytes, { mode: 0o700, flag: 'wx' });
   try { fs.renameSync(temporary, executable); } finally { fs.rmSync(temporary, { force: true }); }
   recordInstallation(details, new Date().toISOString());
+  progress('Cloudflare helper installed and verified.');
   return executable;
 }
 module.exports = { VERSION, RELEASED_AT, BUILDS, ensureHelper, helperDiagnostics };

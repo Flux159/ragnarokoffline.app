@@ -36,6 +36,20 @@ function getSharing() {
         // Reuse the stored invitation so a link already sent to friends keeps
         // working across a restart, a crash or a Repair. Rotating it is a
         // deliberate act -- "Create a new link" in Settings.
+        // Everything sharing does, kept on disk so a bug report carries it.
+        // Bounded, because a reconnecting tunnel is chatty.
+        log: message => {
+            const line = `${new Date().toISOString()} ${message}\n`;
+            appLog(`sharing: ${message}`);
+            try {
+                const file = path.join(dataRoot(), 'sharing', 'sharing.log');
+                fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+                if ((fs.statSync(file, { throwIfNoEntry: false })?.size || 0) > 512 * 1024) {
+                    fs.renameSync(file, file + '.1');
+                }
+                fs.appendFileSync(file, line);
+            } catch { /* diagnostics must never break sharing */ }
+        },
         invite: () => { try { return getSharingSecrets().loadInvite(); } catch { return null; } },
         onInvite: value => { try { getSharingSecrets().saveInvite(value); } catch { /* no secure store */ } },
         lifetime: () => {
@@ -1603,6 +1617,40 @@ const handlers = {
 			state: sharing?.state || 'stopped',
 			helper: require('./sharing/helper').helperDiagnostics(path.join(dataRoot(), 'sharing/helpers')),
 		}, null, 2));
+
+		// What sharing actually did, including the helper download and
+		// cloudflared's own output. The status block above says the current
+		// state; this says how it got there.
+		try {
+			const file = path.join(dataRoot(), 'sharing', 'sharing.log');
+			const body = fs.readFileSync(file, 'utf8').split('\n');
+			add('sharing.log (tail)', body.slice(-80).join('\n'));
+		} catch { /* never shared from this install */ }
+
+		// Preserved map-server crashes. The container log above only carries
+		// the run it is on, so a server that has died more than once loses
+		// every earlier trace from it -- these are the retained copies, and
+		// they are the whole reason the crash capture exists.
+		try {
+			const crashes = path.join(stateDir(), 'crashes');
+			// Structured incident reports, and the raw server logs kept beside
+			// them. Newest last, and only the last few in full: a server that
+			// has died repeatedly would otherwise bury everything else.
+			const listed = [];
+			for (const [where, label] of [[path.join(crashes, 'reports'), 'report'], [crashes, 'log']]) {
+				for (const name of fs.readdirSync(where).sort()) {
+					const file = path.join(where, name);
+					if (fs.statSync(file).isFile() && name.endsWith('.log')) listed.push({ file, name, label });
+				}
+			}
+			if (listed.length) {
+				add('preserved crashes', listed.map(e => `${e.label}: ${e.name}`).join('\n'));
+				for (const entry of listed.slice(-3)) {
+					add(`crash ${entry.label}: ${entry.name}`,
+						fs.readFileSync(entry.file, 'utf8').slice(-40000));
+				}
+			}
+		} catch { /* no crashes recorded */ }
 
 		try {
 			add('engine', await runStack(['status']));

@@ -249,6 +249,13 @@
       <h3>Play together over the internet</h3>
       <p class="note">Your friends open an invitation in their browser and join your server. They do not install the app. Keep this computer awake and the app open while playing together.</p>
       <p class="note">Share creates a temporary invitation link automatically. No Cloudflare account or token is needed. <strong>Cloudflare Quick Tunnels are for testing only:</strong> they have no uptime guarantee and allow at most <strong>200 requests in flight at once</strong> across the tunnel. This is a simultaneous request limit, not a total request allowance or player count; busy asset loading can hit it.</p>
+      <p class="note"><strong>A temporary link changes every time you start sharing.</strong> Cloudflare hands out a new
+         <code>trycloudflare.com</code> address each time, so stopping the app, restarting the server or using
+         <em>Repair</em> means sending your friends a new link. The invitation itself is kept, so only the address moves.</p>
+      <p class="note"><strong>For a link that stays the same, connect a Cloudflare account below</strong> and use your own
+         domain. A named tunnel keeps its address across restarts, and with the saved invitation the whole link stays
+         valid until you choose <em>Create a new link</em>. It needs a free Cloudflare account, a domain on it, and an
+         API token.</p>
       <p class="note">For regular hosting, connect your Cloudflare account and use a named tunnel with your own domain below. Named tunnels do not have the Quick Tunnel 200-request limit and work behind NAT without port forwarding.</p>
       <details id="cloudflare-options"><summary>Use a named tunnel for regular hosting</summary>
       <div id="cloudflare-setup">
