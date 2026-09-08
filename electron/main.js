@@ -33,6 +33,11 @@ function getSharing() {
         directory: path.join(dataRoot(), 'sharing'),
         // 0 means "until you stop sharing": the gateway treats an infinite
         // lifetime as never expiring, and stopping or replacing still revokes.
+        // Reuse the stored invitation so a link already sent to friends keeps
+        // working across a restart, a crash or a Repair. Rotating it is a
+        // deliberate act -- "Create a new link" in Settings.
+        invite: () => { try { return getSharingSecrets().loadInvite(); } catch { return null; } },
+        onInvite: value => { try { getSharingSecrets().saveInvite(value); } catch { /* no secure store */ } },
         lifetime: () => {
             const days = Number(getSettings().sharing_invite_days);
             if (days === 0) return Infinity;
@@ -1834,7 +1839,13 @@ const handlers = {
         const span = Math.min(30, Math.max(1, days || 7));
         return `Invitation copied. It works for ${span} day${span === 1 ? '' : 's'}, until you replace it, or until you stop sharing.`;
     },
-    sharing_replace: () => { getSharing().replaceInvitation(); return 'Previous invitations and connected friends were disconnected. Copy a new link to invite them again.'; },
+    // The invitation is otherwise reused for the life of the install, so this
+    // is the only thing that changes a link -- and it disconnects everyone
+    // holding the old one, which is why the button is styled as destructive.
+    sharing_replace: () => {
+        getSharing().replaceInvitation();
+        return 'New link created. The previous link stopped working and friends using it were disconnected.';
+    },
     sharing_forget: async () => { await getSharing().stop(); getSharingSecrets().forget(); return 'Saved credentials removed. The hostname and stopped tunnel remain in your Cloudflare account for you to remove there.'; },
 	hosting_check: async () => {
 		if (getClientPaths().mode !== 'host') throw new Error('Hosting checks belong to your own server.');

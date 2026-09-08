@@ -569,10 +569,47 @@ static void population_engine_destroy_failed_spawn(map_session_data* sd)
     aFree(sd);
 }
 
+/// RAGNAROKMAC: drop a shell from the live registry, by pointer identity.
+///
+/// Deliberately never dereferences `sd`: it is called from the release path,
+/// where the object may already have been torn down by another route, and
+/// comparing pointer values is safe where reading through them is not.
+///
+/// Returns whether an entry was actually removed, so the counters are only
+/// adjusted by whoever really took the shell out. Callers that already
+/// removed it -- the arena partition, and the drains that std::move the whole
+/// vector -- find nothing here and leave the counts alone.
+static bool population_engine_forget_shell(map_session_data* sd)
+{
+	auto it = std::find(g_population_engine_pcs.begin(), g_population_engine_pcs.end(), sd);
+	if (it == g_population_engine_pcs.end())
+		return false;
+	g_population_engine_pcs.erase(it);
+	if (g_population_engine_count.load() > 0)
+		g_population_engine_count--;
+	if (g_population_engine_stats.active_units > 0)
+		g_population_engine_stats.active_units--;
+	return true;
+}
+
 void population_engine_shell_release(map_session_data* sd)
 {
 	if (!sd)
 		return;
+	// RAGNAROKMAC: leave the registry before anything else, and before the
+	// guard below, which reads sd->id.
+	//
+	// Releasing used to be the caller's job to pair with removal, and one
+	// caller did not: the abandoned-map sweep collects shells on maps that
+	// have gone quiet and releases them while they are still listed. The
+	// combat timer's stale sweep then read sd->id out of freed memory --
+	// which is the SIGSEGV in population_engine_collect_stale_shells that
+	// this fixes.
+	//
+	// Doing it here rather than at each call site makes the invariant one
+	// that cannot be broken by adding another caller later: nothing is freed
+	// while the registry still points at it.
+	population_engine_forget_shell(sd);
 	// Defensive guard: a kill cascade (e.g. Asura Strike against a mortal shell)
 	// can free `sd` out-of-band before the next stale-shell sweep runs. Touching
 	// `sd->sc` (an unordered_map) on freed memory crashes deep inside _Find_last.

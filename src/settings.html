@@ -94,6 +94,9 @@
      refusal was indistinguishable from progress text and read as "nothing
      happened". Errors get their own colour and weight. */
   .note.bad, .bad { color: #ff8080; font-weight: 600; }
+  /* Actions that take something away from people who already have it. */
+  button.danger { background: transparent; color: #ff8080; border: 1px solid #ff808066; }
+  button.danger:hover:not(:disabled) { background: #ff80801a; border-color: #ff8080; }
   .note.good { color: #7fd88f; }
   pre { margin: 0; color: var(--dim); font-size: 11px; white-space: pre-wrap; }
   /* One long scroll made everything past Multiplayer effectively hidden.
@@ -193,6 +196,11 @@
         <button type="button" id="mp-internet-addr" class="linkcopy"
                 title="Click to copy the whole invitation">—</button>
         <button id="mp-internet-copy" class="ghost" style="margin-left:10px">Copy</button>
+      </div>
+      <div class="row" id="mp-internet-new-row" hidden>
+        <span class="name">Replace this link</span>
+        <span class="val" style="width:auto; color: var(--dim); flex:1 1 auto">the same link keeps working across restarts until you replace it</span>
+        <button id="mp-internet-new" class="danger" style="margin-left:10px">Create a new link</button>
       </div>
       <div class="row actions" style="padding-top:10px">
         <button id="mp-restart" class="ghost">Restart server</button>
@@ -1014,6 +1022,8 @@ function paintInternetLink(state) {
   if (!row) return;
   const live = state && state.state === 'sharing' && state.invitation;
   row.hidden = !live;
+  const newRow = $('mp-internet-new-row');
+  if (newRow) newRow.hidden = !live;
   if (live) {
     const field = $('mp-internet-addr');
     field.textContent = state.invitation;
@@ -1067,6 +1077,10 @@ $('sharing-copy').onclick = () => sharingAction('sharing_copy');
 $('mp-internet-copy').onclick = () => sharingAction('sharing_copy');
 // Clicking the link copies it. Selecting an elided string by hand is how
 // somebody ends up sending half a link, or the hostname without its token.
+$('mp-internet-new').onclick = async () => {
+  if (!confirm('Create a new link?\n\nThe link you have already shared will stop working, and anyone playing through it will be disconnected.')) return;
+  await sharingAction('sharing_replace');
+};
 $('mp-internet-addr').onclick = async () => {
   const link = $('mp-internet-addr').dataset.link;
   if (!link) return;

@@ -104,3 +104,26 @@ test('WebSocket framing preserves split payloads and rejects oversized or unmask
     const invalid = new Frames(true); const error = once(invalid, 'error'); invalid.end(bad); assert.match((await error)[0].message, /Invalid|oversized|Incomplete/);
   }
 });
+
+test('a stored invitation is reused so a shared link survives a restart', () => {
+  const origin = 'https://example.invalid';
+  // The shape the gateway mints: 32 random bytes, base64url, 43 characters.
+  const saved = crypto.randomBytes(32).toString('base64url');
+  const restarted = new FriendGateway({ origin, invite: saved });
+  assert.equal(restarted.invite, saved, 'the stored token is adopted as-is');
+  assert.ok(restarted.link().endsWith('#invite=' + saved));
+
+  // Anything that is not a token of the right shape is replaced rather than
+  // trusted -- a truncated or hand-edited store must not weaken the invitation.
+  for (const bad of ['', 'short', null, undefined, 'x'.repeat(43) + '!', 'y'.repeat(44)]) {
+    const fresh = new FriendGateway({ origin, invite: bad });
+    assert.notEqual(fresh.invite, bad);
+    assert.match(fresh.invite, /^[A-Za-z0-9_-]{43}$/, `replaced a bad stored value: ${bad}`);
+  }
+
+  // Replacing is still what changes it, and the new one is a different token.
+  const before = restarted.invite;
+  restarted.revoke();
+  assert.notEqual(restarted.invite, before);
+  assert.match(restarted.invite, /^[A-Za-z0-9_-]{43}$/);
+});

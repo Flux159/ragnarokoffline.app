@@ -104,6 +104,25 @@ edit('UI/Components/MobileUI/MobileUI.js', 'MobileUI.onRemove = function onRemov
      'MobileUI.onRemove = function onRemove() {\n\tstopJoystick();\n')
 print('installed client extension API and shared movement hooks')
 
+# Character names shorter than four characters are refused by the char-server
+# with the same generic code it uses for empty names, control characters and a
+# leading '#', so the client can only say "Char creation denied". Say the actual
+# rule before sending, since the server's answer cannot carry it.
+#
+# Length only. The permitted character set is server configuration
+# (char_name_letters), and a mod may change it, so the client is not the place
+# to assert it -- but char_name_min_length has been 4 since forever and is the
+# client's own historical limit too.
+edit('Engine/CharEngine.js', "function onCharCreationRequest(name, Str, Agi, Vit, Int, Dex, Luk, hair, color, job, sex) {\n\tlet pkt;",
+     """function onCharCreationRequest(name, Str, Agi, Vit, Int, Dex, Luk, hair, color, job, sex) {
+\tlet pkt;
+
+\t// RAGNAROK: the server refuses these with a code that means only "denied".
+\tif (String(name || '').trim().length < 4) {
+\t\tUIManager.showMessageBox('Character names need at least 4 characters.', 'ok');
+\t\treturn;
+\t}""")
+
 # /q1 and /q2 -- quickspell. The official client has them; roBrowser does not.
 # Slot numbers (F9, F7, F8) are fixed in the official client, so they are fixed
 # here. Both toggles default off, as they do there.

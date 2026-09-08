@@ -83,12 +83,16 @@ class Frames extends Transform {
   }
 }
 class FriendGateway {
-  constructor({ origin, upstreamPort = 3338, register, now = Date.now, lifetime = 8 * 60 * 60 * 1000, maxSessions = 32 }) {
+  constructor({ origin, upstreamPort = 3338, register, now = Date.now, lifetime = 8 * 60 * 60 * 1000, maxSessions = 32, invite = null }) {
     const url = new URL(origin);
     if (url.protocol !== 'https:' || url.origin !== origin || url.username || url.password) throw Error('An HTTPS game hostname is required');
     Object.assign(this, { origin, upstreamPort, register, now, lifetime, maxSessions });
     this.host = url.host; this.sessions = new Map(); this.sockets = new Set(); this.requests = new Set();
-    this.invite = token(); this.inviteHash = digest(this.invite); this.expires = now() + lifetime;
+    // A supplied invitation survives restarts, so a link already sent to
+    // friends keeps working after a crash or a repair. Only a token of the
+    // right shape is accepted; anything else is replaced rather than trusted.
+    this.invite = TOKEN.test(invite || '') ? invite : token();
+    this.inviteHash = digest(this.invite); this.expires = now() + lifetime;
     this.challenge = token(); this.attempts = []; this.closed = false; this.pendingRegistrations = 0;
     this.loginLimits = new LoginLimits(now);
   }

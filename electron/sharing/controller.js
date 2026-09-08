@@ -72,8 +72,8 @@ function quickHostname(child) {
   });
 }
 class SharingController {
-  constructor({ directory, register, guard, onChange = () => {}, lifetime = () => 8 * 60 * 60 * 1000 }, { helper = ensureHelper, launch = spawn, health = publicHealth, websocket = publicSocket, Gateway = FriendGateway } = {}) {
-    Object.assign(this, { directory, register, guard, onChange, lifetime, helper, launch, health, websocket, Gateway }); this.state = 'stopped'; this.generation = 0;
+  constructor({ directory, register, guard, onChange = () => {}, lifetime = () => 8 * 60 * 60 * 1000, invite = () => null, onInvite = () => {} }, { helper = ensureHelper, launch = spawn, health = publicHealth, websocket = publicSocket, Gateway = FriendGateway } = {}) {
+    Object.assign(this, { directory, register, guard, onChange, lifetime, invite, onInvite, helper, launch, health, websocket, Gateway }); this.state = 'stopped'; this.generation = 0;
   }
   status() { return { state: this.state, message: this.message || '', hostname: this.hostname || '', expires: this.gateway?.expires || null, connectedFriends: this.gateway ? [...this.gateway.sessions.values()].filter(entry => entry.sockets.size > 0).length : 0 }; }
   update(state, message = '') { this.state = state; this.message = message; this.onChange(this.status()); }
@@ -91,7 +91,10 @@ class SharingController {
       let origin = saved ? 'https://' + saved.hostname : 'https://pending.invalid';
       // Read at each start, so changing it in Settings applies to the next
       // invitation without restarting the app.
-      const gateway = new this.Gateway({ origin, register: this.register, lifetime: this.lifetime() });
+      const gateway = new this.Gateway({ origin, register: this.register, lifetime: this.lifetime(), invite: this.invite() });
+      // Record whatever it ended up using: a reused token, or a fresh one when
+      // nothing was stored or the stored value was unusable.
+      this.onInvite(gateway.invite);
       this.gateway = gateway;
       const port = await gateway.start();
       if (generation !== this.generation) { await gateway.stop(); return; }
@@ -149,7 +152,12 @@ class SharingController {
     if (this.state !== 'sharing' || !this.gateway || this.gateway.expires <= Date.now()) throw Error('Start sharing before copying a current invitation.');
     return this.gateway.link();
   }
-  replaceInvitation() { if (!this.gateway || !['sharing', 'reconnecting'].includes(this.state)) throw Error('Start sharing first.'); this.gateway.revoke(); }
+  replaceInvitation() {
+    if (!this.gateway || !['sharing', 'reconnecting'].includes(this.state)) throw Error('Start sharing first.');
+    this.gateway.revoke();
+    this.onInvite(this.gateway.invite);
+    return this.gateway.link();
+  }
   async stop() {
     if (this.stopping) return this.stopping;
     this.stopping = this.stopOwned();
