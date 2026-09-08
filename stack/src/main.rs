@@ -141,6 +141,13 @@ fn main() {
             }
             Ok(())
         }
+        // The values arrive as one JSON object in argv. spawn passes an
+        // argument vector rather than a command line, so no quoting is at play,
+        // and a mod's settings are bounded to twenty short scalars.
+        "mod-settings" => match (args.get(1), args.get(2)) {
+            (Some(name), Some(body)) => mods::save_settings(&cfg, name, body),
+            _ => Err("mod name and a JSON object of settings required".into()),
+        },
         "mod-enable" | "mod-disable" => match args.get(1) {
             Some(n) => mods::set_enabled(&cfg.state, n, verb == "mod-enable"),
             None => Err("mod name required".into()),

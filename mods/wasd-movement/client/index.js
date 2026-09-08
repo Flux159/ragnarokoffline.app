@@ -65,6 +65,10 @@ export default function init(parameters, api) {
     if (api?.version !== 1) throw new Error('wasd-movement requires client API 1');
     let preferences = settings(api.preferences.get('controls', DEFAULTS));
     const driver = keyboard(api, preferences);
+    // Declared in mod.json and set in Settings > Mods, so the mod can stay on
+    // while its on-screen launcher stays out of the way. Movement, rebinding
+    // and every other behaviour are unaffected.
+    const showLauncher = parameters?.show_controls_button !== false;
     const host = document.createElement('div');
     host.id = 'ragnarok-controls';
     const root = host.attachShadow({ mode: 'open' });
@@ -129,9 +133,9 @@ export default function init(parameters, api) {
     root.querySelector('#reset').addEventListener('click', () => { preferences = settings(); save(); });
     for (const key of ['enabled', 'arrows']) root.querySelector(`#${key}`).addEventListener('change', event => { preferences[key] = event.target.checked; save(); });
     root.querySelector('#policy').addEventListener('change', event => { preferences.policy = event.target.value; save(); });
-    api.on('map:enter', () => { host.hidden = false; });
+    api.on('map:enter', () => { host.hidden = !showLauncher; });
     api.on('map:leave', () => { host.hidden = true; if (dialog.open) dialog.close(); });
-    host.hidden = !api.snapshot().map;
+    host.hidden = !showLauncher || !api.snapshot().map;
     api.cleanup(() => { if (dialog.open) dialog.close(); resume?.(); host.remove(); });
     render();
 }

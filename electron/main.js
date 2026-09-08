@@ -1433,7 +1433,7 @@ const handlers = {
 		// the app would not run it, and the difference is the whole point of
 		// having a reason to show.
 		return out.split('\n').filter(Boolean).map(l => {
-			const [state, name, description, reason, origin, version, author, grants] = l.split('\t');
+			const [state, name, description, reason, origin, version, author, grants, settings] = l.split('\t');
 			return {
 				name,
 				enabled: state === 'on',
@@ -1447,11 +1447,26 @@ const handlers = {
 				// commands players get. Said next to the checkbox because a
 				// mod's own description is not a trustworthy place to learn it.
 				grantsCommands: grants === 'grants-commands',
+				// Options the mod declared in its mod.json, each with the value
+				// in force. Absent for a mod that declares none, and for an
+				// older supervisor that does not write the field at all.
+				settings: (() => {
+					try { return JSON.parse(settings || '[]'); } catch { return []; }
+				})(),
 			};
 		});
 	},
 	set_mod_enabled: ({ name, enabled }) =>
 		runStack([enabled ? 'mod-enable' : 'mod-disable', name]),
+	// Values reach the supervisor as one JSON argument; it validates them
+	// against what the mod actually declares before writing anything. The
+	// client only reads them when its config is regenerated, so rebuild the
+	// asset overlay here rather than leaving the game showing stale options.
+	set_mod_settings: async ({ name, values }) => {
+		await runStack(['mod-settings', String(name), JSON.stringify(values ?? {})]);
+		if (clientComplete(getClientPaths())) await linkClient(getClientPaths());
+		return { applied: true };
+	},
 	// Install a mod from a folder or a .zip the player chose.
 	//
 	// A mod is not data: it drops scripts and tables into the server's paths and

@@ -82,6 +82,56 @@ The **folder name** is the mod's identity — it is what `disabled.txt` lists,
 what the script mount is called, and what decides merge order. A `mod.json`
 that calls the mod something else gets a warning, and the folder name wins.
 
+### settings — options the app renders for you
+
+A mod that wants one switch should not have to ship its own settings window.
+Declare the options in `mod.json` and the app draws them under **Settings →
+Mods**, right below the mod's checkbox:
+
+```json
+{
+  "name": "wasd-movement",
+  "settings": [
+    {
+      "key": "show_controls_button",
+      "type": "boolean",
+      "default": true,
+      "label": "Show the Controls button in game",
+      "description": "Turn this off to keep keyboard movement without the on-screen button."
+    }
+  ]
+}
+```
+
+`type` is `"boolean"`, `"number"` or `"string"` — three scalars, because the
+app has to render them without knowing what the mod means by them. Anything
+richer is the mod's own UI problem. A number takes optional `min` and `max`, a
+string an optional `max_length` (200 at most); `key` is up to 40 letters,
+digits or underscores, and a mod may declare at most twenty.
+
+The values arrive as the **first argument to your client entry point**, the one
+you were already given:
+
+```js
+export default function init(parameters, api) {
+  const showButton = parameters?.show_controls_button !== false;
+}
+```
+
+Read them defensively, the way that line does. A saved value the mod no longer
+declares is dropped, a value of the wrong type falls back to your default, and
+a number outside your own `min`/`max` is clamped to it — so a hand-edited
+`mod-settings.json` cannot hand your mod something it said it could not take.
+Answers live in `state/mod-settings.json`, outside both the runtime tree an
+update replaces and the `state/mods` folder that only exists for mods somebody
+installed, so a bundled mod's options survive an app update.
+
+Settings are read when the client config is generated, so **Apply** rewrites it
+and the game picks the new values up on its next load. Changing an option does
+not disable the mod: it stays on and decides for itself what to do with the
+answer, which is the point — `show_controls_button` hides a button while
+keyboard movement keeps working.
+
 ## Installing a mod
 
 **Settings → Mods → Install a mod…** takes a folder or a `.zip` and puts it in

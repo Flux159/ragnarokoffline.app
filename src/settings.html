@@ -726,6 +726,9 @@ $('report').onclick = () =>
 // Mods. Checkboxes are written on Apply rather than on each click, so a player
 // can turn several on and pay for one restart.
 let modState = {};
+// Per-mod option values, and what they were when the list was drawn, so Apply
+// only rebuilds the asset overlay for mods whose options actually moved.
+let modSettings = {}, modSettingsBaseline = {};
 
 async function refreshMods() {
   let mods = [];
@@ -736,6 +739,7 @@ async function refreshMods() {
     return;
   }
   modState = {};
+  modSettings = {}; modSettingsBaseline = {};
   box.innerHTML = '';
   for (const m of mods) {
     // A refused mod is not a mod the player can turn on, so it does not get a
@@ -765,6 +769,52 @@ async function refreshMods() {
         : '');
     row.append(cb, text);
     box.append(row);
+    // Options the mod declared for itself. Built with DOM calls and
+    // textContent: a label and a description come out of somebody's mod.json,
+    // and nothing about a mod folder is trusted markup.
+    if (!m.refused && Array.isArray(m.settings) && m.settings.length) {
+      const values = {};
+      const options = document.createElement('div');
+      options.style.cssText = 'margin:2px 0 8px 28px; display:flex; flex-direction:column; gap:6px';
+      for (const setting of m.settings) {
+        values[setting.key] = setting.value;
+        const line = document.createElement('label');
+        line.style.cssText = 'display:flex; align-items:center; gap:8px; font-size:12px; min-height:0';
+        const input = document.createElement('input');
+        if (setting.type === 'boolean') {
+          input.type = 'checkbox';
+          input.checked = setting.value === true;
+          input.style.cssText = 'accent-color: var(--accent); flex:none';
+          input.onchange = () => { values[setting.key] = input.checked; };
+        } else if (setting.type === 'number') {
+          input.type = 'number';
+          input.value = String(setting.value ?? 0);
+          if (setting.min !== undefined) input.min = String(setting.min);
+          if (setting.max !== undefined) input.max = String(setting.max);
+          input.style.cssText = 'width:96px; flex:none';
+          input.onchange = () => { values[setting.key] = Number(input.value); };
+        } else {
+          input.type = 'text';
+          input.value = String(setting.value ?? '');
+          if (setting.maxLength) input.maxLength = setting.maxLength;
+          input.style.cssText = 'flex:1 1 auto; min-width:0';
+          input.onchange = () => { values[setting.key] = input.value; };
+        }
+        const caption = document.createElement('span');
+        caption.textContent = setting.label || setting.key;
+        line.append(input, caption);
+        options.append(line);
+        if (setting.description) {
+          const hint = document.createElement('span');
+          hint.textContent = setting.description;
+          hint.style.cssText = 'color:var(--dim); font-size:11px; margin-left:26px';
+          options.append(hint);
+        }
+      }
+      modSettings[m.name] = values;
+      modSettingsBaseline[m.name] = JSON.stringify(values);
+      box.append(options);
+    }
   }
 }
 
@@ -786,6 +836,14 @@ $('mods-folder').onclick = async () => log('Mods folder: ' + await invoke('open_
 $('mods-apply').onclick = () => withButton('mods-apply', 'Applying…', 'Apply', async () => {
   for (const [name, enabled] of Object.entries(modState)) {
     await invoke('set_mod_enabled', { name, enabled });
+  }
+  // Only for mods whose options moved: saving one regenerates the client
+  // config, and doing that per mod on every Apply would rebuild the overlay
+  // several times over for nothing.
+  for (const [name, values] of Object.entries(modSettings)) {
+    if (JSON.stringify(values) !== modSettingsBaseline[name]) {
+      await invoke('set_mod_settings', { name, values });
+    }
   }
   await invoke('stack_up');
   await refreshMods();

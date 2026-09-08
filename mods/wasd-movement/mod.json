@@ -3,5 +3,17 @@
   "version": "1.0.0",
   "author": "Ragnarok Offline",
   "description": "Keyboard movement with per-device bindings and shortcut priority. Open Controls in game to configure or turn it off.",
-  "requires": { "app": ">=1.0.9", "era": "any" }
+  "requires": {
+    "app": ">=1.0.9",
+    "era": "any"
+  },
+  "settings": [
+    {
+      "key": "show_controls_button",
+      "type": "boolean",
+      "default": true,
+      "label": "Show the Controls button in game",
+      "description": "Turn this off to keep keyboard movement without the on-screen button. Rebind keys here in Settings instead."
+    }
+  ]
 }

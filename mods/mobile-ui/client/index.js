@@ -284,9 +284,13 @@ export default function mobileUI(parameters, api) {
       if (windows[name])
         api.actions.perform("window", { name: windows[name], open: true });
     });
+  // Declared in mod.json and set in Settings > Mods. Off keeps the phone
+  // layout and every other behaviour; it only withdraws the on-screen button.
+  const showDisplayButton = parameters?.show_display_button !== false;
   const setPlaying = (playing) => {
     root.querySelector(".hud").hidden = !phone || !playing;
-    root.querySelector("#displayButton").hidden = phone && playing;
+    root.querySelector("#displayButton").hidden =
+      !showDisplayButton || (phone && playing);
     toggleMenu(false);
   };
   api.on("map:enter", () => setPlaying(true));

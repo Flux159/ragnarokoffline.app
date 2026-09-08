@@ -99,6 +99,55 @@ pub struct Manifest {
     /// offered rather than applied, so it declares `"default": "off"` and waits
     /// to be ticked.
     pub default_on: bool,
+    /// Simple options the player can set in Settings, declared by the mod.
+    ///
+    /// A mod that wants one switch should not have to ship its own settings
+    /// window. These are declared here, rendered by the app, and handed back to
+    /// the mod's `init(parameters, api)` when the client loads it -- so a mod
+    /// can stay enabled and still hide part of itself.
+    pub settings: Vec<Setting>,
+}
+
+/// One declared option. Deliberately three scalar types: anything richer is a
+/// mod's own UI problem, and this has to render without the app knowing what
+/// the mod means by it.
+#[derive(Clone, PartialEq, Debug)]
+pub struct Setting {
+    pub key: String,
+    pub label: String,
+    pub description: String,
+    pub value: SettingValue,
+    /// Inclusive bounds for a number, and a maximum length for a string.
+    pub min: f64,
+    pub max: f64,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum SettingValue {
+    Bool(bool),
+    Number(f64),
+    Text(String),
+}
+
+impl SettingValue {
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            SettingValue::Bool(_) => "boolean",
+            SettingValue::Number(_) => "number",
+            SettingValue::Text(_) => "string",
+        }
+    }
+    /// JSON, for both the settings window and the generated client config.
+    pub fn to_json(&self) -> String {
+        match self {
+            SettingValue::Bool(v) => v.to_string(),
+            // Whole numbers must not render as 1.0: this lands in JavaScript
+            // and in a JSON document the settings window parses.
+            SettingValue::Number(v) if v.fract() == 0.0 && v.is_finite() => format!("{}", *v as i64),
+            SettingValue::Number(v) => format!("{v}"),
+            SettingValue::Text(v) => crate::json::quote(v),
+        }
+    }
 }
 
 impl Default for Manifest {
@@ -111,6 +160,7 @@ impl Default for Manifest {
             requires_app: None,
             requires_era: None,
             default_on: true,
+            settings: Vec::new(),
         }
     }
 }
@@ -150,6 +200,73 @@ fn read_manifest(dir: &Path) -> Result<Option<Manifest>, String> {
         },
         ..Manifest::default()
     };
+    if let Some(list) = v.get("settings") {
+        let crate::json::Value::Array(items) = list else {
+            return Err("mod.json: \"settings\" must be an array of option objects".into());
+        };
+        for item in items {
+            if !item.is_object() {
+                return Err("mod.json: each entry in \"settings\" must be an object".into());
+            }
+            let key = item.str("key").unwrap_or_default().to_string();
+            // The key becomes a JavaScript property the mod reads and a form
+            // field the app renders, so keep it to something both can carry.
+            if key.is_empty()
+                || key.len() > 40
+                || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                || key.as_bytes()[0].is_ascii_digit()
+            {
+                return Err(format!(
+                    "mod.json: setting key {key:?} must be 1-40 letters, digits or underscores and cannot start with a digit"
+                ));
+            }
+            if m.settings.iter().any(|s: &Setting| s.key == key) {
+                return Err(format!("mod.json: setting {key:?} is declared twice"));
+            }
+            let label = item.str("label").unwrap_or(&key).to_string();
+            let description = item.str("description").unwrap_or_default().to_string();
+            if label.len() > 120 || description.len() > 400 {
+                return Err(format!("mod.json: setting {key:?} has an over-long label or description"));
+            }
+            let declared = item.str("type").unwrap_or("boolean");
+            let default = item.get("default");
+            let value = match (declared, default) {
+                ("boolean", None) => SettingValue::Bool(false),
+                ("boolean", Some(crate::json::Value::Bool(v))) => SettingValue::Bool(*v),
+                ("number", None) => SettingValue::Number(0.0),
+                ("number", Some(crate::json::Value::Number(v))) if v.is_finite() => SettingValue::Number(*v),
+                ("string", None) => SettingValue::Text(String::new()),
+                ("string", Some(crate::json::Value::String(v))) if v.len() <= 200 => SettingValue::Text(v.clone()),
+                ("boolean" | "number" | "string", _) => {
+                    return Err(format!(
+                        "mod.json: setting {key:?} declares type {declared:?}, so its \"default\" must match that type"
+                    ))
+                }
+                _ => {
+                    return Err(format!(
+                        "mod.json: setting {key:?} has type {declared:?}; use \"boolean\", \"number\" or \"string\""
+                    ))
+                }
+            };
+            let number = |name: &str, fallback: f64| match item.get(name) {
+                Some(crate::json::Value::Number(v)) if v.is_finite() => Ok(*v),
+                None => Ok(fallback),
+                Some(_) => Err(format!("mod.json: setting {key:?} has a non-numeric {name:?}")),
+            };
+            let (min, max) = match &value {
+                SettingValue::Number(_) => (number("min", f64::MIN)?, number("max", f64::MAX)?),
+                SettingValue::Text(_) => (0.0, number("max_length", 200.0)?.clamp(1.0, 200.0)),
+                SettingValue::Bool(_) => (0.0, 0.0),
+            };
+            if min > max {
+                return Err(format!("mod.json: setting {key:?} has a minimum above its maximum"));
+            }
+            m.settings.push(Setting { key, label, description, value, min, max });
+        }
+        if m.settings.len() > 20 {
+            return Err("mod.json: a mod may declare at most 20 settings".into());
+        }
+    }
     if let Some(req) = v.get("requires") {
         if !req.is_object() {
             return Err(format!("mod.json: \"requires\" must be an object, not {req}"));
@@ -303,6 +420,103 @@ const CONF_ALLOWED: &[(&str, &str)] = &[
 /// writes it decides what every player can do. The mods list says so, rather
 /// than the grant being silent -- see `Installed::grants_commands`.
 const CONF_WHOLE_FILE: &[&str] = &["groups.yml", "atcommands.yml"];
+
+/// Where the player's answers live.
+///
+/// One file for every mod rather than a file inside each: a bundled mod's
+/// folder sits in the runtime tree, which is replaced wholesale on update, and
+/// `state/mods` only exists for mods the player installed. Neither is a place
+/// a setting can survive.
+pub fn settings_path(state: &Path) -> PathBuf {
+    state.join("mod-settings.json")
+}
+
+/// Saved answers, as `{ "<mod>": { "<key>": value } }`. A damaged file is an
+/// error rather than an excuse to silently hand every mod its defaults back.
+pub fn read_settings(state: &Path) -> Result<BTreeMap<String, BTreeMap<String, String>>, String> {
+    let path = settings_path(state);
+    let body = match fs::read_to_string(&path) {
+        Ok(body) => body,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
+        Err(e) => return Err(format!("mod settings could not be read: {e}")),
+    };
+    let value = crate::json::parse(&body).map_err(|e| format!("mod-settings.json is not valid JSON -- {e}"))?;
+    let crate::json::Value::Object(mods) = &value else {
+        return Err("mod-settings.json must be an object".into());
+    };
+    let mut out = BTreeMap::new();
+    for (name, entries) in mods {
+        let crate::json::Value::Object(entries) = entries else {
+            return Err(format!("mod-settings.json: {name:?} must be an object"));
+        };
+        let mut values = BTreeMap::new();
+        for (key, value) in entries {
+            values.insert(key.clone(), value_json(value));
+        }
+        out.insert(name.clone(), values);
+    }
+    Ok(out)
+}
+
+fn value_json(value: &crate::json::Value) -> String {
+    match value {
+        crate::json::Value::Bool(v) => v.to_string(),
+        crate::json::Value::Number(v) if v.fract() == 0.0 && v.is_finite() => format!("{}", *v as i64),
+        crate::json::Value::Number(v) => format!("{v}"),
+        crate::json::Value::String(v) => crate::json::quote(v),
+        _ => "null".into(),
+    }
+}
+
+/// A mod's effective settings: its declared defaults with the player's saved
+/// answers applied over them, keeping only keys the mod still declares and only
+/// values still matching the declared type. A mod that drops or retypes an
+/// option therefore cannot be handed a stale value it no longer understands.
+pub fn effective(manifest: &Manifest, saved: Option<&BTreeMap<String, String>>) -> Vec<(String, String)> {
+    manifest
+        .settings
+        .iter()
+        .map(|setting| {
+            let fallback = setting.value.to_json();
+            let chosen = saved
+                .and_then(|values| values.get(&setting.key))
+                .filter(|raw| matching_type(&setting.value, raw))
+                .cloned()
+                .unwrap_or(fallback);
+            (setting.key.clone(), clamp(setting, chosen))
+        })
+        .collect()
+}
+
+fn matching_type(declared: &SettingValue, raw: &str) -> bool {
+    match declared {
+        SettingValue::Bool(_) => raw == "true" || raw == "false",
+        SettingValue::Number(_) => raw.parse::<f64>().map(f64::is_finite).unwrap_or(false),
+        SettingValue::Text(_) => raw.starts_with('"'),
+    }
+}
+
+/// Bounds are the mod's, so a hand-edited file cannot hand it a number it said
+/// it could not take, or a string longer than it asked for.
+fn clamp(setting: &Setting, raw: String) -> String {
+    match &setting.value {
+        SettingValue::Number(_) => match raw.parse::<f64>() {
+            Ok(v) if v.is_finite() => SettingValue::Number(v.clamp(setting.min, setting.max)).to_json(),
+            _ => setting.value.to_json(),
+        },
+        SettingValue::Text(_) => {
+            let limit = setting.max as usize;
+            match crate::json::parse(&raw) {
+                Ok(crate::json::Value::String(v)) if v.chars().count() <= limit => raw,
+                Ok(crate::json::Value::String(v)) => {
+                    crate::json::quote(&v.chars().take(limit).collect::<String>())
+                }
+                _ => setting.value.to_json(),
+            }
+        }
+        SettingValue::Bool(_) => raw,
+    }
+}
 
 /// Read a mod's `conf/` layer, keeping only what the allowlist covers.
 fn read_conf(dir: &Path, name: &str, out: &mut BTreeMap<String, Vec<(String, String)>>) {
@@ -779,7 +993,96 @@ fn one_line(s: &str) -> String {
     s.replace(['\t', '\n', '\r'], " ")
 }
 
-pub fn list(cfg: &Config) -> Vec<[String; 8]> {
+/// The options a mod declares, each with the value actually in force, for the
+/// settings window to render without knowing anything about the mod.
+fn settings_json(manifest: &Manifest, saved: Option<&BTreeMap<String, String>>) -> String {
+    if manifest.settings.is_empty() {
+        return String::from("[]");
+    }
+    let values = effective(manifest, saved);
+    let entries: Vec<String> = manifest
+        .settings
+        .iter()
+        .zip(values.iter())
+        .map(|(setting, (_, value))| {
+            let mut fields = vec![
+                format!("\"key\":{}", crate::json::quote(&setting.key)),
+                format!("\"label\":{}", crate::json::quote(&setting.label)),
+                format!("\"description\":{}", crate::json::quote(&setting.description)),
+                format!("\"type\":{}", crate::json::quote(setting.value.type_name())),
+                format!("\"value\":{value}"),
+            ];
+            match &setting.value {
+                SettingValue::Number(_) => {
+                    if setting.min > f64::MIN {
+                        fields.push(format!("\"min\":{}", SettingValue::Number(setting.min).to_json()));
+                    }
+                    if setting.max < f64::MAX {
+                        fields.push(format!("\"max\":{}", SettingValue::Number(setting.max).to_json()));
+                    }
+                }
+                SettingValue::Text(_) => {
+                    fields.push(format!("\"maxLength\":{}", SettingValue::Number(setting.max).to_json()))
+                }
+                SettingValue::Bool(_) => {}
+            }
+            format!("{{{}}}", fields.join(","))
+        })
+        .collect();
+    format!("[{}]", entries.join(","))
+}
+
+/// Record the player's answers for one mod, keeping only options it declares
+/// and only values of the type it declared. Writing is whole-file and atomic:
+/// a partial answer set would silently reset the options it omitted.
+pub fn save_settings(cfg: &Config, name: &str, body: &str) -> Result<(), String> {
+    let Some(installed) = scan(cfg).into_iter().find(|m| m.name == name) else {
+        return Err(format!("no mod named {name:?} is installed"));
+    };
+    if installed.manifest.settings.is_empty() {
+        return Err(format!("{name} declares no settings"));
+    }
+    let value = crate::json::parse(body).map_err(|e| format!("settings are not valid JSON -- {e}"))?;
+    let crate::json::Value::Object(given) = &value else {
+        return Err("settings must be a JSON object".into());
+    };
+    let mut chosen = BTreeMap::new();
+    for setting in &installed.manifest.settings {
+        let Some(raw) = given.get(&setting.key) else { continue };
+        let encoded = value_json(raw);
+        if !matching_type(&setting.value, &encoded) {
+            return Err(format!(
+                "{}: {:?} expects {}",
+                name,
+                setting.key,
+                setting.value.type_name()
+            ));
+        }
+        chosen.insert(setting.key.clone(), clamp(setting, encoded));
+    }
+    let mut all = read_settings(&cfg.state)?;
+    all.insert(name.to_string(), chosen);
+    let document = all
+        .iter()
+        .map(|(mod_name, values)| {
+            let inner = values
+                .iter()
+                .map(|(key, value)| format!("    {}: {value}", crate::json::quote(key)))
+                .collect::<Vec<_>>()
+                .join(",\n");
+            format!("  {}: {{\n{inner}\n  }}", crate::json::quote(mod_name))
+        })
+        .collect::<Vec<_>>()
+        .join(",\n");
+    let path = settings_path(&cfg.state);
+    let temporary = path.with_extension("json.tmp");
+    fs::write(&temporary, format!("{{\n{document}\n}}\n"))
+        .map_err(|e| format!("writing mod settings: {e}"))?;
+    fs::rename(&temporary, &path).map_err(|e| format!("publishing mod settings: {e}"))
+}
+
+pub fn list(cfg: &Config) -> Vec<[String; 9]> {
+    let saved = read_settings(&cfg.state).unwrap_or_default();
     scan(cfg)
         .into_iter()
         .map(|m| {
@@ -800,6 +1103,10 @@ pub fn list(cfg: &Config) -> Vec<[String; 8]> {
                 // Last, so an older shell that splits off the first seven
                 // fields reads exactly what it did before.
                 if grants { "grants-commands" } else { "" }.to_string(),
+                // Appended for the same reason: the declared options and the
+                // values in force, as one JSON array. json::quote escapes every
+                // control character, so this cannot break the tab framing.
+                settings_json(&m.manifest, saved.get(&m.name)),
             ]
         })
         .collect()
@@ -833,6 +1140,60 @@ fn write_list(state: &Path, file: &str, name: &str, present: bool, header: &str)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn setting(key: &str, value: SettingValue, min: f64, max: f64) -> Setting {
+        Setting { key: key.into(), label: key.into(), description: String::new(), value, min, max }
+    }
+
+    #[test]
+    fn declared_settings_survive_absent_saved_hand_edited_and_retyped_values() {
+        let manifest = Manifest {
+            settings: vec![
+                setting("launcher", SettingValue::Bool(true), 0.0, 0.0),
+                setting("scale", SettingValue::Number(3.0), 1.0, 5.0),
+                setting("label", SettingValue::Text("hi".into()), 0.0, 4.0),
+            ],
+            ..Manifest::default()
+        };
+        // Nothing saved: every mod starts on its own declared defaults.
+        assert_eq!(
+            effective(&manifest, None),
+            vec![
+                ("launcher".to_string(), "true".to_string()),
+                ("scale".to_string(), "3".to_string()),
+                ("label".to_string(), "\"hi\"".to_string()),
+            ]
+        );
+        let saved: BTreeMap<String, String> = [
+            ("launcher".to_string(), "false".to_string()),
+            // Out of the range the mod said it could take.
+            ("scale".to_string(), "99".to_string()),
+            // Longer than the mod asked for.
+            ("label".to_string(), "\"abcdefgh\"".to_string()),
+            // No longer declared; must not reach the mod.
+            ("removed".to_string(), "true".to_string()),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            effective(&manifest, Some(&saved)),
+            vec![
+                ("launcher".to_string(), "false".to_string()),
+                ("scale".to_string(), "5".to_string()),
+                ("label".to_string(), "\"abcd\"".to_string()),
+            ]
+        );
+        // A value of the wrong type falls back to the default rather than
+        // reaching the mod as something it never said it could parse.
+        let wrong: BTreeMap<String, String> =
+            [("launcher".to_string(), "\"yes\"".to_string())].into_iter().collect();
+        assert_eq!(effective(&manifest, Some(&wrong))[0].1, "true");
+    }
+
+    #[test]
+    fn a_mod_declaring_no_settings_reports_an_empty_list() {
+        assert_eq!(settings_json(&Manifest::default(), None), "[]");
+    }
 
     #[test]
     fn version_rules() {

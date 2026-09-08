@@ -223,9 +223,11 @@ fn overlay_mods(
     cfg: &Config,
     server_root: &Path,
     merged: &Path,
-) -> Result<(Vec<String>, Vec<String>), String> {
+) -> Result<(Vec<(String, String)>, Vec<String>), String> {
     let mut plugins = Vec::new();
     let mut item_tables = Vec::new();
+    // The player's answers to whatever each mod declared in its mod.json.
+    let saved = crate::mods::read_settings(&cfg.state)?;
     for m in crate::mods::enabled(cfg) {
         // Served ahead of the GRFs: sprites, .act/.spr, map geometry, Lua.
         // Aliased, so a mod can be written in ASCII rather than in CP949 bytes.
@@ -244,7 +246,16 @@ fn overlay_mods(
         let client = m.dir.join("client");
         if client.join("index.js").is_file() {
             copy_over(&client, &server_root.join("plugins").join(&m.name))?;
-            plugins.push(m.name.clone());
+            // Declared defaults with the player's answers over them. The loader
+            // hands this to the mod's init(parameters, api), so a mod can stay
+            // enabled and still be told to hide part of itself.
+            let entries = crate::mods::effective(&m.manifest, saved.get(&m.name));
+            let pars = entries
+                .iter()
+                .map(|(key, value)| format!("{}: {value}", crate::json::quote(key)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            plugins.push((m.name.clone(), pars));
         }
     }
     Ok((plugins, item_tables))
@@ -554,7 +565,7 @@ fn insert_before_close(body: String, block: &str) -> String {
 fn write_client_config(
     cfg: &Config,
     web: &Path,
-    plugins: &[String],
+    plugins: &[(String, String)],
     item_tables: &[String],
 ) -> Result<(), String> {
     let src = cfg.root.join("config/Config.local.js");
@@ -590,9 +601,14 @@ fn write_client_config(
     let out = if plugins.is_empty() {
         body
     } else {
+        // The object form, always: the loader accepts a bare path string, but
+        // then a mod can never be handed a setting. `pars` reaches the mod as
+        // the first argument of its default export.
         let entries: Vec<String> = plugins
             .iter()
-            .map(|n| format!("\t\t'{n}': 'plugins/{n}/index'"))
+            .map(|(n, pars)| {
+                format!("\t\t'{n}': {{ path: 'plugins/{n}/index', pars: {{ {pars} }} }}")
+            })
             .collect();
         // Inserted before the closing brace of the config object rather than
         // appended: this is the last thing in the file and has to stay inside it.
@@ -916,6 +932,34 @@ mod tests {
     /// Two blocks in a row must not produce `],,` -- a syntax error, and a
     /// config that does not parse is a game that does not start.
     #[test]
+    #[test]
+    fn the_client_config_hands_each_plugin_its_own_settings() {
+        let cfg = fixture_config("plugin-pars");
+        fs::create_dir_all(cfg.root.join("config")).unwrap();
+        let web = cfg.state.join("web");
+        fs::create_dir_all(&web).unwrap();
+        fs::write(
+            cfg.root.join("config/Config.local.js"),
+            "window.ROConfigLocal = {\n\tskipIntro: true\n};\n",
+        )
+        .unwrap();
+        let plugins = vec![
+            ("wasd-movement".to_string(), "\"show_controls_button\": false".to_string()),
+            // A mod that declares nothing still gets the object form, so the
+            // shape the loader sees never depends on whether options exist.
+            ("plain".to_string(), String::new()),
+        ];
+        write_client_config(&cfg, &web, &plugins, &[]).unwrap();
+        let body = fs::read_to_string(web.join("Config.local.js")).unwrap();
+        assert!(
+            body.contains("'wasd-movement': { path: 'plugins/wasd-movement/index', pars: { \"show_controls_button\": false } }"),
+            "{body}"
+        );
+        assert!(body.contains("'plain': { path: 'plugins/plain/index', pars: {  } }"), "{body}");
+        assert!(body.trim_end().ends_with("};"), "{body}");
+        fs::remove_dir_all(cfg.state.parent().unwrap()).unwrap();
+    }
+
     fn two_inserted_blocks_do_not_double_the_comma() {
         let base = "window.ROConfigLocal = {\n\tskipIntro: true\n};\n".to_string();
         let one = insert_before_close(base, "\tcustomItemInfo: ['a'],\n");
