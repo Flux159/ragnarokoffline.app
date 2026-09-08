@@ -1770,7 +1770,13 @@ const handlers = {
     sharing_status: () => {
         let saved, configurationError = '';
         try { saved = getSharingSecrets().load(); } catch (error) { configurationError = error.message; }
-        return { configured: !!saved, ...getSharing().status(), configuredHostname: saved?.hostname || '', configurationError };
+        // The invitation itself, so Settings can show the link a friend
+        // actually needs rather than the hostname alone -- a hostname on its
+        // own looks copyable and is useless to whoever receives it. Only while
+        // sharing, and only to the host's own window.
+        let invitation = '';
+        try { invitation = getSharing().invitation(); } catch { /* not sharing yet */ }
+        return { configured: !!saved, ...getSharing().status(), configuredHostname: saved?.hostname || '', configurationError, invitation };
     },
     sharing_connect: async request => {
         if (getClientPaths().mode !== 'host') throw Error('Cloudflare setup belongs to your own server.');

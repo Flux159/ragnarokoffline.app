@@ -18,6 +18,17 @@
      hidden did nothing on a .row -- and every row here sets display:flex.
      Global, because the next person to hide one should not rediscover it. */
   [hidden] { display: none !important; }
+  /* The whole invitation, elided. Shown in full rather than as a hostname
+     because a hostname looks copyable and is useless to whoever receives it --
+     the token is the part that lets a friend in. Clicking copies, so nobody
+     has to select an elided string by hand. */
+  .linkcopy {
+    flex: 1 1 auto; min-width: 0; margin: 0 10px; padding: 2px 6px;
+    background: transparent; border: 1px dashed var(--line); border-radius: 5px;
+    color: var(--text); font: inherit; font-size: 12px; text-align: left;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
+  }
+  .linkcopy:hover, .linkcopy:focus-visible { border-color: var(--accent); border-style: solid; }
   .row {
     display: flex; justify-content: space-between; align-items: center;
     padding: 5px 0; border-bottom: 1px solid var(--line);
@@ -179,7 +190,8 @@
       </div>
       <div class="row" id="mp-internet-link-row" hidden>
         <span class="name">Your link — over the internet</span>
-        <span class="state" id="mp-internet-addr">—</span>
+        <button type="button" id="mp-internet-addr" class="linkcopy"
+                title="Click to copy the whole invitation">—</button>
         <button id="mp-internet-copy" class="ghost" style="margin-left:10px">Copy</button>
       </div>
       <div class="row actions" style="padding-top:10px">
@@ -1000,9 +1012,14 @@ $('mods-apply').onclick = () => withButton('mods-apply', 'Applying…', 'Apply',
 function paintInternetLink(state) {
   const row = $('mp-internet-link-row');
   if (!row) return;
-  const live = state && state.state === 'sharing' && state.hostname;
+  const live = state && state.state === 'sharing' && state.invitation;
   row.hidden = !live;
-  if (live) $('mp-internet-addr').textContent = state.hostname;
+  if (live) {
+    const field = $('mp-internet-addr');
+    field.textContent = state.invitation;
+    // Elided on screen, whole on the clipboard.
+    field.dataset.link = state.invitation;
+  }
 }
 
 let sharingBusy = false, sharingConfigured = false;
@@ -1048,6 +1065,14 @@ $('sharing-start').onclick = () => sharingAction('sharing_start', { useDomain: $
 $('sharing-stop').onclick = () => sharingAction('sharing_stop');
 $('sharing-copy').onclick = () => sharingAction('sharing_copy');
 $('mp-internet-copy').onclick = () => sharingAction('sharing_copy');
+// Clicking the link copies it. Selecting an elided string by hand is how
+// somebody ends up sending half a link, or the hostname without its token.
+$('mp-internet-addr').onclick = async () => {
+  const link = $('mp-internet-addr').dataset.link;
+  if (!link) return;
+  await invoke('copy_text', { text: link });
+  log('copied the invitation link');
+};
 $('sharing-replace').onclick = () => sharingAction('sharing_replace');
 $('sharing-forget').onclick = () => sharingAction('sharing_forget');
 $('sharing-token-help').onclick = () => invoke('sharing_token_help');
