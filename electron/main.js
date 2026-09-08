@@ -31,6 +31,7 @@ function getSharingSecrets() {
 function getSharing() {
     return sharing ||= new (require('./sharing/controller').SharingController)({
         directory: path.join(dataRoot(), 'sharing'),
+        lifetime: () => Math.min(30, Math.max(1, Number(getSettings().sharing_invite_days) || 7)) * 24 * 60 * 60 * 1000,
         guard: async () => {
             const client = getClientPaths();
             if (client.mode !== 'host' || client.hosting_scope !== 'friends' || client.lan || !assetServer.running || !(await assetsReady())) throw Error('Start your own server in friends mode before sharing.');
@@ -831,6 +832,11 @@ async function linkClientOwned(paths) {
 
 const SETTINGS_DEFAULTS = {
 	open_registration: true,
+	// How long a friends invitation stays valid, in days. Nothing to do with
+	// Cloudflare -- the tunnel runs as long as the app shares; this is only how
+	// long the invite token is accepted. A link posted in Discord should still
+	// work next weekend, and "Replace invitation" revokes one at any time.
+	sharing_invite_days: 7,
 	base_exp_rate: 100,
 	job_exp_rate: 100,
 	quest_exp_rate: 100,
@@ -1797,7 +1803,13 @@ const handlers = {
         return getSharing().status();
     },
     sharing_stop: async () => { ++sharingStartRequest; await getSharing().stop(); return getSharing().status(); },
-    sharing_copy: () => { clipboard.writeText(getSharing().invitation()); return 'Invitation copied. It expires after eight hours or when sharing stops.'; },
+    sharing_copy: () => {
+        clipboard.writeText(getSharing().invitation());
+        // Say the figure actually in force rather than a number baked into the
+        // sentence: this is configurable, and it was never Cloudflare's limit.
+        const days = Math.min(30, Math.max(1, Number(getSettings().sharing_invite_days) || 7));
+        return `Invitation copied. It works for ${days} day${days === 1 ? '' : 's'}, until you replace it, or until you stop sharing.`;
+    },
     sharing_replace: () => { getSharing().replaceInvitation(); return 'Previous invitations and connected friends were disconnected. Copy a new link to invite them again.'; },
     sharing_forget: async () => { await getSharing().stop(); getSharingSecrets().forget(); return 'Saved credentials removed. The hostname and stopped tunnel remain in your Cloudflare account for you to remove there.'; },
 	hosting_check: async () => {

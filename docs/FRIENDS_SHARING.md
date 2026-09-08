@@ -45,7 +45,11 @@ manual setup; DNS alone does not bypass NAT.
 Starting sharing applies protected account policy and restarts game services;
 do this before everyone logs in.
 
-Invitations last eight hours. Each invited browser may create one ordinary
+Invitations last as long as **Invitation lasts** in Settings says, 1-30 days
+and 7 by default. That is this app's own expiry, not Cloudflare's: the tunnel
+runs for as long as you are sharing, and using your own domain instead of a
+temporary link does not change it. **Replace invitation** revokes every
+existing link immediately. Each invited browser may create one ordinary
 account, with a maximum of 32 authenticated browser sessions per invitation.
 Account creation does not restart the host. The account and its characters stay
 in the host's current era when the invitation expires. Renewal and Pre-Renewal

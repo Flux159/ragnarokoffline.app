@@ -222,7 +222,17 @@
         <button id="sharing-forget" class="ghost" disabled>Forget saved Cloudflare connection</button>
         <p class="note">Forgetting removes the saved credential. Remove the stopped tunnel and DNS record separately in your Cloudflare dashboard.</p>
         <p class="note">Copy diagnostics includes the Cloudflare helper version and checksum verification. Keep the app updated: Cloudflare supports helper versions within one year of its most recent release.</p>
-        <p class="note">Hosting on a separate internet server is another option, with your own DNS and HTTPS/WebSocket setup. That setup is manual; a DNS record alone does not make a server behind NAT reachable.</p>
+        <label><span>Invitation lasts</span>
+      <span class="mult" style="margin-left:auto"><input type="number" class="val num" id="sharing_invite_days" min="1" max="30" step="1"></span>
+      <span class="val" style="width:auto; color: var(--dim)">days</span></label>
+    <p class="note">How long a link keeps working, 1–30 days. This is the invitation, not the
+      tunnel: Cloudflare imposes no limit of its own, and a named domain does not change it.
+      <b>Replace invitation</b> revokes every existing link immediately, and stopping sharing
+      ends them all. Applies to the next invitation you create.</p>
+    <p class="note">Mods that change command permissions — <b>player-commands</b>, for example — apply
+      to invited friends too, so anyone with your link gets whatever commands you granted. Only people
+      holding a current invitation can reach the server at all.</p>
+    <p class="note">Hosting on a separate internet server is another option, with your own DNS and HTTPS/WebSocket setup. That setup is manual; a DNS record alone does not make a server behind NAT reachable.</p>
       </details>
     </div>
   </section>
@@ -414,13 +424,19 @@ $('mp-internet-setup').onchange = () => {
 };
 
 function paintRegistration(settings) {
-  const required = ['friends', 'public'].includes(settings.hosting_scope);
-  $('open-registration').value = required || settings.open_registration === false ? 'owner' : 'open';
-  $('open-registration').disabled = required;
-  $('registration-save').disabled = required;
-  $('registration-note').textContent = required
-    ? 'Internet modes require owner-approved accounts. Game-login signup stays off on every restart, Repair and era change. Your Local/LAN preference is preserved.'
-    : 'Owner only disables _M / _F signup. Existing accounts keep working. This policy applies to both eras. Apply and restart to change it.';
+  // The choice is the owner's at every scope. This used to force the control
+  // to "owner", disable it and disable Apply whenever hosting was friends or
+  // public, which showed a policy the saved setting did not actually hold and
+  // left no way to change it.
+  $('open-registration').value = settings.open_registration === false ? 'owner' : 'open';
+  $('sharing_invite_days').value = String(Math.min(30, Math.max(1, Number(settings.sharing_invite_days) || 7)));
+  $('open-registration').disabled = false;
+  $('registration-save').disabled = false;
+  $('registration-note').textContent =
+    'Owner only disables _M / _F signup. Existing accounts keep working. This policy applies to '
+    + 'both eras. Apply and restart to change it. Sharing a link keeps whichever you choose: the '
+    + 'invitation already gates the login server, so friends can sign up at the login screen with '
+    + '_M / _F. Choose owner only if you are hosting something larger than a group of friends.';
 }
 
 $('mp-mode').onchange = async () => {
@@ -615,7 +631,7 @@ $('backup').onclick = async () => {
   try {
     $('db-note').textContent = (await invoke('db_backup', { path })).trim();
   } catch (e) {
-    $('db-note').textContent = String(e);
+    setNote('db-note', String(e && e.message || e), 'bad');
   }
 };
 
@@ -630,7 +646,7 @@ $('restore').onclick = async () => {
     $('db-note').textContent = (await invoke('db_restore', { path })).trim()
       + ' — restart the server for it to take effect.';
   } catch (e) {
-    $('db-note').textContent = String(e);
+    setNote('db-note', String(e && e.message || e), 'bad');
   }
 };
 
@@ -821,6 +837,18 @@ async function refreshMods() {
   }
 }
 
+// Status lines that answer a button. A failure has to look like one: these all
+// used to render in the same dim note colour as the explanatory text around
+// them, so a refusal read as the button doing nothing.
+function setNote(id, message, kind = '') {
+  const node = $(id);
+  if (!node) return;
+  node.classList.remove('bad', 'good');
+  if (kind) node.classList.add(kind);
+  node.textContent = message;
+  if (kind === 'bad') node.scrollIntoView({ block: 'nearest' });
+}
+
 // Mod names, descriptions and refusal reasons are written by whoever made the
 // mod, and land in innerHTML. Nothing about a mod folder is trusted markup.
 function esc(s) {
@@ -870,17 +898,17 @@ async function refreshSharing() {
     $('sharing-stop').disabled = !sharingBusy && ['stopped', 'failed'].includes(state.state);
     $('sharing-replace').disabled = !['sharing', 'reconnecting'].includes(state.state);
     $('sharing-forget').disabled = sharingBusy || (!state.configured && !state.configurationError);
-    $('sharing-state').textContent = state.message || 'Sharing is off.';
+    setNote('sharing-state', state.message || 'Sharing is off.');
     if (state.expires && state.state === 'sharing') $('sharing-state').textContent += ` Invitation expires ${new Date(state.expires).toLocaleTimeString()}. ${state.connectedFriends} friend browser(s) connected.`;
-  } catch (error) { $('sharing-state').textContent = error.message || String(error); }
+  } catch (error) { setNote('sharing-state', error.message || String(error), 'bad'); }
 }
 async function sharingAction(name, request) {
-  sharingBusy = true; $('sharing-feedback').textContent = name === 'sharing_connect' ? 'Connecting Cloudflare…' : name === 'sharing_start' ? 'Preparing your world and starting sharing…' : '';
+  sharingBusy = true; setNote('sharing-feedback', name === 'sharing_connect' ? 'Connecting Cloudflare…' : name === 'sharing_start' ? 'Preparing your world and starting sharing…' : '');
   await refreshSharing();
   try {
     const result = await invoke(name, request);
-    $('sharing-feedback').textContent = typeof result === 'string' ? result : name === 'sharing_connect' ? 'Cloudflare connected. Choose Share with friends when your server is ready.' : '';
-  } catch (error) { $('sharing-feedback').textContent = error.message || String(error); }
+    setNote('sharing-feedback', typeof result === 'string' ? result : name === 'sharing_connect' ? 'Cloudflare connected. Choose Share with friends when your server is ready.' : '');
+  } catch (error) { setNote('sharing-feedback', error.message || String(error), 'bad'); }
   finally { sharingBusy = false; $('sharing-token').value = ''; await refreshSharing(); }
 }
 $('sharing-connect').onclick = () => sharingAction('sharing_connect', { publicHostname: $('sharing-hostname').value, apiToken: $('sharing-token').value });
@@ -896,9 +924,9 @@ refreshSharing();
 $('secure-services').onclick = async () => {
   const button = $('secure-services');
   button.disabled = true;
-  $('services-status').textContent = 'Backing up and securing this era’s internal credentials…';
-  try { $('services-status').textContent = (await invoke('secure_services')).trim(); }
-  catch (error) { $('services-status').textContent = String(error); }
+  setNote('services-status', 'Backing up and securing this era’s internal credentials…');
+  try { setNote('services-status', (await invoke('secure_services')).trim(), 'good'); }
+  catch (error) { setNote('services-status', String(error && error.message || error), 'bad'); }
   finally { button.disabled = false; }
 };
 
@@ -915,7 +943,7 @@ $('hosting-check').onclick = async () => {
       $('hosting-checks').appendChild(item);
     }
     $('hosting-readiness').textContent = `${report.era === 'renewal' ? 'Renewal' : 'Pre-renewal'} (${report.scope}). ${report.accountPolicyReady ? 'Account safeguards passed. Choose Share with friends to make an invitation.' : 'Complete the items above before sharing.'}`;
-  } catch (error) { $('hosting-readiness').textContent = String(error); }
+  } catch (error) { setNote('hosting-readiness', error.message || String(error), 'bad'); }
   finally { button.disabled = false; }
 };
 
@@ -947,7 +975,8 @@ $('save').onclick = async () => {
   settings.max_aspd = Number($('max_aspd').value) || 190;
   settings.max_parameter = Number($('max_parameter').value) || 99;
   settings.free_kafra_warp = $('free_kafra_warp').checked;
-  if (!['friends', 'public'].includes(settings.hosting_scope)) settings.open_registration = $('open-registration').value === 'open';
+  settings.open_registration = $('open-registration').value === 'open';
+  settings.sharing_invite_days = Math.min(30, Math.max(1, Number($('sharing_invite_days').value) || 7));
   settings.prerenewal = eraIsPre;
   settings.zeny_from_mobs = $('zeny_from_mobs').checked;
   $('save').disabled = true;

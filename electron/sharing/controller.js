@@ -72,8 +72,8 @@ function quickHostname(child) {
   });
 }
 class SharingController {
-  constructor({ directory, register, guard, onChange = () => {} }, { helper = ensureHelper, launch = spawn, health = publicHealth, websocket = publicSocket, Gateway = FriendGateway } = {}) {
-    Object.assign(this, { directory, register, guard, onChange, helper, launch, health, websocket, Gateway }); this.state = 'stopped'; this.generation = 0;
+  constructor({ directory, register, guard, onChange = () => {}, lifetime = () => 8 * 60 * 60 * 1000 }, { helper = ensureHelper, launch = spawn, health = publicHealth, websocket = publicSocket, Gateway = FriendGateway } = {}) {
+    Object.assign(this, { directory, register, guard, onChange, lifetime, helper, launch, health, websocket, Gateway }); this.state = 'stopped'; this.generation = 0;
   }
   status() { return { state: this.state, message: this.message || '', hostname: this.hostname || '', expires: this.gateway?.expires || null, connectedFriends: this.gateway ? [...this.gateway.sessions.values()].filter(entry => entry.sockets.size > 0).length : 0 }; }
   update(state, message = '') { this.state = state; this.message = message; this.onChange(this.status()); }
@@ -89,7 +89,9 @@ class SharingController {
       // Bind the protected gateway before requesting any public hostname.
       // Until Cloudflare assigns it, every Host is rejected by this sentinel.
       let origin = saved ? 'https://' + saved.hostname : 'https://pending.invalid';
-      const gateway = new this.Gateway({ origin, register: this.register });
+      // Read at each start, so changing it in Settings applies to the next
+      // invitation without restarting the app.
+      const gateway = new this.Gateway({ origin, register: this.register, lifetime: this.lifetime() });
       this.gateway = gateway;
       const port = await gateway.start();
       if (generation !== this.generation) { await gateway.stop(); return; }

@@ -252,17 +252,12 @@ pub fn sharing_check(cfg: &Config, dk: &Docker) -> Result<String, String> {
         let Value::Array(values) = json::parse(&inspected).map_err(|_| "Cannot verify game listeners")? else { return Err("Cannot verify game listeners".into()); };
         if values.len() != 1 || !bindings_safe(&values[0], port) { return Err("Game listeners are not private. Restart in friends mode before sharing.".into()); }
     }
-    // App mods may replace imported command permissions. Restrict friends to
-    // the pinned defaults until a separate privilege-aware mod policy exists.
-    for name in ["groups.yml", "atcommands.yml"] {
-        if cfg.state.join("conf").join(name).exists() { return Err("Disable mods that change account commands or permissions, then restart before sharing.".into()); }
-    }
-    let expected = [("/rathena/conf/groups.yml", "cf614b85dfdae0a165f9ba59da6ec060a914df504c6cd086378aa3216943293a"),
-        ("/rathena/conf/atcommands.yml", "c97bfd2f874ab3503e5191ae388ea9b29fd8d1991a6f76e8d764529207a13f8e")];
-    for (file, hash) in expected {
-        let actual = dk.output(["exec", "ragnarok-map", "sha256sum", file])?;
-        if actual.split_whitespace().next() != Some(hash) { return Err("The running server's account permissions differ from the pinned defaults. Use the bundled server before sharing.".into()); }
-    }
+    // A mod that changes command permissions is not a reason to refuse to
+    // share. The owner installed it deliberately, the app ships one of them,
+    // and turning it off to hand a friend a link -- then back on afterwards --
+    // is not a trade anyone asked for. Sharing says what those mods do instead;
+    // see the Multiplayer section. What still holds is that only invited
+    // friends reach the server at all.
     let engine = std::fs::read_to_string(cfg.nebula_home.join("config.toml")).map_err(|_| "Cannot verify engine publication settings")?;
     let public: Vec<_> = engine.lines().map(|line| line.split('#').next().unwrap_or("").trim()).filter_map(|line| line.split_once('=')).filter(|(key, _)| key.trim() == "allow_public_publish").collect();
     if public.len() != 1 || public[0].1.trim() != "false" { return Err("The engine still allows public port publication. Restart in friends mode before sharing.".into()); }
