@@ -24,7 +24,7 @@ sharing session gets a new temporary hostname. See [Cloudflare's limits](https:/
 
 ## Optional: your own fixed hostname
 
-Open **Use your own Cloudflare domain** in the same section.
+Open **Use a named tunnel for regular hosting** in the same section.
 
 1. Choose an unused hostname on a domain active in your Cloudflare account.
    Create an API token with Zone Read and DNS Edit scoped to that domain and
@@ -35,6 +35,12 @@ Open **Use your own Cloudflare domain** in the same section.
    The setup API token is not saved; the dedicated tunnel credential uses the
    operating system's secure storage.
 3. Select **Use this fixed hostname**, then **Share with friends**.
+
+The Quick Tunnel limit counts simultaneous requests across the tunnel, not total
+requests or players. Asset loading can reach it. Named tunnels do not have that
+Quick Tunnel limit and work behind NAT without port forwarding. A separately
+hosted server with DNS and HTTPS/WebSocket routing is also possible, but requires
+manual setup; DNS alone does not bypass NAT.
 
 Starting sharing applies protected account policy and restarts game services;
 do this before everyone logs in.
@@ -135,3 +141,22 @@ platform acceptance must be recorded separately from either automated fixture.
 Provider references: [Cloudflare setup](https://developers.cloudflare.com/tunnel/setup/),
 [API setup](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel-api/),
 [cloudflared source and license](../third-party/cloudflared/README.md).
+
+## Helper versions and diagnostics
+
+The helper downloads on demand from the official GitHub release for the current
+platform. The app pins its version and archive/executable SHA-256 checksums.
+**Copy diagnostics** (also Save diagnostics and issue reports) includes the pin,
+verified installed version, release date, platform/asset, official download URL,
+checksums and current integrity status. It records the download and latest
+helper verification times in `sharing/helpers/<version>/installation.json`.
+Older cached helpers have an unknown download time; their version can still be
+verified by checksum. Collecting diagnostics never downloads or executes the
+helper and never includes tunnel credentials or raw connector logs.
+
+Update the app to receive a newer helper pin; the helper does not auto-update.
+Cloudflare [supports versions within one year of its most recent release](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/).
+Maintainers must refresh the version, release date and all platform checksums
+together when upgrading, and retest public HTTPS/WSS sharing. The release date
+in diagnostics helps identify stale app/helper installations; it is not an
+online check of Cloudflare's latest release or support status.

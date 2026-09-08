@@ -190,8 +190,9 @@
     <div class="panel">
       <h3>Play together over the internet</h3>
       <p class="note">Your friends open an invitation in their browser and join your server. They do not install the app. Keep this computer awake and the app open while playing together.</p>
-      <p class="note">Share creates a temporary invitation link automatically. No Cloudflare account or token is needed. Temporary links use Cloudflare’s test service and can be interrupted; use a fixed hostname for regular hosting.</p>
-      <details id="cloudflare-options"><summary>Use your own Cloudflare domain (optional)</summary>
+      <p class="note">Share creates a temporary invitation link automatically. No Cloudflare account or token is needed. <strong>Cloudflare Quick Tunnels are for testing only:</strong> they have no uptime guarantee and allow at most <strong>200 requests in flight at once</strong> across the tunnel. This is a simultaneous request limit, not a total request allowance or player count; busy asset loading can hit it.</p>
+      <p class="note">For regular hosting, connect your Cloudflare account and use a named tunnel with your own domain below. Named tunnels do not have the Quick Tunnel 200-request limit and work behind NAT without port forwarding.</p>
+      <details id="cloudflare-options"><summary>Use a named tunnel for regular hosting</summary>
       <div id="cloudflare-setup">
         <label><span>Game hostname</span><input id="sharing-hostname" placeholder="play.yourdomain.com" autocapitalize="off" spellcheck="false" /></label>
         <label><span>Cloudflare API token</span><input id="sharing-token" type="password" autocomplete="off" spellcheck="false" /></label>
@@ -215,6 +216,8 @@
         <button id="sharing-replace" class="ghost" disabled>Disconnect friends and replace invitation</button>
         <button id="sharing-forget" class="ghost" disabled>Forget saved Cloudflare connection</button>
         <p class="note">Forgetting removes the saved credential. Remove the stopped tunnel and DNS record separately in your Cloudflare dashboard.</p>
+        <p class="note">Copy diagnostics includes the Cloudflare helper version and checksum verification. Keep the app updated: Cloudflare supports helper versions within one year of its most recent release.</p>
+        <p class="note">Hosting on a separate internet server is another option, with your own DNS and HTTPS/WebSocket setup. That setup is manual; a DNS record alone does not make a server behind NAT reachable.</p>
       </details>
     </div>
   </section>

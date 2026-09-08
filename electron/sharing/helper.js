@@ -5,6 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const VERSION = '2026.8.3';
+const RELEASED_AT = '2026-08-31T10:12:13Z';
 // Official release asset digests, verified against GitHub's release metadata.
 // Darwin executables are also pinned after extracting the one named member.
 const BUILDS = {
@@ -15,6 +16,60 @@ const BUILDS = {
   'win32-x64': ['cloudflared-windows-amd64.exe', '83e726ed18ea78c5ad5213c4c3a3a27051393950d2bc8ed4de69bec12d14eaae'],
 };
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
+function helperDetails(directory) {
+  const platform = process.platform + '-' + process.arch;
+  const build = BUILDS[platform];
+  return { platform, build, executable: path.join(directory, VERSION, process.platform === 'win32' ? 'cloudflared.exe' : 'cloudflared'),
+    source: build ? `https://github.com/cloudflare/cloudflared/releases/download/${VERSION}/${build[0]}` : null };
+}
+function installationMetadata(executable, wanted) {
+  try {
+    const file = path.join(path.dirname(executable), 'installation.json');
+    if (fs.statSync(file).size > 4096) return null;
+    const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (value.version !== VERSION || value.executableSha256 !== wanted) return null;
+    // Only allow known timestamp fields into diagnostics, never arbitrary JSON.
+    const timestamp = text => typeof text === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(text) && Number.isFinite(Date.parse(text)) ? text : null;
+    return { downloadedAt: timestamp(value.downloadedAt), lastVerifiedAt: timestamp(value.lastVerifiedAt) };
+  } catch { return null; }
+}
+function recordInstallation(details, downloadedAt = null) {
+  const { executable, build, platform, source } = details;
+  const executableSha256 = build[2] || build[1];
+  const previous = installationMetadata(executable, executableSha256);
+  const metadata = { version: VERSION, releasedAt: RELEASED_AT, platform, asset: build[0], source,
+    archiveSha256: build[1], executableSha256, downloadedAt: downloadedAt || previous?.downloadedAt || null,
+    lastVerifiedAt: new Date().toISOString() };
+  const file = path.join(path.dirname(executable), 'installation.json');
+  const temporary = file + '.' + crypto.randomBytes(6).toString('hex') + '.new';
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(metadata, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+    fs.renameSync(temporary, file);
+  } finally { fs.rmSync(temporary, { force: true }); }
+}
+// Read-only: collecting a report never downloads or executes a helper or reads
+// tunnel credentials. A matching pinned executable hash establishes its version.
+function helperDiagnostics(directory) {
+  const { platform, build, executable, source } = helperDetails(directory);
+  const report = { pinnedVersion: VERSION, releasedAt: RELEASED_AT, platform, asset: build?.[0] || null, source,
+    updatePolicy: 'Pinned by the app; update the app to receive a newer helper.',
+    supportPolicy: 'Cloudflare supports versions within one year of its most recent release.',
+    installedVersion: null, integrity: build ? 'not downloaded' : 'unsupported platform' };
+  if (!build) return report;
+  report.expectedExecutableSha256 = build[2] || build[1];
+  report.archiveSha256 = build[1];
+  try {
+    const stat = fs.statSync(executable);
+    if (!stat.isFile() || stat.size > 80 * 1024 * 1024) { report.integrity = 'invalid executable'; return report; }
+    report.executableSha256 = hash(fs.readFileSync(executable));
+    report.integrity = report.executableSha256 === report.expectedExecutableSha256 ? 'verified' : 'checksum mismatch';
+    if (report.integrity === 'verified') report.installedVersion = VERSION;
+    const metadata = installationMetadata(executable, report.executableSha256);
+    report.downloadedAt = metadata?.downloadedAt || null;
+    report.lastVerifiedAt = metadata?.lastVerifiedAt || null;
+  } catch (error) { report.integrity = error.code === 'ENOENT' ? 'not downloaded' : 'could not read executable'; }
+  return report;
+}
 function download(url, redirects = 0) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
@@ -34,11 +89,11 @@ function download(url, redirects = 0) {
   });
 }
 async function ensureHelper(directory) {
-  const build = BUILDS[process.platform + '-' + process.arch];
+  const details = helperDetails(directory);
+  const { build, executable } = details;
   if (!build) throw Error('Cloudflare sharing is not packaged for this platform yet.');
-  const executable = path.join(directory, VERSION, process.platform === 'win32' ? 'cloudflared.exe' : 'cloudflared');
   const wanted = build[2] || build[1];
-  if (fs.existsSync(executable) && hash(fs.readFileSync(executable)) === wanted) return executable;
+  if (fs.existsSync(executable) && hash(fs.readFileSync(executable)) === wanted) { recordInstallation(details); return executable; }
   fs.mkdirSync(path.dirname(executable), { recursive: true, mode: 0o700 });
   const archive = await download(`https://github.com/cloudflare/cloudflared/releases/download/${VERSION}/${build[0]}`);
   if (hash(archive) !== build[1]) throw Error('The Cloudflare helper checksum did not match. Sharing was not started.');
@@ -52,6 +107,7 @@ async function ensureHelper(directory) {
   if (hash(bytes) !== wanted) throw Error('The Cloudflare executable checksum did not match.');
   const temporary = executable + '.' + crypto.randomBytes(6).toString('hex') + '.new'; fs.writeFileSync(temporary, bytes, { mode: 0o700, flag: 'wx' });
   try { fs.renameSync(temporary, executable); } finally { fs.rmSync(temporary, { force: true }); }
+  recordInstallation(details, new Date().toISOString());
   return executable;
 }
-module.exports = { VERSION, BUILDS, ensureHelper };
+module.exports = { VERSION, RELEASED_AT, BUILDS, ensureHelper, helperDiagnostics };

@@ -1539,6 +1539,10 @@ const handlers = {
 		add('client', Object.entries(c)
 			.map(([k, v]) => `${k.padEnd(14)}${v === '' ? '(unset)' : v}`).join('\n'));
 		add('settings', JSON.stringify(getSettings(), null, 2));
+		add('Cloudflare sharing', JSON.stringify({
+			state: sharing?.state || 'stopped',
+			helper: require('./sharing/helper').helperDiagnostics(path.join(dataRoot(), 'sharing/helpers')),
+		}, null, 2));
 
 		try {
 			add('engine', await runStack(['status']));
