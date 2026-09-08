@@ -166,7 +166,10 @@ echo "==> config"
 # and the rest of scripts/ is development tooling -- packaging, releasing, GRF
 # inspection -- which has no business inside a player's app bundle.
 cp "$ROOT"/config/*                          "$PAYLOAD/config/"
-cp "$ROOT"/patches/*                         "$PAYLOAD/patches/"
+# patches/client/ is a build-time source directory: patch-client-controls.py
+# copies it into the client tree before the bundle is built, so those hooks are
+# already compiled into dist/Web. Only the top-level files belong in a payload.
+for f in "$ROOT"/patches/*; do [ -f "$f" ] && cp "$f" "$PAYLOAD/patches/"; done
 
 # The app's own client artwork (the quest window's tab strip). Copied whole:
 # link-assets reads it from the runtime root the same way it reads config/.
