@@ -22,12 +22,26 @@ fn acquire(state: &Path) -> Result<fs::File, String> {
         .truncate(false)
         .open(state.join(".asset-link.lock"))
         .map_err(|e| e.to_string())?;
-    match lock.try_lock() {
-        Ok(()) => Ok(lock),
-        Err(fs::TryLockError::WouldBlock) => {
-            Err("another asset rebuild is in progress; wait for it to finish and retry".into())
+    // Wait a moment before declaring the lock held. A rebuild that begins while
+    // the previous one is closing its lock would otherwise be refused outright,
+    // and the release of an OS lock is not always visible to the next open the
+    // instant the holder's descriptor closes. A rebuild is a slow, deliberate
+    // operation, so a second of patience costs nothing and removes a class of
+    // spurious "another rebuild is in progress" refusals.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    loop {
+        match lock.try_lock() {
+            Ok(()) => return Ok(lock),
+            Err(fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Err(fs::TryLockError::WouldBlock) => {
+                return Err(
+                    "another asset rebuild is in progress; wait for it to finish and retry".into(),
+                )
+            }
+            Err(fs::TryLockError::Error(e)) => return Err(format!("cannot lock asset state: {e}")),
         }
-        Err(fs::TryLockError::Error(e)) => Err(format!("cannot lock asset state: {e}")),
     }
 }
 
