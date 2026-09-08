@@ -90,7 +90,7 @@ export function init() {
     Runtime.configure({
         inputState,
         shortcutConflict(keyCode) { return inputState().battleMode && Boolean(BattleMode.match(keyCode)); },
-        movementState() { return { ...inputState(), position: Array.from(Session.Entity?.position || []).slice(0, 2), cameraDirection: Camera.direction }; },
+        movementState() { return { ...inputState(), position: Array.from(Session.Entity?.position || []).slice(0, 2), cameraDirection: Camera.direction, cameraAngle: Camera.angle?.[1] }; },
         destination,
         sendMove(position) {
             MapControl.onRequestStopWalk();

@@ -50,7 +50,21 @@ export function createMovement({ read, destination, send, cancelled = () => {}, 
             const game = read();
             if (!game?.canMove) { clear('input-blocked'); return; }
             if ((!vector[0] && !vector[1]) || now - lastSent < cadence) return;
-            const angle = -game.cameraDirection * Math.PI / 4;
+            // Screen -> map, and the sign matters. Camera.js builds its
+            // modelView as Rx(angle[0]) . Ry(angle[1]), so a map step (dx,dy)
+            // lands on screen at R(-angle[1]) . (dx,dy). Inverting that, an
+            // on-screen intent becomes a map step through R(+angle[1]); the
+            // negated form was correct only at angle 0, and turned "right"
+            // into "up" as soon as the camera was rotated a notch.
+            //
+            // Prefer the continuous angle. Camera.direction is a sprite bucket
+            // (floor((angle+22.5)/45) % 8, and negative for a negative angle),
+            // so it quantises movement to 45 degrees and cannot express the
+            // partial rotations indoor maps leave you on.
+            const degrees = Number.isFinite(game.cameraAngle)
+                ? game.cameraAngle
+                : (game.cameraDirection || 0) * 45;
+            const angle = degrees * Math.PI / 180;
             const x = vector[0] * Math.cos(angle) - vector[1] * Math.sin(angle);
             const y = vector[0] * Math.sin(angle) + vector[1] * Math.cos(angle);
             const next = destination(game.position, [x, y]);
