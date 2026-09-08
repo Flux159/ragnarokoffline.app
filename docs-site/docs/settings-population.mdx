@@ -1,0 +1,41 @@
+# Settings: Population
+
+A world of one can feel like a world of one. The population engine fills towns
+and fields with characters who walk around, fight, sit in Prontera and open
+stalls.
+
+They are server-side and need no client changes, so friends who join see the
+same crowd you do.
+
+## Enable
+
+Off by default. With it off the databases are never loaded and its timers never
+run, so a disabled engine costs nothing.
+
+## Density
+
+How crowded a map feels, as a percentage of what the server's own spawn tables
+ask for. **This is the dial you actually want.** The world keeps the shape it
+was authored with; only its crowding changes.
+
+## Limit
+
+A ceiling across every map at once, not a target. Spawning is demand-driven —
+only maps somebody is on get built, and a map holds twenty to forty by the
+spawn tables — so this only binds if a group fans out across dozens of maps at
+once. In a solo game it never comes into play.
+
+## What it costs
+
+Roughly 70–80 KB of server memory per character, and they only think while a
+real player is near enough to see them. The Settings page estimates the memory
+for the number you have chosen.
+
+## If the server becomes unstable
+
+Turn it off and see whether the problem follows. It is the most complex thing
+in the server and the easiest to rule out, and doing so costs you nothing
+permanent — the world is unchanged underneath.
+
+If a crash happens with the engine **off**, that is a different fault and worth
+reporting with **Copy diagnostics**, which now carries preserved crash reports.

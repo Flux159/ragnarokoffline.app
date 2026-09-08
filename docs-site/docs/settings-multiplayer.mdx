@@ -1,0 +1,99 @@
+# Settings: Multiplayer
+
+Playing with other people, on your network or over the internet.
+
+## Mode
+
+**Host a server** runs the world on this machine. **Join a friend** runs
+nothing locally — no server, no virtual machine, no game files — and connects
+to someone else's, which is why joining starts in seconds.
+
+## Allow LAN connections
+
+Off by default: the server listens only on this machine. Turning it on makes it
+reachable by anyone who can reach your computer on the network.
+
+The engine reads this when it starts, so use **Restart server** after changing
+it.
+
+## Your link
+
+Two of them, when they apply.
+
+**On this network** is your LAN address. Anyone on the same network can paste it
+into the app's *Join a friend* box, or open it in a browser.
+
+**Over the internet** appears once sharing is running. It is the whole
+invitation, including its token, shown elided — **click it to copy**. Selecting
+part of an elided link by hand is how people end up sending half of one.
+
+## Set up sharing over the internet
+
+Off until you ask for it, so a local or LAN game stays uncluttered. Turning it
+on also turns on LAN connections, since the people you are about to send a link
+to are by definition not on this machine.
+
+### Temporary links change every time
+
+With no Cloudflare account, sharing creates a **Quick Tunnel** and Cloudflare
+hands out a new `trycloudflare.com` address each time it starts. Stopping the
+app, restarting the server or running Repair therefore means **sending your
+friends a new link**.
+
+The invitation itself is kept across restarts now, so only the address moves.
+
+Quick Tunnels are also explicitly for testing: no uptime guarantee, and at most
+**200 requests in flight at once** across the tunnel. That is a simultaneous
+limit rather than a player count, but busy asset loading can reach it.
+
+### A link that stays the same
+
+Connect a Cloudflare account and use your own domain. A named tunnel keeps its
+address across restarts, and with the saved invitation the whole link stays
+valid until you deliberately replace it.
+
+You need a free Cloudflare account, a domain on it, and an **API token** with:
+
+| Permission | Scope |
+|---|---|
+| **Zone → Zone → Read** | the domain you will use |
+| **Zone → DNS → Edit** | the domain you will use |
+| **Account → Cloudflare Tunnel → Edit** | the account that owns it |
+
+Make it at **My Profile → API Tokens → Create Token → Create Custom Token**.
+The token is used only during setup; the app then stores the tunnel credential
+in your operating system's secure password store.
+
+Setup **will not overwrite an existing DNS record** — choose a hostname you are
+not already using.
+
+### Create a new link
+
+Replaces the invitation. The link you have already shared **stops working**, and
+anyone playing through it is disconnected. That is the point: it is what you use
+if a link leaks.
+
+The button is red because it takes something away from people who already have
+it.
+
+## Invitation lasts
+
+How long a link keeps working, in days. **0 means it never expires** — it lasts
+until you replace it or stop sharing.
+
+This is the app's own expiry, not Cloudflare's, and a named domain does not
+change it.
+
+## What friends get
+
+They open the link in a browser and play. They install nothing.
+
+They can use an existing game account, create one from the invitation page, or
+register at the login screen with `_M` or `_F` if you have left account creation
+open (see [Accounts](./settings-accounts)).
+
+Mods that change command permissions — **player-commands**, for example — apply
+to invited friends too, so anyone with your link gets whatever commands you
+granted. Only people holding a current invitation can reach the server at all.
+
+See [Playing with friends](./friends) for the whole flow.

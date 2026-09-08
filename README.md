@@ -396,6 +396,13 @@ folder closest to what you want.
 
 <img src="docs/assets/modlogin.jpg" alt="A custom login screen from the login-screen example mod" width="640">
 
+## Documentation
+
+**[flux159.github.io/ragnarokoffline.app](https://flux159.github.io/ragnarokoffline.app/)**
+— installing, a page for each Settings tab, playing with friends, making mods
+and troubleshooting. Source is in [docs-site/docs](docs-site/docs); the deeper
+references for people working on the app stay in [docs/](docs).
+
 ## Playing from the keyboard
 
 Skills and items go on the shortcut bar — `F1`–`F9`, `1`–`9`, and two more rows

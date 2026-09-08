@@ -1,0 +1,50 @@
+# Settings: Mods
+
+What is installed, with a checkbox each.
+
+## The list
+
+Each mod shows its name, version, author and description. Two things are said
+in text the mod did not write:
+
+- **"Changes which commands players can use."** A mod supplying `groups.yml` or
+  `atcommands.yml` decides what every player may do. That is worth knowing from
+  the app rather than from the mod's own description.
+- **"Not loaded — …"** A refused mod is not one you can switch on, so it does
+  not get a checkbox that pretends otherwise. The reason is given: usually it
+  wants a newer app version, or an era you are not running.
+
+Mods shipped with the app are marked **included**. They can be switched off, and
+replaced by installing a mod of the same name, but not deleted.
+
+## Mod settings
+
+A mod can declare its own options — a checkbox, a number, a short piece of text
+— and they appear underneath it. The two bundled control mods use this to let
+you hide their on-screen buttons while keeping what they do.
+
+Options are read when the client configuration is regenerated, so **Apply**
+first and the game picks them up on its next load. Changing one does not turn
+the mod off.
+
+## Apply
+
+Applies every checkbox and every option at once, then restarts the server.
+Client-side changes need the game reloaded.
+
+## Install a mod
+
+From a folder or a `.zip`.
+
+**A mod is not data.** It drops scripts and tables into the server's paths and
+can ship JavaScript the game page executes. Installing one is running somebody
+else's code, so the app checks before it moves anything and unpacks defensively
+— but the judgement about whether to trust it is yours.
+
+## Open mods folder
+
+Installed mods live in `state/mods`, deliberately outside the part of the tree
+an update replaces. Adding a folder there by hand works as well as installing
+one.
+
+See [Making mods](./modding) to write your own.

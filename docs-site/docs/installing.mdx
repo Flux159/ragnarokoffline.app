@@ -1,0 +1,49 @@
+# Installing
+
+Download the build for your platform from the
+[releases page](https://github.com/Flux159/ragnarokoffline.app/releases/latest).
+
+## What you need
+
+- **Your own Ragnarok client files.** At minimum `data.grf`. Most installs also
+  have `rdata.grf`, and some have an `official_data.grf`; the app uses whichever
+  are there. A `BGM` folder gives you the music.
+- **Disk space.** Around 3 GB for the app and its server images, plus whatever
+  your client files take.
+- **Nothing else.** No Docker, no database, no compiler.
+
+## macOS
+
+Open the `.dmg` and drag the app to Applications. The build is signed and
+notarised.
+
+## Windows
+
+Run the installer. Windows may need virtualisation enabled in the BIOS for the
+microVM to start; the app says so plainly if it cannot start one.
+
+## Linux
+
+Use the AppImage. `/dev/kvm` needs to exist and your user needs access to it —
+usually membership of the `kvm` group.
+
+## Where the app keeps things
+
+Everything lives in one folder, and **Settings → Save data → Open data folder**
+takes you straight there.
+
+| Platform | Path |
+|---|---|
+| macOS | `~/Library/Application Support/Ragnarok Offline` |
+| Windows | `%APPDATA%\Ragnarok Offline` |
+| Linux | `~/.config/Ragnarok Offline` |
+
+Inside it, `state/` holds your characters, settings and installed mods, and it
+deliberately sits outside the parts an app update replaces. Your GRF files are
+**not** copied in — they stay where you put them and are read in place.
+
+## Updating
+
+Install the new version over the old one. Characters, accounts, settings and
+mods are kept. Taking a backup first is still worth it, and takes seconds:
+**Settings → Save data → Back up**.

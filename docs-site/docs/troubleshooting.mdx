@@ -1,0 +1,64 @@
+# Troubleshooting
+
+## The server will not start
+
+**Virtualisation.** The app runs the server in a microVM. On Windows that needs
+virtualisation enabled in the BIOS; on Linux it needs `/dev/kvm` and your user
+in the `kvm` group. The app says which of these is missing rather than failing
+vaguely.
+
+**One copy at a time.** The ports are fixed, so a second copy of the app cannot
+start its own server even with its own data folder. Quit the first and let it
+finish quitting.
+
+## The game window is blank, or sprites are missing
+
+Usually the client files. Check **Settings → General → Client** points at the
+folder holding `data.grf`. If a specific sprite is missing rather than all of
+them, the asset server logs the exact filename it could not find.
+
+The browser client also caches what it downloads, so a mod replacing a stock
+file can appear to do nothing while everything reports success. Toggling the
+mod and applying clears it.
+
+## The map server crashed
+
+The app keeps the evidence. **Copy diagnostics** includes preserved crash
+reports with a symbolised stack, which is usually enough to name the exact
+function at fault.
+
+If you have the **population engine** on, turn it off and see whether the crash
+follows — it is the most complex part of the server and the easiest thing to
+rule out.
+
+## A friend cannot connect
+
+**Over your network:** LAN connections must be on, and the server restarted
+after turning them on. Your friend needs to be on the same network.
+
+**Over the internet:** a temporary link changes every time sharing starts, so
+the link they have may simply be the old one. Copy the current one from
+**Settings → Multiplayer**.
+
+If sharing itself will not start, the reason appears in red under the buttons,
+and `sharing.log` in the data folder has the whole story including the
+Cloudflare helper's own output.
+
+## Character creation is denied
+
+Character names need **at least 4 characters**, and only letters, numbers and
+spaces. The server returns the same generic refusal for several different
+problems, so the app checks the length before sending.
+
+## Accounts and passwords
+
+Passwords are **8–23 printable ASCII characters** and cannot be the account
+name. Renewal and Pre-Renewal have separate accounts, so check which era you are
+on.
+
+## Reporting a problem
+
+**Copy diagnostics** and paste the result into a
+[GitHub issue](https://github.com/Flux159/ragnarokoffline.app/issues). It
+carries the app version, your settings, server logs, preserved crash reports and
+the sharing log. It never includes passwords or invitation tokens.

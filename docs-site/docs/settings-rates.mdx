@@ -1,0 +1,45 @@
+# Settings: Rates
+
+How fast you level, what monsters drop, and a couple of caps.
+
+Rates are written to rAthena's `conf/import/battle_conf.txt`, which overrides
+the shipped config. Applying restarts the map server, so log back in afterwards.
+
+## Experience
+
+**Base**, **Job** and **Quest**, as multipliers. 1x is the stock game.
+
+Any EXP rate above 1x also lifts the server's one-level-per-kill cap. Without
+that, a kill grants one level and **discards** everything the monster gave
+beyond it — so at 50x you would gain a single level per monster and lose the
+rest, which reads as the slider not working.
+
+## Drops
+
+**Item**, **Equipment** and **Card**, as multipliers. Boss, heal, use, MVP and
+treasure rates follow the common rate rather than getting sliders of their own.
+
+## Monsters drop Zeny
+
+rAthena has no Zeny multiplier: whether monsters drop it at all is a switch, and
+the amount derives from the monster's level.
+
+## Attack speed cap
+
+190 by default, 199 is the server's ceiling. The difference is small and is the
+whole gap between fast and instant.
+
+**Raise only.** Third, baby and summoner classes have their own stock ceilings
+and are lifted with it, rather than being dragged down to yours.
+
+## Stat cap
+
+99 by default, up to 32767. Third, baby, extended and summoner classes are
+lifted with it for the same reason — setting only the base cap would quietly
+nerf third jobs on an untouched install.
+
+## Free Kafra services
+
+Warps and storage at no cost. The prices are hardcoded in the NPC script with no
+config behind them, so the app rewrites the script from a pristine copy on every
+start.

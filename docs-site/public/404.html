@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Ragnarok Offline</title>
+  <script>
+    // SPA redirect for GitHub Pages
+    // Based on https://github.com/rafgraph/spa-github-pages
+    // Stores the path in sessionStorage, redirects to index.html,
+    // which then restores the path via history.replaceState
+    var l = window.location;
+    var pathSegmentsToKeep = 1; // Keep '/ragnarokoffline.app'
+    var repo = l.pathname.split('/')[1];
+    var path = l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/');
+    sessionStorage.setItem('spa-redirect', JSON.stringify({
+      path: path,
+      search: l.search,
+      hash: l.hash
+    }));
+    l.replace(
+      l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+      '/' + repo + '/'
+    );
+  </script>
+</head>
+<body>
+  Redirecting...
+</body>
+</html>

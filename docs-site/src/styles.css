@@ -1,0 +1,573 @@
+:root {
+  --color-bg: #0d1117;
+  --color-bg-secondary: #161b22;
+  --color-border: #30363d;
+  --color-text: #e6edf3;
+  --color-text-muted: #8b949e;
+  --color-primary: #58a6ff;
+  --color-primary-hover: #a5d6ff;
+  --sidebar-width: 260px;
+  --navbar-height: 60px;
+  --content-max-width: 900px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.6;
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--color-primary-hover);
+  text-decoration: underline;
+}
+
+/* Loading state */
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  color: var(--color-text-muted);
+}
+
+/* Navbar */
+.navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--navbar-height);
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  z-index: 100;
+}
+
+.navbar-brand {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.navbar-brand:hover {
+  text-decoration: none;
+}
+
+.navbar-links {
+  margin-left: auto;
+  display: flex;
+  gap: 24px;
+}
+
+.navbar-links a {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.navbar-links a:hover {
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+/* Layout — centered container with sidebar + content */
+.layout {
+  display: flex;
+  margin-top: var(--navbar-height);
+  min-height: calc(100vh - var(--navbar-height));
+  max-width: 1400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Sidebar */
+.sidebar {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  padding: 24px 16px;
+  border-right: 1px solid var(--color-border);
+  position: sticky;
+  top: var(--navbar-height);
+  height: calc(100vh - var(--navbar-height));
+  overflow-y: auto;
+  background: var(--color-bg);
+}
+
+.sidebar-section {
+  margin-bottom: 24px;
+}
+
+.sidebar-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+  padding: 0 8px;
+}
+
+.sidebar-link {
+  display: block;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.sidebar-link:hover {
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.sidebar-link.active {
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--color-primary);
+}
+
+/* Content */
+.content {
+  flex: 1;
+  min-width: 0;
+  padding: 32px 48px;
+  max-width: var(--content-max-width);
+}
+
+.content h1 {
+  font-size: 2.25rem;
+  font-weight: 700;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 16px;
+}
+
+.content h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-top: 32px;
+  margin-bottom: 16px;
+}
+
+.content h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 24px;
+  margin-bottom: 12px;
+}
+
+.content p {
+  margin-bottom: 16px;
+}
+
+.content ul, .content ol {
+  margin-bottom: 16px;
+  padding-left: 24px;
+}
+
+.content li {
+  margin-bottom: 8px;
+}
+
+.content code {
+  background: var(--color-bg-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.875em;
+}
+
+.content pre {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+  margin-bottom: 16px;
+}
+
+.content pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* GitHub-flavored blockquotes / notes */
+.content blockquote {
+  border-left: 4px solid var(--color-primary);
+  margin: 16px 0;
+  padding: 12px 16px;
+  background: rgba(88, 166, 255, 0.08);
+  border-radius: 0 8px 8px 0;
+}
+
+.content blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+
+.content th, .content td {
+  border: 1px solid var(--color-border);
+  padding: 12px;
+  text-align: left;
+}
+
+.content th {
+  background: var(--color-bg-secondary);
+  font-weight: 600;
+}
+
+/* Homepage */
+.hero {
+  text-align: center;
+  padding: 80px 24px 40px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.hero h1 {
+  font-size: 3rem;
+  font-weight: 700;
+  margin-bottom: 24px;
+  border: none;
+  padding: 0;
+}
+
+.hero p {
+  font-size: 1.25rem;
+  color: var(--color-text-muted);
+  margin-bottom: 32px;
+}
+
+.hero-buttons {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.btn {
+  display: inline-block;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: #000;
+}
+
+.btn-primary:hover {
+  background: var(--color-primary-hover);
+  text-decoration: none;
+}
+
+.btn-secondary {
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+
+.btn-secondary:hover {
+  background: var(--color-border);
+  text-decoration: none;
+}
+
+.install-tabs {
+  margin: 32px auto;
+  max-width: 750px;
+  text-align: left;
+}
+
+.install-tab-buttons {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: -1px;
+  position: relative;
+  z-index: 1;
+}
+
+.install-tab-btn {
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  padding: 8px 20px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.install-tab-btn:hover {
+  color: var(--color-text);
+}
+
+.install-tab-btn.active {
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.install-command {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 0 8px 8px 8px;
+  padding: 16px 24px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.9rem;
+  overflow-x: auto;
+}
+
+.install-command code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;
+  white-space: pre;
+}
+
+.install-copy-btn {
+  margin-left: auto;
+  background: var(--color-border);
+  color: var(--color-text-muted);
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.install-copy-btn:hover {
+  color: var(--color-text);
+  background: #484f58;
+}
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+  padding: 24px 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.feature {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.feature h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.feature p {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+/* Copy / Download button group */
+.copy-download-group {
+  position: relative;
+  display: inline-flex;
+  float: right;
+  margin-top: 4px;
+}
+
+.copy-btn {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.copy-btn:hover {
+  color: var(--color-text);
+  background: var(--color-border);
+}
+
+.copy-dropdown-toggle {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 0 6px 6px 0;
+  padding: 6px 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: all 0.15s;
+}
+
+.copy-dropdown-toggle:hover {
+  color: var(--color-text);
+  background: var(--color-border);
+}
+
+.copy-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+  z-index: 10;
+  min-width: 140px;
+}
+
+.copy-dropdown-menu button {
+  display: block;
+  width: 100%;
+  background: none;
+  color: var(--color-text-muted);
+  border: none;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+}
+
+.copy-dropdown-menu button:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+/* Table of Contents (Right Sidebar) */
+.toc {
+  width: 220px;
+  min-width: 220px;
+  padding: 24px 16px;
+  position: sticky;
+  top: var(--navbar-height);
+  height: calc(100vh - var(--navbar-height));
+  overflow-y: auto;
+  border-left: 1px solid var(--color-border);
+}
+
+.toc-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin-bottom: 12px;
+  padding-left: 8px;
+}
+
+.toc-nav {
+  display: flex;
+  flex-direction: column;
+}
+
+.toc-link {
+  display: block;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.toc-link:hover {
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.toc-link.active {
+  color: var(--color-primary);
+  border-left-color: var(--color-primary);
+}
+
+.toc-level-1 {
+  font-weight: 600;
+}
+
+.toc-level-2 {
+  padding-left: 12px;
+}
+
+.toc-level-3 {
+  padding-left: 20px;
+  font-size: 0.75rem;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .toc {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    display: none;
+  }
+
+  .content {
+    padding: 24px 16px;
+    max-width: 100%;
+  }
+
+  .hero h1 {
+    font-size: 2rem;
+  }
+}
+
+/* Ragnarok Offline: the licence note under the hero buttons, and the footer.
+   Everything else on the home page reuses the shared classes above. */
+.hero-note {
+  margin-top: 1.25rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.footer {
+  max-width: 1100px;
+  margin: 4rem auto 3rem;
+  padding: 2rem 2rem 0;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}

@@ -1,0 +1,40 @@
+# Ragnarok Offline
+
+Your own Ragnarok Online server and client, in one app, on macOS, Windows and
+Linux. The server, the database and the browser client are all inside it —
+there is no Docker to install, no rAthena to compile and no client to patch.
+
+You supply your own Ragnarok client files. Nothing copyrighted ships with the
+app.
+
+## What actually happens when you press play
+
+The app starts a small virtual machine, runs the Ragnarok server inside it, and
+opens the game in a window. That sounds heavy and mostly is not: it is a
+purpose-built microVM, not a desktop virtualisation product, and it exists so
+the Linux server the game needs can run the same way on all three platforms
+instead of being ported three times.
+
+Your characters live on your machine, in a database only this app talks to.
+Nothing is sent anywhere.
+
+## First run
+
+1. **Install and open the app.**
+2. **Point it at your Ragnarok files** — the folder holding `data.grf`, and
+   usually `rdata.grf` beside it.
+3. **Press play.** The first start takes a few minutes while it unpacks the
+   server images; later starts take seconds.
+4. **Make an account** at the login screen by adding `_M` or `_F` to the
+   username you want, then log in with the name without the suffix.
+
+See [Installing](./installing) for the details, including where the app keeps
+its data on each platform.
+
+## Where to go next
+
+- [Playing from the keyboard](./keyboard) — WASD, camera turning, and where
+  skills live.
+- [Playing with friends](./friends) — over your network, or over the internet.
+- [Settings](./settings-general) — a page for each tab.
+- [Making mods](./modding) — sprites, maps, NPCs and item tables, as folders.

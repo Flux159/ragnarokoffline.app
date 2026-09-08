@@ -1,0 +1,88 @@
+# Playing with friends
+
+Two ways, depending on where your friends are.
+
+## On your own network
+
+1. **Settings → Multiplayer**, turn on **Allow LAN connections**.
+2. **Restart server** — the engine reads that setting when it starts.
+3. Copy **Your link — on this network** and send it over.
+
+They paste it into the app's *Join a friend* box, or open it in a browser.
+Joining runs nothing locally, so it starts in seconds.
+
+## Over the internet
+
+The app opens a Cloudflare tunnel from your machine outward. **No ports are
+forwarded and nothing on your network is exposed** — the tunnel carries only the
+game, and only to people holding a current invitation.
+
+1. **Settings → Multiplayer**, turn on **Set up sharing over the internet**.
+   This turns on LAN connections too.
+2. **Share with friends.** The first time, it secures the server's internal
+   credentials — it backs up the database first and keeps every account and
+   character.
+3. Click **Your link — over the internet** to copy the whole invitation.
+
+Your friend opens it, and either logs in with a game account, creates one from
+the invitation page, or registers at the login screen with `_M`/`_F`.
+
+Keep the app open and the computer awake while people are playing.
+
+### Temporary links change every time
+
+Without a Cloudflare account you get a **Quick Tunnel**, and Cloudflare hands
+out a new `trycloudflare.com` address on every start. A crash, a restart or a
+Repair therefore means sending a new link.
+
+Quick Tunnels are meant for testing: no uptime guarantee, and at most **200
+requests in flight at once**. Busy asset loading can reach that.
+
+### A link that stays the same
+
+Connect a Cloudflare account and use your own domain. You need a free account, a
+domain on it, and an **API token** with:
+
+| Permission | Scope |
+|---|---|
+| **Zone → Zone → Read** | your domain |
+| **Zone → DNS → Edit** | your domain |
+| **Account → Cloudflare Tunnel → Edit** | the account owning it |
+
+Create it under **My Profile → API Tokens → Create Token → Create Custom
+Token**. It is used only during setup; the tunnel credential then lives in your
+operating system's secure password store.
+
+Pick a hostname you are **not** already using — setup refuses to overwrite an
+existing DNS record rather than replacing a site you have.
+
+With a named tunnel the address is stable, and the invitation is kept across
+restarts, so the whole link keeps working until you replace it.
+
+## Controlling access
+
+**Create a new link** replaces the invitation. The old link stops working
+immediately and anyone using it is disconnected — that is what to reach for if a
+link ends up somewhere public.
+
+**Stop sharing** does the same and closes the tunnel, without stopping your own
+game.
+
+**Invitation lasts** sets an expiry in days, or 0 for none. Replacing is the
+real control; expiry is a weaker version of it.
+
+## What friends can and cannot do
+
+They get an ordinary player account. They do not get GM commands unless you have
+installed a mod that grants commands to everyone — **player-commands** does
+exactly that, and it applies to invited friends too.
+
+Failed logins are rate-limited per account and per browser, so one friend
+mistyping a password cannot lock out the group.
+
+## If it will not start
+
+The reason appears in red under the buttons. `sharing.log` in the data folder
+(**Settings → Save data → Open data folder**) has the full story, including the
+Cloudflare helper's download and cloudflared's own output, and **Copy
+diagnostics** includes its tail.
