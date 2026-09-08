@@ -41,14 +41,23 @@ fn password(request: &Value) -> Result<&str, String> {
     let value = field(request, "password")?;
     // Printable ASCII avoids the client's character-count/UTF-8 byte-count
     // mismatch. Spaces, quotes and backslashes are supported without escaping.
-    if !(12..=23).contains(&value.len()) || !value.bytes().all(|b| (32..=126).contains(&b)) {
-        return Err("Use 12–23 printable ASCII characters for the game password. The pinned game login packet has a 24-byte field including its terminator.".into());
+    if !(8..=23).contains(&value.len()) || !value.bytes().all(|b| (32..=126).contains(&b)) {
+        return Err("Use 8–23 printable ASCII characters for the game password. The pinned game login packet has a 24-byte field including its terminator.".into());
     }
     if value != field(request, "confirmation")? {
         return Err("The passwords do not match".into());
     }
     if value.bytes().all(|b| b == b' ') {
         return Err("The password cannot contain only spaces".into());
+    }
+    // The internet-hosting gate also rejects a password equal to the account
+    // name. Enforce it here too: accepting one and then refusing to host on it
+    // leaves the player changing a password that already "worked", with the
+    // same refusal each time and nothing naming the real rule.
+    if let Ok(name) = field(request, "username") {
+        if value.eq_ignore_ascii_case(name) {
+            return Err("The password cannot be the same as the account name.".into());
+        }
     }
     Ok(value)
 }
@@ -326,7 +335,12 @@ pub fn run(cfg: &Config, dk: &Docker) -> Result<(), String> {
         verify_era(cfg, dk, era)?;
         let output = dk.private_sql(&sql)?;
         if output.trim() != "1" {
-            return Err("No account changed. The name may already exist, the value may be unchanged, or the account changed. Refresh Accounts.".into());
+            return Err(match action {
+                "password" => "The password was not changed: the account already uses this password. Choose a different one.",
+                "create" | "invite-create" => "That account name is already taken. Choose another.",
+                _ => "No account changed. The account may already be in that state, or it changed elsewhere. Refresh Accounts.",
+            }
+            .into());
         }
         Ok(())
     };
@@ -374,7 +388,7 @@ mod tests {
     #[test]
     fn passwords_fit_the_actual_login_packet_without_truncation() {
         for value in [
-            "x".repeat(11),
+            "x".repeat(7),
             "x".repeat(24),
             "é".repeat(12),
             "\n".repeat(12),
@@ -382,7 +396,9 @@ mod tests {
         ] {
             assert!(password(&request(&value)).is_err());
         }
-        for value in ["x".repeat(12), "x".repeat(23), "quote'\\ space".into()] {
+        // Both ends of the accepted range, so a future bound change has to
+        // move a test rather than silently widen or narrow what logs in.
+        for value in ["x".repeat(8), "x".repeat(23), "quote'\\ space".into()] {
             assert_eq!(password(&request(&value)).unwrap(), value);
         }
     }

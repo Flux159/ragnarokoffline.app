@@ -15,7 +15,7 @@ to the era shown. If an era switch did not finish, account operations refuse to
 write to a database whose actual volume does not match the selected era.
 
 Select `ragnarok` and use **Change GM/admin password**, entering the new password
-twice. The new value must be 12–23 printable ASCII characters; spaces and
+twice. The new value must be 8–23 printable ASCII characters; spaces and
 punctuation are supported. The pinned game login packet has only 24 bytes for
 the password including its terminator. Inputs are rejected rather than silently
 truncated. This setting preserves the account ID, GM privileges and characters.

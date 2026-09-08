@@ -140,6 +140,9 @@ export default function mobileUI(parameters, api) {
  .skills button{width:46px;height:46px;padding:4px;font-size:12px;background:#252c35e8;}
  .menu{position:absolute;right:8px;top:calc(env(safe-area-inset-top) + 62px);width:min(260px,calc(100vw - 16px));max-height:calc(var(--ro-view-height,100dvh) - 84px);overflow:auto;pointer-events:auto;background:#24221df5;border:1px solid #b4a27e;border-radius:10px;padding:8px;box-sizing:border-box;display:grid;grid-template-columns:1fr 1fr;gap:6px;}
  #displayButton{position:fixed;right:8px;bottom:8px;z-index:100;}
+ /* Touch targets stay 44px; a mouse does not need one parked on the HUD. */
+ @media (pointer: fine){#displayButton{min-width:0;min-height:0;padding:3px 9px;font-size:12px;opacity:.5;}
+  #displayButton:hover,#displayButton:focus-visible{opacity:1;}}
  dialog{pointer-events:auto;color:#312b21;background:#fff7e8;border:1px solid #ae976c;border-radius:10px;padding:18px;width:min(330px,calc(100vw - 60px));max-height:calc(var(--ro-view-height,100dvh) - 64px);overflow:auto;font:15px/1.45 system-ui;}
  dialog::backdrop{background:#0008;}dialog h2{margin:0 0 12px;font-size:22px;}dialog label{display:block;margin:14px 0 5px;}dialog select{width:100%;min-height:44px;}dialog input{width:100%;min-height:44px;}dialog button{background:#59472c;color:#fff8e6;margin:10px 4px 0 0;}dialog p{margin:10px 0;}output{display:block;min-height:20px;}
  @media(max-height:480px){.skills{right:164px;bottom:20px;}.vitals{width:190px;}.actions{grid-template-columns:repeat(2,60px);}.menu{grid-template-columns:repeat(3,1fr);width:350px;}}

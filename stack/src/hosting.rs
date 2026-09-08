@@ -71,7 +71,7 @@ pub fn before_start(cfg: &Config, scope: Scope) -> Result<(), String> {
     if scope.internet()
         && service_credentials::load(&cfg.state, service_credentials::era(cfg))?.is_none()
     {
-        return Err("Internet hosting requires this era's managed service credentials. Start in Local mode, change or disable the default GM password, and use Settings → Accounts → Secure internal server credentials first.".into());
+        return Err("Internet hosting requires this era's managed service credentials. Start in Local mode, give each GM/admin account an 8–23 character password in Settings → Accounts, then use \"Prepare server for friends\" in Settings → Multiplayer.".into());
     }
     Ok(())
 }
@@ -79,7 +79,7 @@ pub fn before_start(cfg: &Config, scope: Scope) -> Result<(), String> {
 fn unsafe_admin_count(dk: &Docker) -> Result<u32, String> {
     // Count every enabled privileged account, including renamed GMs. Also
     // cover the shipped login if its group was changed. No passwords leave SQL.
-    let result = dk.private_sql("SELECT COUNT(*) FROM login WHERE sex<>'S' AND state=0 AND (group_id>0 OR LOWER(userid)='ragnarok') AND (OCTET_LENGTH(user_pass) NOT BETWEEN 12 AND 23 OR BINARY user_pass REGEXP '[^ -~]' OR TRIM(user_pass)='' OR LOWER(user_pass)=LOWER(userid));")?;
+    let result = dk.private_sql("SELECT COUNT(*) FROM login WHERE sex<>'S' AND state=0 AND (group_id>0 OR LOWER(userid)='ragnarok') AND (OCTET_LENGTH(user_pass) NOT BETWEEN 8 AND 23 OR BINARY user_pass REGEXP '[^ -~]' OR TRIM(user_pass)='' OR LOWER(user_pass)=LOWER(userid));")?;
     result
         .trim()
         .parse()
@@ -89,7 +89,7 @@ fn unsafe_admin_count(dk: &Docker) -> Result<u32, String> {
 pub fn require_admin_passwords(dk: &Docker) -> Result<(), String> {
     let count = unsafe_admin_count(dk)?;
     if count != 0 {
-        return Err(format!("{count} enabled GM/admin account(s) need a new password or must be disabled before internet hosting. Use Settings → Accounts for this era. Game services remain stopped; player accounts and characters were not reset."));
+        return Err(format!("{count} enabled GM/admin account(s) still use a weak or default password. In Settings → Accounts, pick the account for this era and set a password of 8–23 printable ASCII characters that is not the account name; disabling the account also clears this, but you do not have to give up GM access to host. Game services remain stopped; player accounts and characters were not reset."));
     }
     Ok(())
 }
@@ -118,7 +118,7 @@ fn flag(config: &str, wanted: &str) -> Result<String, String> {
 
 fn service_check(cfg: &Config, dk: &Docker) -> Result<(), String> {
     let credentials = service_credentials::load(&cfg.state, service_credentials::era(cfg))?
-        .ok_or("Secure this era's internal server credentials in Settings → Accounts")?;
+        .ok_or("This era's internal server credentials are not secured yet. In Settings → Multiplayer, use \"Prepare server for friends\" once; it backs up the database and rotates the internal service passwords, and it is required before any internet hosting.")?;
     if !credentials.ready {
         return Err(
             "Service credential migration is incomplete; finish startup before sharing".into(),

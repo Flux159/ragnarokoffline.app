@@ -75,6 +75,11 @@
   .row input[type=checkbox] { margin-left: auto; }
 
   .note { color: var(--dim); font-size: 11px; margin-top: 8px; line-height: 1.6; }
+  /* Failures used to render in the same dim grey as every other note, so a
+     refusal was indistinguishable from progress text and read as "nothing
+     happened". Errors get their own colour and weight. */
+  .note.bad, .bad { color: #ff8080; font-weight: 600; }
+  .note.good { color: #7fd88f; }
   pre { margin: 0; color: var(--dim); font-size: 11px; white-space: pre-wrap; }
 </style>
 </head>
@@ -237,19 +242,25 @@
     <p class="note" id="registration-status" role="status" aria-live="polite"></p>
     <div class="row"><span id="accounts-era">Choose Refresh to load the current era</span>
       <button id="accounts-refresh" class="ghost">Refresh accounts</button></div>
-    <p class="note" id="accounts-status" role="status" aria-live="polite"></p>
     <label><span>Account</span><select id="account-select" disabled></select></label>
     <p class="note" id="account-detail"></p>
     <label><span>New password</span><input id="account-password" type="password" autocomplete="new-password" /></label>
     <label><span>Confirm password</span><input id="account-confirmation" type="password" autocomplete="new-password" /></label>
-    <p class="note">Use 12–23 printable ASCII characters, including letters, numbers, spaces
-      and punctuation. The game protocol limits password length; longer or non-ASCII passwords
-      cannot be accepted here. Passwords are never included in diagnostics.</p>
+    <p class="note">Use 8–23 printable ASCII characters, including letters, numbers, spaces
+      and punctuation, and not the account name itself. The game protocol limits password length;
+      longer or non-ASCII passwords cannot be accepted here. Passwords are never included in
+      diagnostics. A GM or admin account needs a password meeting these rules before internet
+      hosting — you do not have to disable it.</p>
     <div class="actions">
       <button id="account-password-save" disabled>Change password</button>
       <button id="account-disable" class="ghost" disabled>Disable account</button>
       <button id="account-enable" class="ghost" disabled>Enable account</button>
     </div>
+    <!-- Beside the buttons, not at the top of the panel. The reply to a click
+         used to render six elements above it, in the same grey as the rules
+         note sitting right next to the button -- so a refusal read as the
+         button doing nothing at all. -->
+    <p class="note" id="accounts-status" role="status" aria-live="polite"></p>
     <label style="margin-top:12px"><span>New friend account</span><input id="account-username" type="text" autocomplete="off" /></label>
     <p class="note">Create an ordinary player account with the password entered above.
       Use 4–23 letters, numbers, underscores or hyphens, without an _M or _F suffix.</p>

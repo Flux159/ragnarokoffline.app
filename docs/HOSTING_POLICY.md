@@ -39,7 +39,7 @@ services. No account is renamed, recreated or assigned a default password.
 
 The admin check counts every enabled non-service account with `group_id > 0`,
 including renamed GMs, plus the shipped `ragnarok` login if its group changed.
-Passwords must fit the app's 12–23 printable-ASCII game-password contract, contain
+Passwords must fit the app's 8–23 printable-ASCII game-password contract, contain
 something besides spaces, and differ from the username. This is a minimum format
 check, not an entropy estimate or a substitute for auditing custom privilege
 configuration. Password values never leave SQL. The byte-sensitive character

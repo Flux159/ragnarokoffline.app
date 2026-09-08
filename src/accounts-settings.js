@@ -4,8 +4,16 @@
   const element = (id) => document.getElementById(id);
   let snapshot = null,
     busy = false;
-  const status = (message) => {
-    element("accounts-status").textContent = message;
+  // A refusal has to look like one. Every message used to land in the same
+  // dim note style as "Loading accounts…", so a rejected password change was
+  // indistinguishable from progress and read as the button doing nothing.
+  const status = (message, kind = "") => {
+    const node = element("accounts-status");
+    node.classList.remove("bad", "good");
+    if (kind) node.classList.add(kind);
+    node.textContent = message;
+    // A refusal that scrolls off-screen is a refusal nobody reads.
+    if (kind === "bad") node.scrollIntoView({ block: "nearest" });
   };
   const selected = () =>
     snapshot?.accounts.find(
@@ -66,7 +74,7 @@
       );
     } catch (error) {
       snapshot = null;
-      status(error.message || "Could not load accounts");
+      status(error.message || "Could not load accounts", "bad");
     } finally {
       busy = false;
       paint();
@@ -89,11 +97,13 @@
     paint();
     status("Updating the account and restarting game services…");
     let message;
+    let failed = true;
     try {
       const result = await invoke("accounts", request);
       if (!result.updated)
         throw new Error("The account update was not confirmed");
       message = `Account updated in ${result.era === "prerenewal" ? "pre-renewal" : "renewal"}. Log in again.`;
+      failed = false;
     } catch (error) {
       message = error.message || "Account update failed";
     } finally {
@@ -105,7 +115,7 @@
       busy = false;
     }
     await refresh();
-    status(message);
+    status(message, failed ? "bad" : "good");
   }
   element("accounts-refresh").onclick = refresh;
   element("account-select").onchange = paint;

@@ -85,7 +85,7 @@ async function main() {
     await page
       .getByRole("button", { name: "Change GM/admin password", exact: true })
       .click();
-    await expect(page.locator("#accounts-status")).toContainText("12–23", {
+    await expect(page.locator("#accounts-status")).toContainText("8–23", {
       timeout: 40000,
     });
     await expect(page.locator("#account-password")).toHaveValue("");

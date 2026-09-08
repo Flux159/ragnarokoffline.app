@@ -1739,6 +1739,17 @@ const handlers = {
         if (getClientPaths().mode !== 'host') throw Error('Start your own server before sharing.');
         const saved = useDomain ? getSharingSecrets().load() : null;
         if (useDomain && !saved) throw Error('Connect your Cloudflare domain first, or use a temporary session link.');
+        // Securing this era's internal credentials is mechanical: it backs the
+        // database up first and preserves every account and character. Refusing
+        // here and telling the player to go find a button in another section is
+        // what made "share with friends" feel like a maze, so just do it. Safe
+        // to run from here -- sharing has not started, so runStack's stop-first
+        // rule for this verb has nothing to interrupt.
+        const era = getSettings().prerenewal ? 'prerenewal' : 'renewal';
+        if (!fs.existsSync(path.join(stateDir(), 'private/service-credentials', era, 'credentials.json'))) {
+            appLog('sharing: securing this era\u2019s internal service credentials (one time; the database is backed up first)');
+            await runStack(['secure-services']);
+        }
         // The existing mandatory account safeguards remain in force. Never
         // turn packet-level _M/_F signup back on for invited web users.
         const policy = JSON.parse(await runStack(['hosting-check']));
