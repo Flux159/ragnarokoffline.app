@@ -35,3 +35,6 @@ and touch share one movement owner; switching input or leaving a map cancels
 held directions. Releasing a key stops new destination requests. The server can
 finish an already accepted path of up to three steps; this is not an instant
 stop or a change to server movement speed.
+
+Full key reference, including roBrowser's own shortcut bar and how the two
+overlap: [docs/KEYBOARD_CONTROLS.md](../../docs/KEYBOARD_CONTROLS.md).

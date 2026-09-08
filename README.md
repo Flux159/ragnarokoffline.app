@@ -396,6 +396,14 @@ folder closest to what you want.
 
 <img src="docs/assets/modlogin.jpg" alt="A custom login screen from the login-screen example mod" width="640">
 
+## Playing from the keyboard
+
+Skills and items go on the shortcut bar — `F1`–`F9`, `1`–`9`, and two more rows
+— which is roBrowser's own and always there. The bundled `wasd-movement` mod
+adds walking, `Q`/`E` camera turning and a spacebar attack on the nearest
+monster. Those two share some keys, and you choose which wins:
+**[docs/KEYBOARD_CONTROLS.md](docs/KEYBOARD_CONTROLS.md)**.
+
 ## Advanced features
 
 Backing up and restoring your characters, where the app keeps its data on each
