@@ -571,3 +571,11 @@ a:hover {
   color: var(--text-secondary);
   font-size: 0.9rem;
 }
+
+/* The app icon above the title, so the home page leads with the mark rather
+   than repeating it only in the navbar. */
+.hero-mark {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}

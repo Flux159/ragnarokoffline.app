@@ -24,11 +24,30 @@ is worth the five minutes.
 
 ## Open data folder
 
-Opens the folder holding everything the app keeps: characters, settings, logs,
-crash reports and staged backups.
+Opens the folder holding everything the app generates: the microVM, its disks,
+the server runtime and your settings. Useful for attaching a log to a bug
+report, or copying a backup somewhere safe by hand.
 
-Useful for attaching a log to a bug report, or copying a backup somewhere safe
-by hand. See [Installing](./installing) for the path on each platform.
+| Platform | Location |
+|---|---|
+| macOS | `~/Library/Application Support/Ragnarok Offline` |
+| Windows | `%APPDATA%\Ragnarok Offline` (that is `AppData\Roaming`, not `Local`) |
+| Linux | `~/.local/share/Ragnarok Offline` (or `$XDG_DATA_HOME/Ragnarok Offline`) |
+
+Inside it:
+
+| Entry | What it is |
+|---|---|
+| `nebula/` | The microVM: guest kernel, container images, and the virtual disks. Nearly all of the size. |
+| `runtime/` | The server runtime — rAthena config, SQL schema, the client. Replaced wholesale by each app update. |
+| `state/` | Generated config, seeded schema, and staged backups. Deliberately outside `runtime/` so an update cannot wipe it. |
+| `state/mods` | Installed mods. Outside the asset tree on purpose, so rebuilding assets cannot destroy them. |
+| `state/crashes` | Preserved map-server crashes, including the symbolised stack a bug report wants. |
+| `client.json` | Which folder your GRFs are in, and whether you are hosting or joining. |
+
+**Your Ragnarok client is not in here.** The GRFs stay wherever you put them and
+are read in place, so a 3.5 GB client is never duplicated — and nothing on this
+page can put it at risk.
 
 ## Copying diagnostics
 

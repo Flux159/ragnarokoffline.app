@@ -35,8 +35,8 @@ takes you straight there.
 | Platform | Path |
 |---|---|
 | macOS | `~/Library/Application Support/Ragnarok Offline` |
-| Windows | `%APPDATA%\Ragnarok Offline` |
-| Linux | `~/.config/Ragnarok Offline` |
+| Windows | `%APPDATA%\Ragnarok Offline` (that is `AppData\Roaming`, not `Local`) |
+| Linux | `~/.local/share/Ragnarok Offline` (or `$XDG_DATA_HOME/Ragnarok Offline`) |
 
 Inside it, `state/` holds your characters, settings and installed mods, and it
 deliberately sits outside the parts an app update replaces. Your GRF files are

@@ -37,6 +37,9 @@ export default function HomePage() {
           Ragnarok Offline
         </Link>
         <div className="navbar-links">
+          <a href="https://discord.gg/jUYC9dMbu5" target="_blank" rel="noopener">
+            Discord
+          </a>
           <Link to="/docs/getting-started">Docs</Link>
           <a href="https://github.com/Flux159/ragnarokoffline.app" target="_blank" rel="noopener">
             GitHub
@@ -46,10 +49,13 @@ export default function HomePage() {
 
       <div style={{ marginTop: 'var(--navbar-height)' }}>
         <header className="hero">
+          <div className="hero-mark">
+            <AppMark size={96} />
+          </div>
           <h1>Your own Ragnarok Online server</h1>
           <p>
-            A single app for macOS, Windows and Linux. It carries the server, the database and the
-            client, so there is nothing to configure before you are standing in Prontera.
+            A single ragnarok app for MacOS, Windows, and Linux. Open the app, point to your client
+            files, and start playing in Midgard.
           </p>
           <div className="hero-buttons">
             <a
@@ -64,9 +70,6 @@ export default function HomePage() {
               Read the docs
             </Link>
           </div>
-          <p className="hero-note">
-            You supply your own Ragnarok client files. Nothing copyrighted ships with the app.
-          </p>
         </header>
 
         <section className="features">
@@ -79,6 +82,13 @@ export default function HomePage() {
         </section>
 
         <footer className="footer">
+          <p>
+            Stuck, or want to show off a server?{' '}
+            <a href="https://discord.gg/jUYC9dMbu5" target="_blank" rel="noopener">
+              Join the Discord
+            </a>
+            .
+          </p>
           <p>
             Built on <a href="https://github.com/rathena/rathena" target="_blank" rel="noopener">rAthena</a>,{' '}
             <a href="https://github.com/MrAntares/roBrowserLegacy" target="_blank" rel="noopener">roBrowserLegacy</a>{' '}

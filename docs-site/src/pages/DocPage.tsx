@@ -146,6 +146,9 @@ export default function DocPage() {
           Ragnarok Offline
         </Link>
         <div className="navbar-links">
+          <a href="https://discord.gg/jUYC9dMbu5" target="_blank" rel="noopener">
+            Discord
+          </a>
           <Link to="/docs/getting-started">Docs</Link>
           <a href="https://github.com/Flux159/ragnarokoffline.app" target="_blank" rel="noopener">
             GitHub

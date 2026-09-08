@@ -6,9 +6,16 @@
 
 FROM alpine:3.23 AS build
 
+# libunwind is pinned by upstream version, not by Alpine's package revision.
+# Alpine's repository carries only the current -rN for a branch: the moment
+# libunwind is rebuilt as -r1, an `=1.8.1-r0` pin stops resolving and the image
+# build fails outright -- on a release tag, most likely. `~1.8.1` keeps the
+# version deterministic while tolerating a repackage. The build-time -dev and
+# the runtime library must move together.
+
 RUN apk add --no-cache \
         bash git make cmake gcc g++ \
-        zlib-dev mariadb-dev linux-headers libunwind-dev=1.8.1-r0 binutils
+        zlib-dev mariadb-dev linux-headers libunwind-dev~1.8.1 binutils
 
 WORKDIR /rathena
 COPY . /rathena
@@ -85,7 +92,7 @@ COPY --from=build /symbols/ /
 
 FROM alpine:3.23
 
-RUN apk add --no-cache mariadb-connector-c zlib libstdc++ libgcc bash tzdata libunwind=1.8.1-r0 \
+RUN apk add --no-cache mariadb-connector-c zlib libstdc++ libgcc bash tzdata libunwind~1.8.1 \
     && adduser -D -h /rathena rathena
 
 WORKDIR /rathena
