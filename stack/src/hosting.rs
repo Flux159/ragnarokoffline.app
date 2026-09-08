@@ -158,13 +158,20 @@ fn service_check(cfg: &Config, dk: &Docker) -> Result<(), String> {
 }
 
 fn require_registration(cfg: &Config) -> Result<(), String> {
-    if registration::enabled(&cfg.state)? {
-        return Err("Choose owner-only account creation and restart before sharing".into());
-    }
+    // Either answer is allowed; what matters is that the running server agrees
+    // with the setting. Refusing to share whenever signup was open used to make
+    // _M/_F unreachable over a link, even though the tunnel already gates the
+    // login port behind an invitation.
+    let wanted = registration::enabled(&cfg.state)?;
     let config = std::fs::read_to_string(cfg.state.join("conf/login_conf.txt"))
         .map_err(|_| "Cannot read generated login configuration")?;
-    if !["no", "off", "false", "0"].contains(&flag(&config, "new_account")?.as_str()) {
-        return Err("The generated signup policy is still open; restart before sharing".into());
+    let running = !["no", "off", "false", "0"].contains(&flag(&config, "new_account")?.as_str());
+    if running != wanted {
+        return Err(format!(
+            "The running server still has account creation {}, but the setting is {}. Restart the server to apply it before sharing.",
+            if running { "open" } else { "owner-only" },
+            if wanted { "open" } else { "owner-only" }
+        ));
     }
     Ok(())
 }

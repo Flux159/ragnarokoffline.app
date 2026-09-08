@@ -20,7 +20,13 @@ fn parse(body: &str) -> Result<bool, String> {
         Some(Value::Bool(value)) => *value,
         _ => return Err(ERROR.into()),
     };
-    Ok(requested && !crate::hosting::Scope::from_settings(&settings, false)?.internet())
+    // Honour the choice at any scope. Sharing links reach the login server
+    // only through an invitation-gated tunnel -- the gateway rejects a
+    // WebSocket upgrade to 6900 without a current invitation cookie -- so
+    // _M/_F signup here is reachable by invited friends, not the internet.
+    // Hosting something larger is the case for turning it off, and that is
+    // a decision the owner makes in Settings.
+    Ok(requested)
 }
 
 pub fn settings(state: &Path) -> Result<Value, String> {
@@ -52,7 +58,13 @@ pub fn enabled(state: &Path) -> Result<bool, String> {
         Some(Value::Bool(value)) => *value,
         _ => return Err(ERROR.into()),
     };
-    Ok(requested && !crate::hosting::Scope::from_settings(&settings, false)?.internet())
+    // Honour the choice at any scope. Sharing links reach the login server
+    // only through an invitation-gated tunnel -- the gateway rejects a
+    // WebSocket upgrade to 6900 without a current invitation cookie -- so
+    // _M/_F signup here is reachable by invited friends, not the internet.
+    // Hosting something larger is the case for turning it off, and that is
+    // a decision the owner makes in Settings.
+    Ok(requested)
 }
 
 pub fn login_config(enabled: bool) -> String {
@@ -90,21 +102,22 @@ mod tests {
     }
 
     #[test]
-    fn internet_modes_cannot_reopen_signup_with_a_saved_preference() {
-        for scope in ["friends", "public"] {
-            for request in ["true", "false"] {
-                assert!(!parse(&format!(
-                    "{{\"hosting_scope\":\"{scope}\",\"open_registration\":{request}}}"
-                ))
-                .unwrap());
-            }
-            assert!(!parse(&format!("{{\"hosting_scope\":\"{scope}\"}}")).unwrap());
-        }
-        for scope in ["local", "lan"] {
+    fn the_saved_preference_decides_signup_at_every_scope() {
+        // Sharing a link is mostly sending it to a few friends, and the tunnel
+        // already gates the login port behind an invitation, so an internet
+        // scope no longer overrides the owner's choice in either direction.
+        for scope in ["local", "lan", "friends", "public"] {
             assert!(parse(&format!(
                 "{{\"hosting_scope\":\"{scope}\",\"open_registration\":true}}"
             ))
             .unwrap());
+            assert!(!parse(&format!(
+                "{{\"hosting_scope\":\"{scope}\",\"open_registration\":false}}"
+            ))
+            .unwrap());
+            // Absent means open: a fresh install lets an invited friend sign up
+            // with _M/_F without the owner having to find a setting first.
+            assert!(parse(&format!("{{\"hosting_scope\":\"{scope}\"}}")).unwrap());
         }
     }
 }

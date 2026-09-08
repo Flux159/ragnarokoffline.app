@@ -1750,12 +1750,14 @@ const handlers = {
             appLog('sharing: securing this era\u2019s internal service credentials (one time; the database is backed up first)');
             await runStack(['secure-services']);
         }
-        // The existing mandatory account safeguards remain in force. Never
-        // turn packet-level _M/_F signup back on for invited web users.
+        // Account safeguards stay in force, but the signup policy is the
+        // owner's to set. Sharing used to force it off and then hide the
+        // resulting check failure, which made _M/_F unreachable over a link
+        // even though the tunnel only carries invited friends.
         const policy = JSON.parse(await runStack(['hosting-check']));
-        const missing = policy.checks.filter(check => check.id !== 'registration' && !check.passed);
+        const missing = policy.checks.filter(check => !check.passed);
         if (missing.length) throw Error(missing.map(check => check.detail).join(' '));
-        await saveSettings({ hosting_scope: 'friends', open_registration: false });
+        await saveSettings({ hosting_scope: 'friends' });
         await assetsStart();
         if (request !== sharingStartRequest) return getSharing().status();
         await getSharing().start(saved);
