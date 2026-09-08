@@ -81,9 +81,31 @@
   .note.bad, .bad { color: #ff8080; font-weight: 600; }
   .note.good { color: #7fd88f; }
   pre { margin: 0; color: var(--dim); font-size: 11px; white-space: pre-wrap; }
+  /* One long scroll made everything past Multiplayer effectively hidden.
+     The cards are unchanged; only their grouping is new. */
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; position: sticky; top: 0; z-index: 5;
+    background: var(--bg, #0d0f15); padding: 8px 0 10px; margin: 0 0 4px;
+    border-bottom: 1px solid var(--line); }
+  .tab { background: transparent; color: var(--dim); border: 1px solid transparent;
+    border-radius: 6px; padding: 7px 12px; font: inherit; font-weight: 600; cursor: pointer; }
+  .tab:hover { color: var(--text); }
+  .tab[aria-selected="true"] { background: var(--accent); color: #0d0f15; }
+  .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The first heading in a panel would otherwise sit oddly far from the tabs. */
+  .tabpanel > h2:first-child { margin-top: 10px; }
 </style>
 </head>
 <body>
+  <div class="tabs" role="tablist" aria-label="Settings sections">
+    <button role="tab" class="tab" id="tab-general" aria-controls="panel-general" aria-selected="true" tabindex="0">General</button>
+    <button role="tab" class="tab" id="tab-multiplayer" aria-controls="panel-multiplayer" aria-selected="false" tabindex="-1">Multiplayer</button>
+    <button role="tab" class="tab" id="tab-accounts" aria-controls="panel-accounts" aria-selected="false" tabindex="-1">Accounts</button>
+    <button role="tab" class="tab" id="tab-savedata" aria-controls="panel-savedata" aria-selected="false" tabindex="-1">Save data</button>
+    <button role="tab" class="tab" id="tab-mods" aria-controls="panel-mods" aria-selected="false" tabindex="-1">Mods</button>
+    <button role="tab" class="tab" id="tab-population" aria-controls="panel-population" aria-selected="false" tabindex="-1">Population</button>
+    <button role="tab" class="tab" id="tab-rates" aria-controls="panel-rates" aria-selected="false" tabindex="-1">Rates</button>
+  </div>
+  <div class="tabpanel" id="panel-general" role="tabpanel" aria-labelledby="tab-general">
   <h2>Game era</h2>
   <div class="panel">
     <div class="row" style="border-bottom:0; padding-bottom:14px">
@@ -124,7 +146,9 @@
     <p class="note">The GRFs and music stay where they are — Ragnarok Offline only
        references them, so nothing is copied or duplicated.</p>
   </div>
+  </div>
 
+  <div class="tabpanel" id="panel-multiplayer" role="tabpanel" aria-labelledby="tab-multiplayer" hidden>
   <h2>Multiplayer</h2>
   <div class="panel">
     <div class="row">
@@ -236,7 +260,9 @@
       </details>
     </div>
   </section>
+  </div>
 
+  <div class="tabpanel" id="panel-accounts" role="tabpanel" aria-labelledby="tab-accounts" hidden>
   <h2>Accounts</h2>
   <div class="panel" id="accounts-panel">
     <p class="note">Manage accounts on your own running server. Renewal and pre-renewal
@@ -279,18 +305,22 @@
       Use 4–23 letters, numbers, underscores or hyphens, without an _M or _F suffix.</p>
     <button id="account-create" class="ghost" disabled>Create friend account</button>
   </div>
+  </div>
 
-
+  <div class="tabpanel" id="panel-savedata" role="tabpanel" aria-labelledby="tab-savedata" hidden>
   <h2>Save data</h2>
   <div class="card">
     <div class="row"><span class="name">Characters &amp; accounts</span><span class="state" id="s-dbfile">—</span></div>
     <div class="actions">
       <button id="backup" class="ghost">Back up…</button>
       <button id="restore" class="ghost">Restore…</button>
+      <button id="open-data" class="ghost">Open data folder</button>
     </div>
     <div class="note" id="db-note">Backups briefly disconnect players so their latest data can be saved consistently. Restore keeps the game stopped until you restart it and preserves a backup of the current database.</div>
   </div>
+  </div>
 
+  <div class="tabpanel" id="panel-mods" role="tabpanel" aria-labelledby="tab-mods" hidden>
   <h2>Mods</h2>
   <div class="panel">
     <div id="mods-list" class="note">Looking…</div>
@@ -303,7 +333,9 @@
        changes need the server restarted, which Apply does; client changes —
        sprites, styling — need the app restarted.</p>
   </div>
+  </div>
 
+  <div class="tabpanel" id="panel-population" role="tabpanel" aria-labelledby="tab-population" hidden>
   <h2>Population</h2>
   <div class="panel">
     <label>
@@ -338,7 +370,9 @@
        it never comes into play.</p>
     <p class="note" id="ram-note"></p>
   </div>
+  </div>
 
+  <div class="tabpanel" id="panel-rates" role="tabpanel" aria-labelledby="tab-rates" hidden>
   <h2>Rates</h2>
   <div class="panel">
     <label><span>Base EXP</span><input type="range" id="base_exp_rate" min="100" max="5000" step="100"><span class="mult"><input type="number" class="val num" id="v-base_exp_rate" min="0" step="0.1">x</span></label>
@@ -375,6 +409,7 @@
     <p class="note">Rates are written to rAthena's <code>conf/import/battle_conf.txt</code>,
        which overrides the shipped config. Applying restarts the map server, so
        log back in afterwards.</p>
+  </div>
   </div>
 
   <div class="panel"><pre id="log">idle</pre></div>
@@ -837,6 +872,40 @@ async function refreshMods() {
   }
 }
 
+// Tabs. Every panel stays in the DOM and is only hidden, so nothing here has
+// to care which section an element lives in -- the rest of this file still
+// looks elements up by id exactly as it did when the page was one scroll.
+const TAB_KEYS = ['general', 'multiplayer', 'accounts', 'savedata', 'mods', 'population', 'rates'];
+function showTab(key, focus = false) {
+  if (!TAB_KEYS.includes(key)) key = TAB_KEYS[0];
+  for (const other of TAB_KEYS) {
+    const tab = $('tab-' + other);
+    const panel = $('panel-' + other);
+    const on = other === key;
+    tab.setAttribute('aria-selected', String(on));
+    tab.tabIndex = on ? 0 : -1;
+    panel.hidden = !on;
+  }
+  if (focus) $('tab-' + key).focus();
+  // Coming back to a section should not also restore someone else's scroll.
+  window.scrollTo(0, 0);
+  try { localStorage.setItem('settings-tab', key); } catch { /* private window */ }
+}
+for (const [index, key] of TAB_KEYS.entries()) {
+  $('tab-' + key).onclick = () => showTab(key);
+  $('tab-' + key).onkeydown = event => {
+    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (step) {
+      event.preventDefault();
+      showTab(TAB_KEYS[(index + step + TAB_KEYS.length) % TAB_KEYS.length], true);
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      showTab(event.key === 'Home' ? TAB_KEYS[0] : TAB_KEYS[TAB_KEYS.length - 1], true);
+    }
+  };
+}
+try { showTab(localStorage.getItem('settings-tab') || 'general'); } catch { showTab('general'); }
+
 // Status lines that answer a button. A failure has to look like one: these all
 // used to render in the same dim note colour as the explanatory text around
 // them, so a refusal read as the button doing nothing.
@@ -863,6 +932,7 @@ $('mods-install').onclick = () => withButton('mods-install', 'Installing…', 'I
 });
 
 $('mods-folder').onclick = async () => log('Mods folder: ' + await invoke('open_mods_folder'));
+$('open-data').onclick = async () => setNote('db-note', 'Data folder: ' + await invoke('open_data_folder'));
 
 $('mods-apply').onclick = () => withButton('mods-apply', 'Applying…', 'Apply', async () => {
   for (const [name, enabled] of Object.entries(modState)) {

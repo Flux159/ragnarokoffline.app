@@ -1511,6 +1511,16 @@ const handlers = {
 		shell.openPath(dir);
 		return dir;
 	},
+	// The data folder itself: characters, settings, logs, crash reports and
+	// the staged backups all live under it, and it is the thing a bug report
+	// or a manual backup actually wants. dataRoot(), not stateDir() -- the
+	// player is looking for the whole install, not one directory inside it.
+	open_data_folder: () => {
+		const dir = dataRoot();
+		fs.mkdirSync(dir, { recursive: true });
+		shell.openPath(dir);
+		return dir;
+	},
 
 	// One file a player can attach to a bug report.
 	//
