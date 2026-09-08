@@ -41,6 +41,32 @@ anything to get skills onto `1`, `2`, `3`.
 **Rows three and four overlap the movement keys.** `W`, `A`, `S`, `D` are row-4
 and row-3 slots, and so are `Q` and `E`. See *Resolving the overlap* below.
 
+### Quickspell — casting from the mouse
+
+The official client lets the mouse fire three of the hotkeys, and these are
+toggles you turn on in chat. Both are off until you ask for them.
+
+| Command | Does | Also |
+|---|---|---|
+| `/q1` | right click casts the **F9** slot | `/quickspell` |
+| `/q2` | wheel up and down cast **F7** and **F8** | `/quickspell2` |
+| `/q3` | both at once | |
+
+Type the command again to toggle, or be explicit with `/q1 on` and `/q1 off`.
+The choice is saved per browser, like every other client preference.
+
+The slots are fixed at F7, F8 and F9 — that is the official client's choice, not
+ours, and it is not configurable there either.
+
+Two things worth knowing:
+
+- **Right-drag still rotates the camera.** Only a right click that does not move
+  the mouse casts, which is the same rule the client already used to decide
+  whether to open a context menu.
+- **The wheel still sets skill level while you are choosing a target.** That
+  takes priority; quickspell only takes the wheel back afterwards, and zooming
+  moves to whatever you have left.
+
 ### Remapping
 
 Every binding above is remappable in the client's shortcut-configuration window,

@@ -104,6 +104,85 @@ edit('UI/Components/MobileUI/MobileUI.js', 'MobileUI.onRemove = function onRemov
      'MobileUI.onRemove = function onRemove() {\n\tstopJoystick();\n')
 print('installed client extension API and shared movement hooks')
 
+# /q1 and /q2 -- quickspell. The official client has them; roBrowser does not.
+# Slot numbers (F9, F7, F8) are fixed in the official client, so they are fixed
+# here. Both toggles default off, as they do there.
+edit('Controls/ProcessCommand.js', "let aliases = {};",
+     "import { QuickSpell, SLOT_RIGHT_CLICK, SLOT_WHEEL_UP, SLOT_WHEEL_DOWN } from "
+     "'Plugins/Ragnarok/QuickSpell.mjs';\n\nlet aliases = {};")
+edit('Controls/ProcessCommand.js', "const CommandStore = {\n",
+     """const CommandStore = {
+\tq1: {
+\t\tdescription: 'Right click casts the F9 hotkey',
+\t\taliases: ['quickspell'],
+\t\tcallback: function (text) {
+\t\t\tconst on = quickSpellArgument(text, QuickSpell.rightClick);
+\t\t\tQuickSpell.set('rightClick', on);
+\t\t\tthis.addText(`Mouse right click shortcut to F9 hotkey is ${on ? 'Enabled' : 'Disabled'}.[/q1 ${on ? 'ON' : 'OFF'}]`, this.TYPE.INFO, this.FILTER.PUBLIC_LOG);
+\t\t}
+\t},
+\tq2: {
+\t\tdescription: 'Mouse wheel casts the F7 and F8 hotkeys',
+\t\taliases: ['quickspell2'],
+\t\tcallback: function (text) {
+\t\t\tconst on = quickSpellArgument(text, QuickSpell.wheel);
+\t\t\tQuickSpell.set('wheel', on);
+\t\t\tthis.addText(`Mouse wheel shortcuts to F7 and F8 hotkeys are ${on ? 'Enabled' : 'Disabled'}.[/q2 ${on ? 'ON' : 'OFF'}]`, this.TYPE.INFO, this.FILTER.PUBLIC_LOG);
+\t\t}
+\t},
+\tq3: {
+\t\tdescription: 'Both quickspell shortcuts at once',
+\t\tcallback: function (text) {
+\t\t\tconst on = quickSpellArgument(text, QuickSpell.rightClick && QuickSpell.wheel);
+\t\t\tQuickSpell.set('rightClick', on);
+\t\t\tQuickSpell.set('wheel', on);
+\t\t\tthis.addText(`Quickspell shortcuts are ${on ? 'Enabled' : 'Disabled'}.[/q3 ${on ? 'ON' : 'OFF'}]`, this.TYPE.INFO, this.FILTER.PUBLIC_LOG);
+\t\t}
+\t},
+""")
+
+# The callback is handed the whole command line, not just its argument, so
+# "q1 OFF" has to be split before it can be read. No argument toggles, which
+# is what the official client does.
+edit('Controls/ProcessCommand.js', "let aliases = {};\n",
+     """let aliases = {};
+
+function quickSpellArgument(text, current) {
+\tconst argument = String(text || '').trim().split(/\\s+/)[1];
+\tif (!argument) return !current;
+\treturn !['off', '0', 'false'].includes(argument.toLowerCase());
+}
+""")
+
+# Right click without a drag: cast instead of opening the context menu.
+edit('Controls/MapControl.js', "import UIManager from 'UI/UIManager.js';",
+     "import UIManager from 'UI/UIManager.js';\nimport { QuickSpell, SLOT_RIGHT_CLICK, SLOT_WHEEL_UP, SLOT_WHEEL_DOWN } from 'Plugins/Ragnarok/QuickSpell.mjs';")
+edit('Controls/MapControl.js',
+     """			if (_rightClickPosition[0] === Mouse.screen.x && _rightClickPosition[1] === Mouse.screen.y && !KEYS.SHIFT) {
+				entity = EntityManager.getOverEntity();""",
+     """			if (_rightClickPosition[0] === Mouse.screen.x && _rightClickPosition[1] === Mouse.screen.y && !KEYS.SHIFT) {
+				// /q1: a right click that did not drag is a hotkey press, not a
+				// context menu. A drag still rotates, so the camera is unaffected.
+				if (QuickSpell.rightClick && QuickSpell.cast(SLOT_RIGHT_CLICK)) {
+					break;
+				}
+				entity = EntityManager.getOverEntity();""")
+
+# Wheel: cast instead of zooming, but never while choosing a skill level.
+edit('Controls/MapControl.js',
+     """	// Zooming on the scene
+	const delta = event.deltaY < 0 ? 1 : event.deltaY > 0 ? -1 : 0;""",
+     """	// /q2: the wheel casts F7 and F8 instead of zooming. Checked after the
+	// skill-level branch above, which owns the wheel while targeting.
+	if (QuickSpell.wheel && event.deltaY !== 0) {
+		if (QuickSpell.cast(event.deltaY < 0 ? SLOT_WHEEL_UP : SLOT_WHEEL_DOWN)) {
+			return;
+		}
+	}
+
+	// Zooming on the scene
+	const delta = event.deltaY < 0 ? 1 : event.deltaY > 0 ? -1 : 0;""")
+
 # Phone windows keep their own geometry. Keep legacy desktop keys unchanged.
 edit('Core/Preferences.js', 'const Storage = {',
      "import { geometryKey } from 'Plugins/Ragnarok/LayoutProfile.mjs';\n\nconst Storage = {")
