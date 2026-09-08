@@ -20,14 +20,58 @@ test('directional input normalizes diagonals, rotates with the camera and bounds
     movement.setActive(true);
     keyboard.begin(5, 5); movement.tick(0);
     assert.ok(Math.abs(Math.hypot(...directions[0]) - 1) < 1e-10);
+    // Assert the geometry, not the formula. Camera.js renders a map step
+    // (dx,dy) at screen R(-angle) . (dx,dy), so projecting the map direction
+    // back through R(-angle) must return the on-screen intent that produced
+    // it. Checking the round trip is what stops a sign error being re-encoded
+    // here: the previous expectation matched the implementation, and both were
+    // wrong for every camera angle except zero.
     cameraDirection = 2; keyboard.update(0, 1); movement.tick(180);
-    assert.ok(directions[1][0] > 0.999); assert.ok(Math.abs(directions[1][1]) < 1e-10);
+    const onScreen = (vector, degrees) => {
+        const t = -degrees * Math.PI / 180;
+        return [vector[0] * Math.cos(t) - vector[1] * Math.sin(t),
+                vector[0] * Math.sin(t) + vector[1] * Math.cos(t)];
+    };
+    const back = onScreen(directions[1], 90);
+    assert.ok(Math.abs(back[0]) < 1e-10, `screen x ${back[0]} should be 0`);
+    assert.ok(back[1] > 0.999, `screen y ${back[1]} should be +1 (the "up" that was pressed)`);
     wall = true;
     for (let time = 181; time < 540; time++) movement.tick(time);
     assert.equal(moves.length, 2); assert.equal(directions.length, 3);
     canMove = false; movement.tick(540); canMove = true; movement.tick(720);
     assert.equal(movement.snapshot().source, null);
     assert.equal(directions.length, 3, 'unblocking must not resume stale held input');
+});
+
+test('screen intent survives any camera angle, including the partial ones indoors', async () => {
+    const [{ createMovement }] = await modules;
+    // Indoor maps (prt_in) stop short of a full rotation, so the camera rests
+    // between the 45-degree sprite buckets Camera.direction reports. Movement
+    // has to follow the continuous angle or "right" drifts by up to 22.5.
+    const onScreen = (vector, degrees) => {
+        const t = -degrees * Math.PI / 180;
+        return [vector[0] * Math.cos(t) - vector[1] * Math.sin(t),
+                vector[0] * Math.sin(t) + vector[1] * Math.cos(t)];
+    };
+    for (const cameraAngle of [0, -45, 45, 90, -90, 17.5, -122.5, 180]) {
+        for (const [label, intent] of [['right', [1, 0]], ['up', [0, 1]], ['down-left', [-1, -1]]]) {
+            const directions = [];
+            const movement = createMovement({
+                read: () => ({ canMove: true, cameraAngle, position: [10, 10] }),
+                destination: (position, direction) => { directions.push(direction); return position; },
+                send: () => {},
+            });
+            const source = movement.register('keyboard');
+            movement.setActive(true);
+            source.begin(...intent); movement.tick(0);
+            const back = onScreen(directions[0], cameraAngle);
+            const want = intent.map(v => v / Math.max(1, Math.hypot(...intent)));
+            for (const axis of [0, 1]) {
+                assert.ok(Math.abs(back[axis] - want[axis]) < 1e-9,
+                    `${label} at camera ${cameraAngle}: screen axis ${axis} was ${back[axis]}, wanted ${want[axis]}`);
+            }
+        }
+    }
 });
 
 test('the last deliberate source owns movement; release never restores an older source', async () => {

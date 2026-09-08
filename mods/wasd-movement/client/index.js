@@ -76,6 +76,10 @@ export default function init(parameters, api) {
         dialog::backdrop { background:#0008; } h2 { margin:0 0 12px; } label { display:flex; align-items:center; gap:8px; min-height:44px; } input { width:20px; height:20px; }
         .bindings { display:grid; grid-template-columns:1fr 1fr; gap:8px; } p { line-height:1.45; } .footer { display:flex; justify-content:space-between; margin-top:16px; gap:8px; }
         select { width:100%; } output { display:block; min-height:2.5em; margin-top:8px; }
+        /* 44px is a touch target. With a mouse it is just a big button parked
+           over the game, so shrink the launcher (never the dialog controls). */
+        @media (pointer: fine) { #open { min-height:0; padding:3px 9px; font-size:12px; opacity:.5; }
+            #open:hover, #open:focus-visible { opacity:1; } }
     </style>
     <button id="open" aria-haspopup="dialog">Controls</button>
     <dialog aria-labelledby="title"><h2 id="title">Movement controls</h2>
