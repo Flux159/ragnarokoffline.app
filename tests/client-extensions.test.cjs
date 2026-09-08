@@ -74,6 +74,57 @@ test('screen intent survives any camera angle, including the partial ones indoor
     }
 });
 
+test('Q and E turn while held, and space attacks once without repeating', async () => {
+    const [, , { createPluginLoader }] = await modules;
+    void createPluginLoader;
+    const { keyboard } = await import('../mods/wasd-movement/client/index.js');
+    const turns = [];
+    let attacks = 0, canMove = true;
+    const listeners = {};
+    const target = {
+        addEventListener(type, handler) { (listeners[type] ||= []).push(handler); },
+    };
+    const api = {
+        movement: { register: () => ({ begin: () => true, update: () => true, end() {}, dispose() {} }) },
+        input: { state: () => ({ canMove }), shortcutConflict: () => false },
+        actions: { rotateCamera: d => { turns.push(d); return true; }, attackNearest: () => { attacks++; return true; } },
+        cleanup() {},
+    };
+    const send = (type, code, repeat = false) => {
+        for (const handler of listeners[type] || []) {
+            handler({ code, repeat, preventDefault() {}, stopImmediatePropagation() {} });
+        }
+    };
+    const driver = keyboard(api, {}, target);
+    send('keydown', 'KeyQ');
+    assert.ok(turns.length >= 1, 'holding Q turns immediately');
+    assert.ok(turns.every(d => d > 0), 'Q turns one way');
+    send('keyup', 'KeyQ');
+    const afterRelease = turns.length;
+    send('keydown', 'KeyE');
+    assert.ok(turns.slice(afterRelease).every(d => d < 0), 'E turns the other way');
+    send('keyup', 'KeyE');
+
+    // Space is deliberately not a repeat key: the server continues an attack
+    // on its own, so a held key must not re-issue the same order.
+    send('keydown', 'Space');
+    send('keydown', 'Space', true);
+    send('keydown', 'Space', true);
+    assert.equal(attacks, 1, 'OS key repeat must not re-issue the attack');
+    send('keyup', 'Space');
+    send('keydown', 'Space');
+    assert.equal(attacks, 2, 'a fresh press attacks again');
+
+    // Nothing fires while the player cannot act.
+    canMove = false;
+    const before = turns.length;
+    send('keydown', 'KeyQ');
+    send('keydown', 'Space');
+    assert.equal(turns.length, before, 'no turning while input is blocked');
+    assert.equal(attacks, 2, 'no attack while input is blocked');
+    driver.dispose();
+});
+
 test('the last deliberate source owns movement; release never restores an older source', async () => {
     const [{ createMovement }] = await modules;
     const sent = [], cancelled = [];

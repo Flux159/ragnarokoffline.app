@@ -99,10 +99,24 @@ export function createRuntime({ storage, report = (...args) => console.error(...
                     return source;
                 },
             }),
-            actions: Object.freeze({ perform(action, payload) {
-                if (disposed) throw new Error(`Plugin ${name} is disposed`);
-                return bridge.action?.(action, copy(payload)) ?? false;
-            } }),
+            actions: Object.freeze({
+                perform(action, payload) {
+                    if (disposed) throw new Error(`Plugin ${name} is disposed`);
+                    return bridge.action?.(action, copy(payload)) ?? false;
+                },
+                // Turn the camera by a step, clamped to the limits the map
+                // allows. Returns false when it is already against one.
+                rotateCamera(degrees) {
+                    if (disposed) throw new Error(`Plugin ${name} is disposed`);
+                    return bridge.rotateCamera?.(Number(degrees)) ?? false;
+                },
+                // Attack the nearest living monster, walking into range first
+                // if needed. The server continues the attack on its own.
+                attackNearest() {
+                    if (disposed) throw new Error(`Plugin ${name} is disposed`);
+                    return bridge.attackNearest?.() ?? false;
+                },
+            }),
         });
         const instance = { api, dispose() {
             if (disposed) return;

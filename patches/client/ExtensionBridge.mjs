@@ -8,6 +8,7 @@ import EntityManager from 'Renderer/EntityManager.js';
 import Altitude from 'Renderer/Map/Altitude.js';
 import PathFinding from 'Utils/PathFinding.js';
 import MapControl from 'Controls/MapControl.js';
+import DB from 'DB/DBManager.js';
 import KEYS from 'Controls/KeyEventHandler.js';
 import BattleMode from 'Controls/BattleMode.js';
 import Network from 'Network/NetworkManager.js';
@@ -159,6 +160,59 @@ export function init() {
                     hp: player.life.hp, maxHp: player.life.hp_max, sp: player.life.sp, maxSp: player.life.sp_max } : null,
                 camera: { direction: Camera.direction },
                 target: target ? { id: target.GID, name: target.display?.name || '', hp: target.life?.hp, maxHp: target.life?.hp_max } : null };
+        },
+        // Turn the camera by a step, honouring the same limits the mouse obeys.
+        // Indoor maps clamp yaw to a narrow window (-60..-25 for prt_in), so a
+        // key press there moves as far as it can and then stops, rather than
+        // silently building an angle the renderer will never adopt.
+        rotateCamera(degrees) {
+            if (!Number.isFinite(degrees) || !Camera.angleFinal) return false;
+            const indoor = DB.isIndoor(Camera.currentMap);
+            const low = indoor ? Camera.indoorRotationFrom : Camera.rotationFrom;
+            const high = indoor ? Camera.indoorRotationTo : Camera.rotationTo;
+            const wanted = Camera.angleFinal[1] + degrees;
+            const next = Math.min(high, Math.max(low, wanted));
+            const moved = next !== Camera.angleFinal[1];
+            Camera.angleFinal[1] = next;
+            return moved;
+        },
+        // Attack the nearest living monster, keeping the current target while
+        // it lives. Action 7 is RO's *continuous* attack: the server keeps
+        // swinging until the target dies or the player does something else, so
+        // there is no loop here and nothing that hunts on the player's behalf.
+        // Out of reach, this walks into range and lets the queued action fire,
+        // exactly as a click on the monster does.
+        attackNearest() {
+            const player = Session.Entity;
+            if (!player || !inputState().canMove) return false;
+            const MOB = player.constructor.TYPE_MOB;
+            let target = EntityManager.getFocusEntity();
+            if (!target || target.objecttype !== MOB || target.action === target.ACTION.DIE) {
+                target = EntityManager.getClosestEntity(player, MOB);
+            }
+            if (!target) return false;
+            const path = [];
+            const count = PathFinding.search(
+                player.position[0] | 0, player.position[1] | 0,
+                target.position[0] | 0, target.position[1] | 0,
+                player.attack_range + 1, path);
+            if (!count) return false;
+            // Held movement keys would otherwise send a destination on the next
+            // tick and cancel the attack before the first swing lands.
+            Runtime.movement.clear('attack');
+            EntityManager.setFocusEntity(target);
+            const attack = PACKETVER.value >= 20180307
+                ? new PACKET.CZ.REQUEST_ACT2() : new PACKET.CZ.REQUEST_ACT();
+            attack.action = 7;
+            attack.targetGID = target.GID;
+            if (count < 2) { Network.sendPacket(attack); return true; }
+            Session.moveAction = attack;
+            const move = PACKETVER.value >= 20180307
+                ? new PACKET.CZ.REQUEST_MOVE2() : new PACKET.CZ.REQUEST_MOVE();
+            move.dest[0] = path[(count - 1) * 2 + 0];
+            move.dest[1] = path[(count - 1) * 2 + 1];
+            Network.sendPacket(move);
+            return true;
         },
         action,
     });

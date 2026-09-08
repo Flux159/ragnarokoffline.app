@@ -1,5 +1,11 @@
 const DEFAULTS = Object.freeze({ enabled: true, arrows: true, policy: 'movement',
+    rotate: true, attack: true,
     bindings: { up: 'KeyW', left: 'KeyA', down: 'KeyS', right: 'KeyD' } });
+// Held keys that are not movement. Rotation repeats while held, which is what
+// makes it feel like the mouse drag it replaces; attack does not, because the
+// server continues an attack on its own and a repeat would only re-issue it.
+const TURN_STEP = 6;
+const TURN_INTERVAL = 16;
 const DIRECTIONS = { up: [0, 1], left: [-1, 0], down: [0, -1], right: [1, 0] };
 const ARROWS = { ArrowUp: [0, 1], ArrowLeft: [-1, 0], ArrowDown: [0, -1], ArrowRight: [1, 0] };
 const validCode = code => typeof code === 'string' && /^(Key[A-Z]|Digit[0-9]|Arrow(Up|Left|Down|Right))$/.test(code);
@@ -10,6 +16,7 @@ export function settings(value = {}) {
         for (const key of Object.keys(bindings)) bindings[key] = value.bindings[key];
     }
     return { enabled: value.enabled !== false, arrows: value.arrows !== false,
+        rotate: value.rotate !== false, attack: value.attack !== false,
         policy: value.policy === 'shortcuts' ? 'shortcuts' : 'movement', bindings };
 }
 
@@ -27,12 +34,42 @@ export function keyboard(api, initial, target = window) {
         const v = binding(code); return v ? [sum[0] + v[0], sum[1] + v[1]] : sum;
     }, [0, 0]);
     const consume = event => { event.preventDefault(); event.stopImmediatePropagation(); };
-    const clear = () => { source.end(); held.clear(); };
+    const clear = () => { source.end(); held.clear(); stopTurning(); };
+    // Turning is its own held-key loop rather than part of the movement vector:
+    // it changes the camera, not a destination, and the two are independent --
+    // holding W while turning should curve, not stop.
+    const turning = new Set();
+    let turnTimer = null;
+    const stopTurning = () => { turning.clear(); if (turnTimer) { clearInterval(turnTimer); turnTimer = null; } };
+    const turnStep = () => {
+        let degrees = 0;
+        for (const code of turning) degrees += code === 'KeyQ' ? TURN_STEP : -TURN_STEP;
+        if (degrees) api.actions.rotateCamera(degrees);
+    };
+    const startTurning = code => {
+        turning.add(code);
+        if (!turnTimer) { turnStep(); turnTimer = setInterval(turnStep, TURN_INTERVAL); }
+    };
     target.addEventListener('keydown', event => {
         if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey || event.isComposing) {
             clear(); return;
         }
-        if (!preferences.enabled || !binding(event.code)) return;
+        if (!preferences.enabled) return;
+        // Turning and attacking are separate from the movement vector, and are
+        // still subject to the same text-field and modal rules above.
+        if (preferences.rotate && (event.code === 'KeyQ' || event.code === 'KeyE')) {
+            if (!api.input.state().canMove) { clear(); return; }
+            if (!event.repeat) startTurning(event.code);
+            consume(event); return;
+        }
+        if (preferences.attack && event.code === 'Space') {
+            if (!api.input.state().canMove) { clear(); return; }
+            // No repeat: action 7 keeps the server swinging on its own, so a
+            // held space would only re-issue the same order.
+            if (!event.repeat) api.actions.attackNearest();
+            consume(event); return;
+        }
+        if (!binding(event.code)) return;
         if (!api.input.state().canMove) {
             clear(); return;
         }
@@ -51,12 +88,16 @@ export function keyboard(api, initial, target = window) {
     }, { capture: true, signal: abort.signal });
     target.addEventListener('keyup', event => {
         pressed.delete(event.code);
+        if (turning.delete(event.code)) {
+            if (!turning.size && turnTimer) { clearInterval(turnTimer); turnTimer = null; }
+            consume(event); return;
+        }
         if (!held.delete(event.code)) return;
         if (held.size) source.update(...vector()); else source.end();
         consume(event);
     }, { capture: true, signal: abort.signal });
     target.addEventListener('blur', () => { clear(); pressed.clear(); }, { signal: abort.signal });
-    const dispose = () => { clear(); pressed.clear(); source.dispose(); abort.abort(); };
+    const dispose = () => { clear(); stopTurning(); pressed.clear(); source.dispose(); abort.abort(); };
     api.cleanup(dispose);
     return { configure(value) { clear(); preferences = settings(value); }, dispose };
 }
@@ -89,6 +130,10 @@ export default function init(parameters, api) {
     <dialog aria-labelledby="title"><h2 id="title">Movement controls</h2>
         <label><input id="enabled" type="checkbox"> Keyboard movement</label>
         <label><input id="arrows" type="checkbox"> Also use arrow keys</label>
+        <label><input id="rotate" type="checkbox"> Q and E turn the camera</label>
+        <label><input id="attack" type="checkbox"> Space attacks the nearest monster</label>
+        <p>Space keeps attacking the same monster until it falls, the way clicking it does.
+           Skills stay on the shortcut bar — F1 to F9 by default, and remappable in game.</p>
         <p>Physical keys keep directions consistent across keyboard layouts. Choose a direction to rebind it.</p>
         <div class="bindings"></div>
         <label for="policy">When battle shortcuts conflict</label>
@@ -105,6 +150,8 @@ export default function init(parameters, api) {
     const render = () => {
         root.querySelector('#enabled').checked = preferences.enabled;
         root.querySelector('#arrows').checked = preferences.arrows;
+        root.querySelector('#rotate').checked = preferences.rotate;
+        root.querySelector('#attack').checked = preferences.attack;
         root.querySelector('#policy').value = preferences.policy;
         for (const [name, code] of Object.entries(preferences.bindings)) root.querySelector(`[data-direction="${name}"]`).textContent = `${name}: ${code}`;
     };
@@ -131,7 +178,7 @@ export default function init(parameters, api) {
     dialog.addEventListener('close', () => { resume?.(); resume = null; rebind = null; });
     root.querySelector('#close').addEventListener('click', () => dialog.close());
     root.querySelector('#reset').addEventListener('click', () => { preferences = settings(); save(); });
-    for (const key of ['enabled', 'arrows']) root.querySelector(`#${key}`).addEventListener('change', event => { preferences[key] = event.target.checked; save(); });
+    for (const key of ['enabled', 'arrows', 'rotate', 'attack']) root.querySelector(`#${key}`).addEventListener('change', event => { preferences[key] = event.target.checked; save(); });
     root.querySelector('#policy').addEventListener('change', event => { preferences.policy = event.target.value; save(); });
     api.on('map:enter', () => { host.hidden = !showLauncher; });
     api.on('map:leave', () => { host.hidden = true; if (dialog.open) dialog.close(); });

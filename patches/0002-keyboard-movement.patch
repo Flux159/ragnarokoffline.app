@@ -12,8 +12,15 @@ is removed. Keyboard and touch share intent ownership, bounded pathfinding
 and native movement packets. Map/network/GUI hooks provide lifecycle and
 component notifications without exposing engine globals to plugins.
 
+Q and E turn the camera while held, clamped to the same limits the mouse
+drag obeys -- indoor maps allow only a narrow window, so a key press there
+turns as far as it can and stops. Space attacks the nearest living monster,
+walking into range first when needed; it sends RO's continuous attack, so the
+server keeps swinging until the target falls and nothing loops client-side.
+Skills stay on roBrowser's own shortcut bar.
+
 The Controls dialog provides per-browser enablement, physical-key rebinding,
-arrows and movement/battle-shortcut priority. Text entry, IME, shortcut capture,
+arrows, turning, attack and movement/battle-shortcut priority. Text entry, IME, shortcut capture,
 modals, blur and hidden pages cancel movement. A fresh physical press is
 required after cancellation; OS key repeat cannot revive stale intent.
 
