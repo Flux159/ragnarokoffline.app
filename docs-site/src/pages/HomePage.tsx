@@ -50,7 +50,7 @@ export default function HomePage() {
       <div style={{ marginTop: 'var(--navbar-height)' }}>
         <header className="hero">
           <div className="hero-mark">
-            <AppMark size={96} />
+            <AppMark size={192} />
           </div>
           <h1>Your own Ragnarok Online server</h1>
           <p>

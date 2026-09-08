@@ -9,11 +9,9 @@ app.
 
 ## What actually happens when you press play
 
-The app starts a small virtual machine, runs the Ragnarok server inside it, and
-opens the game in a window. That sounds heavy and mostly is not: it is a
-purpose-built microVM, not a desktop virtualisation product, and it exists so
-the Linux server the game needs can run the same way on all three platforms
-instead of being ported three times.
+The app starts a microVM, runs the Ragnarok server and its database inside it,
+and opens the game client in a window. The server is Linux-only, so the VM is
+how the same server runs on macOS, Windows and Linux without being ported.
 
 Your characters live on your machine, in a database only this app talks to.
 Nothing is sent anywhere.
