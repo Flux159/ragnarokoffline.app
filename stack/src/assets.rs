@@ -929,9 +929,6 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
-    /// Two blocks in a row must not produce `],,` -- a syntax error, and a
-    /// config that does not parse is a game that does not start.
-    #[test]
     #[test]
     fn the_client_config_hands_each_plugin_its_own_settings() {
         let cfg = fixture_config("plugin-pars");
@@ -960,6 +957,9 @@ mod tests {
         fs::remove_dir_all(cfg.state.parent().unwrap()).unwrap();
     }
 
+    /// Two blocks in a row must not produce `],,` -- a syntax error, and a
+    /// config that does not parse is a game that does not start.
+    #[test]
     fn two_inserted_blocks_do_not_double_the_comma() {
         let base = "window.ROConfigLocal = {\n\tskipIntro: true\n};\n".to_string();
         let one = insert_before_close(base, "\tcustomItemInfo: ['a'],\n");
