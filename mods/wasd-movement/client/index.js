@@ -57,13 +57,22 @@ export function keyboard(api, initial, target = window) {
         if (!preferences.enabled) return;
         // Turning and attacking are separate from the movement vector, and are
         // still subject to the same text-field and modal rules above.
+        // Q, E and space are shortcut slots too -- Q and E are row three, slots
+        // one and three -- so they answer to the same priority setting the
+        // movement keys do. Without this, choosing "battle shortcuts take
+        // priority" would still lose Q, E and space to this mod.
+        const yields = code => preferences.policy === 'shortcuts'
+            && api.input.shortcutConflict(event.keyCode || event.which)
+            && Boolean(code);
         if (preferences.rotate && (event.code === 'KeyQ' || event.code === 'KeyE')) {
             if (!api.input.state().canMove) { clear(); return; }
+            if (yields(event.code)) { stopTurning(); return; }
             if (!event.repeat) startTurning(event.code);
             consume(event); return;
         }
         if (preferences.attack && event.code === 'Space') {
             if (!api.input.state().canMove) { clear(); return; }
+            if (yields(event.code)) return;
             // No repeat: action 7 keeps the server swinging on its own, so a
             // held space would only re-issue the same order.
             if (!event.repeat) api.actions.attackNearest();

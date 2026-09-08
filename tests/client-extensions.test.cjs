@@ -115,6 +115,26 @@ test('Q and E turn while held, and space attacks once without repeating', async 
     send('keydown', 'Space');
     assert.equal(attacks, 2, 'a fresh press attacks again');
 
+    // Q, E and space are shortcut slots (row three, slots one and three for Q
+    // and E), so battle-shortcut priority has to reach them the same way it
+    // reaches the movement keys.
+    // Its own target: the driver above is still listening on the shared one,
+    // and a second subscriber there would leave its turn timer running.
+    const otherListeners = {};
+    const otherTarget = { addEventListener(type, handler) { (otherListeners[type] ||= []).push(handler); } };
+    const yielding = keyboard(
+        { ...api, input: { state: () => ({ canMove: true }), shortcutConflict: () => true } },
+        { policy: 'shortcuts' }, otherTarget);
+    const turnsBefore = turns.length, attacksBefore = attacks;
+    for (const code of ['KeyQ', 'Space']) {
+        for (const handler of otherListeners.keydown || []) {
+            handler({ code, repeat: false, preventDefault() {}, stopImmediatePropagation() {} });
+        }
+    }
+    assert.equal(turns.length, turnsBefore, 'Q yields to a bound shortcut');
+    assert.equal(attacks, attacksBefore, 'space yields to a bound shortcut');
+    yielding.dispose();
+
     // Nothing fires while the player cannot act.
     canMove = false;
     const before = turns.length;

@@ -29,7 +29,13 @@ function inputState() {
     // while idle. It is not a declaration that the component is a modal.
     const capturing = Object.values(UIManager.components).some(component =>
         (component.isCapturing || component.mouseMode === 2 ||
-            ['Escape', 'ShortCuts', 'WorldMap', 'SkillTargetSelection', 'CaptchaAnswer', 'CaptchaSelector', 'CaptchaUpload'].includes(component.name)) && visible(component));
+            ['Escape', 'ShortCuts', 'WorldMap', 'SkillTargetSelection', 'CaptchaAnswer', 'CaptchaSelector', 'CaptchaUpload',
+            // An open NPC dialogue owns space and enter -- they advance and
+            // close it. Neither sets FreezeUI, so without naming them here a
+            // capture-phase key handler silently takes those keys away from
+            // the conversation. The server will not move a talking player
+            // either, so treating a dialogue as blocking matches the game.
+            'NpcBox', 'NpcMenu'].includes(component.name)) && visible(component));
     const battle = UIManager.components.ChatBox?.getRoot()?.querySelector('.battlemode');
     return {
         canMove: Boolean(player && Runtime.movement.snapshot().active && !document.hidden && !composing && !editing &&
