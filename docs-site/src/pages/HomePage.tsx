@@ -19,8 +19,8 @@ const features = [
     body: 'The population engine fills towns and fields with characters who walk, fight, sit in Prontera and open stalls, so a server of one does not feel like one.',
   },
   {
-    title: 'Mods that are just folders',
-    body: 'Drop in sprites, maps, NPCs, item tables or a whole custom island. No GRF repacking. Settings lists what is installed, with a checkbox each.',
+    title: 'Mod Support',
+    body: 'Ragnarokoffline.app supports mods that allow you to change sprites, maps, NPCs, and items. No need to modify GRFs. Enable and disable mods in settings. Join the discord to share your mods.',
   },
   {
     title: 'It stays yours',
