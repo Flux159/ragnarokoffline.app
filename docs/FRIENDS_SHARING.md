@@ -91,7 +91,10 @@ Custom SSO/Han login modes and non-ASCII account names are not supported here.
 The Rust supervisor checks the actual running era, managed credentials, GM
 password policy, suffix signup policy, container port bindings and the pinned
 base command/permission files. Mods replacing command/permission imports are
-refused for friends mode. The app checks current LAN listeners as well. A
+refused for friends mode. The app probes the current LAN listeners as a second
+opinion: a port that answers refuses sharing outright, while a probe a firewall
+drops is reported to the player rather than treated as a failure, since the
+supervisor has already verified the bindings from the inside. A
 separate owner page retains privileged Electron IPC; public pages have none.
 
 The access boundary is implemented in the shell's gateway rather than changing

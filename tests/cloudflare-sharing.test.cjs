@@ -98,8 +98,9 @@ test('a guard advisory reaches the player without failing the start', async t =>
   await f.instance.start(saved);
   assert.equal(f.instance.status().state, 'sharing');
   assert.match(f.instance.status().notice, /firewall dropped the check on 192\.168\.1\.5/);
-  // A later clean start must not keep showing the previous one's advisory.
+  // Stopping ends the session the advisory described.
   await f.instance.stop();
+  assert.equal(f.instance.status().notice, '', 'a stopped session shows no advisory');
   f.instance.guard = async () => '';
   await f.instance.start(saved);
   assert.equal(f.instance.status().notice, '');

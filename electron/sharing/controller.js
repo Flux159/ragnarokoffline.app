@@ -183,7 +183,9 @@ class SharingController {
     try { await this.stopping; } finally { this.stopping = null; }
   }
   async stopOwned() {
-    ++this.generation; clearInterval(this.monitor); this.monitor = null;
+    // The advisory described a session that is ending. Left in place it read
+    // as "sharing continued" under a panel saying sharing was off.
+    ++this.generation; clearInterval(this.monitor); this.monitor = null; this.notice = '';
     this.update('stopping', 'Stopping sharing…');
     const gateway = this.gateway; this.gateway = null;
     if (gateway) await gateway.stop();

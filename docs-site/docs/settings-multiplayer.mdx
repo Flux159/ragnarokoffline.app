@@ -35,9 +35,22 @@ part of an elided link by hand is how people end up sending half of one.
 
 ## Set up sharing over the internet
 
-Off until you ask for it, so a local or LAN game stays uncluttered. Turning it
-on also turns on LAN connections, since the people you are about to send a link
-to are by definition not on this machine.
+Off until you ask for it, so a local or LAN game stays uncluttered. The
+checkbox only reveals the controls; it changes no hosting setting on its own.
+
+### Sharing turns LAN connections off
+
+**Allow LAN connections** unticks itself when sharing starts, and that is the
+app closing ports rather than discarding your setting.
+
+Friends hosting and LAN are deliberately exclusive. While sharing, the game
+ports listen on this machine only and the invitation link is the single way in.
+LAN hosting would put those same ports on every network interface, where anyone
+who can reach your computer could connect without an invitation — past the gate
+that makes sharing safe to hand out.
+
+Turn LAN back on when you want players on your own network again. It applies at
+the next **Restart server**.
 
 ### Temporary links change every time
 
