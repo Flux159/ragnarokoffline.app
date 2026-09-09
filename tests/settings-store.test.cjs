@@ -32,6 +32,22 @@ test('malformed saved policy fails closed and is never overwritten with defaults
   }
 });
 
+test('a damaged deletion setting is refused rather than read as no wait', t => {
+  const file = fixture(t);
+  store.write(file, { instant_character_deletion: true }, defaults);
+  assert.equal(store.read(file, defaults).instant_character_deletion, true);
+  const previous = fs.readFileSync(file, 'utf8');
+  for (const update of [{ instant_character_deletion: 'true' }, { instant_character_deletion: 1 }, { instant_character_deletion: null }]) {
+    assert.throws(() => store.write(file, update, defaults), /character deletion setting/);
+    assert.equal(fs.readFileSync(file, 'utf8'), previous);
+  }
+  // An install that has never opened the setting keeps rAthena's wait, and
+  // reading one must not rewrite the file to say so.
+  fs.writeFileSync(file, '{"max_aspd":190}');
+  assert.equal(store.read(file, defaults).instant_character_deletion, undefined);
+  assert.equal(fs.readFileSync(file, 'utf8'), '{"max_aspd":190}');
+});
+
 test('invalid updates cannot erase or reopen owner policy', t => {
   const file = fixture(t);
   store.write(file, { open_registration: false }, defaults);

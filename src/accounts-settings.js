@@ -7,14 +7,20 @@
   // A refusal has to look like one. Every message used to land in the same
   // dim note style as "Loading accounts…", so a rejected password change was
   // indistinguishable from progress and read as the button doing nothing.
-  const status = (message, kind = "") => {
-    const node = element("accounts-status");
+  const report = (id, message, kind = "") => {
+    const node = element(id);
     node.classList.remove("bad", "good");
     if (kind) node.classList.add(kind);
     node.textContent = message;
     // A refusal that scrolls off-screen is a refusal nobody reads.
     if (kind === "bad") node.scrollIntoView({ block: "nearest" });
   };
+  const status = (message, kind = "") => report("accounts-status", message, kind);
+  // The birthday migration answers beside its own button rather than in the
+  // shared line, which sits with the password and enable/disable buttons well
+  // above it.
+  const replyTo = (action) =>
+    action === "birthdates" ? "account-birthdate-status" : "accounts-status";
   const selected = () =>
     snapshot?.accounts.find(
       (account) => account.id === element("account-select").value,
@@ -110,7 +116,13 @@
     }
     busy = true;
     paint();
-    status("Updating the account and restarting game services…");
+    const reply = replyTo(action);
+    report(
+      reply,
+      action === "birthdates"
+        ? "Giving accounts a birthday and restarting game services…"
+        : "Updating the account and restarting game services…",
+    );
     let message;
     let failed = true;
     try {
@@ -137,7 +149,7 @@
       busy = false;
     }
     await refresh();
-    status(message, failed ? "bad" : "good");
+    report(reply, message, failed ? "bad" : "good");
   }
   element("accounts-refresh").onclick = refresh;
   element("account-select").onchange = paint;

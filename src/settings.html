@@ -361,23 +361,38 @@
       <button id="account-disable" class="ghost" disabled>Disable account</button>
       <button id="account-enable" class="ghost" disabled>Enable account</button>
     </div>
+    <!-- Beside the buttons, not at the top of the panel. The reply to a click
+         used to render six elements above it, in the same grey as the rules
+         note sitting right next to the button -- so a refusal read as the
+         button doing nothing at all. The character-deletion controls below
+         each carry their own reply for that reason. -->
+    <p class="note" id="accounts-status" role="status" aria-live="polite"></p>
     <!-- Account-wide rather than part of the row above: a birthday is a fixed
          value the game needs present, not a per-account preference, and the
          delete prompt never says which account is missing one. -->
     <p class="note" id="account-birthdate-detail">Character deletion needs a birthday on the account.</p>
-    <button id="account-birthdates" class="ghost" disabled>Set missing account birthdays</button>
     <p class="note">The game asks for the account's birthday before it will delete a character.
       Accounts created before this app started storing one have nothing to match, so the
       prompt refuses every answer that can be typed. This writes 1 January 2000 to those
       accounts and leaves any that already have a birthday alone. Enter it as
       <strong>20000101</strong> when the game asks. To delete a character: choose Delete,
-      wait out the countdown the server puts on the slot, then choose the final delete and
-      enter the birthday.</p>
-    <!-- Beside the buttons, not at the top of the panel. The reply to a click
-         used to render six elements above it, in the same grey as the rules
-         note sitting right next to the button -- so a refusal read as the
-         button doing nothing at all. -->
-    <p class="note" id="accounts-status" role="status" aria-live="polite"></p>
+      wait out any countdown on the slot, then choose the final delete and enter the
+      birthday.</p>
+    <button id="account-birthdates" class="ghost" disabled>Set missing account birthdays</button>
+    <p class="note" id="account-birthdate-status" role="status" aria-live="polite"></p>
+    <label><span>Character deletion</span><select id="delete-delay">
+      <option value="delayed">A day after it is requested</option>
+      <option value="instant">As soon as the birthday is entered</option>
+    </select></label>
+    <p class="note">Choosing Delete does not remove the character. It queues it and starts
+      a countdown on the slot, and only the final delete after that countdown removes it.
+      <b>A day after it is requested</b> is Ragnarok's own behaviour, and the countdown is
+      what lets you cancel a deletion you did not start — keep it if friends can reach your
+      server. <b>As soon as the birthday is entered</b> removes the wait, so the two clicks
+      run back to back. Either way the birthday is still asked for, and a character in a
+      party or guild is still refused. Applying restarts game services.</p>
+    <button id="delete-delay-save" class="ghost">Apply character deletion and restart</button>
+    <p class="note" id="delete-delay-status" role="status" aria-live="polite"></p>
     <label style="margin-top:12px"><span>New friend account</span><input id="account-username" type="text" autocomplete="off" /></label>
     <p class="note">Create an ordinary player account with the password entered above.
       Use 4–23 letters, numbers, underscores or hyphens, without an _M or _F suffix.</p>
@@ -1223,6 +1238,30 @@ $('registration-save').onclick = async () => {
   }
 };
 
+$('delete-delay-save').onclick = async () => {
+  const button = $('delete-delay-save');
+  const status = $('delete-delay-status');
+  button.disabled = true;
+  status.textContent = 'Saving character deletion and restarting…';
+  try {
+    // One preference at a time, for the same reason as the policy above: the
+    // owner operation is serialized, and a whole-settings write from an older
+    // snapshot of this window would take a concurrent change with it.
+    const instant = $('delete-delay').value === 'instant';
+    await invoke('save_settings', { settings: { instant_character_deletion: instant } });
+    const mode = await invoke('get_mode');
+    status.textContent = mode.mode === 'join'
+      ? 'Saved for your own server. It will apply when you next host.'
+      : instant
+        ? 'Characters are deleted as soon as the birthday is entered.'
+        : 'Characters are deleted a day after they are requested, and can be cancelled until then.';
+  } catch (error) {
+    status.textContent = `Could not apply character deletion: ${String(error)}. Start the server to retry.`;
+  } finally {
+    button.disabled = false;
+  }
+};
+
 $('save').onclick = async () => {
   const settings = await invoke('get_settings');
   for (const k of RATES) settings[k] = rateOf(k);
@@ -1230,6 +1269,7 @@ $('save').onclick = async () => {
   settings.max_parameter = Number($('max_parameter').value) || 99;
   settings.free_kafra_warp = $('free_kafra_warp').checked;
   settings.open_registration = $('open-registration').value === 'open';
+  settings.instant_character_deletion = $('delete-delay').value === 'instant';
   settings.sharing_invite_days = inviteDays($('sharing_invite_days').value);
   settings.prerenewal = eraIsPre;
   settings.zeny_from_mobs = $('zeny_from_mobs').checked;
@@ -1264,6 +1304,7 @@ invoke('get_settings').then(s => {
   $('max_parameter').value = s.max_parameter ?? 99;
   $('free_kafra_warp').checked = !!s.free_kafra_warp;
   paintRegistration(s);
+  $('delete-delay').value = s.instant_character_deletion ? 'instant' : 'delayed';
   setEra(!!s.prerenewal);
   $('zeny_from_mobs').checked = !!s.zeny_from_mobs;
   $('population_enable').checked = !!s.population_enable;

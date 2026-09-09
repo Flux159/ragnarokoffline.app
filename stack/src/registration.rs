@@ -1,6 +1,8 @@
-//! Persisted login registration policy, read on every startup/repair/era switch.
-//! Missing legacy settings retain local/LAN behavior; malformed settings never
-//! silently reopen registration. Internet-mode enforcement builds on this policy.
+//! Persisted account policy, read on every startup/repair/era switch: who may
+//! create a login, and how long a character survives after it is queued for
+//! deletion. Missing legacy settings retain local/LAN behavior; malformed
+//! settings never silently reopen registration or drop a safeguard.
+//! Internet-mode enforcement builds on this policy.
 use crate::json::{self, Value};
 use std::fs::File;
 use std::io::Read;
@@ -67,6 +69,49 @@ pub fn enabled(state: &Path) -> Result<bool, String> {
     Ok(requested)
 }
 
+/// rAthena's own delay before a queued character is actually removed, in
+/// seconds. Named here rather than left to the shipped config, because
+/// char_conf.txt is regenerated on every start and the key has to be written
+/// in both directions to mean anything.
+const DELETE_DELAY: u32 = 86400;
+
+const DELETE_ERROR: &str = "Cannot read the character deletion setting. Repair settings.json before starting the server; the deletion delay was left in place.";
+
+fn instant_deletion(settings: &Value) -> Result<bool, String> {
+    match settings.get("instant_character_deletion") {
+        // Absent is rAthena's own behaviour, which is also what every install
+        // predating this setting has been running.
+        None => Ok(false),
+        Some(Value::Bool(value)) => Ok(*value),
+        _ => Err(DELETE_ERROR.into()),
+    }
+}
+
+/// Whether a character goes the moment its birthday is accepted, or a day
+/// after it was queued.
+///
+/// The wait is worth having wherever someone else can reach the game: it is
+/// the countdown on the character slot, and the chance to cancel, that turn a
+/// malicious or mistaken deletion into something the player can still undo. On
+/// a loopback server with one player there is nobody to undo it against, and
+/// the day is only a day.
+///
+/// A damaged value keeps the wait rather than removing a safeguard nobody
+/// asked to remove.
+pub fn instant_character_deletion(state: &Path) -> Result<bool, String> {
+    instant_deletion(&settings(state)?)
+}
+
+/// The character-server line for that choice. Written either way, because a
+/// key left out of the regenerated config falls back to the shipped 86400 and
+/// the setting would appear to do nothing in one direction only.
+pub fn character_config(instant: bool) -> String {
+    format!(
+        "char_del_delay: {}\n",
+        if instant { 0 } else { DELETE_DELAY }
+    )
+}
+
 pub fn login_config(enabled: bool) -> String {
     format!(
         "new_account: {}\nacc_name_min_length: 4\npassword_min_length: 4\n",
@@ -84,6 +129,25 @@ mod tests {
         assert!(parse(r#"{"open_registration":true}"#).unwrap());
         assert!(parse(r#"{"prerenewal":false}"#).unwrap());
         assert!(login_config(false).starts_with("new_account: no\n"));
+    }
+
+    #[test]
+    fn deletion_stays_delayed_unless_the_owner_asked_for_otherwise() {
+        let read = |body: &str| instant_deletion(&json::parse(body).unwrap());
+        assert!(read(r#"{"instant_character_deletion":true}"#).unwrap());
+        assert!(!read(r#"{"instant_character_deletion":false}"#).unwrap());
+        // Every install predating the setting, and every one that has never
+        // opened it, keeps rAthena's day-long wait.
+        assert!(!read(r#"{"open_registration":false}"#).unwrap());
+        assert!(!read("{}").unwrap());
+        // A hand-edited value is refused rather than read as "no wait".
+        for value in ["\"true\"", "1", "null", "{}"] {
+            assert!(read(&format!("{{\"instant_character_deletion\":{value}}}")).is_err());
+        }
+        // Both directions are stated, so regenerating the config cannot leave
+        // the server on the shipped default while Settings says otherwise.
+        assert_eq!(character_config(true), "char_del_delay: 0\n");
+        assert_eq!(character_config(false), "char_del_delay: 86400\n");
     }
 
     #[test]

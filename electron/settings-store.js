@@ -14,6 +14,13 @@ function validate(settings) {
   if (Object.hasOwn(settings, 'hosting_scope') && !['local', 'lan', 'friends', 'public'].includes(settings.hosting_scope)) {
     throw new Error('Invalid hosting scope. Choose local, lan, friends or public before starting.');
   }
+  // Checked here as well as in the supervisor: the supervisor refuses to start
+  // on a damaged value, and a refusal is a much worse way to learn about it
+  // than a rejected Apply.
+  if (Object.hasOwn(settings, 'instant_character_deletion') &&
+      typeof settings.instant_character_deletion !== 'boolean') {
+    throw new Error('Cannot read the character deletion setting. Repair settings.json before starting the server; the deletion delay was left in place.');
+  }
   return settings;
 }
 

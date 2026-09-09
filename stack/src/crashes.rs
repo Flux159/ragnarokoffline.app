@@ -281,6 +281,7 @@ pub fn capture(cfg: &Config, dk: &Docker, name: &str) -> Result<Option<String>, 
             "population_max",
             "population_density",
             "prerenewal",
+            "instant_character_deletion",
         ] {
             match settings.get(key) {
                 Some(Value::Bool(v)) => report.push_str(&format!("{key}: {v}\n")),

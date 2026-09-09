@@ -1755,9 +1755,11 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     // reader takes the last assignment of a key: start_point in particular is
     // parsed by char_config_split_startpoint, which clears the array before
     // filling it, so the last line is the whole answer rather than an addition.
+    let instant_deletion = crate::registration::instant_character_deletion(&cfg.state)?;
     write_conf(&conf, "char_conf.txt",
-        &format!("login_ip: ragnarok-login\nchar_ip: {advertise}\npincode_enabled: no\n\
-                  {start_point}\n{}{}", conf_lines(&mods, "char_conf.txt"),
+        &format!("login_ip: ragnarok-login\nchar_ip: {advertise}\npincode_enabled: no\n{}\
+                  {start_point}\n{}{}", crate::registration::character_config(instant_deletion),
+                  conf_lines(&mods, "char_conf.txt"),
                   credentials.as_ref().map(|c| format!("userid: s1\npasswd: {}\n", c.interserver)).unwrap_or_default()))?;
 
     let product = if cfg!(target_os = "macos") { "RagnarokMac" }

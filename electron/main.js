@@ -894,6 +894,11 @@ const SETTINGS_DEFAULTS = {
 	// spawn tables ask for. This is the dial players actually want; the limit
 	// above is only a safety net.
 	population_density: 100,
+	// Whether deleting a character takes effect at once or a day after it is
+	// queued. rAthena's default is the day, and it stays the default here: the
+	// countdown on the slot is what lets a player undo a deletion somebody else
+	// started, which matters the moment friends can reach the server.
+	instant_character_deletion: false,
 	// Pre-renewal is a different rAthena build, not a runtime option, so this
 	// selects which of the two the supervisor starts. Each mode keeps its own
 	// characters -- see db_volume() in stack/src/cmds.rs for why sharing them
