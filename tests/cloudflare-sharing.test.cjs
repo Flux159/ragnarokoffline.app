@@ -91,6 +91,19 @@ test('failed policy checks and cancellation cannot launch a connector later', as
   const pending = canceled.instance.start(saved); await canceled.instance.stop(); release(); await pending;
   assert.equal(canceled.launched(), undefined); assert.equal(canceled.instance.status().state, 'stopped');
 });
+// A check that could not confirm something is not a failure, but the player
+// still has to see it -- previously it reached the log and stopped there.
+test('a guard advisory reaches the player without failing the start', async t => {
+  const f = controller(t, { guard: async () => 'Your firewall dropped the check on 192.168.1.5.' });
+  await f.instance.start(saved);
+  assert.equal(f.instance.status().state, 'sharing');
+  assert.match(f.instance.status().notice, /firewall dropped the check on 192\.168\.1\.5/);
+  // A later clean start must not keep showing the previous one's advisory.
+  await f.instance.stop();
+  f.instance.guard = async () => '';
+  await f.instance.start(saved);
+  assert.equal(f.instance.status().notice, '');
+});
 test('connector exit removes the public gateway and reports a failed link', async t => {
   const f = controller(t); await f.instance.start(saved);
   f.child().exitCode = 1; f.child().emit('exit', 1, null);

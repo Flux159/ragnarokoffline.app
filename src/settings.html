@@ -303,6 +303,7 @@
         <button id="sharing-stop" class="ghost" disabled>Stop sharing</button>
       </div>
       <p id="sharing-state" class="note" role="status" aria-live="polite">Sharing is off.</p>
+      <p id="sharing-notice" class="note" role="status" aria-live="polite" hidden></p>
       <p id="sharing-feedback" class="note" role="status" aria-live="polite"></p>
       <p class="note" id="sharing-lifetime-note">An invitation lets up to 32 friend browsers connect. Invited friends can create an ordinary game account. Stop sharing disconnects friends without stopping your local game. Starting sharing applies the protected account policy and restarts game services once.</p>
       <details><summary>Manage invitations and connection</summary>
@@ -1113,6 +1114,9 @@ async function refreshSharing() {
     $('sharing-replace').disabled = !['sharing', 'reconnecting'].includes(state.state);
     $('sharing-forget').disabled = sharingBusy || (!state.configured && !state.configurationError);
     setNote('sharing-state', state.message || 'Sharing is off.');
+    // What the pre-flight checks could not confirm on a start that worked.
+    setNote('sharing-notice', state.notice || '');
+    $('sharing-notice').hidden = !state.notice;
     if (state.state === 'sharing') {
       const expiry = Number.isFinite(state.expires)
         ? ` Invitation expires ${new Date(state.expires).toLocaleString()}.`

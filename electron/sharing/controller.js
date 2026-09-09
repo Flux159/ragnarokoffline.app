@@ -75,14 +75,21 @@ class SharingController {
   constructor({ directory, register, guard, onChange = () => {}, lifetime = () => 8 * 60 * 60 * 1000, invite = () => null, onInvite = () => {}, log = () => {} }, { helper = ensureHelper, launch = spawn, health = publicHealth, websocket = publicSocket, Gateway = FriendGateway } = {}) {
     Object.assign(this, { directory, register, guard, onChange, lifetime, invite, onInvite, log, helper, launch, health, websocket, Gateway }); this.state = 'stopped'; this.generation = 0;
   }
-  status() { return { state: this.state, message: this.message || '', hostname: this.hostname || '', expires: this.gateway?.expires || null, connectedFriends: this.gateway ? [...this.gateway.sessions.values()].filter(entry => entry.sockets.size > 0).length : 0 }; }
+  // `notice` is what the pre-flight checks could not confirm, on a start that
+  // succeeded anyway. It is deliberately separate from `message`, which is the
+  // current state: a player who shared successfully should still be told that
+  // their firewall hid the listener check, without that reading as a failure.
+  status() { return { state: this.state, message: this.message || '', notice: this.notice || '', hostname: this.hostname || '', expires: this.gateway?.expires || null, connectedFriends: this.gateway ? [...this.gateway.sessions.values()].filter(entry => entry.sockets.size > 0).length : 0 }; }
   update(state, message = '') { this.state = state; this.message = message; this.onChange(this.status()); }
   async start(saved) {
     if (this.state !== 'stopped' && this.state !== 'failed') throw Error('Sharing is already starting or running.');
     const generation = ++this.generation;
-    this.hostname = saved?.hostname || ''; this.update('preparing', 'Checking your server and preparing Cloudflare…');
+    this.hostname = saved?.hostname || ''; this.notice = ''; this.update('preparing', 'Checking your server and preparing Cloudflare…');
     try {
-      await this.guard();
+      // A guard that passes may still have something to say. Anything it
+      // could not verify is carried to the player rather than to the log
+      // alone, which is where it used to stop.
+      this.notice = (await this.guard()) || '';
       if (generation !== this.generation) return;
       const executable = await this.helper(path.join(this.directory, 'helpers'), message => {
         this.log(`helper: ${message}`);

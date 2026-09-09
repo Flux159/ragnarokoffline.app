@@ -25,6 +25,10 @@ const { JoinSession } = require('./join-session');
 const joinSession = new JoinSession();
 let sharing, sharingSecrets;
 let sharingStartRequest = 0;
+// Kept for the diagnostics bundle. A sharing failure used to arrive as one
+// sentence with no address in it, and the report carried no way to work out
+// which interface the check had objected to.
+let lastListenerReport = null;
 function getSharingSecrets() {
     return sharingSecrets ||= new (require('./sharing/secrets').SharingSecrets)(path.join(dataRoot(), 'sharing'), safeStorage);
 }
@@ -62,18 +66,23 @@ function getSharing() {
             if (client.mode !== 'host' || client.hosting_scope !== 'friends' || client.lan || !assetServer.running || !(await assetsReady())) throw Error('Start your own server in friends mode before sharing.');
             const checked = JSON.parse(await runStack(['sharing-check']));
             if (!checked.backendReady) throw Error('The server is not ready for friends.');
-            // Configuration checks above verify each published container port.
-            // Also reject a reachable listener on any current LAN interface.
-            const net = require('node:net');
-            const addresses = Object.values(os.networkInterfaces()).flat().filter(info => info && !info.internal && info.family === 'IPv4');
-            for (const info of addresses) for (const port of [3338, 6900, 6121, 5121]) {
-                await new Promise((resolve, reject) => {
-                    const socket = net.connect({ host: info.address, port });
-                    socket.once('connect', () => { socket.destroy(); reject(Error('A game or management port is reachable on the LAN. Turn off LAN hosting and restart before sharing.')); });
-                    socket.once('error', error => ['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'EACCES'].includes(error.code) ? resolve() : reject(Error('Could not verify private game listeners.')));
-                    socket.setTimeout(1000, () => { socket.destroy(); reject(Error('Could not verify private game listeners.')); });
-                });
-            }
+            // Configuration checks above verify each published container port
+            // from the inside -- the container bindings and the engine's
+            // publication flag. This is the outside second opinion: nothing of
+            // ours should answer on a LAN address. It reports what it found
+            // rather than refusing whenever it cannot tell, because a firewall
+            // that drops the probe is the ordinary case on Windows and used to
+            // fail here with a sentence naming neither an address nor a port.
+            const probe = require('./listener-probe');
+            lastListenerReport = await probe.probeListeners();
+            appLog(`sharing: listener check\n${probe.describe(lastListenerReport)}`);
+            const decided = probe.verdict(lastListenerReport);
+            if (!decided.shareable) throw Error(decided.message);
+            if (decided.message) appLog(`sharing: ${decided.message}`);
+            // Returned, not just logged: the controller shows it beside the
+            // sharing state so the player reads it without opening a log or
+            // asking on Discord.
+            return decided.message;
         },
         register: (request, stillInvited) => queueServerOperation(async () => {
             if (!stillInvited() || !sharing?.gateway || !['sharing', 'connecting', 'reconnecting'].includes(sharing.state)) throw Error('Sharing stopped');
@@ -1617,6 +1626,24 @@ const handlers = {
 			state: sharing?.state || 'stopped',
 			helper: require('./sharing/helper').helperDiagnostics(path.join(dataRoot(), 'sharing/helpers')),
 		}, null, 2));
+
+		// The addresses the listener check runs against, and what it last
+		// found. Diagnostics carried neither, so a report saying the check had
+		// failed gave no way to tell which interface it objected to -- and on
+		// a machine with virtual adapters that is most of the question.
+		try {
+			const probe = require('./listener-probe');
+			add('network', [
+				`interfaces  ${probe.localAddresses().join(', ') || 'none (loopback only)'}`,
+				`ports       ${probe.GAME_PORTS.join(', ')}`,
+				'',
+				lastListenerReport
+					? probe.describe(lastListenerReport)
+					: 'listener check has not run in this session',
+			].join('\n'));
+		} catch (e) {
+			add('network', `could not read: ${e.message}`);
+		}
 
 		// What sharing actually did, including the helper download and
 		// cloudflared's own output. The status block above says the current
