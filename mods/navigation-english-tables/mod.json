@@ -1,0 +1,11 @@
+{
+  "name": "navigation-english-tables",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "Use ROenglishRE legacy tables when an optional English GRF hides or replaces working NPC, monster and route data.",
+  "default": "off",
+  "requires": {
+    "app": ">=1.1.0",
+    "era": "renewal"
+  }
+}

@@ -264,6 +264,20 @@ echo "==> bundled mods"
 if [ -d "$ROOT/mods" ]; then
     mkdir -p "$PAYLOAD/mods"
     cp -R "$ROOT"/mods/* "$PAYLOAD/mods/"
+
+    # This compatibility mod is deliberately off by default. Its tables come
+    # from the same pinned ROenglishRE checkout as the rest of the translation,
+    # rather than from any developer's local GRF.
+    NAVIGATION_SRC="$ROOT/vendor/ROenglishRE/Addons/Navigation Legacy"
+    NAVIGATION_DST="$PAYLOAD/mods/navigation-english-tables/data/luafiles514/lua files/navigation"
+    mkdir -p "$NAVIGATION_DST"
+    cp "$NAVIGATION_SRC"/navi_{map,mob,npc,link,linkdistance,npcdistance}_{krpri,krsak}.lub \
+        "$NAVIGATION_DST/"
+    [ "$(find "$NAVIGATION_DST" -maxdepth 1 -type f -name 'navi_*.lub' | wc -l | tr -d ' ')" = 12 ] || {
+        echo "English navigation table set is incomplete" >&2
+        exit 1
+    }
+
     ls "$PAYLOAD/mods"
 fi
 
