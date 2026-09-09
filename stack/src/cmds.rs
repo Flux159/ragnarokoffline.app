@@ -1196,7 +1196,7 @@ fn ensure_images(cfg: &Config, dk: &Docker) -> Result<(), String> {
     phase(cfg, "Loading the bundled server images…");
     // Always use Docker's owned-engine transport, including Windows' loopback
     // proxy. Existing fixed image tags are replaced when bundled bytes change.
-    dk.load_bundle(&bundle)?;
+    dk.load_bundle(&bundle, || dk.image_exists(&cfg.image) && dk.image_exists(&cfg.db_image))?;
     if !dk.image_exists(&cfg.image) || !dk.image_exists(&cfg.db_image) {
         return Err(format!("image load did not produce {} and {}", cfg.image, cfg.db_image));
     }

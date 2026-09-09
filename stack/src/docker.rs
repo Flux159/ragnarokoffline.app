@@ -161,13 +161,52 @@ impl Docker {
         }
     }
 
-    pub fn load_bundle(&self, bundle: &Path) -> Result<(), String> {
+    /// Load the bundled images, without trusting the loader to exit.
+    ///
+    /// This waited on the child forever. On Windows the loader has been seen
+    /// importing the bundle correctly and then never exiting, which hung the
+    /// first start of a fresh install with no output at all -- both streams go
+    /// to null -- and nothing to distinguish it from a slow import. Ten minutes
+    /// in, the process held 0.03s of CPU and killing it let startup continue
+    /// with the images already present.
+    ///
+    /// So `done` is the real completion test: the images the caller asked for
+    /// exist. A loader that exits first is still the fast path; one that hangs
+    /// after doing its work no longer costs anything. It is checked on a slower
+    /// cadence than the child is polled because each call runs a docker
+    /// command.
+    pub fn load_bundle(&self, bundle: &Path, done: impl Fn() -> bool) -> Result<(), String> {
         let file = fs::File::open(bundle).map_err(|_| "Cannot open the bundled server images")?;
-        let status = self.base().arg("load").stdin(Stdio::from(file))
-            .stdout(Stdio::null()).stderr(Stdio::null()).status()
+        let mut child = self.base().arg("load").stdin(Stdio::from(file))
+            .stdout(Stdio::null()).stderr(Stdio::null()).spawn()
             .map_err(|_| "Cannot run the bundled image loader")?;
-        if !status.success() { return Err("Could not load the bundled server images".into()); }
-        Ok(())
+        let deadline = Instant::now() + Duration::from_secs(900);
+        let mut next_check = Instant::now() + Duration::from_secs(5);
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    return if status.success() { Ok(()) }
+                    else { Err("Could not load the bundled server images".into()) };
+                }
+                Ok(None) => {}
+                Err(_) => return Err("Cannot run the bundled image loader".into()),
+            }
+            let now = Instant::now();
+            if now >= next_check {
+                if done() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Ok(());
+                }
+                next_check = now + Duration::from_secs(3);
+            }
+            if now >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("The bundled image loader did not finish in time".into());
+            }
+            sleep(Duration::from_millis(250));
+        }
     }
 
     pub fn image_exists(&self, image: &str) -> bool {
