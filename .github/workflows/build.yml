@@ -104,6 +104,13 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build:all
 
+      # After the build, because these edit the bundle rather than src/.
+      # Missing this step is invisible: the app builds, ships, and is simply
+      # short a feature, which is how the navigation patch reached no release
+      # while working in every local build.
+      - name: Apply our patches to the built bundle
+        run: scripts/patch-bundle.sh vendor/roBrowserLegacy/dist/Web
+
       # build:all emits seven ~12 MB bundles and the game loads one. package.sh
       # prunes too, but pruning here keeps the artifact small enough to be worth
       # caching between jobs.

@@ -261,8 +261,15 @@ function setNavigationGroundPathStyle(style) {
 function loadNavigationGroundPathTextures(gl) {
 	if (_navigationGroundPathTexturesLoading) return;
 	_navigationGroundPathTexturesLoading = true;
+	// Cleared once every frame has settled, successfully or not. Leaving it
+	// set on failure meant a client whose GRF lacks these arrows never tried
+	// again -- and a GRF that lacks them is exactly the case this feature is
+	// for.
+	let settled = 0;
+	const settle = () => { if (++settled === 8) _navigationGroundPathTexturesLoading = false; };
 	for (let frame = 0; frame < 8; frame++) Client.loadFile(DB.INTERFACE_PATH + "navigation_interface3/navi_grid" + _navigationGroundPathStyle + "_" + frame + ".tga", function(buffer) {
 		Texture.load(buffer, function(success) {
+			settle();
 			if (!success || gl.isContextLost()) return;
 			const texture = gl.createTexture();
 			const previousFlip = gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL);
@@ -282,8 +289,11 @@ function loadNavigationGroundPathTextures(gl) {
 function loadNavigationTargetTextures(gl) {
 	if (_navigationTargetTexturesLoading) return;
 	_navigationTargetTexturesLoading = true;
+	let settled = 0;
+	const settle = () => { if (++settled === 4) _navigationTargetTexturesLoading = false; };
 	for (let frame = 0; frame < 4; frame++) Client.loadFile(DB.INTERFACE_PATH + "navigation_interface3/location" + (frame + 1) + ".tga", function(buffer) {
 		Texture.load(buffer, function(success) {
+			settle();
 			if (!success || gl.isContextLost()) return;
 			const texture = gl.createTexture();
 			const previousFlip = gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL);
@@ -530,7 +540,7 @@ patched = patched.replace(clearPathNeedle, `\tNavigation.clearPath = function cl
 \t\tthis.clearPath();
 \t\tthis.setTargetCoordinatesBlinking(false);
 \t\tconst root = Navigation.getRoot();
-\t\tconst targetInfo = root.querySelector(".target-info");
+\t\tconst targetInfo = root && root.querySelector(".target-info");
 \t\tif (targetInfo) targetInfo.style.display = "none";
 \t\tthis.setLocationTitle(getCurrentMap(), null);
 \t};`);
@@ -789,7 +799,10 @@ patched = patched.replace(displayNeedle, `\t\t} else resultsContainer.innerHTML 
 \t\t_selectedNavigationResult = null;
 \t\t_navigationPreviewModel.render = false;
 \t\troot.querySelector(".detail-name").textContent = results.length ? "Select a result" : "No result";
-\t\troot.querySelector(".detail-coordinates").textContent = "";
+\t\t// A player whose GRF replaced the tables gets an empty search and no
+\t\t// reason for it. The mod that fixes it is off by default and lives in
+\t\t// another window, so name it here or they will never find it.
+\t\troot.querySelector(".detail-coordinates").textContent = results.length ? "" : "Empty? An English GRF can replace these tables. Enable Settings \u2192 Mods \u2192 navigation-english-tables.";
 \t\troot.querySelector(".detail-stats").replaceChildren();
 \t\troot.querySelector(".location-list").replaceChildren();
 \t\troot.querySelector(".detail-map-preview").style.backgroundImage = "";

@@ -143,3 +143,31 @@ the few minutes the first run takes, not the seconds a normal one does.
 You lose your characters, your rate settings, and the app's memory of where your
 GRFs are. You do not lose the GRFs themselves. This is also the reliable fix for
 an install that has got itself into a state no amount of restarting clears.
+
+## Finding your way around
+
+Open **Navigation** in the game client to search every entry, or just NPCs, or
+just monsters. Results sharing a name are grouped: pick the map and coordinates
+on the right, then choose **Find**. The route is drawn on the ground using the
+navigation art from your own client, and clears itself when you arrive.
+
+The chat command takes either a destination or a name:
+
+```
+/navi lhz_in02 100/143
+/navi Kafra
+```
+
+### When searches come back empty
+
+The tables behind the search are read from your own client archives, and they
+normally match the maps that client shipped with. Some optional English GRFs
+replace those tables with data this client cannot read, and then every search
+returns nothing.
+
+If that happens, turn on **Settings → Mods → navigation-english-tables**. It
+supplies a known-good English set in place of the ones your GRF provides.
+
+It is off by default deliberately. Your client's own tables are the better
+source whenever they work, because they match its maps and may list places the
+bundled copy does not. Turn this on only when the search is actually empty.

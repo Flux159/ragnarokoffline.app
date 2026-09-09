@@ -33,12 +33,9 @@ echo "==> building the web client"
 # and the online client is launched with ROBrowser.TYPE.FRAME, which loads
 # api.html in an iframe. Skipping build targets yields a blank window.
 (cd "$VENDOR/roBrowserLegacy" && npm ci --no-audit --no-fund && npm run build:all)
-# Navigation is applied to a temporary bundle first. Signature checks leave the
-# freshly built Online.js untouched if the pinned client no longer matches.
-NAVIGATION_OUTPUT="$VENDOR/roBrowserLegacy/dist/Web/Online.navigation.js"
-node "$ROOT/scripts/patch-navigation-client.cjs" \
-    "$VENDOR/roBrowserLegacy/dist/Web/Online.js" "$NAVIGATION_OUTPUT"
-mv "$NAVIGATION_OUTPUT" "$VENDOR/roBrowserLegacy/dist/Web/Online.js"
+# Patches that edit the built bundle rather than src/. The release workflow
+# runs this same script, so the two build paths cannot diverge.
+"$ROOT/scripts/patch-bundle.sh" "$VENDOR/roBrowserLegacy/dist/Web"
 (cd "$VENDOR/roBrowserLegacy/dist/Web" && rm -f \
     GrfViewer.js MapViewer.js ModelViewer.js StrViewer.js EffectViewer.js \
     GrannyModelViewer.js screenshotwide.png screenshotnarrow.png)

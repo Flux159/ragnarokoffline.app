@@ -60,25 +60,6 @@ login as `myname`  without the suffix. Both the name and the password need at le
 Ordinary accounts have almost no `@` commands — rAthena keeps `@autoloot` and
 `@showexp` for GMs. Settings → Mods → **player-commands** gives player characters some common commands.
 
-### Navigation
-
-Open **Navigation** in the game client to search all entries, NPCs or monsters.
-Results with the same name are grouped; select the map and coordinates on the
-right, then choose **Find**. The route is drawn with the navigation assets from
-the selected game data until the character reaches the destination.
-
-Navigation tables are read automatically from the selected client archives. If
-an optional English GRF replaces them with incompatible data and searches stay
-empty, enable **Settings → Mods → navigation-english-tables**. The compatibility
-mod is off by default so clients with newer working tables keep their own data.
-
-The chat command accepts both a destination and a name search:
-
-```
-/navi lhz_in02 100/143
-/navi Kafra
-```
-
 **4. Optional: fill the world with people.** A private server is empty by
 default. Settings → **Population** puts AI characters on the map with you —
 hunting in the fields, standing around town, running vending stalls you can
