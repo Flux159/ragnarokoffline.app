@@ -361,6 +361,18 @@
       <button id="account-disable" class="ghost" disabled>Disable account</button>
       <button id="account-enable" class="ghost" disabled>Enable account</button>
     </div>
+    <!-- Account-wide rather than part of the row above: a birthday is a fixed
+         value the game needs present, not a per-account preference, and the
+         delete prompt never says which account is missing one. -->
+    <p class="note" id="account-birthdate-detail">Character deletion needs a birthday on the account.</p>
+    <button id="account-birthdates" class="ghost" disabled>Set missing account birthdays</button>
+    <p class="note">The game asks for the account's birthday before it will delete a character.
+      Accounts created before this app started storing one have nothing to match, so the
+      prompt refuses every answer that can be typed. This writes 1 January 2000 to those
+      accounts and leaves any that already have a birthday alone. Enter it as
+      <strong>20000101</strong> when the game asks. To delete a character: choose Delete,
+      wait out the countdown the server puts on the slot, then choose the final delete and
+      enter the birthday.</p>
     <!-- Beside the buttons, not at the top of the panel. The reply to a click
          used to render six elements above it, in the same grey as the rules
          note sitting right next to the button -- so a refusal read as the
@@ -530,19 +542,20 @@ function paintInternetSetup(mode = $('mp-mode').value) {
   $('mp-internet-setup').setAttribute('aria-expanded', String(visible));
   $('internet-hosting').hidden = !visible;
 }
-$('mp-internet-setup').onchange = async () => {
+$('mp-internet-setup').onchange = () => {
   internetSetup = $('mp-internet-setup').checked;
   try { localStorage.setItem('internet-sharing-setup', String(internetSetup)); } catch {}
   paintInternetSetup();
-  // Sharing over the internet with LAN off is a combination nobody wants: the
-  // people you hand a link to are, by definition, not on this machine. Turn it
-  // on as a default when the disclosure is opened -- never off, and never
-  // again once it has been unticked deliberately.
-  if (internetSetup && !$('mp-lan').checked) {
-    await invoke('set_mode', { lan: true });
-    await refreshMode();
-    log('LAN connections turned on for internet sharing. Restart server to apply.');
-  }
+  // Revealing the controls must not change hosting, which is what the comment
+  // on paintInternetSetup already says and what this used to contradict: it
+  // turned LAN on, and then Share with friends turned it straight back off.
+  //
+  // Friends hosting and LAN are mutually exclusive on purpose. In friends
+  // scope the game ports bind loopback only and the invitation is the single
+  // way in; LAN would bind them to every interface and let anyone on the
+  // network past the gate that makes sharing safe. So the box unticking
+  // itself when sharing starts is the app closing those ports, not undoing
+  // the setting.
   refreshSharing();
 };
 
@@ -1024,7 +1037,11 @@ function paintInviteLifetime(days) {
     : `An invitation lasts ${span} day${span === 1 ? '' : 's'} and lets up to 32 friend browsers connect.`)
     + ' Invited friends can create an ordinary game account. Stop sharing disconnects friends'
     + ' without stopping your local game. Starting sharing applies the protected account policy'
-    + ' and restarts game services once.';
+    + ' and restarts game services once.'
+    // Said here because the checkbox visibly unticks itself a moment later,
+    // which reads as the app undoing your setting rather than closing a door.
+    + ' It also turns off Allow LAN connections: friends reach you through the'
+    + ' invitation only, so the game ports stop listening on your network.';
 }
 
 // Status lines that answer a button. A failure has to look like one: these all

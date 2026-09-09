@@ -42,6 +42,25 @@ If a change is refused, the reason appears in red under the buttons.
 entered above. Use 4–23 letters, numbers, underscores or hyphens, without an
 `_M` or `_F` suffix.
 
+## Deleting a character: the birthday prompt
+
+The game asks for the **account's birthday** before it deletes a character, and
+refuses the deletion if the answer does not match what the server has stored.
+
+Every account this app creates is given **1 January 2000**. Type it as
+`20000101` when the game asks.
+
+Accounts created before the app started storing a birthday have nothing to
+match, so the prompt rejects every answer — including the `000000` and
+`00-00-00` suggested on rAthena forums. **Set missing account birthdays** gives
+those accounts the same 1 January 2000 and leaves any account that already has
+one alone. It is safe to press twice.
+
+The full deletion is three steps, because the server holds a character for a
+day before it will remove it: choose Delete, wait out the countdown shown on
+the character slot, then choose the final delete and enter the birthday. A
+character still in a party or guild cannot be deleted at all.
+
 ## Character names
 
 Not a setting, but the rule that surprises people: character names need **at

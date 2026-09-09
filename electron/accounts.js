@@ -6,9 +6,15 @@ const { spawn } = require("node:child_process");
 function runAccounts(binary, options, request) {
   if (
     !request ||
-    !["list", "create", "invite-create", "password", "disable", "enable"].includes(
-      request.action,
-    ) ||
+    ![
+      "list",
+      "create",
+      "invite-create",
+      "password",
+      "disable",
+      "enable",
+      "birthdates",
+    ].includes(request.action) ||
     !["renewal", "prerenewal"].includes(request.era)
   ) {
     return Promise.reject(new Error("Invalid account request"));

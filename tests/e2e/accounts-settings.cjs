@@ -108,6 +108,19 @@ async function main() {
     );
     const friend = accounts.accounts.find((a) => a.username === username);
     if (!friend || friend.group !== 0) throw Error("Friend not ordinary");
+    // A new account has to be able to delete its characters: the game checks
+    // its delete prompt against a birthday the account must actually carry.
+    if (friend.needsBirthdate)
+      throw Error("A created account has no birthday and cannot delete a character");
+    // Worlds seeded before the birthday existed still have accounts without
+    // one, so the migration tracks the listing rather than a fixed state.
+    const migration = page.getByRole("button", {
+      name: "Set missing account birthdays",
+      exact: true,
+    });
+    if (accounts.accounts.some((account) => account.needsBirthdate))
+      await expect(migration).toBeEnabled();
+    else await expect(migration).toBeDisabled();
     await page.locator("#account-select").selectOption(friend.id);
     await page
       .getByRole("button", { name: "Disable account", exact: true })

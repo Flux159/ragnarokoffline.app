@@ -19,8 +19,20 @@
     snapshot?.accounts.find(
       (account) => account.id === element("account-select").value,
     );
+  // Accounts the game will never let delete a character, because it checks its
+  // birthday prompt against a column nothing used to write.
+  const birthdayless = () =>
+    snapshot?.accounts.filter((account) => account.needsBirthdate).length ?? 0;
+  const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
   function paint() {
     const account = selected();
+    const missing = birthdayless();
+    element("account-birthdates").disabled = busy || !snapshot || !missing;
+    element("account-birthdate-detail").textContent = !snapshot
+      ? "Character deletion needs a birthday on the account."
+      : missing
+        ? `${plural(missing, "account has", "accounts have")} no birthday, so characters on ${missing === 1 ? "it" : "them"} cannot be deleted in the game.`
+        : "Every account has a birthday. Enter 20000101 when the game asks for it.";
     element("account-select").disabled = busy || !snapshot;
     for (const id of [
       "accounts-refresh",
@@ -86,9 +98,12 @@
     const request = { action, era: snapshot.era };
     if (action === "create")
       request.username = element("account-username").value;
-    else if (account)
+    // The birthday migration names no account: it fills in whichever rows are
+    // missing one, so the selection in the list above is irrelevant to it.
+    else if (action !== "birthdates") {
+      if (!account) return;
       Object.assign(request, { id: account.id, username: account.username });
-    else return;
+    }
     if (action === "password" || action === "create") {
       request.password = element("account-password").value;
       request.confirmation = element("account-confirmation").value;
@@ -102,7 +117,14 @@
       const result = await invoke("accounts", request);
       if (!result.updated)
         throw new Error("The account update was not confirmed");
-      message = `Account updated in ${result.era === "prerenewal" ? "pre-renewal" : "renewal"}. Log in again.`;
+      // Zero rows is success here rather than a refusal: it means every
+      // account already had a birthday. Say which of the two happened,
+      // because they leave the panel looking identical.
+      const filled = Number(result.changed) || 0;
+      message =
+        action === "birthdates"
+          ? `${filled ? `${plural(filled, "account", "accounts")} given a birthday` : "Every account already had a birthday"}. Enter 20000101 when the game asks for it, and log in again.`
+          : `Account updated in ${result.era === "prerenewal" ? "pre-renewal" : "renewal"}. Log in again.`;
       failed = false;
     } catch (error) {
       message = error.message || "Account update failed";
@@ -123,4 +145,5 @@
   element("account-disable").onclick = () => change("disable");
   element("account-enable").onclick = () => change("enable");
   element("account-create").onclick = () => change("create");
+  element("account-birthdates").onclick = () => change("birthdates");
 })();

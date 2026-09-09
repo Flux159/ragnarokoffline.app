@@ -70,6 +70,29 @@ test("structured errors redact the supplied password", async (t) => {
   );
 });
 
+test("the birthday migration carries no account and reports what it changed", async (t) => {
+  const cwd = fixture(
+    t,
+    `let input=''; process.stdin.on('data',c=>input+=c); process.stdin.on('end',()=>{
+        const request=JSON.parse(input);
+        require('node:fs').writeFileSync('request.json',input);
+        process.stdout.write(JSON.stringify({era:request.era,updated:true,changed:2}));
+    });`,
+  );
+  assert.deepEqual(
+    await runAccounts(
+      process.execPath,
+      { cwd },
+      { action: "birthdates", era: "renewal" },
+    ),
+    { era: "renewal", updated: true, changed: 2 },
+  );
+  // It fills in whichever accounts are missing a birthday, so a selected
+  // account travelling with it would be a bug rather than an extra field.
+  const sent = JSON.parse(fs.readFileSync(path.join(cwd, "request.json")));
+  assert.deepEqual(Object.keys(sent).sort(), ["action", "era"]);
+});
+
 test("unknown operations and oversized UTF-8 requests are rejected before spawning", async () => {
   await assert.rejects(
     runAccounts("/does-not-exist", {}, { ...request, action: "sql" }),

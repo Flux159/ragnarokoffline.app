@@ -7,6 +7,30 @@ use crate::{
 };
 use std::io::{self, Read};
 
+/// The birthday every account this app creates is given, and the one the
+/// Accounts panel writes over accounts that have none.
+///
+/// It exists because character deletion asks for it. rAthena will not delete a
+/// character until the client echoes back the account's birthday
+/// (`chclif_delchar_check`, `vendor/rathena/src/char/char_clif.cpp`), and the
+/// login server stores an empty one for every account it creates. An empty
+/// birthday is unmatchable in practice: the only input that satisfies the check
+/// is an empty one, and roBrowser's prompt refuses to submit an empty field.
+///
+/// A literal rather than the player's own date of birth: this is a single-player
+/// server whose owner is the only person who can reach this column, so the value
+/// is a formality that has to be *known*, and one date everyone can be told
+/// beats a birthday nobody recorded. Digits and dashes only, so it can be
+/// inlined into SQL alongside the hex-encoded literals below.
+///
+/// Typed into the game's delete prompt as `20000101`: the client sends the last
+/// six digits and the char server compares those.
+const DEFAULT_BIRTHDATE: &str = "2000-01-01";
+
+/// Accounts whose birthday the migration has to write. NULL is what rAthena
+/// leaves; the zero date is what a permissive `sql_mode` can turn it into.
+const MISSING_BIRTHDATE: &str = "(birthdate IS NULL OR birthdate='0000-00-00')";
+
 fn field<'a>(request: &'a Value, key: &str) -> Result<&'a str, String> {
     request
         .str(key)
@@ -140,26 +164,27 @@ pub(crate) fn verify_era(cfg: &Config, dk: &Docker, era: &str) -> Result<(), Str
 }
 
 fn list(dk: &Docker, era: &str) -> Result<String, String> {
-    let output = dk.private_sql("SELECT account_id,HEX(userid),group_id,state,(BINARY user_pass=0x7261676e61726f6b) FROM login WHERE sex<>'S' ORDER BY account_id LIMIT 251;")?;
+    let output = dk.private_sql(&format!("SELECT account_id,HEX(userid),group_id,state,(BINARY user_pass=0x7261676e61726f6b),{MISSING_BIRTHDATE} FROM login WHERE sex<>'S' ORDER BY account_id LIMIT 251;"))?;
     let mut rows = Vec::new();
     for line in output.lines().filter(|l| !l.is_empty()) {
         let values: Vec<_> = line.split('\t').collect();
-        if values.len() != 5 {
+        if values.len() != 6 {
             return Err("Invalid account response".into());
         }
-        for index in [0, 2, 3, 4] {
+        for index in [0, 2, 3, 4, 5] {
             values[index]
                 .parse::<u32>()
                 .map_err(|_| "Invalid account response")?;
         }
         let name = unhex(values[1])?;
         rows.push(format!(
-            "{{\"id\":{},\"username\":{},\"group\":{},\"state\":{},\"defaultPassword\":{}}}",
+            "{{\"id\":{},\"username\":{},\"group\":{},\"state\":{},\"defaultPassword\":{},\"needsBirthdate\":{}}}",
             json::quote(values[0]),
             json::quote(&name),
             values[2],
             values[3],
-            values[4] == "1"
+            values[4] == "1",
+            values[5] == "1"
         ));
     }
     if rows.len() > 250 {
@@ -284,6 +309,45 @@ fn wait_for_restarted_maps(dk: &Docker, previous: Option<&str>) -> bool {
     false
 }
 
+/// The one statement an action runs, ending in `SELECT ROW_COUNT()` so the
+/// caller can tell a write that landed from one that matched nothing.
+///
+/// Separate from `run` so the SQL can be read in a test without a database:
+/// every value reaching it is either hex-encoded, parsed as a number, or a
+/// constant in this file, and that is a property worth pinning down.
+fn statement(action: &str, request: &Value) -> Result<String, String> {
+    Ok(match action {
+        "create" | "invite-create" => {
+            let name = field(request, "username")?;
+            username(name)?;
+            let pass = password(request)?;
+            format!("LOCK TABLES login WRITE, login AS existing READ; INSERT INTO login (userid,user_pass,sex,email,group_id,birthdate) SELECT {},{},'M','a@a.com',0,'{DEFAULT_BIRTHDATE}' FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM login AS existing WHERE userid={}); SELECT ROW_COUNT(); UNLOCK TABLES;", hex(name), hex(pass), hex(name))
+        }
+        // Every account at once, not the selected one. A birthday is not a
+        // per-account preference here -- it is a fixed value the game needs
+        // present -- and a player who has hit the delete prompt has no way to
+        // tell which of their accounts is the one missing it. Accounts that
+        // already have one are left alone, so the button can be pressed twice.
+        "birthdates" => format!("UPDATE login SET birthdate='{DEFAULT_BIRTHDATE}' WHERE sex<>'S' AND {MISSING_BIRTHDATE}; SELECT ROW_COUNT();"),
+        "password" | "disable" | "enable" => {
+            let id = field(request, "id")?
+                .parse::<u32>()
+                .map_err(|_| "Invalid account ID")?;
+            let name = field(request, "username")?;
+            if id < 2000000 {
+                return Err("Service accounts cannot be edited here".into());
+            }
+            let assignment = match action {
+                "password" => format!("user_pass={}", hex(password(request)?)),
+                "disable" => "state=5".into(),
+                _ => "state=0".into(),
+            };
+            format!("UPDATE login SET {assignment} WHERE account_id={id} AND BINARY userid={} AND sex<>'S'; SELECT ROW_COUNT();", hex(name))
+        }
+        _ => return Err("Unknown account action".into()),
+    })
+}
+
 pub fn run(cfg: &Config, dk: &Docker) -> Result<(), String> {
     let mut input = String::new();
     io::stdin()
@@ -306,34 +370,20 @@ pub fn run(cfg: &Config, dk: &Docker) -> Result<(), String> {
     if action == "password" || action == "create" || action == "invite-create" {
         verify_password_format(cfg)?;
     }
-    let sql = match action {
-        "create" | "invite-create" => {
-            let name = field(&request, "username")?;
-            username(name)?;
-            let pass = password(&request)?;
-            format!("LOCK TABLES login WRITE, login AS existing READ; INSERT INTO login (userid,user_pass,sex,email,group_id) SELECT {},{},'M','a@a.com',0 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM login AS existing WHERE userid={}); SELECT ROW_COUNT(); UNLOCK TABLES;", hex(name), hex(pass), hex(name))
-        }
-        "password" | "disable" | "enable" => {
-            let id = field(&request, "id")?
-                .parse::<u32>()
-                .map_err(|_| "Invalid account ID")?;
-            let name = field(&request, "username")?;
-            if id < 2000000 {
-                return Err("Service accounts cannot be edited here".into());
-            }
-            let assignment = match action {
-                "password" => format!("user_pass={}", hex(password(&request)?)),
-                "disable" => "state=5".into(),
-                _ => "state=0".into(),
-            };
-            format!("UPDATE login SET {assignment} WHERE account_id={id} AND BINARY userid={} AND sex<>'S'; SELECT ROW_COUNT();", hex(name))
-        }
-        _ => return Err("Unknown account action".into()),
-    };
-    let update = || {
+    let sql = statement(action, &request)?;
+    let update = || -> Result<u32, String> {
         // Recheck immediately before touching any records.
         verify_era(cfg, dk, era)?;
         let output = dk.private_sql(&sql)?;
+        // A set operation, so any row count is a result rather than a refusal:
+        // zero means every account already had a birthday, which is the state
+        // the button exists to reach.
+        if action == "birthdates" {
+            return output
+                .trim()
+                .parse::<u32>()
+                .map_err(|_| "Invalid account response".into());
+        }
         if output.trim() != "1" {
             return Err(match action {
                 "password" => "The password was not changed: the account already uses this password. Choose a different one.",
@@ -342,9 +392,9 @@ pub fn run(cfg: &Config, dk: &Docker) -> Result<(), String> {
             }
             .into());
         }
-        Ok(())
+        Ok(1)
     };
-    if action == "invite-create" {
+    let changed = if action == "invite-create" {
         // The invited-player path only INSERTs a new group-0 row. It cannot
         // change a loaded account, so friends joining need not disconnect the
         // host or other players. Owner mutations retain their stop/save guard.
@@ -352,11 +402,14 @@ pub fn run(cfg: &Config, dk: &Docker) -> Result<(), String> {
             return Err("Invited accounts require internet friends mode".into());
         }
         crate::hosting::require_game_policy(cfg, dk)?;
-        update()?;
+        update()?
     } else {
-        with_servers_stopped(cfg, dk, update)?;
-    }
-    println!("{{\"era\":{},\"updated\":true}}", json::quote(era));
+        with_servers_stopped(cfg, dk, update)?
+    };
+    println!(
+        "{{\"era\":{},\"updated\":true,\"changed\":{changed}}}",
+        json::quote(era)
+    );
     Ok(())
 }
 
@@ -407,6 +460,47 @@ mod tests {
         let attack = "'; DROP TABLE login; --\\";
         assert_eq!(unhex(&hex(attack)[2..]).unwrap(), attack);
         assert!(hex(attack)[2..].bytes().all(|b| b.is_ascii_hexdigit()));
+    }
+    #[test]
+    fn every_account_this_app_creates_can_delete_a_character() {
+        // rAthena compares the delete prompt against login.birthdate, so an
+        // account created without one has characters that cannot be deleted
+        // from inside the game at all. Both creation paths write the date.
+        for action in ["create", "invite-create"] {
+            let request = json::parse(&format!(
+                "{{\"username\":\"friend-1\",\"password\":{},\"confirmation\":{}}}",
+                json::quote("a-test-only-secret"),
+                json::quote("a-test-only-secret")
+            ))
+            .unwrap();
+            let sql = statement(action, &request).unwrap();
+            assert!(sql.contains(&format!("'{DEFAULT_BIRTHDATE}'")));
+            assert!(sql.contains("group_id,birthdate"));
+        }
+    }
+    #[test]
+    fn the_birthdate_migration_only_fills_in_what_is_missing() {
+        let sql = statement("birthdates", &json::parse("{}").unwrap()).unwrap();
+        // Rows that already have a birthday keep it: the player may have set
+        // their own, and pressing the button twice must not rewrite it.
+        assert!(sql.contains(MISSING_BIRTHDATE));
+        // Service accounts are out of scope here exactly as they are in the
+        // listing and in every other write.
+        assert!(sql.contains("sex<>'S'"));
+        // No account is named, so no request field reaches the statement.
+        assert!(!sql.contains("account_id"));
+        assert!(sql.ends_with("SELECT ROW_COUNT();"));
+    }
+    #[test]
+    fn the_default_birthdate_is_safe_to_inline_and_matches_the_seeded_account() {
+        assert!(DEFAULT_BIRTHDATE
+            .bytes()
+            .all(|b| b.is_ascii_digit() || b == b'-'));
+        // The seed writes it into a fresh database; this file writes it into
+        // every account afterwards. They drift apart silently otherwise.
+        let seed = include_str!("../../sql/03-account.sql");
+        assert!(seed.contains(&format!("'{DEFAULT_BIRTHDATE}'")));
+        assert!(seed.contains("`birthdate`"));
     }
     #[test]
     fn ordinary_accounts_cannot_occupy_reserved_or_registration_names() {
