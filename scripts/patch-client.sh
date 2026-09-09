@@ -667,6 +667,206 @@ else:
     p.write_text(s.replace(old, new, 1))
     print("patched EquipmentCommon.js (drag and drop onto the equipment window)")
 
+# 0012 - Put the cart/mount controls below the equipment grid and actually
+# show them when their state is active.
+#
+# roBrowser ships both controls in every equipment layout, positioned over the
+# character preview. Their stylesheet default is `display: none`, while the
+# state updater tries to reveal them with `style.display = ''`. Clearing the
+# inline value merely exposes the stylesheet's `display: none` again, so the
+# controls can never appear. V4 is the layout selected by our 20221005 packet
+# version. Give that layout the cleaner native control bar used by the client
+# UI the assets came from; older layouts retain their upstream geometry.
+# `allRidingState` is deliberately not included: Halter Lead Box class mounts
+# use that separate state and cannot be removed by this REQ_CARTOFF control.
+p = rb / "src/UI/Components/Equipment/EquipmentCommon.js"
+s = p.read_text()
+old = """\t\t\t\tif (_lastState & HasAttachmentState || _hasCart) {
+\t\t\t\t\tif (removeOpt) removeOpt.style.display = '';
+\t\t\t\t} else {
+\t\t\t\t\tif (removeOpt) removeOpt.style.display = 'none';
+\t\t\t\t}
+
+\t\t\t\tif (_lastState & HasCartState || _hasCart) {
+\t\t\t\t\tif (cartBtn) cartBtn.style.display = '';
+\t\t\t\t} else {
+\t\t\t\t\tif (cartBtn) cartBtn.style.display = 'none';
+\t\t\t\t}"""
+new = """\t\t\t\tconst hasAttachment = Boolean(_lastState & HasAttachmentState || _hasCart);
+\t\t\t\tconst hasCart = Boolean(_lastState & HasCartState || _hasCart);
+
+\t\t\t\tif (hasAttachment) {
+\t\t\t\t\t// The stylesheet default is none; clearing the inline value does
+\t\t\t\t\t// not override it and left the button permanently invisible.
+\t\t\t\t\tif (removeOpt) removeOpt.style.display = 'block';
+\t\t\t\t} else {
+\t\t\t\t\tif (removeOpt) removeOpt.style.display = 'none';
+\t\t\t\t}
+\t\t\t\tconst removeControl = removeOpt && removeOpt.closest('.attachment-control');
+\t\t\t\tif (removeControl) removeControl.style.display = hasAttachment ? 'flex' : 'none';
+
+\t\t\t\tif (hasCart) {
+\t\t\t\t\tif (cartBtn) cartBtn.style.display = 'block';
+\t\t\t\t} else {
+\t\t\t\t\tif (cartBtn) cartBtn.style.display = 'none';
+\t\t\t\t}
+\t\t\t\tconst cartControl = cartBtn && cartBtn.closest('.attachment-control');
+\t\t\t\tif (cartControl) cartControl.style.display = hasCart ? 'flex' : 'none';
+
+\t\t\t\tconst attachmentControls = root.querySelector('.attachment-controls');
+\t\t\t\tif (attachmentControls) {
+\t\t\t\t\tconst showAttachmentControls =
+\t\t\t\t\t\tcurrentTabId === 'general' && (hasAttachment || hasCart);
+\t\t\t\t\tattachmentControls.style.display = showAttachmentControls ? 'flex' : 'none';
+\t\t\t\t\tconst panel = root.querySelector('.panel');
+\t\t\t\t\tif (panel) panel.classList.toggle('has-attachment-controls', showAttachmentControls);
+\t\t\t\t}"""
+if "left the button permanently invisible" in s:
+    print("EquipmentCommon.js attachment controls already patched")
+elif s.count(old) == 1:
+    p.write_text(s.replace(old, new, 1))
+    print("patched EquipmentCommon.js (attachment controls become visible)")
+else:
+    sys.exit("EquipmentCommon.js: attachment visibility no longer matches (%d hits); re-check the patch" % s.count(old))
+
+# The V4 controls sit outside the tab tables, so switching away from General
+# must hide their strip explicitly. Restore it only when one of its state-
+# controlled buttons is active.
+p = rb / "src/UI/Components/Equipment/EquipmentCommon.js"
+s = p.read_text()
+old = """\t\tcurrentTabId = selectedId;
+
+\t\tif (switchEquip) {"""
+new = """\t\tcurrentTabId = selectedId;
+
+\t\tconst attachmentControls = root.querySelector('.attachment-controls');
+\t\tif (attachmentControls) {
+\t\t\tconst hasVisibleControl = Array.from(attachmentControls.querySelectorAll('button')).some(
+\t\t\t\tbutton => button.style.display === 'block'
+\t\t\t);
+\t\t\tconst showAttachmentControls = currentTabId === 'general' && hasVisibleControl;
+\t\t\tattachmentControls.style.display = showAttachmentControls ? 'flex' : 'none';
+\t\t\tconst panel = root.querySelector('.panel');
+\t\t\tif (panel) panel.classList.toggle('has-attachment-controls', showAttachmentControls);
+\t\t}
+
+\t\tif (switchEquip) {"""
+if "const hasVisibleControl" in s:
+    print("EquipmentCommon.js attachment tab visibility already patched")
+elif s.count(old) == 1:
+    p.write_text(s.replace(old, new, 1))
+    print("patched EquipmentCommon.js (attachment controls follow General tab)")
+else:
+    sys.exit("EquipmentCommon.js: tab-switch anchor no longer matches (%d hits); re-check the patch" % s.count(old))
+
+p = rb / "src/UI/Components/Equipment/EquipmentV4/EquipmentV4.html"
+s = p.read_text()
+old_controls = """\t\t\t\t\t\t<button
+\t\t\t\t\t\t\tclass="cartitems"
+\t\t\t\t\t\t\tdata-background="basic_interface/btn_items_off.bmp"
+\t\t\t\t\t\t\tdata-hover="basic_interface/btn_items_on.bmp"
+\t\t\t\t\t\t></button>
+\t\t\t\t\t\t<button class="removeOption" data-background="basic_interface/btn_off.bmp"></button>
+"""
+new_controls = ""
+old_footer = """\t\t<div class="footer" id="equipment_footer" data-background="basic_interface/equipwin_bg2.bmp">
+\t\t\t<div class="left">"""
+new_footer = """\t\t<div class="attachment-controls" data-background="basic_interface/equipwin_bg3.bmp">
+\t\t\t<div class="attachment-control mount-control">
+\t\t\t\t<span>Mount/Cart</span>
+\t\t\t\t<button
+\t\t\t\t\tclass="removeOption"
+\t\t\t\t\tdata-background="basic_interface/grp_online.bmp"
+\t\t\t\t\tdata-hover="basic_interface/grp_offline.bmp"
+\t\t\t\t></button>
+\t\t\t</div>
+\t\t\t<div class="attachment-control cart-control">
+\t\t\t\t<span>Cart</span>
+\t\t\t\t<button
+\t\t\t\t\tclass="cartitems"
+\t\t\t\t\tdata-background="basic_interface/btn_items_off.bmp"
+\t\t\t\t\tdata-hover="basic_interface/btn_items_on.bmp"
+\t\t\t\t></button>
+\t\t\t</div>
+\t\t</div>
+\t\t<div class="footer" id="equipment_footer" data-background="basic_interface/equipwin_bg2.bmp">
+\t\t\t<div class="left">"""
+if "class=\"attachment-controls\"" in s:
+    print("EquipmentV4.html attachment controls already moved")
+elif s.count(old_controls) == 1 and s.count(old_footer) == 1:
+    s = s.replace(old_controls, new_controls, 1)
+    s = s.replace(old_footer, new_footer, 1)
+    p.write_text(s)
+    print("patched EquipmentV4.html (attachment controls below equipment grid)")
+else:
+    sys.exit("EquipmentV4.html: attachment control anchors no longer match; re-check the patch")
+
+p = rb / "src/UI/Components/Equipment/EquipmentV4/EquipmentV4.css"
+s = p.read_text()
+anchor = """#EquipmentV4 .removeOption {
+\tposition: absolute;
+\ttop: 90px;
+\tleft: 12px;
+\twidth: 36px;
+\theight: 36px;
+\tbackground-repeat: no-repeat;
+\tbackground-color: transparent;
+\tborder: none;
+\tdisplay: none;
+}
+"""
+replacement = """#EquipmentV4 .attachment-controls {
+\tdisplay: none;
+\tposition: relative;
+\theight: 23px;
+\tbackground-repeat: no-repeat;
+}
+#EquipmentV4 .panel.has-attachment-controls {
+\theight: 173px;
+}
+#EquipmentV4 .attachment-control {
+\tposition: absolute;
+\ttop: -4px;
+\tdisplay: none;
+\talign-items: center;
+\theight: 23px;
+\twhite-space: nowrap;
+\ttext-shadow: 1px 1px white;
+}
+#EquipmentV4 .mount-control {
+\tleft: 108px;
+}
+#EquipmentV4 .cart-control {
+\tleft: 207px;
+}
+#EquipmentV4 .attachment-control button {
+\tposition: static;
+\tmargin-left: 6px;
+\tbackground-repeat: no-repeat;
+\tbackground-color: transparent;
+\tborder: none;
+\tdisplay: none;
+}
+#EquipmentV4 .mount-control .removeOption {
+\twidth: 14px;
+\theight: 14px;
+}
+#EquipmentV4 .cart-control .cartitems {
+\twidth: 30px;
+\theight: 20px;
+}
+"""
+if "#EquipmentV4 .attachment-controls" in s:
+    print("EquipmentV4.css attachment controls already styled")
+elif s.count(anchor) == 1:
+    # The cart rule immediately before this block is superseded by the more
+    # specific descendant rule, so only the second legacy-position block has
+    # to be replaced.
+    p.write_text(s.replace(anchor, replacement, 1))
+    print("patched EquipmentV4.css (bottom attachment-control layout)")
+else:
+    sys.exit("EquipmentV4.css: removeOption block no longer matches (%d hits); re-check the patch" % s.count(anchor))
+
 PY
 
 python3 "$ROOT/scripts/patch-client-controls.py" "$ROOT" "$RB"
