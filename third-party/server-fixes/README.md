@@ -28,3 +28,13 @@ equipping a Katar read index 16 from the old 16-element array. Later weapon type
 also exceeded that array, including the damage bonus used by combat.
 `verify-weapon-bounds.py` reproduces the actual declaration/setter/status-read
 fault and checks every weapon type plus invalid script indices after patching.
+
+`0005-persist-loot-preferences.patch` keeps `@autoloot`, `@autoloottype` and
+`@showexp` across a logout. All three lived only in the session, so every login
+began by retyping them, and players were writing login scripts to do it for
+them. The values are stored as ordinary per-character variables, which needs no
+schema change and no migration, written by the commands that set them so a
+crash loses nothing, and read back in `pc_reg_received` because that is the
+first point at which character variables have arrived. A stored rate is clamped
+to rAthena's own range on the way in, so a hand-edited variable cannot put the
+session into a state the command itself could not produce.
