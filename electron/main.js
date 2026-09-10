@@ -974,14 +974,7 @@ function toBattleConf(s) {
 		// it feeds the same two bars, so a raised quest rate is discarded on
 		// turn-in the same way.
 		`multi_level_up: ${expRatesRaised(s) ? 'yes' : 'no'}\n` +
-		`item_rate_common: ${s.item_rate_common}\n` +
-		`item_rate_common_boss: ${s.item_rate_common}\n` +
-		`item_rate_equip: ${s.item_rate_equip}\n` +
-		`item_rate_equip_boss: ${s.item_rate_equip}\n` +
-		`item_rate_card: ${s.item_rate_card}\n` +
-		`item_rate_card_boss: ${s.item_rate_card}\n` +
-		`item_rate_heal: ${s.item_rate_common}\n` +
-		`item_rate_use: ${s.item_rate_common}\n` +
+		require('./battle-rates').dropRateConf(s) +
 		`item_rate_mvp: ${s.item_rate_common}\n` +
 		`item_rate_treasure: ${s.item_rate_common}\n` +
 		`zeny_from_mobs: ${s.zeny_from_mobs ? 'yes' : 'no'}\n` +
