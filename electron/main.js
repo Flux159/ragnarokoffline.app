@@ -21,6 +21,7 @@ const os = require('os');
 const { spawn, execFile } = require('child_process');
 const { parseJoinAddress, GAME_PATH } = require('./join-address');
 const { probeHost } = require('./host-probe');
+const { installDesktopEntry } = require('./linux-desktop-entry');
 const { JoinSession } = require('./join-session');
 const joinSession = new JoinSession();
 let sharing, sharingSecrets;
@@ -2660,6 +2661,14 @@ app.whenReady().then(() => {
 	// Before anything reads a path: an existing install still has its data
 	// under the old folder name.
 	migrateDataRoot();
+	// An AppImage installs nothing, so without this there is no icon to click
+	// the second time -- see linux-desktop-entry.js. Idempotent, and it reports
+	// rather than throws, because a launcher entry must never stop a launch.
+	if (process.platform === 'linux') {
+		const entry = installDesktopEntry();
+		if (entry.installed) appLog(`desktop entry ${entry.updated ? 'updated' : 'written'}: ${entry.file}`);
+		else if (entry.file) appLog(`desktop entry not written: ${entry.reason}`);
+	}
 	Menu.setApplicationMenu(buildMenu());
 
 	// Joining loads the host's page directly, so nothing on the way there

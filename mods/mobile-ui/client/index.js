@@ -21,6 +21,11 @@ export default function mobileUI(parameters, api) {
   if (api?.version !== 1) throw new Error("mobile-ui requires client API 1");
   let settings = readLayout(api);
   const phone = usePhone(settings.mode);
+  // What "Auto" resolves to right now. Shown in the Display dialog: the
+  // rule is invisible from the game, so a Steam Deck flipping between
+  // layouts -- which it does, depending on whether the desktop session
+  // advertises its touch screen -- looks arbitrary rather than automatic.
+  const autoPhone = usePhone("auto");
   const abort = new AbortController();
   const listen = (node, event, fn, options = {}) =>
     node.addEventListener(event, fn, { ...options, signal: abort.signal });
@@ -158,9 +163,9 @@ export default function mobileUI(parameters, api) {
  </div>
  <button id="displayButton" aria-haspopup="dialog">Display</button>
  <dialog aria-labelledby="displayTitle"><h2 id="displayTitle">Display settings</h2>
-  <label for="layoutMode">Phone layout</label><select id="layoutMode"><option value="auto">Auto — touch screens</option><option value="on">On</option><option value="off">Off — desktop layout</option></select>
+  <label for="layoutMode">Phone layout</label><select id="layoutMode"><option value="auto">Auto — ${autoPhone ? "phone layout here" : "desktop layout here"}</option><option value="on">On</option><option value="off">Off — desktop layout</option></select>
   <label for="uiScale">Control size</label><input id="uiScale" type="range" min="0.85" max="1.25" step="0.05"><output id="scaleValue"></output>
-  <p>Phone and desktop window positions are saved separately. Changing layout mode takes effect when you reload the game.</p><output id="message" aria-live="polite"></output>
+  <p>Auto chooses the phone layout on a touch screen whose short side is 900 pixels or less; this screen ${autoPhone ? "matches" : "does not"}. Phone and desktop window positions are saved separately. Changing layout mode takes effect when you reload the game.</p><output id="message" aria-live="polite"></output>
   <button id="reload">Save and reload</button><button id="done">Done</button>
  </dialog>`;
   document.body.append(host);

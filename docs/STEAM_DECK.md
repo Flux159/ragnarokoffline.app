@@ -1,44 +1,83 @@
 # The Steam Deck
 
-**The app runs on a Steam Deck.** Confirmed on SteamOS 3.8.16: the microVM
-boots, the server comes up, and the client draws the login screen. It needs one
-Chromium flag and, for now, to be run extracted rather than as an AppImage —
-both below.
+**The app runs on a Steam Deck, and downloading it and double-clicking it is
+all it takes.** Confirmed on SteamOS 3.8.16, in Desktop Mode, with a real
+client's GRFs: the microVM boots, the server reaches Ready, the game draws, and
+it is playable with the Deck's own controls. No flags, no terminal, no
+workarounds.
 
-On an *older* SteamOS it cannot start at all, and the reason is not the one
-people assume: the Electron shell is fine, and everything behind it is linked
-against a newer glibc than SteamOS has, so the window opens and nothing behind
-it runs.
+That is a correction. An earlier round of testing recorded two hard blockers —
+the AppImage crashing with `SIGBUS`, and Chromium killing itself over the GPU
+sandbox — and a third, the on-screen keyboard never opening. **None of them are
+real.** All three were produced by how the app was being launched over SSH, and
+the section on that trap is at the bottom, because it cost a day and will cost
+the next person one too.
 
-Measured on the same physical Deck, before and after a system update:
+On an *older* SteamOS it cannot start at all, and that part stands. See
+[Why an old SteamOS is not supported](#why-an-old-steamos-is-not-supported).
 
-| | SteamOS 3.2 (2022-05) | SteamOS 3.8.16 (2026-07) |
+## Installing it
+
+Download the AppImage from the releases page in Desktop Mode and run it. There
+is one step that is not a double-click, and it is not ours to remove:
+
+**Firefox does not mark downloads executable.** So the first double-click opens
+the file in an archive tool rather than running it. In Dolphin: right-click →
+Properties → Permissions → *Is executable*. Or `chmod +x` in Konsole. Every
+AppImage on every distribution has this problem.
+
+After that it runs, and **the first run writes a launcher entry**, so the app
+appears under Games in the application launcher and in search, with its icon,
+like it would on any other system. That is `electron/linux-desktop-entry.js`:
+an AppImage installs nothing, so nothing else would ever do it. The entry
+points back at wherever the AppImage was saved, is rewritten if the file moves,
+hides itself through `TryExec` if the file is deleted, and is skipped entirely
+if some other entry already claims the name. `RAGNAROK_OFFLINE_NO_DESKTOP_ENTRY`
+turns it off.
+
+Game Mode needs a Steam shortcut, which a desktop entry is not. Untested.
+
+## What works on the hardware
+
+Measured by playing it, not inferred:
+
+| | |
+|---|---|
+| On-screen keyboard | STEAM + X, types into the login screen |
+| Left stick | movement |
+| Right stick | moves the pointer |
+| Right trackpad | moves the pointer |
+| Touchscreen | works as a pointer |
+| Virtual machine | `vm Running, agent healthy` in 2.7 s |
+
+## Which layout you get, and why it moves
+
+The bundled `mobile-ui` mod picks a layout automatically, and on a Deck it can
+land either way, which looks arbitrary from the outside. The rule is a touch
+screen *and* a short side of 900 pixels or less. The Deck's 1280×800 always
+satisfies the second half, so it comes down to whether the desktop session
+tells the app there is a touch screen — and that depends on the display
+backend:
+
+| Launched as | Ozone platform | Layout |
 |---|---|---|
-| glibc | 2.33 | 2.41 |
-| kernel | 5.13 neptune | 6.16.12-valve24.5 |
-| v1.2.0 payload binaries | none start | all start |
-| `libkrun.so.1` | unresolved symbols | resolves |
-| `nebula up` | impossible | **`vm Running, agent healthy` in 2.7 s** |
+| plain double-click | X11, through Xwayland | desktop |
+| `--ozone-platform-hint=auto` | Wayland | phone |
 
-So [#87](../../../issues/87)'s question — can nebula spin up VMs on a Steam
-Deck — is answered: yes, on a current SteamOS, with the build that already
-ships. What follows is about the Decks that are not current.
+Both are playable. Neither is forced, deliberately: the default is whatever the
+session gives, which is also what every other Linux distribution gets, so
+nothing here changes behaviour anywhere else.
 
-## What was measured on the old build
+What was worth fixing is that the reason was invisible. The Display dialog's
+Auto option now says which layout it is choosing and states the rule, instead
+of reading "Auto — touch screens" and leaving a player to guess. Either way,
+**Display → Phone layout → On/Off** overrides it.
 
-A Steam Deck on **SteamOS 3.2**, build `20220526.1`, kernel
-`5.13.0-valve15-1-neptune`, glibc **2.33**. The v1.2.0 AppImage, downloaded and
-run in Desktop Mode:
+## Why an old SteamOS is not supported
 
-```
-$ ./RO.AppImage --no-sandbox
-[...] No such interface "org.freedesktop.portal.FileChooser"
-[...] GetVSyncParametersIfAvailable() failed
-```
-
-It **starts**. The window opens, `~/.local/share/Ragnarok Offline/state` is
-created, and there is no glibc complaint, because Chromium deliberately targets
-an old one. Then, from the payload inside that same AppImage:
+A Deck on **SteamOS 3.2**, build `20220526.1`, glibc **2.33**. The AppImage
+starts — the window opens and the state directory is created, because Chromium
+deliberately targets an old glibc — and then nothing behind it runs:
 
 ```
 $ payload/bin/nebula --version
@@ -56,30 +95,37 @@ Every native binary in the Linux payload, against a system providing 2.33:
 | `docker-slim` | glibc 2.34 |
 | `robrowser-remoteclient` | glibc 2.34 |
 
-Not one of them can start. The microVM never boots, so the server never runs,
-so the app is a window with nothing behind it.
+The same physical Deck, after updating:
 
-## Why an old SteamOS is not supported
+| | SteamOS 3.2 (2022-05) | SteamOS 3.8.16 (2026-07) |
+|---|---|---|
+| glibc | 2.33 | 2.41 |
+| kernel | 5.13 neptune | 6.16.12-valve24.5 |
+| payload binaries | none start | all start |
+| `libkrun.so.1` | unresolved symbols | resolves |
+| `nebula up` | impossible | **2.7 s** |
 
 The binaries are built on `runs-on: ubuntu-latest`, which is Ubuntu 24.04 and
-ships glibc 2.39. Nothing pins that floor, so it follows the runner.
-
-We deliberately do not build lower. Keeping a Deck on SteamOS 3.2 working would
-mean a second Linux build in an old-glibc container, plus the same for nebula's
-embed kit, plus a floor check in both repositories to stop the floor drifting
-up again — a permanent second build target for a four-year-old system image
-that Valve updates automatically.
+ships glibc 2.39. Nothing pins that floor, so it follows the runner. We
+deliberately do not build lower: keeping SteamOS 3.2 working would mean a
+second Linux build in an old-glibc container, the same again for nebula's embed
+kit, and a floor check in both repositories to stop it drifting up again — a
+permanent second build target for a four-year-old image that Valve updates
+automatically.
 
 **If someone reports the app not starting on a Deck, ask for their SteamOS
-version first.** `ldd --version` at a terminal, or Settings → System. Anything
-from 3.5 onwards is glibc 2.37+, and updating is the fix. The symptom is
-distinctive: the window opens normally and nothing behind it ever starts,
-because Chromium targets an old glibc deliberately and the payload does not.
+version first.** Settings → System, or `ldd --version` in a terminal. Anything
+from 3.5 onwards is glibc 2.37 or newer, and updating is the fix. The symptom
+is distinctive: the window opens normally and nothing behind it ever starts.
 
 For reference, if that floor ever needs lowering: `rust:1-bullseye` is glibc
 2.31, and the same sources built there ask for 2.30 — under every SteamOS there
 has been. That was measured, for nebula and libkrun as well as for this
-repository's binaries. It is a known, working option, not a theory.
+repository's binaries. It is a known option, not a theory.
+
+So [#87](../../../issues/87)'s question — can nebula spin up VMs on a Steam
+Deck — is answered: yes, on a current SteamOS, with the build that already
+ships.
 
 ## Things that are fine
 
@@ -90,140 +136,56 @@ repository's binaries. It is a known, working option, not a theory.
 - libfuse2 is present, which the AppImage runtime needs.
 - The Deck's wifi is not a constraint: 5 GHz, 80 MHz, 866 Mbit/s tx.
 
-## Running it: what a Deck needs
+## The trap: testing over SSH invents crashes
 
-Confirmed on SteamOS 3.8.16 in Desktop Mode, with a real client's GRFs. The
-stack reaches **Ready** — microVM, containers, MariaDB, login/char/map — and
-the asset server answers on :3338 with the login screen drawn.
+SteamOS sets `KillUserProcesses=True`, so logind destroys everything in an SSH
+session's scope the moment that session ends. A GUI app started over SSH is
+therefore killed about a minute after the command that started it returns —
+and it does not die cleanly or all at once, which is what makes this expensive:
 
-Two things are needed to get there, and neither is obvious from a crash log.
+- **The squashfuse daemon dies first.** It is what backs the AppImage's mount
+  at `/tmp/.mount_RO.App*`, and the app's executable pages are mapped from it.
+  Every page fault after that point is `SIGBUS`. Three launches, three
+  `SIGBUS`, always from the mount, all of it recorded as an AppImage bug on
+  SteamOS. It is not. Mounting the same AppImage with `--appimage-mount` and
+  reading all 187 files through it gives 0 errors.
+- **Child processes are killed as they spawn.** `GPU process launch failed:
+  error_code=1002` five times, then `GPU process isn't usable. Goodbye.`, which
+  reads exactly like a sandbox incompatibility. Launched properly, there are no
+  GPU errors at all and no flag is needed.
+- **The window disappears while someone is testing it.** Which is how "STEAM +
+  X does not open the keyboard" got written down.
 
-**`--disable-gpu-sandbox`.** Without it the app opens, draws the login screen,
-and then Chromium kills itself:
-
-```
-ERROR:gpu_process_host.cc(976)] GPU process launch failed: error_code=1002   (x5)
-FATAL:gpu_data_manager_impl_private.cc(423)] GPU process isn't usable. Goodbye.
-```
-
-With the flag: zero GPU errors. The game needs WebGL, so `--disable-gpu` is not
-an alternative.
-
-**Run the extracted directory, not the AppImage.** Three launches from the
-AppImage, three crashes, all `SIGBUS`, always from the FUSE mount:
-
-```
-SIGBUS  /tmp/.mount_RO.AppfvdAeX/ragnarokoffline
-SIGBUS  /tmp/.mount_RO.AppC9y3Nn/ragnarokoffline
-SIGBUS  /tmp/.mount_RO.AppK84mj6/ragnarokoffline
-```
-
-The same build extracted with `--appimage-extract` and started through `AppRun`
-is stable. The AppImage file itself is intact — 240617795 bytes, the release's
-own size — so this is the squashfuse mount on SteamOS rather than a bad
-download. Not yet diagnosed further.
-
-### A trap for anyone testing over SSH
-
-SteamOS sets `KillUserProcesses=True`, so logind kills everything in an SSH
-session's scope the moment that session ends. The app dies roughly a minute
-after each command returns, the log shows the asset server exiting on `SIGHUP`,
-and it looks exactly like a crash. It is not, and it does not affect a Deck
-being used normally. Launch it as a user unit instead:
+Launch it as a user unit instead, which survives the session ending:
 
 ```sh
 systemd-run --user --unit=ragnarok --collect \
   --setenv=XDG_RUNTIME_DIR=/run/user/1000 \
   --setenv=WAYLAND_DISPLAY=wayland-0 \
-  --setenv=APPDIR=$HOME/rotest/squashfs-root \
-  $HOME/rotest/squashfs-root/AppRun --no-sandbox --disable-gpu-sandbox \
-  --ozone-platform=wayland --enable-features=UseOzonePlatform
+  --setenv=DISPLAY=:0 \
+  $HOME/RO.AppImage
 ```
 
-## Starting it again: there is no icon
+`systemctl --user stop ragnarok` stops it, and `journalctl --user -u ragnarok`
+has its output. Add `--ozone-platform-hint=auto` to get the native Wayland path
+and the phone layout.
 
-On macOS the app is in Applications, and on Windows the installer makes a Start
-Menu entry. **On a Deck right now there is neither**, and that is three separate
-gaps rather than one:
-
-- Nothing was installed. The working copy is an AppImage extracted by hand, so
-  no part of the system knows it exists.
-- An AppImage never creates a launcher entry by itself. That needs
-  AppImageLauncher, which SteamOS does not ship.
-- Even with an entry, a plain launch is the broken path — it would run the
-  AppImage rather than the extracted copy, and without
-  `--disable-gpu-sandbox`.
-
-So until the app sets its own flags, a Deck needs a launcher written by hand.
-In Desktop Mode, in Konsole:
-
-```sh
-RO=$HOME/rotest/squashfs-root
-cat > ~/.local/share/applications/ragnarok-offline.desktop <<EOF
-[Desktop Entry]
-Type=Application
-Name=Ragnarok Offline
-Exec=env APPDIR=$RO $RO/AppRun --no-sandbox --disable-gpu-sandbox
-Icon=$(ls $RO/*.png | head -1)
-Categories=Game;
-Terminal=false
-EOF
-```
-
-It then appears in the application launcher under Games, and **Add a Non-Steam
-Game** can point at the same command to reach Game Mode. Neither has been tried
-on the device yet.
-
-To start it from a terminal instead, the `systemd-run` form below is the one to
-use over SSH; a Konsole window on the Deck itself can run `AppRun` directly.
-
-## How someone would actually install it
-
-Every other platform is a download and a double-click, and the Deck is meant to
-be the same: Firefox, fetch the AppImage from the releases page, run it, and
-point it at a client folder on first launch. The client GRFs have to reach the
-Deck too, which on a handheld means downloading and extracting them in Desktop
-Mode first.
-
-**That path does not work today**, and it is worth being precise about where it
-breaks, because none of it is the user's fault:
-
-| Step | State on a Deck |
-|---|---|
-| Download from Firefox | fine |
-| Make it executable | Firefox does not set the bit; Dolphin needs Properties → Permissions |
-| Double-click it | crashes — `SIGBUS`, the FUSE mount |
-| Launch with no flags | dies after the login screen draws — GPU sandbox |
-| Point at client files | fine |
-| Find it again afterwards | no icon, no menu entry |
-
-Three of those are ours to fix, and all three are in the app rather than on the
-device. The app should set `--disable-gpu-sandbox` for itself on Linux —
-nothing in `electron/` sets any Chromium switch today — the AppImage crash needs
-diagnosing or a plain archive shipping beside it, and a desktop entry has to
-come from somewhere. Until then, telling a Deck owner to download the AppImage
-sends them into a crash.
+One more SSH-specific thing, in the other direction: `/proc/<pid>/environ` and
+`/proc/<pid>/fd` are unreadable for a process you did not start, because
+SteamOS sets `kernel.yama.ptrace_scope = 1`. `/proc/<pid>/cmdline` and
+`/proc/<pid>/maps` still work, and the resolved Ozone platform is visible in
+the *child* process arguments — `--ozone-platform=wayland` appears there even
+when only the hint was passed.
 
 ## What is still outstanding
 
-**The on-screen keyboard does not open**, so the login screen cannot be typed
-into. Steam Deck's Desktop Mode keyboard is STEAM + X; it did not come up over
-the app's window. Likely the Wayland text-input protocol not being advertised
-to Electron. Without this a Deck owner cannot log in at all, so it is the first
-thing to fix.
+**Game Mode is untested.** Everything here is Desktop Mode, and Game Mode needs
+a Steam shortcut rather than a desktop entry.
 
-**The quest window traps you.** Opening a quest leaves the window up with no
-way out except going back to character select and logging in again. Worth
-knowing what was already ruled out: at packetver 20221005 the client uses the
-renewal `Quest` window, which *does* wire its close button
-(`close-quest-container-btn` → `onClose()`), and Escape is bound as well. So it
-is not simply an unwired button. The remaining suspects are the `mobile-ui`
-mod, which relabels that button and is enabled by default, and touch input not
-reaching it. Not yet reproduced away from the device.
-
-**There is no way to launch it twice.** No icon, no menu entry, and the two
-things that make it start — the extracted copy and `--disable-gpu-sandbox` —
-both have to be typed. The flag belongs in the app; the entry belongs in the
-build.
-
-**Game Mode is untested.** Everything here is Desktop Mode.
+**The quest window.** Reported as trapping the player, with no way out but
+character select and a relog. Worth recording what was ruled out: at packetver
+20221005 the client uses the renewal `Quest` window, which *does* wire its close
+button (`close-quest-container-btn` → `onClose()`) and *does* bind Escape, so it
+is not an unwired button. It was seen under the phone layout, which is where
+`mobile-ui` relabels that button, and that remains the leading suspect. Not yet
+reproduced away from the device.
