@@ -140,6 +140,70 @@ systemd-run --user --unit=ragnarok --collect \
   --ozone-platform=wayland --enable-features=UseOzonePlatform
 ```
 
+## Starting it again: there is no icon
+
+On macOS the app is in Applications, and on Windows the installer makes a Start
+Menu entry. **On a Deck right now there is neither**, and that is three separate
+gaps rather than one:
+
+- Nothing was installed. The working copy is an AppImage extracted by hand, so
+  no part of the system knows it exists.
+- An AppImage never creates a launcher entry by itself. That needs
+  AppImageLauncher, which SteamOS does not ship.
+- Even with an entry, a plain launch is the broken path — it would run the
+  AppImage rather than the extracted copy, and without
+  `--disable-gpu-sandbox`.
+
+So until the app sets its own flags, a Deck needs a launcher written by hand.
+In Desktop Mode, in Konsole:
+
+```sh
+RO=$HOME/rotest/squashfs-root
+cat > ~/.local/share/applications/ragnarok-offline.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=Ragnarok Offline
+Exec=env APPDIR=$RO $RO/AppRun --no-sandbox --disable-gpu-sandbox
+Icon=$(ls $RO/*.png | head -1)
+Categories=Game;
+Terminal=false
+EOF
+```
+
+It then appears in the application launcher under Games, and **Add a Non-Steam
+Game** can point at the same command to reach Game Mode. Neither has been tried
+on the device yet.
+
+To start it from a terminal instead, the `systemd-run` form below is the one to
+use over SSH; a Konsole window on the Deck itself can run `AppRun` directly.
+
+## How someone would actually install it
+
+Every other platform is a download and a double-click, and the Deck is meant to
+be the same: Firefox, fetch the AppImage from the releases page, run it, and
+point it at a client folder on first launch. The client GRFs have to reach the
+Deck too, which on a handheld means downloading and extracting them in Desktop
+Mode first.
+
+**That path does not work today**, and it is worth being precise about where it
+breaks, because none of it is the user's fault:
+
+| Step | State on a Deck |
+|---|---|
+| Download from Firefox | fine |
+| Make it executable | Firefox does not set the bit; Dolphin needs Properties → Permissions |
+| Double-click it | crashes — `SIGBUS`, the FUSE mount |
+| Launch with no flags | dies after the login screen draws — GPU sandbox |
+| Point at client files | fine |
+| Find it again afterwards | no icon, no menu entry |
+
+Three of those are ours to fix, and all three are in the app rather than on the
+device. The app should set `--disable-gpu-sandbox` for itself on Linux —
+nothing in `electron/` sets any Chromium switch today — the AppImage crash needs
+diagnosing or a plain archive shipping beside it, and a desktop entry has to
+come from somewhere. Until then, telling a Deck owner to download the AppImage
+sends them into a crash.
+
 ## What is still outstanding
 
 **The on-screen keyboard does not open**, so the login screen cannot be typed
@@ -156,5 +220,10 @@ renewal `Quest` window, which *does* wire its close button
 is not simply an unwired button. The remaining suspects are the `mobile-ui`
 mod, which relabels that button and is enabled by default, and touch input not
 reaching it. Not yet reproduced away from the device.
+
+**There is no way to launch it twice.** No icon, no menu entry, and the two
+things that make it start — the extracted copy and `--disable-gpu-sandbox` —
+both have to be typed. The flag belongs in the app; the entry belongs in the
+build.
 
 **Game Mode is untested.** Everything here is Desktop Mode.
