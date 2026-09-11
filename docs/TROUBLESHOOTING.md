@@ -198,6 +198,36 @@ Fixed in the next release: the app now waits for the schema rather than just a
 connection, and refuses to start with an error if the account is not there,
 instead of leaving you at a login screen that cannot work.
 
+## After switching era, the server will not start and mentions credentials
+
+The error is:
+
+```
+Internet hosting requires this era's managed service credentials. Start in
+Local mode, give each GM/admin account an 8-23 character password in
+Settings -> Accounts, then use "Prepare server for friends" in
+Settings -> Multiplayer.
+```
+
+and refreshing the account list answers `Start this era's server first`.
+
+Nothing is wrong with the install, and no data is at risk. The credentials
+internet hosting needs are generated separately for renewal and pre-renewal,
+but the hosting choice is one setting for both. So preparing one era for
+friends and then switching to the other left the setting pointing at an era
+that was never prepared, and the server refused to start — including Repair.
+The instructions in the message lead to Settings -> Accounts, which needs a
+running server, so the two halves waited on each other.
+
+**The way out on an affected build:** Settings -> Multiplayer, set hosting back
+to **Local**, and start. Accounts and every other section work again from
+there. Switching back to the era you had prepared restores friends hosting with
+nothing to redo.
+
+From the next release this is handled: an era that was never prepared for
+internet hosting starts in Local mode and says so, instead of not starting.
+Your hosting choice is kept, and the era you prepared still hosts.
+
 ## My characters are gone / I want to move them to another machine
 
 Settings → **Back up…** writes everything to a single file, and **Restore…**

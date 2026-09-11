@@ -732,9 +732,21 @@ async function chooseEra(pre) {
 
   try {
     const s = await invoke('get_settings');
-    await invoke('save_settings', { settings: { ...s, prerenewal: pre } });
+    const out = await invoke('save_settings', { settings: { ...s, prerenewal: pre } });
     clearInterval(ticking);
     show(`Switched to ${label} in ${elapsed()}s. Log in again — your character list is the ${label} one.`);
+    // Internet hosting credentials are per era, so an era that was never
+    // prepared for friends starts in Local mode. The supervisor says so; say
+    // it here as well, because the player asked for a different era, not for
+    // their friends' link to stop working, and the log is not where they are
+    // looking.
+    const narrowed = String(out || '').split('\n')
+      .find(line => line.includes('has not been prepared for internet hosting'));
+    if (narrowed) {
+      const note = document.createElement('p');
+      note.textContent = narrowed.trim();
+      status.append(note);
+    }
     log(`${label} ready`);
   } catch (e) {
     clearInterval(ticking);

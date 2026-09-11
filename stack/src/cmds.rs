@@ -1340,8 +1340,13 @@ pub fn secure_services(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32
 pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<(), String> {
     // Validate before touching the engine or replacing any running service.
     let open_registration = crate::registration::enabled(&cfg.state)?;
-    let scope = crate::hosting::Scope::load(cfg, lan)?;
+    // Era-aware: a scope saved against an era that was never prepared for
+    // internet hosting starts Local rather than refusing to start at all.
+    let (scope, hosting_notice) = crate::hosting::effective_for_start(cfg, lan)?;
     crate::hosting::before_start(cfg, scope)?;
+    if let Some(notice) = &hosting_notice {
+        println!("{notice}");
+    }
     let lan = scope.lan();
     let credentials = crate::service_credentials::load(&cfg.state, crate::service_credentials::era(cfg))?;
     let conf = cfg.state.join("conf");
@@ -1965,7 +1970,13 @@ pub fn restore(cfg: &Config, dk: &Docker, src: &str) -> Result<(), String> {
 /// Player data is untouched — characters live in the ragnarokmac-db volume.
 pub fn repair(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<(), String> {
     crate::registration::enabled(&cfg.state)?;
-    crate::hosting::before_start(cfg, crate::hosting::Scope::load(cfg, lan)?)?;
+    // Repair is the escape hatch, so it must not be the thing that is stuck:
+    // see effective_for_start.
+    let (repair_scope, hosting_notice) = crate::hosting::effective_for_start(cfg, lan)?;
+    crate::hosting::before_start(cfg, repair_scope)?;
+    if let Some(notice) = &hosting_notice {
+        println!("{notice}");
+    }
     crate::crashes::capture_all(cfg, dk);
     phase(cfg, "Repairing…");
     // Break the lock rather than wait: the usual reason to reach for repair is

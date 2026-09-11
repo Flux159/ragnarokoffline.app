@@ -76,6 +76,43 @@ pub fn before_start(cfg: &Config, scope: Scope) -> Result<(), String> {
     Ok(())
 }
 
+/// The scope a start can actually honour, and what to tell the player when it
+/// is not the one they saved.
+///
+/// `hosting_scope` is one setting for the whole install, but the credentials
+/// internet hosting needs are generated per era. So preparing renewal for
+/// friends and then switching to pre-renewal left the saved scope pointing at
+/// an era that was never prepared, and `before_start` refused every start --
+/// including Repair, which exists to be the way out. The instructions in that
+/// error go through Settings -> Accounts, which needs a running server, so
+/// there was no way out at all: the server would not start until the accounts
+/// were fixed, and the accounts could not be reached until the server started.
+///
+/// A start narrows the scope to Local for the unprepared era instead, and says
+/// so. It only ever narrows -- nothing here can turn internet hosting on -- and
+/// the saved setting is left alone, so going back to the prepared era goes back
+/// to hosting as well.
+pub fn effective_for_start(
+    cfg: &Config,
+    legacy_lan: bool,
+) -> Result<(Scope, Option<String>), String> {
+    let scope = Scope::load(cfg, legacy_lan)?;
+    if !scope.internet() {
+        return Ok((scope, None));
+    }
+    let era = service_credentials::era(cfg);
+    if service_credentials::load(&cfg.state, era)?.is_some() {
+        return Ok((scope, None));
+    }
+    Ok((
+        Scope::Local,
+        Some(format!(
+            "{era} has not been prepared for internet hosting, so the server started in Local mode. \"{}\" is still saved and still applies to the era that was prepared. To host {era} as well, use \"Prepare server for friends\" in Settings -> Multiplayer once it is running.",
+            scope.name()
+        )),
+    ))
+}
+
 fn unsafe_admin_count(dk: &Docker) -> Result<u32, String> {
     // Count every enabled privileged account, including renamed GMs. Also
     // cover the shipped login if its group was changed. No passwords leave SQL.
@@ -294,6 +331,83 @@ mod tests {
             assert_eq!(Scope::from_settings(&settings, true).is_ok(), name == "lan");
         }
     }
+    fn fixture_config(name: &str) -> Config {
+        let root = std::env::temp_dir().join(format!("ro-host-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("state")).unwrap();
+        Config {
+            root: root.join("app"),
+            state: root.join("state"),
+            nebula_home: root.join("nebula"),
+            nebula: root.join("unused"),
+            docker: root.join("unused"),
+            image: String::new(),
+            db_image: String::new(),
+            app_version: None,
+        }
+    }
+
+    // Reported by a player: prepare renewal for friends, switch to
+    // pre-renewal, and the server will not start. The error told them to fix
+    // it in Settings -> Accounts, which needs a running server, so there was no
+    // way out -- Repair included.
+    #[test]
+    fn an_era_that_was_never_prepared_starts_local_instead_of_not_at_all() {
+        let cfg = fixture_config("era-switch");
+        std::fs::write(
+            cfg.state.join("settings.json"),
+            "{\"hosting_scope\":\"friends\"}",
+        )
+        .unwrap();
+        service_credentials::prepare(&cfg).unwrap();
+
+        // The era that was prepared is unaffected: friends hosting, no notice.
+        let (scope, notice) = effective_for_start(&cfg, false).unwrap();
+        assert_eq!(scope, Scope::Friends);
+        assert!(notice.is_none());
+        assert!(before_start(&cfg, scope).is_ok());
+
+        // Switching era leaves the same saved scope pointing at credentials
+        // that do not exist.
+        std::fs::write(cfg.state.join("prerenewal"), "").unwrap();
+        assert!(before_start(&cfg, Scope::Friends).is_err());
+
+        let (scope, notice) = effective_for_start(&cfg, false).unwrap();
+        assert_eq!(scope, Scope::Local);
+        assert!(before_start(&cfg, scope).is_ok());
+        let notice = notice.expect("a narrowed scope has to say so");
+        assert!(notice.contains("prerenewal"), "{notice}");
+        assert!(notice.contains("Local mode"), "{notice}");
+
+        // Narrowing only. The setting is the player's, and going back to the
+        // era they prepared goes back to hosting.
+        assert!(std::fs::read_to_string(cfg.state.join("settings.json"))
+            .unwrap()
+            .contains("friends"));
+        std::fs::remove_file(cfg.state.join("prerenewal")).unwrap();
+        assert_eq!(effective_for_start(&cfg, false).unwrap().0, Scope::Friends);
+    }
+
+    #[test]
+    fn narrowing_never_turns_hosting_on_and_never_hides_a_bad_setting() {
+        let cfg = fixture_config("narrow-only");
+        // Local stays local even with credentials sitting there.
+        service_credentials::prepare(&cfg).unwrap();
+        for saved in ["local", "lan"] {
+            std::fs::write(
+                cfg.state.join("settings.json"),
+                format!("{{\"hosting_scope\":\"{saved}\"}}"),
+            )
+            .unwrap();
+            let (scope, notice) = effective_for_start(&cfg, false).unwrap();
+            assert_eq!(scope.name(), saved);
+            assert!(notice.is_none());
+        }
+        // An unreadable scope is still a hard failure, not a quiet Local.
+        std::fs::write(cfg.state.join("settings.json"), "{\"hosting_scope\":23}").unwrap();
+        assert!(effective_for_start(&cfg, false).is_err());
+    }
+
     #[test]
     fn invalid_scope_and_login_imports_fail_closed() {
         for value in ["null", "false", "23", "\"Friends\"", "\"\""] {
