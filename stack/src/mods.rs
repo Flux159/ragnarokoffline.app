@@ -692,7 +692,7 @@ pub fn enabled(cfg: &Config) -> Vec<Installed> {
 // ---------------------------------------------------------------------------
 
 fn copy_tree(src: &Path, dst: &Path) -> Result<(), String> {
-    copy_tree_owned(src, dst, "", None, &mut BTreeMap::new())
+    copy_tree_owned(src, dst, "", None, &mut BTreeMap::new(), &mut Vec::new())
 }
 
 /// Copy a tree, and optionally record which mod each file came from.
@@ -700,6 +700,78 @@ fn copy_tree(src: &Path, dst: &Path) -> Result<(), String> {
 /// The recording exists for one reason: two mods that both ship
 /// `db/mob_db.yml` resolve last-wins by name order, quietly, and the player has
 /// no way to tell that half of what they installed is not in effect. The
+/// The line `label` sits on, as (start of that line, start of the next).
+///
+/// Matched at column zero and on the whole line, because `Body:` also appears
+/// indented inside rAthena's own comment blocks and as a value elsewhere.
+fn section(text: &str, label: &str) -> Option<(usize, usize)> {
+    let mut at = 0usize;
+    for line in text.split_inclusive('\n') {
+        if line.trim_end_matches(['\n', '\r']) == label {
+            return Some((at, at + line.len()));
+        }
+        at += line.len();
+    }
+    None
+}
+
+/// The `Type:` a table declares in its header, which is what says two files
+/// are the same kind of table rather than merely the same filename.
+fn header_type(text: &str) -> Option<String> {
+    let (_, after) = section(text, "Header:")?;
+    for line in text[after..].split_inclusive('\n') {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        // The header block is indented; the first unindented line ends it.
+        if !line.starts_with(' ') && !line.starts_with('\t') {
+            break;
+        }
+        if let Some(value) = trimmed.strip_prefix("Type:") {
+            return Some(value.trim().to_string());
+        }
+    }
+    None
+}
+
+/// Combine two mods' copies of the same rAthena table.
+///
+/// Two mods that both add an item each ship `db/item_db.yml`, and merging them
+/// by filename means one of them silently does not exist. rAthena itself has
+/// no such problem -- it reads a list of files and applies them in order, so
+/// entries accumulate and only a repeated key is a contest. This produces the
+/// file it would have read: one header, both bodies, the later mod's entries
+/// last so a repeated id resolves the way the load order says.
+///
+/// `None` when the two are not the same kind of table, or either lacks a
+/// `Body:` -- then there is nothing safe to combine and the caller says so
+/// rather than guessing.
+fn merge_tables(existing: &str, incoming: &str) -> Option<String> {
+    if header_type(existing)? != header_type(incoming)? {
+        return None;
+    }
+    let (_, incoming_body) = section(incoming, "Body:")?;
+    // A Footer carries `Imports:`, which names other files rather than holding
+    // entries. Keeping the first file's and dropping the rest is right: the
+    // paths in it are the server's own, identical in every copy.
+    let incoming_end = section(incoming, "Footer:").map_or(incoming.len(), |(start, _)| start);
+    let body = incoming[incoming_body..incoming_end].trim_matches(['\n', '\r']);
+    if body.trim().is_empty() {
+        return Some(existing.to_string());
+    }
+    section(existing, "Body:")?;
+    let insert = section(existing, "Footer:").map_or(existing.len(), |(start, _)| start);
+
+    let mut out = String::with_capacity(existing.len() + body.len() + 2);
+    out.push_str(existing[..insert].trim_end_matches(['\n', '\r']));
+    out.push('\n');
+    out.push_str(body);
+    out.push('\n');
+    out.push_str(&existing[insert..]);
+    Some(out)
+}
+
 /// supervisor knows -- it is doing the overwriting -- so it says so.
 fn copy_tree_owned(
     src: &Path,
@@ -707,6 +779,7 @@ fn copy_tree_owned(
     rel: &str,
     owner: Option<&str>,
     seen: &mut BTreeMap<String, String>,
+    clashes: &mut Vec<(String, String)>,
 ) -> Result<(), String> {
     fs::create_dir_all(dst).map_err(|e| e.to_string())?;
     for e in fs::read_dir(src).map_err(|e| e.to_string())?.flatten() {
@@ -715,19 +788,46 @@ fn copy_tree_owned(
         let to = dst.join(e.file_name());
         let child = if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
         if from.is_dir() {
-            copy_tree_owned(&from, &to, &child, owner, seen)?;
+            copy_tree_owned(&from, &to, &child, owner, seen, clashes)?;
         } else {
-            if let Some(owner) = owner {
-                if let Some(before) = seen.insert(child.clone(), owner.to_string()) {
-                    if before != owner {
-                        eprintln!(
-                            "mods: {owner} overwrites {child} from {before} -- \
-                             later name wins, so {before}'s copy is not in effect"
-                        );
-                    }
+            let Some(owner) = owner else {
+                let _ = fs::copy(&from, &to);
+                continue;
+            };
+            // Whoever had it before, if it was a mod rather than the stub this
+            // tree was seeded with.
+            let before = seen.insert(child.clone(), owner.to_string());
+            let Some(before) = before.filter(|before| before != owner) else {
+                let _ = fs::copy(&from, &to);
+                continue;
+            };
+
+            // Two mods, one table. rAthena would have read both files and
+            // accumulated their entries; merging by filename instead means one
+            // of them silently does not exist, which is #98.
+            let merged = match (fs::read_to_string(&to), fs::read_to_string(&from)) {
+                (Ok(existing), Ok(incoming)) => merge_tables(&existing, &incoming),
+                _ => None,
+            };
+            match merged {
+                Some(body) => {
+                    fs::write(&to, body)
+                        .map_err(|e| format!("merging {child} into {}: {e}", to.display()))?;
+                    println!("mods: {child}: {owner}'s entries added after {before}'s");
+                }
+                // Not two tables of the same kind, or not a shape with entries
+                // to combine -- a font, a cache, a mismatched Type. Last name
+                // still wins, but nobody has to find that out from a log.
+                None => {
+                    let _ = fs::copy(&from, &to);
+                    let message = format!(
+                        "db/{child} is also supplied by {owner}, and the two could not be \
+                         combined, so only {owner}'s copy is in effect."
+                    );
+                    eprintln!("mods: {before}: {message}");
+                    clashes.push((before, message));
                 }
             }
-            let _ = fs::copy(&from, &to);
         }
     }
     Ok(())
@@ -814,12 +914,14 @@ pub fn assemble(cfg: &Config) -> Result<Assembled, String> {
         let dst = build.join("db");
         seed_db_import(cfg, &dst)?;
         let mut owners: BTreeMap<String, String> = BTreeMap::new();
+        let mut clashes: Vec<(String, String)> = Vec::new();
         for m in &live {
             let from = m.dir.join("db");
             if from.is_dir() {
-                copy_tree_owned(&from, &dst, "", Some(&m.name), &mut owners)?;
+                copy_tree_owned(&from, &dst, "", Some(&m.name), &mut owners, &mut clashes)?;
             }
         }
+        write_clashes(&dst, &clashes);
         if !maps.is_empty() {
             write_map_layer(&dst, &maps)?;
             out.maps = maps.iter().map(|m| m.name.clone()).collect();
@@ -1121,6 +1223,29 @@ fn read_owners(db: &Path) -> BTreeMap<String, String> {
 }
 
 const OWNERS_FILE: &str = ".owners.tsv";
+const CLASHES_FILE: &str = ".clashes.tsv";
+
+/// Collisions that could not be merged, kept until the report is written.
+///
+/// Known while the tree is being built, said after the server starts, so both
+/// kinds of trouble with a mod's tables reach Settings by the same road.
+fn write_clashes(dst: &Path, clashes: &[(String, String)]) {
+    let mut body = String::new();
+    for (owner, message) in clashes {
+        body.push_str(&format!("{}\t{}\n", one_line(owner), one_line(message)));
+    }
+    let _ = fs::write(dst.join(CLASHES_FILE), body);
+}
+
+fn read_clashes(db: &Path) -> Vec<(String, String)> {
+    let Ok(body) = fs::read_to_string(db.join(CLASHES_FILE)) else {
+        return Vec::new();
+    };
+    body.lines()
+        .filter_map(|line| line.split_once('\t'))
+        .map(|(owner, message)| (owner.to_string(), message.to_string()))
+        .collect()
+}
 
 /// One table a mod supplied, and what the server made of it.
 #[derive(Debug, PartialEq)]
@@ -1307,12 +1432,16 @@ fn describe(result: &TableResult) -> String {
 pub fn record_load_report(cfg: &Config, dk: &crate::docker::Docker) {
     let build = cfg.state.join("modbuild/db");
     let owners = read_owners(&build);
-    if owners.is_empty() {
+    if owners.is_empty() && read_clashes(&build).is_empty() {
         let _ = fs::remove_file(report_path(&cfg.state));
         return;
     }
     let log = dk.logs("ragnarok-map", "4000");
     let mut problems: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    // Collisions the merge could not resolve, recorded when the tree was built.
+    for (owner, message) in read_clashes(&build) {
+        problems.entry(owner).or_default().push(message);
+    }
     for result in parse_table_results(&log) {
         if result.accepted >= result.offered && result.errors.is_empty() {
             continue;
@@ -1445,6 +1574,90 @@ fn write_list(state: &Path, file: &str, name: &str, present: bool, header: &str)
 
 #[cfg(test)]
 mod tests {
+
+    const TABLE_A: &str = "# a comment mentioning Body: in passing\nHeader:\n  Type: ITEM_DB\n  Version: 3\n\nBody:\n  - Id: 30000\n    AegisName: Mod_A_Potion\n";
+    const TABLE_B: &str = "Header:\n  Type: ITEM_DB\n  Version: 3\n\nBody:\n  - Id: 30001\n    AegisName: Mod_B_Potion\n";
+
+    /// #98: two mods each add an item, each ships db/item_db.yml, and one of
+    /// them silently did not exist. rAthena would have read both files.
+    #[test]
+    fn two_mods_adding_items_keep_both() {
+        let merged = merge_tables(TABLE_A, TABLE_B).expect("two ITEM_DB tables merge");
+        assert!(merged.contains("Mod_A_Potion"), "{merged}");
+        assert!(merged.contains("Mod_B_Potion"), "{merged}");
+        // One header, not two: a second one partway down is not a table.
+        assert_eq!(merged.matches("Type: ITEM_DB").count(), 1, "{merged}");
+        assert_eq!(merged.matches("\nBody:").count(), 1, "{merged}");
+        // Later mod last, so a repeated id resolves the way load order says.
+        assert!(merged.find("Mod_A_Potion") < merged.find("Mod_B_Potion"), "{merged}");
+    }
+
+    /// A Footer names other files to import rather than holding entries. The
+    /// first file's is kept and entries go in front of it, or the server reads
+    /// the imports and then finds entries after them.
+    #[test]
+    fn entries_land_above_a_footer_and_it_is_not_duplicated() {
+        let with_footer = format!("{TABLE_A}\nFooter:\n  Imports:\n  - Path: db/re/item_db_etc.yml\n");
+        let b_with_footer = format!("{TABLE_B}\nFooter:\n  Imports:\n  - Path: db/re/item_db_etc.yml\n");
+        let merged = merge_tables(&with_footer, &b_with_footer).expect("merges");
+        assert_eq!(merged.matches("Footer:").count(), 1, "{merged}");
+        assert_eq!(merged.matches("item_db_etc.yml").count(), 1, "{merged}");
+        assert!(merged.find("Mod_B_Potion") < merged.find("Footer:"), "{merged}");
+        assert!(merged.trim_end().ends_with("item_db_etc.yml"), "{merged}");
+    }
+
+    /// Same filename, different kind of table. Nothing safe to combine, so the
+    /// caller is told rather than handed a file with two headers in it.
+    #[test]
+    fn two_different_kinds_of_table_do_not_merge() {
+        let other = TABLE_B.replace("ITEM_DB", "MOB_DB");
+        assert!(merge_tables(TABLE_A, &other).is_none());
+    }
+
+    /// Not every file under db/ is a table: a cache, a txt index, a stub with
+    /// a header and nothing under it.
+    #[test]
+    fn a_file_with_no_entries_to_add_is_left_alone() {
+        let stub = "Header:\n  Type: ITEM_DB\n  Version: 3\n";
+        // Nothing to take from it, so the destination is unchanged.
+        assert_eq!(merge_tables(TABLE_A, stub).as_deref(), None);
+        // Nowhere to put entries, so the caller decides instead.
+        assert!(merge_tables(stub, TABLE_B).is_none());
+        assert!(merge_tables("map_index contents", TABLE_B).is_none());
+    }
+
+    /// `Body:` appears indented inside rAthena's own comment headers, and the
+    /// word turns up in values. Only a bare line at column zero is the section.
+    #[test]
+    fn only_a_bare_body_line_starts_the_entries() {
+        let tricky = "Header:\n  Type: ITEM_DB\n#   Body:                  the entry list\nBody:\n  - Id: 1\n";
+        let (_, after) = section(tricky, "Body:").expect("the real one is found");
+        assert_eq!(&tricky[after..], "  - Id: 1\n");
+        assert_eq!(header_type(tricky).as_deref(), Some("ITEM_DB"));
+    }
+
+    /// Windows line endings are what a mod written on Windows ships.
+    #[test]
+    fn crlf_tables_merge_too() {
+        let a = TABLE_A.replace('\n', "\r\n");
+        let b = TABLE_B.replace('\n', "\r\n");
+        let merged = merge_tables(&a, &b).expect("merges");
+        assert!(merged.contains("Mod_A_Potion") && merged.contains("Mod_B_Potion"), "{merged}");
+        assert_eq!(merged.matches("Type: ITEM_DB").count(), 1, "{merged}");
+    }
+
+    /// The collision that could not be merged has to reach the report, and be
+    /// attributed to the mod whose copy is not in effect.
+    #[test]
+    fn an_unmergeable_collision_is_recorded_against_the_loser() {
+        let dir = std::env::temp_dir().join(format!("ro-clash-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let clashes = vec![("mod-a".to_string(), "db/item_db.yml is also supplied by mod-b".to_string())];
+        write_clashes(&dir, &clashes);
+        assert_eq!(read_clashes(&dir), clashes);
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     /// The real thing, escape codes and all: rAthena prints its status lines
     /// without newlines and overwrites them in place, so several share one

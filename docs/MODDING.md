@@ -167,6 +167,18 @@ Anything with a stub in rAthena's `db/import-tmpl` can be overridden:
 
 Only the entries you name are affected — the rest of the table is untouched.
 
+**Two mods can both ship the same table.** rAthena reads a list of files and
+accumulates their entries, and so does this: if another enabled mod also has a
+`db/item_db.yml`, the two are combined into the one file the server reads —
+one header, both sets of entries. Neither mod has to know the other exists.
+
+Entries go in the order the mods are applied, which is their folder names in
+alphabetical order, so if both define the *same* id the later name wins. That
+is the only case where two mods can disagree, and it is the only case worth
+avoiding. If the two files cannot be combined at all — different `Type:` in
+the header, or a file that is not a table — the later name wins outright and
+**Settings → Mods says so under the mod whose copy is not in effect.**
+
 ```yaml
 # my-mod/db/mob_db.yml — a Poring that fights back
 Header:
@@ -187,6 +199,12 @@ Body:
 an error; rAthena warns that the database version is outdated and loads the
 file in a reduced-compatibility mode, which is a different thing from what you
 asked for.
+
+**A brand-new item needs a second file to be named in the client.** `db/` gives
+it stats, a script and a price; the client gets its name, icon and description
+from a separate table and will otherwise call it *Unknown Item*. That is
+[`System/`](#system--item-names-and-descriptions), ten lines, and it is
+additive too.
 
 **`Drops:` does not behave like the other fields.** A drop entry without an
 `Index:` is *appended* to the monster's existing list rather than replacing it,
