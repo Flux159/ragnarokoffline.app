@@ -148,6 +148,20 @@ You lose your characters, your rate settings, and the app's memory of where your
 GRFs are. You do not lose the GRFs themselves. This is also the reliable fix for
 an install that has got itself into a state no amount of restarting clears.
 
+## Opening Settings instead of the game
+
+Launching the app opens the game window, which starts the server for you. That
+is what almost everyone wants, and it is the default.
+
+If you spend more time changing settings than playing — switching era, testing a
+mod, moving rates around — turn on **Settings → General → Startup → At startup:
+open Settings instead of the game**. The next launch opens Settings and nothing
+else. No server starts on its own, so press **Start** and then **Open game**
+under **Server** when you actually want to play.
+
+Closing that window quits the app, the same as closing the game window does.
+Turn the option off to go back to the game opening first.
+
 ## Finding your way around
 
 Open **Navigation** in the game client to search every entry, or just NPCs, or

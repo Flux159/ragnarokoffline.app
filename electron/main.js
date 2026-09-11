@@ -899,6 +899,13 @@ const SETTINGS_DEFAULTS = {
 	// countdown on the slot is what lets a player undo a deletion somebody else
 	// started, which matters the moment friends can reach the server.
 	instant_character_deletion: false,
+	// Which window a launch opens. Off means the game, which is what anyone
+	// who has not asked for this gets; on means the Settings window and no
+	// game window at all. The only shell-side preference in this file -- it is
+	// here because settings.json is where the app's preferences live and the
+	// window already reads it, and it is deliberately ignored by
+	// writeSettingsFiles: the server knows nothing about it.
+	open_settings_first: false,
 	// Pre-renewal is a different rAthena build, not a runtime option, so this
 	// selects which of the two the supervisor starts. Each mode keeps its own
 	// characters -- see db_volume() in stack/src/cmds.rs for why sharing them
@@ -908,6 +915,25 @@ const SETTINGS_DEFAULTS = {
 
 function getSettings() {
 	return require('./settings-store').read(path.join(stateDir(), 'settings.json'), SETTINGS_DEFAULTS);
+}
+
+// Keys in settings.json that the app acts on rather than the server, and the
+// only names set_app_preference will write. Everything else in that file
+// changes how the server runs and has to go through Apply.
+const APP_PREFERENCES = new Set(['open_settings_first']);
+
+// Whether this launch opens Settings instead of the game.
+//
+// Guarded, and answering false on anything it cannot read: a settings.json the
+// store refuses is already reported everywhere it matters, and the one thing it
+// must not do is leave a launch with no window at all. The game window is the
+// safe answer because it is the one nobody has to have asked for.
+function openSettingsFirst() {
+	try {
+		return getSettings().open_settings_first === true;
+	} catch {
+		return false;
+	}
 }
 
 // rAthena has no zeny multiplier: whether monsters drop zeny at all is a
@@ -1472,6 +1498,122 @@ async function installModFrom(src) {
 }
 
 // ---------------------------------------------------------------------------
+// Sharing, and putting it back
+// ---------------------------------------------------------------------------
+
+// Set when the player stops sharing themselves, cleared when they start it by
+// hand again. Since a connected domain resumes without being asked, this is
+// what makes Stop mean stopped -- see auto-share.
+let sharingStoppedByHand = false;
+
+// The whole of "Share with friends", so that an automatic resume runs the same
+// sequence as the button rather than a second, thinner version of it that
+// drifts.
+//
+// `applyScope` is the only difference between the two callers. The button may
+// be arriving from a server that is local-only or on the LAN, so it writes
+// friends mode and cycles the stack to pick it up. A resume is already in
+// friends mode -- that is one of the conditions for resuming at all -- and the
+// stack it would cycle is the one that just came up.
+async function shareWithFriends({ useDomain, applyScope }) {
+	const request = ++sharingStartRequest;
+	if (getClientPaths().mode !== 'host') throw Error('Start your own server before sharing.');
+	const saved = useDomain ? getSharingSecrets().load() : null;
+	if (useDomain && !saved) throw Error('Connect your Cloudflare domain first, or use a temporary session link.');
+	// Securing this era's internal credentials is mechanical: it backs the
+	// database up first and preserves every account and character. Refusing
+	// here and telling the player to go find a button in another section is
+	// what made "share with friends" feel like a maze, so just do it. Safe
+	// to run from here -- sharing has not started, so runStack's stop-first
+	// rule for this verb has nothing to interrupt.
+	const era = getSettings().prerenewal ? 'prerenewal' : 'renewal';
+	if (!fs.existsSync(path.join(stateDir(), 'private/service-credentials', era, 'credentials.json'))) {
+		appLog('sharing: securing this era\u2019s internal service credentials (one time; the database is backed up first)');
+		await runStack(['secure-services']);
+	}
+	// Account safeguards stay in force, but the signup policy is the
+	// owner's to set. Sharing used to force it off and then hide the
+	// resulting check failure, which made _M/_F unreachable over a link
+	// even though the tunnel only carries invited friends.
+	const policy = JSON.parse(await runStack(['hosting-check']));
+	const missing = policy.checks.filter(check => !check.passed);
+	if (missing.length) throw Error(missing.map(check => check.detail).join(' '));
+	if (applyScope) await saveSettings({ hosting_scope: 'friends' });
+	await assetsStart();
+	if (request !== sharingStartRequest) return getSharing().status();
+	await getSharing().start(saved);
+	return getSharing().status();
+}
+
+// Put sharing back on after something stopped it. The conditions are in
+// sharing/auto-share.js; this is the plumbing around them.
+//
+// Queued and not awaited, on purpose. The operation that just finished is what
+// the player is waiting on, and a tunnel takes tens of seconds to come up, so
+// this chains itself behind that operation and then reports through the sharing
+// panel exactly like a manual start -- because it is one. Nothing about the
+// triggering operation succeeds or fails on the strength of it.
+//
+// The generation is read now and checked again when the turn comes: a Stop, a
+// crash, a suspend or a share started by hand in between all move it, and each
+// of those is a reason to drop a resume that was decided before it happened.
+function resumeSharing(reason) {
+	const generation = sharingStartRequest;
+	// Asked at both ends rather than once: the mode, the scope and a
+	// Stop can all have happened by the time the queue reaches this, and the
+	// answer that matters is the one at that moment.
+	const assess = () => {
+		const client = getClientPaths();
+		// The secure store is opened only once the cheap conditions agree.
+		// This runs after every server operation, and asking the operating
+		// system to unlock a credential to answer a question already settled is
+		// both slow and a source of failures that have nothing to do with
+		// sharing. The repeated conditions are a guard on that lookup, not a
+		// second opinion: auto-share still decides.
+		let configured = false;
+		if (client.mode === 'host' && client.hosting_scope === 'friends') {
+			try {
+				configured = !!getSharingSecrets().load();
+			} catch (error) {
+				// A domain is configured but its credential cannot be
+				// unlocked. Carrying on with `configured: false` would read as
+				// "no domain", which is a quiet refusal -- and this is worth
+				// saying, because the host is expecting their link to be up.
+				return { share: false, reason: error.message };
+			}
+		}
+		return require('./sharing/auto-share').decide({
+			mode: client.mode,
+			scope: client.hosting_scope,
+			state: sharing ? sharing.state : 'stopped',
+			configured,
+			stoppedByHand: sharingStoppedByHand,
+			quitting: tearingDown,
+		});
+	};
+	let decision;
+	// A settings.json or client.json the store refuses is reported by every
+	// other path that reads them; this one just does nothing about it.
+	try { decision = assess(); } catch (error) { return appLog(`sharing: automatic resume skipped: ${error.message}`); }
+	if (!decision.share) {
+		// Silent on the installs that were never going to share, which is most
+		// of them: a line after every server operation saying that nothing
+		// happened is a line nobody can read past.
+		if (!decision.quiet) appLog(`sharing: not resuming automatically (${decision.reason})`);
+		return;
+	}
+	appLog(`sharing: resuming automatically ${reason} (${decision.reason})`);
+	queueServerOperation(() => {
+		if (generation !== sharingStartRequest) {
+			return appLog('sharing: automatic resume dropped; sharing changed while it waited');
+		}
+		const now = assess();
+		if (!now.share) return appLog(`sharing: automatic resume dropped (${now.reason})`);
+		return shareWithFriends({ useDomain: now.useDomain, applyScope: false });
+	}).catch(error => appLog(`sharing: automatic resume failed: ${error.message}`));
+}
+
+// ---------------------------------------------------------------------------
 // IPC — every name the pages can call, reached via window.__ELECTRON__.core
 // ---------------------------------------------------------------------------
 
@@ -1873,36 +2015,15 @@ const handlers = {
         }
         return { hostname: saved.hostname };
     },
+    // Starting by hand also withdraws any earlier Stop: the player has said
+    // what they want twice now, and an automatic resume may act again.
     sharing_start: async ({ useDomain = false } = {}) => {
-        const request = ++sharingStartRequest;
-        if (getClientPaths().mode !== 'host') throw Error('Start your own server before sharing.');
-        const saved = useDomain ? getSharingSecrets().load() : null;
-        if (useDomain && !saved) throw Error('Connect your Cloudflare domain first, or use a temporary session link.');
-        // Securing this era's internal credentials is mechanical: it backs the
-        // database up first and preserves every account and character. Refusing
-        // here and telling the player to go find a button in another section is
-        // what made "share with friends" feel like a maze, so just do it. Safe
-        // to run from here -- sharing has not started, so runStack's stop-first
-        // rule for this verb has nothing to interrupt.
-        const era = getSettings().prerenewal ? 'prerenewal' : 'renewal';
-        if (!fs.existsSync(path.join(stateDir(), 'private/service-credentials', era, 'credentials.json'))) {
-            appLog('sharing: securing this era\u2019s internal service credentials (one time; the database is backed up first)');
-            await runStack(['secure-services']);
-        }
-        // Account safeguards stay in force, but the signup policy is the
-        // owner's to set. Sharing used to force it off and then hide the
-        // resulting check failure, which made _M/_F unreachable over a link
-        // even though the tunnel only carries invited friends.
-        const policy = JSON.parse(await runStack(['hosting-check']));
-        const missing = policy.checks.filter(check => !check.passed);
-        if (missing.length) throw Error(missing.map(check => check.detail).join(' '));
-        await saveSettings({ hosting_scope: 'friends' });
-        await assetsStart();
-        if (request !== sharingStartRequest) return getSharing().status();
-        await getSharing().start(saved);
-        return getSharing().status();
+        sharingStoppedByHand = false;
+        return shareWithFriends({ useDomain, applyScope: true });
     },
-    sharing_stop: async () => { ++sharingStartRequest; await getSharing().stop(); return getSharing().status(); },
+    // Remembered, so that applying a setting a minute later does not undo it.
+    // Cleared by the next start, by hand or at the next launch.
+    sharing_stop: async () => { sharingStoppedByHand = true; ++sharingStartRequest; await getSharing().stop(); return getSharing().status(); },
     sharing_copy: () => {
         clipboard.writeText(getSharing().invitation());
         // Say the figure actually in force rather than a number baked into the
@@ -1919,7 +2040,7 @@ const handlers = {
         getSharing().replaceInvitation();
         return 'New link created. The previous link stopped working and friends using it were disconnected.';
     },
-    sharing_forget: async () => { await getSharing().stop(); getSharingSecrets().forget(); return 'Saved credentials removed. The hostname and stopped tunnel remain in your Cloudflare account for you to remove there.'; },
+    sharing_forget: async () => { sharingStoppedByHand = true; await getSharing().stop(); getSharingSecrets().forget(); return 'Saved credentials removed. The hostname and stopped tunnel remain in your Cloudflare account for you to remove there.'; },
 	hosting_check: async () => {
 		if (getClientPaths().mode !== 'host') throw new Error('Hosting checks belong to your own server.');
 		return JSON.parse(await runStack(['hosting-check']));
@@ -2076,6 +2197,21 @@ const handlers = {
 		return next.vm_ram_mib;
 	},
 	save_settings: ({ settings }) => saveSettings(settings),
+	// The preferences the app acts on itself. Written straight to
+	// settings.json, and deliberately not server operations: nothing the
+	// supervisor reads is involved, and going the usual way would restart the
+	// whole stack to record which window opens next launch.
+	//
+	// The allowlist is the point. Every other key in settings.json changes how
+	// the server runs and has to go through Apply, which regenerates its config
+	// and restarts it; a setter that took any name would be a way around that.
+	set_app_preference: ({ key, value }) => {
+		if (!APP_PREFERENCES.has(key)) throw new Error(`${key} is not an app preference`);
+		const on = !!value;
+		require('./settings-store').write(path.join(stateDir(), 'settings.json'),
+			{ [key]: on }, SETTINGS_DEFAULTS);
+		return on;
+	},
 
 	copy_text: ({ text }) => clipboard.writeText(String(text || '')),
 
@@ -2231,6 +2367,11 @@ const GAME_PAGE_HANDLERS = new Set([]);
 // not change halfway through an account operation. Read-only status stays live.
 const SERVER_OPERATIONS = new Set(['sharing_connect', 'sharing_start', 'sharing_forget', 'accounts', 'hosting_check', 'save_settings', 'set_mode', 'set_client_paths', 'start_stack',
 	'stack_up', 'stack_down', 'stack_repair', 'secure_services', 'db_backup', 'db_restore']);
+// The operations that must never be followed by an automatic resume. Sharing's
+// own verbs answer for themselves, and `stack_down` is a server the player has
+// just taken offline on purpose. Everything else in the set above leaves a
+// running server behind it.
+const NEVER_RESUMES_SHARING = new Set(['sharing_connect', 'sharing_start', 'sharing_forget', 'stack_down']);
 let serverOperationQueue = Promise.resolve();
 function queueServerOperation(operation) {
 	if (tearingDown) return Promise.reject(new Error('The app is quitting; wait until the next launch.'));
@@ -2263,10 +2404,18 @@ ipcMain.handle('invoke', async (event, name, args) => {
 	if (!fn) throw new Error(`unknown command: ${name}`);
 	try {
 		if (SERVER_OPERATIONS.has(name)) {
-			return await queueServerOperation(async () => {
+			const result = await queueServerOperation(async () => {
                 if (sharing && ((name === 'accounts' && args?.action !== 'list') || ['set_mode', 'set_client_paths', 'save_settings', 'stack_repair', 'secure_services', 'db_restore'].includes(name))) await sharing.stop();
                 return fn(args || {});
             });
+			// Every operation above either stops sharing on the way in or
+			// cycles the stack underneath it, and the server is back up by the
+			// time one returns. This is the single place that offers it back,
+			// rather than a call at the end of each handler that the next
+			// handler forgets to copy. Only on success: a failed start is not
+			// a server to share.
+			if (!NEVER_RESUMES_SHARING.has(name)) resumeSharing(`after ${name}`);
+			return result;
 		}
 		return await fn(args || {});
 	} catch (e) {
@@ -2453,7 +2602,14 @@ app.whenReady().then(() => {
 	// would notice the host being down -- Electron would just render its own
 	// "cannot be reached" page, which says nothing about which host or why.
 	const c = getClientPaths();
-	if (c.mode === 'join' && c.join_host) {
+	// Asked for by people who are in Settings more often than in the game. The
+	// game window is not opened behind it -- opening both would defeat the
+	// point, and Settings already has "Open game", which runs the same boot
+	// page. Nothing is prepared here either, in either mode: the boot page owns
+	// starting the server and reaching a host, whenever it is finally opened.
+	if (openSettingsFirst()) {
+		openSettings();
+	} else if (c.mode === 'join' && c.join_host) {
 		queueServerOperation(() => prepareJoin(c))
 			.then(() => openGame())
 			.catch(err => {
@@ -2484,8 +2640,12 @@ app.whenReady().then(() => {
 		openGame();
 	}
 
+	// Clicking the Dock icon with every window closed is the same question as
+	// launching the app, so it gets the same answer.
 	app.on('activate', () => {
-		if (BrowserWindow.getAllWindows().length === 0) openGame();
+		if (BrowserWindow.getAllWindows().length) return;
+		if (openSettingsFirst()) openSettings();
+		else openGame();
 	});
 });
 

@@ -161,6 +161,21 @@
        or fourth jobs. Switching restarts the server.</p>
   </div>
 
+  <h2>Startup</h2>
+  <div class="panel">
+    <label>
+      <span>At startup</span>
+      <input type="checkbox" id="open_settings_first" style="accent-color: var(--accent); flex: none" />
+      <span class="val" style="width:auto; color: var(--dim)">open Settings instead of the game</span>
+    </label>
+    <p class="note" id="startup-status" hidden style="margin:8px 0 0; color: var(--text)"></p>
+    <p class="note">For anyone who changes settings more often than they play. With
+       this on, launching opens Settings and nothing else &mdash; the server does not
+       start on its own, so press <b>Start</b> and then <b>Open game</b> under
+       <b>Server</b> when you want to play. Leave it off and launching goes straight
+       to the game, which starts the server itself.</p>
+  </div>
+
   <h2>Server</h2>
   <div class="panel">
     <div class="row"><span class="name">Assets &amp; client (:3338)</span><span class="state" id="s-assets">—</span></div>
@@ -305,6 +320,10 @@
       <p id="sharing-state" class="note" role="status" aria-live="polite">Sharing is off.</p>
       <p id="sharing-notice" class="note" role="status" aria-live="polite" hidden></p>
       <p id="sharing-feedback" class="note" role="status" aria-live="polite"></p>
+      <!-- Written by refreshSharing: what happens after a restart depends on
+           whether a domain is connected, and a fixed sentence would be wrong
+           half the time. -->
+      <p class="note" id="share-auto-note"></p>
       <p class="note" id="sharing-lifetime-note">An invitation lets up to 32 friend browsers connect. Invited friends can create an ordinary game account. Stop sharing disconnects friends without stopping your local game. Starting sharing applies the protected account policy and restarts game services once.</p>
       <details><summary>Manage invitations and connection</summary>
         <button id="sharing-replace" class="ghost" disabled>Disconnect friends and replace invitation</button>
@@ -1071,6 +1090,24 @@ function setNote(id, message, kind = '') {
   if (kind === 'bad') node.scrollIntoView({ block: 'nearest' });
 }
 
+// Saved the moment it is clicked. Nothing the server reads is involved, so
+// there is nothing to restart and nothing to confirm -- and Apply, which does
+// restart the server, would be the wrong place for it. The box goes back if the
+// write fails: one left ticked over a settings.json that never took it is worse
+// than the failure. The element id is the settings key, and main.js will write
+// no name that is not on its own list.
+$('open_settings_first').onchange = async () => {
+  const on = $('open_settings_first').checked;
+  try {
+    await invoke('set_app_preference', { key: 'open_settings_first', value: on });
+    setNote('startup-status', on ? 'Next launch opens this window.' : 'Next launch opens the game.');
+  } catch (error) {
+    $('open_settings_first').checked = !on;
+    setNote('startup-status', `Could not save that: ${error.message || String(error)}`, 'bad');
+  }
+  $('startup-status').hidden = false;
+};
+
 // Mod names, descriptions and refusal reasons are written by whoever made the
 // mod, and land in innerHTML. Nothing about a mod folder is trusted markup.
 function esc(s) {
@@ -1149,6 +1186,16 @@ async function refreshSharing() {
     // What the pre-flight checks could not confirm on a start that worked.
     setNote('sharing-notice', state.notice || '');
     $('sharing-notice').hidden = !state.notice;
+    // What happens the next time the server restarts, which is different with
+    // a domain connected and is the main thing connecting one buys you.
+    setNote('share-auto-note', state.configured
+      ? 'Your hostname does not change, so sharing comes back by itself once the server is up again '
+        + '— after applying a setting, a Repair, a crash you recovered from, or the next time you start '
+        + 'the server — and the link your friends already have starts working again with nothing sent to '
+        + 'anyone. Stop sharing still means stopped: that holds until you share again or relaunch.'
+      : 'A temporary link gets a new address every time, so anything that restarts the server — applying '
+        + 'a setting, a Repair, a crash, quitting — ends the session and the next one needs a new link. '
+        + 'Connect your own domain below and sharing comes back by itself, at the same address.');
     if (state.state === 'sharing') {
       const expiry = Number.isFinite(state.expires)
         ? ` Invitation expires ${new Date(state.expires).toLocaleString()}.`
@@ -1307,6 +1354,7 @@ invoke('get_settings').then(s => {
   $('delete-delay').value = s.instant_character_deletion ? 'instant' : 'delayed';
   setEra(!!s.prerenewal);
   $('zeny_from_mobs').checked = !!s.zeny_from_mobs;
+  $('open_settings_first').checked = !!s.open_settings_first;
   $('population_enable').checked = !!s.population_enable;
   $('population_max').value = s.population_max;
   $('population_density').value = s.population_density;

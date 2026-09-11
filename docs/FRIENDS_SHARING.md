@@ -62,6 +62,25 @@ or suspending the host also stops sharing. Start sharing again when ready.
 A failed/reconnecting link is shown as such; Copy is enabled only after the
 public HTTPS endpoint and a game WebSocket have verified against this host.
 
+**With your own domain connected, that last step happens by itself.** A named
+tunnel keeps its hostname, so once the server is up again — after applying a
+setting, a Repair, a crash you recovered from, or the next time you start the
+server — sharing comes back at the same address and the link your friends
+already have starts working again with nothing sent to anyone. There is nothing
+to turn on.
+
+Three things it will not do. It never acts on a server that has not been shared
+before: the saved hosting scope is the record of that, so a local or LAN server
+is never put on the internet by it, and an automatic start never changes how the
+game ports bind. It never resumes a temporary link, whose `trycloudflare.com`
+address changes every time — resuming one would open a tunnel at an address
+nobody holds, which is what connecting a domain is for. And it never overrides
+**Stop sharing**, which holds until you share again yourself or relaunch the
+app, so applying a setting a minute later does not undo it. To stop sharing for
+good, use **Forget saved Cloudflare connection**, or take the server off friends
+mode. An automatic start runs the same checks and reports in the same place as
+the button, and a failure leaves the panel saying why.
+
 Forgetting a connection removes its saved local credential. The stopped tunnel
 and DNS record remain in Cloudflare for the account owner to remove there.
 Open public registration, SMTP/reset services and ngrok are not provided.
