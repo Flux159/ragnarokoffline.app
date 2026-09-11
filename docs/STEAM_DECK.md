@@ -1,9 +1,14 @@
 # The Steam Deck
 
-**On a current SteamOS the app already works.** On an older one it cannot start
-at all, and the reason is not the one people assume: the Electron shell is
-fine, and everything behind it is linked against a newer glibc than SteamOS
-has, so the window opens and nothing behind it runs.
+**The app runs on a Steam Deck.** Confirmed on SteamOS 3.8.16: the microVM
+boots, the server comes up, and the client draws the login screen. It needs one
+Chromium flag and, for now, to be run extracted rather than as an AppImage —
+both below.
+
+On an *older* SteamOS it cannot start at all, and the reason is not the one
+people assume: the Electron shell is fine, and everything behind it is linked
+against a newer glibc than SteamOS has, so the window opens and nothing behind
+it runs.
 
 Measured on the same physical Deck, before and after a system update:
 
@@ -85,11 +90,71 @@ repository's binaries. It is a known, working option, not a theory.
 - libfuse2 is present, which the AppImage runtime needs.
 - The Deck's wifi is not a constraint: 5 GHz, 80 MHz, 866 Mbit/s tx.
 
+## Running it: what a Deck needs
+
+Confirmed on SteamOS 3.8.16 in Desktop Mode, with a real client's GRFs. The
+stack reaches **Ready** — microVM, containers, MariaDB, login/char/map — and
+the asset server answers on :3338 with the login screen drawn.
+
+Two things are needed to get there, and neither is obvious from a crash log.
+
+**`--disable-gpu-sandbox`.** Without it the app opens, draws the login screen,
+and then Chromium kills itself:
+
+```
+ERROR:gpu_process_host.cc(976)] GPU process launch failed: error_code=1002   (x5)
+FATAL:gpu_data_manager_impl_private.cc(423)] GPU process isn't usable. Goodbye.
+```
+
+With the flag: zero GPU errors. The game needs WebGL, so `--disable-gpu` is not
+an alternative.
+
+**Run the extracted directory, not the AppImage.** Three launches from the
+AppImage, three crashes, all `SIGBUS`, always from the FUSE mount:
+
+```
+SIGBUS  /tmp/.mount_RO.AppfvdAeX/ragnarokoffline
+SIGBUS  /tmp/.mount_RO.AppC9y3Nn/ragnarokoffline
+SIGBUS  /tmp/.mount_RO.AppK84mj6/ragnarokoffline
+```
+
+The same build extracted with `--appimage-extract` and started through `AppRun`
+is stable. The AppImage file itself is intact — 240617795 bytes, the release's
+own size — so this is the squashfuse mount on SteamOS rather than a bad
+download. Not yet diagnosed further.
+
+### A trap for anyone testing over SSH
+
+SteamOS sets `KillUserProcesses=True`, so logind kills everything in an SSH
+session's scope the moment that session ends. The app dies roughly a minute
+after each command returns, the log shows the asset server exiting on `SIGHUP`,
+and it looks exactly like a crash. It is not, and it does not affect a Deck
+being used normally. Launch it as a user unit instead:
+
+```sh
+systemd-run --user --unit=ragnarok --collect \
+  --setenv=XDG_RUNTIME_DIR=/run/user/1000 \
+  --setenv=WAYLAND_DISPLAY=wayland-0 \
+  --setenv=APPDIR=$HOME/rotest/squashfs-root \
+  $HOME/rotest/squashfs-root/AppRun --no-sandbox --disable-gpu-sandbox \
+  --ozone-platform=wayland --enable-features=UseOzonePlatform
+```
+
 ## What is still outstanding
 
-**Game Mode is untested.** Everything here is Desktop Mode.
+**The on-screen keyboard does not open**, so the login screen cannot be typed
+into. Steam Deck's Desktop Mode keyboard is STEAM + X; it did not come up over
+the app's window. Likely the Wayland text-input protocol not being advertised
+to Electron. Without this a Deck owner cannot log in at all, so it is the first
+thing to fix.
 
-**The file picker.** On 3.2 there was no `org.freedesktop.portal.FileChooser`
-at all, so `dialog.showOpenDialog` had nothing to talk to. 3.8 ships the kde,
-gtk and gamescope portal backends, so it should work; it has not yet been
-driven through the setup screen.
+**The quest window traps you.** Opening a quest leaves the window up with no
+way out except going back to character select and logging in again. Worth
+knowing what was already ruled out: at packetver 20221005 the client uses the
+renewal `Quest` window, which *does* wire its close button
+(`close-quest-container-btn` → `onClose()`), and Escape is bound as well. So it
+is not simply an unwired button. The remaining suspects are the `mobile-ui`
+mod, which relabels that button and is enabled by default, and touch input not
+reaching it. Not yet reproduced away from the device.
+
+**Game Mode is untested.** Everything here is Desktop Mode.
