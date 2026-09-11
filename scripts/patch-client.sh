@@ -1042,6 +1042,112 @@ elif s.count(old) == 1:
 else:
     sys.exit("CartItems.js: the host drop registrations no longer match (%d hits); re-check the patch" % s.count(old))
 
+# 0017 - The walk fast-forward ran on a clock that was never set.
+#
+# A walk arrives with the server tick it started at, and the client rolls it
+# back by the latency so the character is drawn where it really is by now. Both
+# numbers that computation needs are wrong.
+#
+# `onPong` assigns `SP.pongTime = 0` and then computes
+# `SP.value = SP.pongTime - SP.pingTime` from it, so the "half ping" correction
+# is always minus half of `pingTime` -- and `pingTime` is time-since-connect,
+# not a timestamp. Measured on a ten-second-old session it read -10048, and the
+# error grows for as long as the session lasts.
+#
+# Before the first pong it is worse than wrong, it is unrelated: `serverTick`
+# counts from the renderer starting and `moveStartTime` counts from the map
+# server starting. Over twelve clicked moves here the difference sat at a
+# steady -40379 ms, which is negative, so the fast-forward never ran at all --
+# which is why this does not reproduce on a machine that launches the app and
+# plays. Let the page outlive the server, as Apply, era switch, Repair and
+# crash recovery all arrange, and the same subtraction comes out positive. The
+# clamp for a player is the whole path duration, so the character is drawn at
+# the far end of its path and the next server update drags it back.
+#
+# So: measure the round trip against the base `pingTime` is already measured
+# from, and do not fast-forward anything until a pong has put `serverTick` on
+# the server's clock.
+p = rb / "src/Engine/SessionStorage.js"
+s = p.read_text()
+old = """	serverTick: 0,"""
+new = """	serverTick: 0,
+	/// Whether a pong has put `serverTick` on the server's clock. Until one
+	/// has, it counts from the renderer starting and means nothing next to a
+	/// tick the server sent.
+	serverTickSynced: false,"""
+if "serverTickSynced" in s:
+    print("SessionStorage.js already patched")
+elif s.count(old) == 1:
+    p.write_text(s.replace(old, new, 1))
+    print("patched SessionStorage.js (serverTick sync flag)")
+else:
+    sys.exit("SessionStorage.js: serverTick no longer matches (%d hits); re-check the patch" % s.count(old))
+
+p = rb / "src/Engine/MapEngine.js"
+s = p.read_text()
+if "SP.epoch" in s:
+    print("MapEngine.js ping/pong already patched")
+else:
+    old = """				const startTick = Date.now();
+\t\t\t\tNetwork.setPing(() => {"""
+    new = """				const startTick = Date.now();
+\t\t\t\t// A new connection makes any previous correction meaningless.
+\t\t\t\tSession.serverTickSynced = false;
+\t\t\t\tNetwork.setPing(() => {"""
+    if s.count(old) != 1:
+        sys.exit("MapEngine.js: the ping setup no longer matches (%d hits); re-check the patch" % s.count(old))
+    s = s.replace(old, new, 1)
+
+    old = """\t\t\t\t\tSP.pingTime = ping.clientTime;
+\t\t\t\t\tSP.returned = false;"""
+    new = """\t\t\t\t\tSP.pingTime = ping.clientTime;
+\t\t\t\t\t// The base pingTime is measured from, so the pong can be put on
+\t\t\t\t\t// the same clock and subtracted. Without it there is nothing here
+\t\t\t\t\t// for a pong to be compared against.
+\t\t\t\t\tSP.epoch = startTick;
+\t\t\t\t\tSP.returned = false;"""
+    if s.count(old) != 1:
+        sys.exit("MapEngine.js: the ping send no longer matches (%d hits); re-check the patch" % s.count(old))
+    s = s.replace(old, new, 1)
+
+    old = """\tSP.returned = true;
+\tSP.pongTime = 0;
+\tSP.value = SP.pongTime - SP.pingTime;
+
+\tSession.serverTick = pkt.time + SP.value / 2; // Adjust with half ping"""
+    new = """\tSP.returned = true;
+\t// On the same clock as pingTime, so the subtraction below is the round
+\t// trip it reads as. It used to be assigned 0 first, which made `value`
+\t// minus the age of the session.
+\tSP.pongTime = SP.epoch ? Date.now() - SP.epoch : SP.pingTime;
+\tSP.value = SP.pongTime - SP.pingTime;
+
+\tSession.serverTick = pkt.time + SP.value / 2; // Adjust with half ping
+\tSession.serverTickSynced = true;"""
+    if s.count(old) != 1:
+        sys.exit("MapEngine.js: onPong no longer matches (%d hits); re-check the patch" % s.count(old))
+    p.write_text(s.replace(old, new, 1))
+    print("patched MapEngine.js (round-trip ping, and serverTick marked synced)")
+
+p = rb / "src/Renderer/Entity/EntityWalk.js"
+s = p.read_text()
+old = """\tif (!moveStartTime || !Session || !Session.serverTick) {
+\t\treturn nowTick;
+\t}"""
+new = """\t// Not `!Session.serverTick`: that is non-zero from the first frame, because
+\t// it counts from the renderer starting. Until a pong lands it is not the
+\t// server's clock, and subtracting a server tick from it is meaningless.
+\tif (!moveStartTime || !Session || !Session.serverTickSynced) {
+\t\treturn nowTick;
+\t}"""
+if "!Session.serverTickSynced" in s:
+    print("EntityWalk.js already patched")
+elif s.count(old) == 1:
+    p.write_text(s.replace(old, new, 1))
+    print("patched EntityWalk.js (no fast-forward on an unsynced clock)")
+else:
+    sys.exit("EntityWalk.js: computeWalkStartTick no longer matches (%d hits); re-check the patch" % s.count(old))
+
 PY
 
 python3 "$ROOT/scripts/patch-client-controls.py" "$ROOT" "$RB"
