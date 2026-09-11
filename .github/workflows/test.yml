@@ -42,6 +42,10 @@ jobs:
       - run: npm ci --prefix vendor/roBrowserLegacy
       - run: npm --prefix vendor/roBrowserLegacy run build -- --O --T --H
       - run: node --test tests/client-extensions.test.cjs
+      # A mod cannot be merged without its digests matching its files, or the
+      # app refuses the download and nobody can tell which half is wrong.
+      - name: The mod index matches the mod folders
+        run: python3 scripts/mod-index.py --check
   supervisor-and-lifecycle:
     timeout-minutes: 20
     strategy:

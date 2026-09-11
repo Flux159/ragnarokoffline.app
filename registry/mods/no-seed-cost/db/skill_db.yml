@@ -1,0 +1,20 @@
+Header:
+  Type: SKILL_DB
+  Version: 4
+
+Body:
+  # 243 is AM_CALLHOMUN, Call Homunculus.
+  #
+  # Id has to be the number. rAthena reads it as an integer, and a skill's
+  # Aegis name here makes it reject the whole entry:
+  #   [Error]: Node "Id" cannot be parsed as t.
+  # which loads one entry and keeps none, so the mod appears to do nothing.
+  - Id: 243
+    Requires:
+      # The list replaces the stock one, so the Embryo has to be repeated or
+      # it stops being required too.
+      ItemCost:
+        - Item: Germination_Breed
+          Amount: 1
+        - Item: Seed_Of_Life
+          Amount: 0

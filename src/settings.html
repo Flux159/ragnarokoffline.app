@@ -456,9 +456,20 @@
   <div class="panel">
     <div id="mods-list" class="note">Looking…</div>
     <div class="actions" style="margin-top:10px">
-      <button id="mods-install" class="ghost">Install a mod…</button>
+      <button id="mods-browse" class="ghost">Find mods…</button>
+      <button id="mods-install" class="ghost">Install from a folder…</button>
       <button id="mods-folder" class="ghost">Open mods folder</button>
       <button id="mods-apply" class="ghost">Apply</button>
+    </div>
+    <div id="mods-registry" hidden style="margin-top:12px; border-top:1px solid var(--line, #333); padding-top:12px">
+      <label style="margin-bottom:8px"><span>Search</span>
+        <input type="text" id="mods-search" placeholder="name, author or what it does" /></label>
+      <div id="mods-catalogue" class="note">Looking…</div>
+      <p class="note" style="margin-top:8px">These are mods people have published to the
+         app's mod list. Each one is a folder in a public repository and gets there by pull
+         request, so somebody has read it before it appears here &mdash; but a mod can change
+         the rules of your server and run code in your game window, so install ones you
+         want, not ones you are merely curious about.</p>
     </div>
     <p class="note">A mod is a folder. Drop one in and it appears here. Server
        changes need the server restarted, which Apply does; client changes —
@@ -1176,7 +1187,84 @@ function esc(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-$('mods-install').onclick = () => withButton('mods-install', 'Installing…', 'Install a mod…', async () => {
+// The registry listing, fetched once per opening so a mod taken down since is
+// not still offered from a cache.
+let catalogue = null;
+
+function paintCatalogue() {
+  const box = $('mods-catalogue');
+  const query = $('mods-search').value.trim().toLowerCase();
+  box.innerHTML = '';
+  if (!catalogue) { box.textContent = 'Looking…'; return; }
+  const matches = catalogue.filter(m => !query
+    || [m.name, m.author, m.description].join(' ').toLowerCase().includes(query));
+  if (!matches.length) {
+    box.textContent = catalogue.length ? 'Nothing matches that.' : 'The mod list is empty.';
+    return;
+  }
+  // Built with DOM calls and textContent throughout: every string here came
+  // off the internet, and none of it is trusted markup.
+  for (const mod of matches.slice(0, 100)) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; align-items:flex-start; gap:10px; padding:5px 0';
+    const button = document.createElement('button');
+    button.className = 'ghost';
+    button.style.cssText = 'flex:none';
+    button.textContent = Object.hasOwn(modState, mod.name) ? 'Reinstall' : 'Install';
+    button.onclick = async () => {
+      const was = button.textContent;
+      button.disabled = true; button.textContent = 'Installing…';
+      try {
+        const result = await invoke('install_registry_mod', { name: mod.name });
+        log(`installed ${result.name} ${result.version}`);
+        button.textContent = 'Installed';
+        await refreshMods();
+      } catch (e) {
+        log('error: ' + e);
+        button.textContent = was; button.disabled = false;
+      }
+    };
+    const text = document.createElement('span');
+    const title = document.createElement('b');
+    title.textContent = mod.name;
+    text.append(title);
+    const by = [mod.version && 'v' + mod.version, mod.author && 'by ' + mod.author].filter(Boolean).join(' ');
+    if (by) {
+      const meta = document.createElement('span');
+      meta.style.cssText = 'color:var(--dim); font-size:11px';
+      meta.textContent = ' ' + by;
+      text.append(meta);
+    }
+    if (mod.description) {
+      const description = document.createElement('div');
+      description.style.color = 'var(--dim)';
+      description.textContent = mod.description;
+      text.append(description);
+    }
+    row.append(button, text);
+    box.append(row);
+  }
+}
+
+$('mods-search').addEventListener('input', paintCatalogue);
+
+$('mods-browse').onclick = async () => {
+  const panel = $('mods-registry');
+  if (!panel.hidden) { panel.hidden = true; $('mods-browse').textContent = 'Find mods…'; return; }
+  panel.hidden = false;
+  $('mods-browse').textContent = 'Hide the mod list';
+  catalogue = null;
+  paintCatalogue();
+  try {
+    catalogue = await invoke('list_registry_mods');
+    paintCatalogue();
+  } catch (e) {
+    catalogue = [];
+    $('mods-catalogue').textContent = 'Could not read the mod list: ' + String(e);
+  }
+};
+
+$('mods-install').onclick = () => withButton('mods-install', 'Installing…', 'Install from a folder…', async () => {
   const msg = await invoke('install_mod');
   await refreshMods();
   return msg;

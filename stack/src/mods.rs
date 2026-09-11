@@ -106,6 +106,15 @@ pub struct Manifest {
     /// the mod's `init(parameters, api)` when the client loads it -- so a mod
     /// can stay enabled and still hide part of itself.
     pub settings: Vec<Setting>,
+    /// Mods this one does not work without. Each must be installed and on, or
+    /// this mod is refused and says which one is missing.
+    pub requires_mods: Vec<String>,
+    /// Mods this one must be applied *after*, when both are on.
+    ///
+    /// Only about precedence, not need: a name here that nobody has installed
+    /// is ignored. This is how a mod says "my copy of that table wins" without
+    /// having to be named later in the alphabet than somebody else's folder.
+    pub after: Vec<String>,
 }
 
 /// One declared option. Deliberately three scalar types: anything richer is a
@@ -161,8 +170,114 @@ impl Default for Manifest {
             requires_era: None,
             default_on: true,
             settings: Vec::new(),
+            requires_mods: Vec::new(),
+            after: Vec::new(),
         }
     }
+}
+
+/// A list of mod names from the manifest, checked for shape.
+///
+/// Mod names are folder names, so the same rules apply: something a filesystem
+/// and a JSON document can both carry, and nothing that could climb out of the
+/// mods directory if it were ever joined to a path.
+fn name_list(value: &json::Value, key: &str, prefix: Option<&str>) -> Result<Vec<String>, String> {
+    let label = format!("{}{key}", prefix.unwrap_or(""));
+    let Some(list) = value.get(key) else {
+        return Ok(Vec::new());
+    };
+    let json::Value::Array(items) = list else {
+        return Err(format!("mod.json: \"{label}\" must be an array of mod names"));
+    };
+    let mut out = Vec::new();
+    for item in items {
+        let json::Value::String(name) = item else {
+            return Err(format!("mod.json: every entry in \"{label}\" must be a mod name"));
+        };
+        if name.is_empty()
+            || name.len() > 64
+            || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        {
+            return Err(format!(
+                "mod.json: {name:?} in \"{label}\" is not a mod name -- letters, digits, - and _, up to 64"
+            ));
+        }
+        if !out.contains(name) {
+            out.push(name.clone());
+        }
+    }
+    Ok(out)
+}
+
+/// Put the enabled mods in the order their layers should be applied.
+///
+/// Alphabetical is the floor, because it is stable and a player can predict it.
+/// `after` lifts a mod above that: it is applied later than the mods it names,
+/// so its copy of a repeated key wins. Names nobody installed are ignored --
+/// `after` is about precedence between mods that are both here, and `requires`
+/// is the field for actually needing one.
+///
+/// A cycle cannot be ordered, so the mods in it are returned as an error
+/// against their names rather than silently resolved into some order that
+/// happens to fall out of the traversal.
+fn apply_order(mods: &[(String, Vec<String>)]) -> Result<Vec<String>, Vec<String>> {
+    let names: Vec<String> = {
+        let mut names: Vec<String> = mods.iter().map(|(name, _)| name.clone()).collect();
+        names.sort();
+        names
+    };
+    let mut done: Vec<String> = Vec::new();
+    // 0 untouched, 1 in progress, 2 placed.
+    let mut state: BTreeMap<&str, u8> = BTreeMap::new();
+    let edges: BTreeMap<&str, &Vec<String>> =
+        mods.iter().map(|(name, after)| (name.as_str(), after)).collect();
+
+    // Iterative, so a deep chain cannot overflow the stack, and alphabetical
+    // at every choice so the result does not depend on directory order.
+    for root in &names {
+        if state.get(root.as_str()).copied().unwrap_or(0) == 2 {
+            continue;
+        }
+        let mut stack: Vec<(&str, usize)> = vec![(root.as_str(), 0)];
+        while let Some((name, index)) = stack.pop() {
+            if index == 0 {
+                match state.get(name).copied().unwrap_or(0) {
+                    2 => continue,
+                    1 => {
+                        let cycle: Vec<String> =
+                            stack.iter().map(|(n, _)| (*n).to_string()).collect();
+                        return Err(cycle);
+                    }
+                    _ => {
+                        state.insert(name, 1);
+                    }
+                }
+            }
+            let before = edges.get(name).copied();
+            let mut next = None;
+            if let Some(before) = before {
+                let mut sorted: Vec<&String> = before.iter().collect();
+                sorted.sort();
+                if let Some(dep) = sorted.get(index) {
+                    next = Some(dep.as_str());
+                }
+            }
+            match next {
+                Some(dep) => {
+                    stack.push((name, index + 1));
+                    // Not installed, or not on: `after` is only a preference.
+                    if edges.contains_key(dep) {
+                        stack.push((dep, 0));
+                    }
+                }
+                None => {
+                    state.insert(name, 2);
+                    done.push(name.to_string());
+                }
+            }
+        }
+    }
+    Ok(done)
 }
 
 /// Read and check one mod's manifest.
@@ -200,6 +315,13 @@ fn read_manifest(dir: &Path) -> Result<Option<Manifest>, String> {
         },
         ..Manifest::default()
     };
+    m.after = name_list(&v, "after", None)?;
+    if let Some(requires) = v.get("requires") {
+        m.requires_mods = name_list(requires, "mods", Some("requires."))?;
+        if m.requires_mods.iter().any(|n| *n == m.name) {
+            return Err("mod.json: a mod cannot require itself".into());
+        }
+    }
     if let Some(list) = v.get("settings") {
         let crate::json::Value::Array(items) = list else {
             return Err("mod.json: \"settings\" must be an array of option objects".into());
@@ -679,6 +801,33 @@ pub fn scan(cfg: &Config) -> Vec<Installed> {
         }
         out.push(Installed { name, dir, status, manifest, bundled });
     }
+
+    // A second pass, because a requirement can name a mod the first pass had
+    // not reached yet. Only a mod that is actually on can satisfy one: a
+    // dependency switched off is as absent as one never installed, and the
+    // difference is worth saying out loud to whoever has to fix it.
+    let present: BTreeMap<String, bool> = out
+        .iter()
+        .map(|m| (m.name.clone(), m.status == Status::On))
+        .collect();
+    for m in &mut out {
+        if m.status != Status::On {
+            continue;
+        }
+        let missing: Vec<String> = m
+            .manifest
+            .requires_mods
+            .iter()
+            .filter(|name| present.get(name.as_str()) != Some(&true))
+            .map(|name| match present.contains_key(name.as_str()) {
+                true => format!("{name} is installed but switched off"),
+                false => format!("{name} is not installed"),
+            })
+            .collect();
+        if !missing.is_empty() {
+            m.status = Status::Refused(format!("needs {}", missing.join(", ")));
+        }
+    }
     out
 }
 
@@ -865,7 +1014,33 @@ pub fn assemble(cfg: &Config) -> Result<Assembled, String> {
             out.refused.push((m.name.clone(), reason.clone()));
         }
     }
-    let live: Vec<&Installed> = installed.iter().filter(|m| m.status == Status::On).collect();
+    let mut live: Vec<&Installed> = installed.iter().filter(|m| m.status == Status::On).collect();
+
+    // The order layers are applied in, which is what decides who wins a
+    // repeated key. Alphabetical unless a mod asked to come later.
+    let declared: Vec<(String, Vec<String>)> = live
+        .iter()
+        .map(|m| (m.name.clone(), m.manifest.after.clone()))
+        .collect();
+    match apply_order(&declared) {
+        Ok(order) => {
+            let rank: BTreeMap<&str, usize> =
+                order.iter().enumerate().map(|(i, n)| (n.as_str(), i)).collect();
+            live.sort_by_key(|m| rank.get(m.name.as_str()).copied().unwrap_or(usize::MAX));
+        }
+        Err(cycle) => {
+            // A loop cannot be ordered, so none of the mods in it are applied.
+            // Naming the ring is the only useful thing to say about it.
+            let names = cycle.join(", ");
+            for name in &cycle {
+                out.refused.push((
+                    name.clone(),
+                    format!("\"after\" forms a loop with {names}, so none of them were applied"),
+                ));
+            }
+            live.retain(|m| !cycle.contains(&m.name));
+        }
+    }
 
     // Rebuilt from scratch every start: a mod removed from state/mods must stop
     // affecting the server, and a stale merge is indistinguishable from a mod
@@ -1574,6 +1749,89 @@ fn write_list(state: &Path, file: &str, name: &str, present: bool, header: &str)
 
 #[cfg(test)]
 mod tests {
+
+    fn order(pairs: &[(&str, &[&str])]) -> Result<Vec<String>, Vec<String>> {
+        let owned: Vec<(String, Vec<String>)> = pairs
+            .iter()
+            .map(|(n, a)| ((*n).to_string(), a.iter().map(|s| (*s).to_string()).collect()))
+            .collect();
+        apply_order(&owned)
+    }
+
+    /// Alphabetical is the floor, so the order is predictable without anyone
+    /// declaring anything.
+    #[test]
+    fn with_nothing_declared_the_order_is_alphabetical() {
+        assert_eq!(
+            order(&[("zebra", &[]), ("alpha", &[]), ("middle", &[])]).unwrap(),
+            vec!["alpha", "middle", "zebra"]
+        );
+    }
+
+    /// The whole point: a mod whose folder sorts first can still be applied
+    /// last, so its copy of a repeated key wins.
+    #[test]
+    fn after_lifts_a_mod_past_the_alphabet() {
+        let placed = order(&[("alpha", &["zebra"]), ("zebra", &[])]).unwrap();
+        assert_eq!(placed, vec!["zebra", "alpha"]);
+    }
+
+    /// `after` is precedence, not need. Naming a mod nobody installed is how a
+    /// mod says "if that one is here, I come later", and it must not refuse
+    /// anything on its own.
+    #[test]
+    fn after_ignores_a_mod_that_is_not_here() {
+        assert_eq!(order(&[("alpha", &["absent"])]).unwrap(), vec!["alpha"]);
+    }
+
+    /// A chain, and a mod that has to be placed after two others.
+    #[test]
+    fn a_chain_and_a_join_both_come_out_in_order() {
+        let placed = order(&[("c", &["b"]), ("b", &["a"]), ("a", &[])]).unwrap();
+        assert_eq!(placed, vec!["a", "b", "c"]);
+        let placed = order(&[("last", &["one", "two"]), ("one", &[]), ("two", &[])]).unwrap();
+        assert_eq!(placed.last().unwrap(), "last");
+        assert!(placed.contains(&"one".to_string()) && placed.contains(&"two".to_string()));
+    }
+
+    /// A loop has no order. Resolving it into whatever falls out of the
+    /// traversal would be worse than saying so.
+    #[test]
+    fn a_loop_is_refused_rather_than_resolved() {
+        let cycle = order(&[("a", &["b"]), ("b", &["a"])]).unwrap_err();
+        assert!(cycle.contains(&"a".to_string()) || cycle.contains(&"b".to_string()), "{cycle:?}");
+        assert!(order(&[("a", &["a"])]).is_err(), "a mod after itself is a loop");
+    }
+
+    /// A deep chain must not be ordered by recursion.
+    #[test]
+    fn a_very_long_chain_does_not_overflow() {
+        let names: Vec<String> = (0..5000).map(|i| format!("mod-{i:05}")).collect();
+        let pairs: Vec<(String, Vec<String>)> = names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.clone(), if i == 0 { vec![] } else { vec![names[i - 1].clone()] }))
+            .collect();
+        assert_eq!(apply_order(&pairs).unwrap(), names);
+    }
+
+    /// Mod names become folder names and reach a path join, so the manifest
+    /// only accepts something a filesystem can carry.
+    #[test]
+    fn a_dependency_list_only_accepts_mod_names() {
+        let good = json::parse("{\"after\":[\"a-mod\",\"b_mod2\"]}").unwrap();
+        assert_eq!(name_list(&good, "after", None).unwrap(), vec!["a-mod", "b_mod2"]);
+        // Repeats collapse rather than ordering a mod against itself twice.
+        let twice = json::parse("{\"after\":[\"a\",\"a\"]}").unwrap();
+        assert_eq!(name_list(&twice, "after", None).unwrap(), vec!["a"]);
+        for bad in ["{\"after\":\"a\"}", "{\"after\":[1]}", "{\"after\":[\"../escape\"]}",
+                    "{\"after\":[\"\"]}", "{\"after\":[\"has space\"]}"] {
+            let value = json::parse(bad).unwrap();
+            assert!(name_list(&value, "after", None).is_err(), "{bad} must be refused");
+        }
+        let absent = json::parse("{}").unwrap();
+        assert!(name_list(&absent, "after", None).unwrap().is_empty());
+    }
 
     const TABLE_A: &str = "# a comment mentioning Body: in passing\nHeader:\n  Type: ITEM_DB\n  Version: 3\n\nBody:\n  - Id: 30000\n    AegisName: Mod_A_Potion\n";
     const TABLE_B: &str = "Header:\n  Type: ITEM_DB\n  Version: 3\n\nBody:\n  - Id: 30001\n    AegisName: Mod_B_Potion\n";

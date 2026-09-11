@@ -1631,6 +1631,22 @@ const handlers = {
 	stack_status: () => runStack(['status']),
 
 	// Mods
+	// The registry: an index of reviewed mods in a GitHub repository. Listed
+	// on demand rather than cached, because the interesting failure is a stale
+	// list showing a mod that has since been taken down.
+	list_registry_mods: async () => {
+		const registry = require('./mod-registry');
+		return registry.list({ url: process.env.RAGNAROK_MOD_INDEX || registry.DEFAULT_INDEX });
+	},
+	install_registry_mod: async ({ name }) => {
+		const registry = require('./mod-registry');
+		const result = await registry.install(name, {
+			url: process.env.RAGNAROK_MOD_INDEX || registry.DEFAULT_INDEX,
+			modsDir: path.join(stateDir(), 'mods'),
+		});
+		appLog(`installed mod ${result.name} ${result.version} (${result.files} files)`);
+		return result;
+	},
 	list_mods: async () => {
 		const out = await runStack(['mods']);
 		// Tab-separated, in the order mods.rs writes them. `refused` is its own

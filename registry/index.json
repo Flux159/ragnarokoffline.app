@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "mods": [
+    {
+      "name": "no-seed-cost",
+      "version": "1.0.1",
+      "author": "Ragnarok Offline",
+      "description": "Call Homunculus no longer costs a Seed of Life. The Embryo is still required.",
+      "homepage": "",
+      "files": [
+        {
+          "path": "db/skill_db.yml",
+          "sha256": "42dcdf20f7c4b315c03f28a17e8da306ed477500b8c84d7b46e37eb1d39c5098"
+        },
+        {
+          "path": "mod.json",
+          "sha256": "0b76d3b315628ceee41c57b489ec1f41dcd30a5c159b0c18eb139abb609afb57"
+        }
+      ]
+    }
+  ]
+}
