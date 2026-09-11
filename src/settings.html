@@ -465,6 +465,7 @@
       <label style="margin-bottom:8px"><span>Search</span>
         <input type="text" id="mods-search" placeholder="name, author or what it does" /></label>
       <div id="mods-catalogue" class="note">Looking…</div>
+      <div id="mods-detail" hidden></div>
       <p class="note" style="margin-top:8px">These are mods people have published to the
          app's mod list. Each one is a folder in a public repository and gets there by pull
          request, so somebody has read it before it appears here &mdash; but a mod can change
@@ -1191,13 +1192,155 @@ function esc(s) {
 // not still offered from a cache.
 let catalogue = null;
 
+// Search runs here, over the one document the index already is. At the scale
+// this is built for -- hundreds of mods, not hundreds of thousands -- a
+// request per keystroke would be worse in every way than scoring in memory.
+function matchScore(mod, terms) {
+  if (!terms.length) return 1;
+  const name = mod.name.toLowerCase();
+  const tags = mod.tags.join(' ');
+  const haystack = `${name} ${mod.author} ${mod.description} ${tags}`.toLowerCase();
+  let score = 0;
+  for (const term of terms) {
+    // Every term has to appear somewhere, so two words narrow rather than widen.
+    if (!haystack.includes(term)) return 0;
+    if (name === term) score += 100;
+    else if (name.startsWith(term)) score += 40;
+    else if (name.includes(term)) score += 20;
+    if (mod.tags.some(tag => tag === term)) score += 30;
+    else if (tags.includes(term)) score += 10;
+    if (mod.author.toLowerCase().includes(term)) score += 5;
+    score += 1;
+  }
+  return score;
+}
+
+// Pictures arrive as data URLs from the main process, which checks them
+// against the index the same way it checks anything else it downloads.
+async function showPicture(element, mod, relative) {
+  try {
+    element.src = await invoke('registry_image', { name: mod.name, path: relative });
+  } catch { element.remove(); }
+}
+
+function detailFor(mod) {
+  const box = $('mods-detail');
+  box.hidden = false;
+  $('mods-catalogue').hidden = true;
+  box.innerHTML = '';
+  const back = document.createElement('button');
+  back.className = 'ghost';
+  back.textContent = '← All mods';
+  back.onclick = () => { box.hidden = true; $('mods-catalogue').hidden = false; };
+  box.append(back);
+
+  const head = document.createElement('div');
+  head.style.cssText = 'display:flex; align-items:flex-start; gap:12px; margin:12px 0 6px';
+  if (mod.icon) {
+    const icon = document.createElement('img');
+    icon.style.cssText = 'width:64px; height:64px; object-fit:contain; flex:none; border-radius:6px';
+    icon.alt = '';
+    head.append(icon);
+    showPicture(icon, mod, mod.icon);
+  }
+  const title = document.createElement('div');
+  const name = document.createElement('div');
+  name.innerHTML = '';
+  const strong = document.createElement('b');
+  strong.textContent = mod.name;
+  name.append(strong);
+  const by = [mod.version && 'v' + mod.version, mod.author && 'by ' + mod.author].filter(Boolean).join(' ');
+  if (by) {
+    const meta = document.createElement('span');
+    meta.style.cssText = 'color:var(--dim); font-size:11px';
+    meta.textContent = ' ' + by;
+    name.append(meta);
+  }
+  title.append(name);
+  const install = document.createElement('button');
+  install.className = 'ghost';
+  install.style.marginTop = '6px';
+  install.textContent = Object.hasOwn(modState, mod.name) ? 'Reinstall' : 'Install';
+  install.onclick = () => installMod(mod, install);
+  title.append(install);
+  head.append(title);
+  box.append(head);
+
+  if (mod.description) {
+    const description = document.createElement('p');
+    description.className = 'note';
+    description.style.whiteSpace = 'pre-wrap';
+    description.textContent = mod.description;
+    box.append(description);
+  }
+  if (mod.tags.length) {
+    const tags = document.createElement('div');
+    tags.style.cssText = 'display:flex; flex-wrap:wrap; gap:6px; margin:6px 0';
+    for (const tag of mod.tags) {
+      const chip = document.createElement('span');
+      chip.style.cssText = 'font-size:11px; color:var(--dim); border:1px solid var(--line,#333); border-radius:10px; padding:1px 8px; cursor:pointer';
+      chip.textContent = tag;
+      chip.onclick = () => { $('mods-search').value = tag; back.onclick(); paintCatalogue(); };
+      tags.append(chip);
+    }
+    box.append(tags);
+  }
+  // What it needs, so nobody installs a mod that will refuse to load.
+  const needs = mod.requires.mods.filter(Boolean);
+  if (needs.length || mod.requires.era) {
+    const line = document.createElement('p');
+    line.className = 'note';
+    const parts = [];
+    if (needs.length) parts.push('Needs ' + needs.join(', ') + ' installed and switched on.');
+    if (mod.requires.era) parts.push(`For the ${mod.requires.era} era.`);
+    line.textContent = parts.join(' ');
+    box.append(line);
+  }
+  if (mod.screenshots.length) {
+    const strip = document.createElement('div');
+    strip.style.cssText = 'display:flex; flex-wrap:wrap; gap:8px; margin-top:8px';
+    for (const shot of mod.screenshots) {
+      const picture = document.createElement('img');
+      picture.style.cssText = 'max-width:100%; width:260px; border-radius:6px; border:1px solid var(--line,#333)';
+      picture.alt = '';
+      strip.append(picture);
+      showPicture(picture, mod, shot);
+    }
+    box.append(strip);
+  }
+  if (mod.homepage) {
+    const link = document.createElement('p');
+    link.className = 'note';
+    link.textContent = mod.homepage;
+    box.append(link);
+  }
+}
+
+async function installMod(mod, button) {
+  const was = button.textContent;
+  button.disabled = true; button.textContent = 'Installing…';
+  try {
+    const result = await invoke('install_registry_mod', { name: mod.name });
+    log(`installed ${result.name} ${result.version}`);
+    button.textContent = 'Installed';
+    await refreshMods();
+  } catch (e) {
+    log('error: ' + e);
+    button.textContent = was; button.disabled = false;
+  }
+}
+
 function paintCatalogue() {
   const box = $('mods-catalogue');
   const query = $('mods-search').value.trim().toLowerCase();
   box.innerHTML = '';
   if (!catalogue) { box.textContent = 'Looking…'; return; }
-  const matches = catalogue.filter(m => !query
-    || [m.name, m.author, m.description].join(' ').toLowerCase().includes(query));
+  const terms = query.split(/\s+/).filter(Boolean);
+  const matches = catalogue
+    .map(mod => ({ mod, score: matchScore(mod, terms) }))
+    .filter(entry => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.mod.name.localeCompare(b.mod.name))
+    .map(entry => entry.mod);
   if (!matches.length) {
     box.textContent = catalogue.length ? 'Nothing matches that.' : 'The mod list is empty.';
     return;
@@ -1206,27 +1349,29 @@ function paintCatalogue() {
   // off the internet, and none of it is trusted markup.
   for (const mod of matches.slice(0, 100)) {
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex; align-items:flex-start; gap:10px; padding:5px 0';
+    row.style.cssText = 'display:flex; align-items:flex-start; gap:10px; padding:6px 0';
     const button = document.createElement('button');
     button.className = 'ghost';
     button.style.cssText = 'flex:none';
     button.textContent = Object.hasOwn(modState, mod.name) ? 'Reinstall' : 'Install';
-    button.onclick = async () => {
-      const was = button.textContent;
-      button.disabled = true; button.textContent = 'Installing…';
-      try {
-        const result = await invoke('install_registry_mod', { name: mod.name });
-        log(`installed ${result.name} ${result.version}`);
-        button.textContent = 'Installed';
-        await refreshMods();
-      } catch (e) {
-        log('error: ' + e);
-        button.textContent = was; button.disabled = false;
-      }
-    };
+    button.onclick = () => installMod(mod, button);
+    if (mod.icon) {
+      const icon = document.createElement('img');
+      icon.style.cssText = 'width:32px; height:32px; object-fit:contain; flex:none; border-radius:4px';
+      icon.alt = '';
+      row.append(button, icon);
+      showPicture(icon, mod, mod.icon);
+    } else {
+      row.append(button);
+    }
+    // The name opens the mod rather than installing it: reading first is the
+    // ordinary thing to want, and installing is the irreversible one.
     const text = document.createElement('span');
-    const title = document.createElement('b');
+    const title = document.createElement('a');
+    title.href = '#';
+    title.style.cssText = 'font-weight:600; color:inherit; text-decoration:none; border-bottom:1px dotted var(--dim)';
     title.textContent = mod.name;
+    title.onclick = event => { event.preventDefault(); detailFor(mod); };
     text.append(title);
     const by = [mod.version && 'v' + mod.version, mod.author && 'by ' + mod.author].filter(Boolean).join(' ');
     if (by) {
@@ -1235,13 +1380,19 @@ function paintCatalogue() {
       meta.textContent = ' ' + by;
       text.append(meta);
     }
+    if (mod.tags.length) {
+      const tags = document.createElement('span');
+      tags.style.cssText = 'color:var(--dim); font-size:11px';
+      tags.textContent = '  ' + mod.tags.join(' · ');
+      text.append(tags);
+    }
     if (mod.description) {
       const description = document.createElement('div');
       description.style.color = 'var(--dim)';
       description.textContent = mod.description;
       text.append(description);
     }
-    row.append(button, text);
+    row.append(text);
     box.append(row);
   }
 }
@@ -1252,6 +1403,8 @@ $('mods-browse').onclick = async () => {
   const panel = $('mods-registry');
   if (!panel.hidden) { panel.hidden = true; $('mods-browse').textContent = 'Find mods…'; return; }
   panel.hidden = false;
+  $('mods-detail').hidden = true;
+  $('mods-catalogue').hidden = false;
   $('mods-browse').textContent = 'Hide the mod list';
   catalogue = null;
   paintCatalogue();

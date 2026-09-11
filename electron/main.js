@@ -864,6 +864,8 @@ async function linkClientOwned(paths) {
 	});
 }
 
+let registryImages = null;
+
 const SETTINGS_DEFAULTS = {
 	open_registration: true,
 	// How long a friends invitation stays valid, in days. Nothing to do with
@@ -1631,12 +1633,26 @@ const handlers = {
 	stack_status: () => runStack(['status']),
 
 	// Mods
+	// Registry pictures already fetched this session, keyed by digest.
+	// (declared below as a module-level binding)
 	// The registry: an index of reviewed mods in a GitHub repository. Listed
 	// on demand rather than cached, because the interesting failure is a stale
 	// list showing a mod that has since been taken down.
 	list_registry_mods: async () => {
 		const registry = require('./mod-registry');
 		return registry.list({ url: process.env.RAGNAROK_MOD_INDEX || registry.DEFAULT_INDEX });
+	},
+	// Pictures come through here rather than being loaded by the settings
+	// window: it is a privileged page, and a list nobody reviewed should not
+	// get to decide what addresses it reaches. Cached by digest, so a list of
+	// a hundred icons is fetched once per session.
+	registry_image: async ({ name, path: relative }) => {
+		const registry = require('./mod-registry');
+		registryImages = registryImages || new Map();
+		return registry.image(name, relative, {
+			url: process.env.RAGNAROK_MOD_INDEX || registry.DEFAULT_INDEX,
+			cache: registryImages,
+		});
 	},
 	install_registry_mod: async ({ name }) => {
 		const registry = require('./mod-registry');

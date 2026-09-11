@@ -6,5 +6,15 @@
   "requires": {
     "app": ">=1.0.6",
     "era": "renewal"
-  }
+  },
+  "tags": [
+    "homunculus",
+    "alchemist",
+    "quality-of-life"
+  ],
+  "icon": "images/icon.png",
+  "screenshots": [
+    "images/homunculus.png"
+  ],
+  "homepage": "https://github.com/Flux159/ragnarokoffline.app/tree/main/registry/mods/no-seed-cost"
 }

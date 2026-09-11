@@ -23,6 +23,11 @@ MODS = REGISTRY / "mods"
 ALLOWED = {".json", ".yml", ".yaml", ".txt", ".lua", ".lub", ".js", ".mjs",
            ".css", ".html", ".png", ".bmp", ".jpg", ".gif", ".spr", ".act",
            ".gat", ".gnd", ".rsw", ".rsm", ".wav", ".mp3", ".ttf", ".md"}
+# What an icon or a screenshot may be. The app decodes these itself, so the
+# list is what it can render rather than what a browser might guess at.
+PICTURES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+MAX_SCREENSHOTS = 4
+TAG = __import__("re").compile(r"^[a-z0-9][a-z0-9-]{0,23}$")
 
 
 def build():
@@ -41,12 +46,43 @@ def build():
                           "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
         if not files:
             raise SystemExit(f"{directory.name}: no files")
+        carried = {relative["path"] for relative in files}
+
+        def picture(value, field):
+            """A picture the mod actually ships, named relative to its folder."""
+            if not isinstance(value, str) or not value:
+                raise SystemExit(f"{directory.name}: {field} must be a path inside the mod")
+            if value not in carried:
+                raise SystemExit(f"{directory.name}: {field} names {value}, which the mod does not contain")
+            if Path(value).suffix.lower() not in PICTURES:
+                raise SystemExit(f"{directory.name}: {field} names {value}, which is not a picture")
+            return value
+
+        tags = manifest.get("tags", [])
+        if not isinstance(tags, list) or len(tags) > 8:
+            raise SystemExit(f"{directory.name}: \"tags\" is a list of up to 8 short labels")
+        for tag in tags:
+            if not isinstance(tag, str) or not TAG.match(tag):
+                raise SystemExit(f"{directory.name}: tag {tag!r} must be lowercase letters, digits and -, up to 24")
+
+        screenshots = manifest.get("screenshots", [])
+        if not isinstance(screenshots, list) or len(screenshots) > MAX_SCREENSHOTS:
+            raise SystemExit(f"{directory.name}: up to {MAX_SCREENSHOTS} screenshots")
+
+        requires = manifest.get("requires", {})
+        requires = requires if isinstance(requires, dict) else {}
+        needs = [name for name in requires.get("mods", []) if isinstance(name, str)]
+
         mods.append({
             "name": directory.name,
             "version": manifest.get("version", ""),
             "author": manifest.get("author", ""),
             "description": manifest.get("description", ""),
             "homepage": manifest.get("homepage", ""),
+            "tags": sorted(dict.fromkeys(tags)),
+            "icon": picture(manifest["icon"], "icon") if manifest.get("icon") else "",
+            "screenshots": [picture(shot, "screenshots") for shot in screenshots],
+            "requires": {"mods": needs, "era": requires.get("era", ""), "app": requires.get("app", "")},
             "files": files,
         })
     return {"version": 1, "mods": mods}

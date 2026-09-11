@@ -110,3 +110,59 @@ test('a homepage is only carried through when it is https', () => {
   assert.strictEqual(registry.readIndex(entry('javascript:alert(1)')).at(0).homepage, '');
   assert.strictEqual(registry.readIndex(entry('http://example.com')).at(0).homepage, '');
 });
+
+test('tags, pictures and dependencies come through the index', () => {
+  const body = JSON.stringify({ version: 1, mods: [{
+    name: 'shiny', tags: ['ui', 'Quality-Of-Life', 'ok-tag', 'x'.repeat(30)],
+    icon: 'images/icon.png', screenshots: ['a.png', 'b.jpg', 'c.gif', 'd.webp', 'e.png'],
+    requires: { mods: ['base'], era: 'renewal', app: '>=1.2.0' },
+    files: ['mod.json', 'images/icon.png', 'a.png', 'b.jpg', 'c.gif', 'd.webp', 'e.png']
+      .map(p => ({ path: p, sha256: sha(p) })),
+  }] });
+  const mod = registry.readIndex(body)[0];
+  // Uppercase and over-long tags are dropped rather than cleaned up silently.
+  assert.deepStrictEqual(mod.tags, ['ui', 'ok-tag']);
+  assert.strictEqual(mod.icon, 'images/icon.png');
+  // Capped at four, in the order given.
+  assert.deepStrictEqual(mod.screenshots, ['a.png', 'b.jpg', 'c.gif', 'd.webp']);
+  assert.deepStrictEqual(mod.requires, { mods: ['base'], era: 'renewal', app: '>=1.2.0' });
+});
+
+test('a picture the mod does not ship is not shown', () => {
+  const body = JSON.stringify({ version: 1, mods: [{
+    name: 'sneaky', icon: 'https://elsewhere.example/pixel.png',
+    screenshots: ['../outside.png', 'notes.txt', 'real.png'],
+    files: [{ path: 'mod.json', sha256: sha('m') }, { path: 'notes.txt', sha256: sha('n') },
+            { path: 'real.png', sha256: sha('r') }],
+  }] });
+  const mod = registry.readIndex(body)[0];
+  // A URL is not one of its files, and a text file is not a picture.
+  assert.strictEqual(mod.icon, '');
+  assert.deepStrictEqual(mod.screenshots, ['real.png']);
+});
+
+test('a picture is fetched only when the entry declared it, and verified', async () => {
+  const png = Buffer.from('89504e470d0a1a0a', 'hex');
+  const body = JSON.stringify({ version: 1, mods: [{
+    name: 'tidy-mod', icon: 'icon.png', screenshots: [],
+    files: [{ path: 'mod.json', sha256: sha('m') }, { path: 'icon.png', sha256: sha(png) },
+            { path: 'secret.yml', sha256: sha('s') }],
+  }] });
+  const fetch = fakeRegistry({ 'icon.png': png, 'secret.yml': 's' }, body);
+  const url = INDEX;
+  const data = await registry.image('tidy-mod', 'icon.png', { url, fetch });
+  assert.match(data, /^data:image\/png;base64,/);
+  assert.strictEqual(Buffer.from(data.split(',')[1], 'base64').toString('hex'), png.toString('hex'));
+  // A file the mod ships but never offered as a picture is not reachable.
+  await assert.rejects(registry.image('tidy-mod', 'secret.yml', { url, fetch }), /not one of its pictures/);
+});
+
+test('a picture whose bytes were swapped is refused', async () => {
+  const body = JSON.stringify({ version: 1, mods: [{
+    name: 'tidy-mod', icon: 'icon.png', screenshots: [],
+    files: [{ path: 'mod.json', sha256: sha('m') }, { path: 'icon.png', sha256: sha('expected') }],
+  }] });
+  await assert.rejects(
+    registry.image('tidy-mod', 'icon.png', { url: INDEX, fetch: fakeRegistry({ 'icon.png': 'swapped' }, body) }),
+    /does not match the reviewed copy/);
+});

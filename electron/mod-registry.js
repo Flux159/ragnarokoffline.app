@@ -30,6 +30,12 @@ const TOTAL_LIMIT = 96 * 1024 * 1024;
 const MAX_FILES = 600;
 const NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 const SHA256 = /^[a-f0-9]{64}$/;
+const TAG = /^[a-z0-9][a-z0-9-]{0,23}$/;
+const MAX_SCREENSHOTS = 4;
+// What the settings window will render. Decided here rather than left to
+// whatever a browser is willing to guess from the bytes.
+const PICTURES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif', '.webp': 'image/webp' };
 
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 
@@ -113,8 +119,29 @@ function readIndex(body) {
     // A mod whose own manifest is missing would install as an unnamed folder.
     if (!ok || !files.some(file => file.path === 'mod.json')) continue;
     const text = (field, limit) => typeof entry[field] === 'string' ? entry[field].slice(0, limit) : '';
+    // A picture has to be one of the files the entry already vouches for, or
+    // it is a URL nobody reviewed wearing a reviewed mod's name.
+    const carried = new Set(files.map(file => file.path));
+    const picture = value => {
+      if (typeof value !== 'string' || !carried.has(value)) return null;
+      const dot = value.lastIndexOf('.');
+      const mime = dot < 0 ? null : PICTURES[value.slice(dot).toLowerCase()];
+      return mime ? value : null;
+    };
+    const tags = Array.isArray(entry.tags)
+      ? entry.tags.filter(tag => typeof tag === 'string' && TAG.test(tag)).slice(0, 8) : [];
+    const screenshots = Array.isArray(entry.screenshots)
+      ? entry.screenshots.map(picture).filter(Boolean).slice(0, MAX_SCREENSHOTS) : [];
+    const requires = entry.requires && typeof entry.requires === 'object' ? entry.requires : {};
     mods.push({ name: entry.name, version: text('version', 40), author: text('author', 80),
       description: text('description', 600), homepage: /^https:\/\//.test(entry.homepage || '') ? entry.homepage : '',
+      tags, icon: picture(entry.icon) || '', screenshots,
+      requires: {
+        mods: Array.isArray(requires.mods)
+          ? requires.mods.filter(name => NAME.test(name || '')).slice(0, 16) : [],
+        era: typeof requires.era === 'string' ? requires.era.slice(0, 20) : '',
+        app: typeof requires.app === 'string' ? requires.app.slice(0, 20) : '',
+      },
       files });
   }
   return mods;
@@ -171,4 +198,34 @@ async function install(name, { url = DEFAULT_INDEX, fetch = download, modsDir, m
   return { name: entry.name, version: entry.version, files: staged.length, bytes: total };
 }
 
-module.exports = { list, install, readIndex, safeRelative, fileUrl, DEFAULT_INDEX };
+/**
+ * One of a mod's declared pictures, as a data URL the settings window can show.
+ *
+ * Fetched here rather than in the page: the settings window is privileged, and
+ * letting it load remote images would let a list nobody reviewed decide what
+ * addresses it reaches. The bytes are checked against the same digest as any
+ * other file in the mod, so a picture is as reviewed as the rest of it.
+ */
+async function image(name, relative, { url = DEFAULT_INDEX, fetch = download, mods, cache } = {}) {
+  const listing = mods || await list({ url, fetch });
+  const entry = listing.find(mod => mod.name === name);
+  if (!entry) throw new Error(`${name} is not in the mod list`);
+  if (entry.icon !== relative && !entry.screenshots.includes(relative)) {
+    throw new Error(`${name}: ${relative} is not one of its pictures`);
+  }
+  const file = entry.files.find(candidate => candidate.path === relative);
+  if (!file) throw new Error(`${name}: ${relative} is not one of its files`);
+  if (cache && cache.has(file.sha256)) return cache.get(file.sha256);
+
+  const bytes = await fetch(fileUrl(url, entry.name, relative), FILE_LIMIT);
+  if (digest(bytes) !== file.sha256) {
+    throw new Error(`${name}: ${relative} does not match the reviewed copy`);
+  }
+  const dot = relative.lastIndexOf('.');
+  const mime = PICTURES[relative.slice(dot).toLowerCase()];
+  const dataUrl = `data:${mime};base64,${bytes.toString('base64')}`;
+  if (cache) cache.set(file.sha256, dataUrl);
+  return dataUrl;
+}
+
+module.exports = { list, install, image, readIndex, safeRelative, fileUrl, DEFAULT_INDEX, MAX_SCREENSHOTS };
