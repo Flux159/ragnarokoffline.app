@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { installDesktopEntry } = require('../electron/linux-desktop-entry');
+const { installDesktopEntry, entryText } = require('../electron/linux-desktop-entry');
 
 function sandbox(t) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ro-desktop-'));
@@ -22,18 +22,25 @@ function sandbox(t) {
   return { home, env, appImage, appDir, file };
 }
 
+// The entry is only ever written on Linux, so the text is asserted against a
+// Linux path literal rather than whatever the host's path separator is. The
+// behaviour around it -- idempotence, following a move, leaving other people's
+// files alone -- is not platform-specific and is exercised everywhere.
+test('the entry points back at the AppImage, quoted so a space cannot split it', () => {
+  const text = entryText('/home/player/My Games/Ragnarok Offline-1.2.0-x64.AppImage');
+  assert.match(text, /^Exec="\/home\/player\/My Games\/Ragnarok Offline-1\.2\.0-x64\.AppImage" --no-sandbox %U$/m);
+  assert.match(text, /^TryExec=\/home\/player\/My Games\/Ragnarok Offline-1\.2\.0-x64\.AppImage$/m);
+  assert.match(text, /^Type=Application$/m);
+  assert.match(text, /^Categories=Game;$/m);
+  assert.match(text, /^Icon=ragnarokoffline$/m);
+});
+
 test('an AppImage run writes a launcher entry pointing back at itself', t => {
   const s = sandbox(t);
   const result = installDesktopEntry({ env: s.env, home: s.home, platform: 'linux' });
   assert.equal(result.installed, true);
   assert.equal(result.updated, false);
-  const text = fs.readFileSync(s.file, 'utf8');
-  // The whole point: the Exec line has to survive a path with spaces in it,
-  // which the default download name has.
-  assert.match(text, /^Exec="[^"]*Ragnarok Offline-1\.2\.0-x64\.AppImage" --no-sandbox %U$/m);
-  assert.match(text, new RegExp(`^TryExec=${s.appImage.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'));
-  assert.match(text, /^Type=Application$/m);
-  assert.match(text, /^Categories=Game;$/m);
+  assert.equal(fs.readFileSync(s.file, 'utf8'), entryText(s.appImage));
   // Both icon sizes, at the path a hicolor theme looks in.
   for (const size of ['512x512', '1024x1024']) {
     const icon = path.join(s.env.XDG_DATA_HOME, 'icons/hicolor', size, 'apps/ragnarokoffline.png');
@@ -56,7 +63,7 @@ test('a second launch changes nothing, and a moved AppImage is followed', t => {
   const after = installDesktopEntry({ env: { ...s.env, APPIMAGE: moved }, home: s.home, platform: 'linux' });
   assert.equal(after.installed, true);
   assert.equal(after.updated, true);
-  assert.match(fs.readFileSync(s.file, 'utf8'), /Exec="[^"]*Applications\/RO\.AppImage"/);
+  assert.equal(fs.readFileSync(s.file, 'utf8'), entryText(moved));
 });
 
 test('nothing is written when it is not our AppImage to write about', t => {
@@ -83,7 +90,10 @@ test("an entry this app did not write is left alone", t => {
   assert.match(fs.readFileSync(s.file, 'utf8'), /^Exec=\/opt\/ragnarok\/ragnarokoffline$/m);
 });
 
-test('an unwritable home is reported, not thrown', { skip: process.getuid?.() === 0 && 'root ignores the mode' }, t => {
+test('an unwritable home is reported, not thrown', {
+  // Windows does not honour a mode, and root ignores one.
+  skip: (process.platform === 'win32' && 'no POSIX mode') || (process.getuid?.() === 0 && 'root ignores the mode'),
+}, t => {
   const s = sandbox(t);
   const blocked = path.join(s.home, 'blocked');
   fs.mkdirSync(blocked);
