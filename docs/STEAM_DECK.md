@@ -35,6 +35,12 @@ hides itself through `TryExec` if the file is deleted, and is skipped entirely
 if some other entry already claims the name. `RAGNAROK_OFFLINE_NO_DESKTOP_ENTRY`
 turns it off.
 
+Verified on the Deck rather than only in tests: the module runs there under
+the environment the AppImage runtime sets, writes an entry
+`desktop-file-validate` accepts, copies the 1024×1024 icon into the user's
+hicolor tree, and leaves the file untouched on a second run. The `Exec` line it
+writes starts the app to **Ready** when run verbatim.
+
 Game Mode needs a Steam shortcut, which a desktop entry is not. Untested.
 
 ## What works on the hardware
