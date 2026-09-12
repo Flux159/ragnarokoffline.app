@@ -91,6 +91,30 @@ matched. A model scored the file and Defender acted on the score. It is not a
 mangled `.yml`, and there is no file called "Bearfoos" anywhere in this
 project.
 
+**The file it flags is `ragnarok-stack.exe`**, the supervisor:
+
+```
+%APPDATA%\Ragnarok Offline\runtime\bin\ragnarok-stack.exe
+```
+
+That matters beyond the warning, because the supervisor is what starts
+everything else. If Defender quarantines it, the app opens and then cannot
+start the server at all, and the error it gives is about a process that would
+not launch rather than about antivirus. **Check Protection history first** if
+the server stopped working after a Defender alert.
+
+**You can check the copy you have is the one we shipped.** A SHA-256 is written
+beside the binary at build time, in the same folder:
+
+```powershell
+cd "$env:APPDATA\Ragnarok Offline\runtime\bin"
+(Get-FileHash ragnarok-stack.exe -Algorithm SHA256).Hash.ToLower()
+Get-Content ragnarok-stack.sha256
+```
+
+Two matching lines means your copy is byte-for-byte the one built in public CI.
+The same pair of files exists for `robrowser-remoteclient` and `docker-slim`.
+
 **Why this app trips it.** The model weighs things this app genuinely does and
 things it genuinely lacks. It is unsigned, so there is no publisher to vouch
 for it — the same missing certificate as

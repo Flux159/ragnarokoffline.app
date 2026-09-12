@@ -21,6 +21,14 @@ Defender's name for a detection, and the `!ml` on the end means a
 machine-learning model made the call rather than a signature matching known
 malware. There is no file called "Bearfoos" in this project.
 
+The file it flags is `ragnarok-stack.exe`, the supervisor, which lives in
+`%APPDATA%\Ragnarok Offline\runtime\bin`. That is worth knowing because the
+supervisor is what starts everything else: if Defender quarantines it, the app
+opens and then cannot start the server, and the error talks about a process
+that would not launch rather than about antivirus. Check Protection history
+first if the server stopped working after an alert. A `ragnarok-stack.sha256`
+sits beside the binary, so you can confirm your copy is the one we shipped.
+
 The app is unsigned, every release is a new binary with no reputation, and it
 starts a hypervisor and several child processes. None of that is evidence of
 anything, and together it is enough for a probabilistic model. Microsoft's own
