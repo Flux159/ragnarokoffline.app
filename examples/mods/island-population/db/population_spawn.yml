@@ -1,18 +1,20 @@
-# Put AI characters on the custom island from the custom-map mod.
+# Twelve AI characters on the custom island from the custom-map mod.
 #
-# ---------------------------------------------------------------------------
-# THIS DOES NOT WORK YET. See README.md. The file is here because it is the
-# file that *would* work, and because the shape of it is worth having.
-# ---------------------------------------------------------------------------
+# The whole file is four lines of body, and that is the point. Profiles are
+# matched by name against the shipped table and only the fields named here are
+# touched, so everywhere else in the world is left exactly as it was.
 #
-# The Population Engine spawns by profile, not by job: a Profile named here
-# resolves to every job that inherits from it in db/population_engine.yml, and
-# one job is picked at random per shell.
+# FieldsAdd rather than Fields: the plain form *replaces* the profile's field
+# list, which would take combat_pve_low's low-level characters off every field
+# map they are supposed to be on and strand them all here. FieldsPopulationAdd
+# for the same reason -- adding a map without adding shells only spreads the
+# existing ones thinner.
 #
-# This is a complete file, not an addition: whatever mechanism eventually reads
-# it will either replace the shipped table or merge over it, and a partial file
-# under a merge would leave every other map unpopulated. Start from
-# third-party/population-engine/files/db/population_spawn.yml and edit.
+# To own the table outright instead, add `Clear: true` to the Header: the
+# shipped table is emptied and only what is here survives.
+#
+# Check anything you write with:
+#   python3 third-party/population-engine/validate.py
 
 Header:
   Type: POPULATION_SPAWN_DB
@@ -20,7 +22,7 @@ Header:
 
 Body:
   - Profile: combat_pve_low
-    Fields:
+    FieldsAdd:
       - ro_isle
-    FieldsPopulation: 12
+    FieldsPopulationAdd: 12
     FieldsMaxPerMap: 12

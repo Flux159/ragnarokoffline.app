@@ -884,6 +884,43 @@ fn header_type(text: &str) -> Option<String> {
     None
 }
 
+/// Whether a table's header asks rAthena to empty the database before reading
+/// it -- `Header: Clear: true`, which rAthena honours for every YAML database
+/// (`YamlDatabase::load`, src/common/database.cpp). It is how a mod says "this
+/// table is mine outright" rather than "add these entries to it".
+fn header_clears(text: &str) -> bool {
+    let Some((_, after)) = section(text, "Header:") else {
+        return false;
+    };
+    for line in text[after..].split_inclusive('\n') {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if !line.starts_with(' ') && !line.starts_with('\t') {
+            break;
+        }
+        if let Some(value) = trimmed.strip_prefix("Clear:") {
+            return value.trim().eq_ignore_ascii_case("true");
+        }
+    }
+    false
+}
+
+/// Put `Clear: true` into a header that does not have it, keeping the
+/// indentation the file already uses.
+fn add_header_clear(text: &str) -> Option<String> {
+    let (_, after) = section(text, "Header:")?;
+    let indent = text[after..]
+        .split_inclusive('\n')
+        .find(|line| !line.trim().is_empty())
+        .map(|line| &line[..line.len() - line.trim_start().len()])
+        .filter(|indent| !indent.is_empty())
+        .unwrap_or("  ")
+        .to_string();
+    Some(format!("{}{indent}Clear: true\n{}", &text[..after], &text[after..]))
+}
+
 /// Combine two mods' copies of the same rAthena table.
 ///
 /// Two mods that both add an item each ship `db/item_db.yml`, and merging them
@@ -900,6 +937,16 @@ fn merge_tables(existing: &str, incoming: &str) -> Option<String> {
     if header_type(existing)? != header_type(incoming)? {
         return None;
     }
+    // The merged file keeps the first header, so a later mod's `Clear: true`
+    // would be dropped and its table would quietly become an addition to the
+    // one it meant to replace. Carry it across instead: clearing is the
+    // stronger statement, and both mods' entries still survive it.
+    let existing = if header_clears(incoming) && !header_clears(existing) {
+        add_header_clear(existing)?
+    } else {
+        existing.to_string()
+    };
+    let existing = existing.as_str();
     let (_, incoming_body) = section(incoming, "Body:")?;
     // A Footer carries `Imports:`, which names other files rather than holding
     // entries. Keeping the first file's and dropping the rest is right: the
@@ -1760,6 +1807,53 @@ mod tests {
 
     /// Alphabetical is the floor, so the order is predictable without anyone
     /// declaring anything.
+    // Two mods, one population table: one adds its island, the other declares
+    // the table its own. The merged file has to keep both bodies *and* the
+    // Clear, or the replacing mod silently becomes an addition.
+    #[test]
+    fn a_replacing_table_keeps_its_clear_through_a_merge_with_an_adding_one() {
+        let adds = "Header:\n  Type: POPULATION_SPAWN_DB\n  Version: 1\n\nBody:\n  - Profile: combat_pve_low\n    FieldsAdd:\n      - ro_isle\n";
+        let replaces = "Header:\n  Type: POPULATION_SPAWN_DB\n  Version: 1\n  Clear: true\n\nBody:\n  - Profile: novice_default\n    Towns:\n      - new_1-1\n";
+        assert!(!header_clears(adds));
+        assert!(header_clears(replaces));
+
+        // Whichever order the mod names put them in.
+        let merged = merge_tables(adds, replaces).expect("same Type merges");
+        assert!(header_clears(&merged), "{merged}");
+        assert!(merged.contains("ro_isle"), "{merged}");
+        assert!(merged.contains("new_1-1"), "{merged}");
+        assert_eq!(merged.matches("Clear: true").count(), 1, "{merged}");
+
+        let merged = merge_tables(replaces, adds).expect("same Type merges");
+        assert!(header_clears(&merged), "{merged}");
+        assert!(merged.contains("ro_isle"), "{merged}");
+
+        // Two ordinary tables are untouched by any of this.
+        let merged = merge_tables(adds, adds).expect("same Type merges");
+        assert!(!header_clears(&merged), "{merged}");
+    }
+
+    // The spawn table has to keep declaring the import a mod's copy arrives
+    // through. Without the Footer the file loads, the mod's copy sits in
+    // db/import unread, and nothing reports it.
+    #[test]
+    fn the_population_spawn_table_still_imports_the_mod_overlay() {
+        let table = include_str!(
+            "../../third-party/population-engine/files/db/population_spawn.yml"
+        );
+        assert_eq!(header_type(table).as_deref(), Some("POPULATION_SPAWN_DB"));
+        assert!(
+            table.contains("- Path: db/import/population_spawn.yml"),
+            "the engine would read nothing a mod ships"
+        );
+        let stub = include_str!(
+            "../../third-party/population-engine/files/db/import-tmpl/population_spawn.yml"
+        );
+        assert_eq!(header_type(stub).as_deref(), Some("POPULATION_SPAWN_DB"));
+        // A stub that cleared would empty the shipped table on every start.
+        assert!(!header_clears(stub));
+    }
+
     #[test]
     fn with_nothing_declared_the_order_is_alphabetical() {
         assert_eq!(

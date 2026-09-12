@@ -256,6 +256,15 @@ if [ -d "$ROOT/vendor/rathena/db/import-tmpl" ]; then
 else
     echo "warning: no vendor/rathena/db/import-tmpl -- mods overriding a db table will warn" >&2
 fi
+# The population engine's stubs, from third-party/ rather than the checkout:
+# they only reach vendor/rathena when apply-server-mods.sh has run, and a
+# packaging run that skipped bootstrap would otherwise ship a db/import with a
+# hole in it -- which the map server reports as a missing import on every
+# start, once per table.
+if [ -d "$ROOT/third-party/population-engine/files/db/import-tmpl" ]; then
+    mkdir -p "$PAYLOAD/db-import"
+    cp "$ROOT"/third-party/population-engine/files/db/import-tmpl/* "$PAYLOAD/db-import/"
+fi
 
 # Mods that ship with the app. The supervisor reads these alongside the ones a
 # player installs, and a player's mod of the same name replaces the shipped

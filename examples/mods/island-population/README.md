@@ -1,65 +1,65 @@
 # island-population
 
-**This mod does not work, and the reason is worth more than the mod would be.**
+Puts twelve AI characters on the custom island from
+[`custom-map`](../custom-map), and leaves every other map exactly as it was.
 
-It is here because §3.7 of the brief asks whether a mod can put AI characters on
-a custom map, and the answer — read out of the loader rather than guessed — is
-no, not without a change to the engine.
+The whole mod is four lines of body in `db/population_spawn.yml`:
 
-## The wall
+```yaml
+Body:
+  - Profile: combat_pve_low
+    FieldsAdd:
+      - ro_isle
+    FieldsPopulationAdd: 12
+```
 
-The Population Engine is a source modification to rAthena, not stock rAthena,
-and it does not participate in the `db/import` mechanism at all. Every one of
-its tables is loaded from exactly one path:
+## Why `FieldsAdd` and not `Fields`
+
+`Fields:` **replaces** that profile's field list. Writing it here would take
+`combat_pve_low`'s low-level characters off every field map they are supposed
+to be on and strand all of them on the island — and it would need the twenty
+map names already in the profile restated, which would then go stale the next
+time the shipped table changes.
+
+`FieldsPopulationAdd:` is the same argument for the headcount. A category's
+population is divided between its maps, so adding a map without adding
+characters just spreads the existing ones thinner.
+
+To own the table outright instead of adding to it, put `Clear: true` in the
+header. rAthena empties a database before reading a file that asks for it, so
+the shipped table goes and only this one remains. That is the right shape for
+a server where the AI characters should be nowhere except where you say.
+
+## This did not used to work
+
+Until 1.3.0 it could not. The Population Engine is a source modification to
+rAthena rather than stock rAthena, and it read each of its tables from exactly
+one path:
 
 ```cpp
-// third-party/population-engine/files/src/map/population_engine/config/population_config.cpp
 static std::string population_config_join_db(const char *basename)
 {
 	return std::string(db_path) + "/" + basename;
 }
 ```
 
-`db_path` is `db`, so `population_spawn.yml` is read from `db/population_spawn.yml`
-and from nowhere else. There is no import path in the list, no era subdirectory,
-and no second load that could merge one in.
+`db_path` is `db`, so the table came from `db/population_spawn.yml` and nowhere
+else, while a mod's copy is mounted at `db/import/population_spawn.yml`. The
+server did not complain. It loaded its own copy, reported `Loading '14' entries
+in 'db/population_spawn.yml'`, and the island stayed empty — indistinguishable
+from a mod that loaded and did nothing.
 
-Meanwhile `scripts/apply-server-mods.sh` copies the engine's tables into the
-rAthena checkout at **image build time**, so the file that is actually read
-lives inside the container image. A mod's `db/population_spawn.yml` is mounted
-at `db/import/population_spawn.yml`, which nothing opens.
+What fixed it was a `Footer: Imports:` on the shipped table, which is how every
+stock rAthena table has always taken an override, plus a stub in
+`db/import-tmpl` so the import resolves when no mod supplies one. The `…Add`
+forms came with it, because per-profile override alone still meant restating a
+list to add one entry to it.
 
-The server does not complain. It loads its own copy, reports
-`Loading '14' entries in 'db/population_spawn.yml'`, and the island stays
-empty — which is indistinguishable from a mod that loaded and did nothing.
+**The other eight population databases are still not wired this way** — chat
+lines, names, gear sets, vendor placement. A mod's copy of those lands in a
+directory nothing opens, exactly as this one used to.
 
-## What it would take
-
-Six lines in the engine, and an image build to ship them:
-
-```cpp
-static std::string population_config_join_db(const char *basename)
-{
-	// A mod's tables arrive at db/import; prefer one when it is there.
-	std::string import = std::string(db_path) + "/" + DBIMPORT + "/" + basename;
-	if (std::filesystem::exists(import))
-		return import;
-	return std::string(db_path) + "/" + basename;
-}
-```
-
-That is replace-not-merge, which is the right shape for this table: the spawn
-config is a distribution across the whole world, and a partial override that
-merged would silently halve somebody else's population. It also means a mod
-that touches it must ship the whole file — which is why the one in `db/` here
-is complete rather than a fragment.
-
-The narrower alternative — the supervisor bind-mounting a merged file over
-`/rathena/db/population_spawn.yml` — was considered and does not survive
-contact: single-file binds are unreliable when the host path contains a space,
-and on macOS the state directory is under `Application Support`.
-
-## The trap that is already documented, and still applies
+## The trap that has not gone away
 
 `third-party/population-engine/validate.py` exists because this YAML has two
 failure modes the server never reports:
@@ -67,18 +67,11 @@ failure modes the server never reports:
 - **A job belongs to exactly one profile, and the last block parsed silently
   wins.** A profile that loses all its jobs is skipped without a word and the
   maps it owns just stay empty.
-- **A gear item in the wrong slot is rejected at load** and the shell spawns
-  naked.
+- **A gear item in the wrong slot is rejected at load** and the character
+  spawns naked.
 
 Run it over anything you write here:
 
 ```
 python3 third-party/population-engine/validate.py
 ```
-
-## Status
-
-Blocked. Tracked against issue
-[#6](https://github.com/Flux159/ragnarokoffline.app/issues/6)'s wider "mods
-should reach further into the server" theme; the engine change belongs in the
-next image build, not in a mod.

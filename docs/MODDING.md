@@ -227,6 +227,70 @@ which is 0.01%.
 
 See [`examples/mods/tougher-monsters`](../examples/mods/tougher-monsters).
 
+### Where the AI characters go
+
+The wandering AI characters are placed by `db/population_spawn.yml`, one entry
+per *profile* — `novice_default`, `combat_pve_low`, `pve_knight` and eleven
+more — each with a list of town, field and dungeon maps and a headcount to
+spread across each list.
+
+A mod ships `db/population_spawn.yml` like any other table, and names only the
+profiles it cares about. Entries are matched by `Profile:`, and only the fields
+an entry actually names are touched, so the rest of the table is left alone. A
+profile that is not in the shipped table is added whole.
+
+Each list and count has two forms, and the difference matters:
+
+| | |
+|---|---|
+| `Towns:` `Fields:` `Dungeons:` | **replace** that profile's list |
+| `TownsAdd:` `FieldsAdd:` `DungeonsAdd:` | **append** to it |
+| `TownsPopulation:` and the `Fields`/`Dungeons` pair | set the headcount |
+| `TownsPopulationAdd:` and its pair | add to the headcount |
+| `TownsMaxPerMap:` and its pair, plus the `…Add` forms | the per-map cap |
+
+Prefer the `Add` forms. A category's headcount is divided between its maps, so
+adding a map with the plain form means restating the twenty already there — and
+then silently keeping *those* twenty when the shipped table changes.
+
+```yaml
+# my-mod/db/population_spawn.yml — twelve more of them, on my island
+Header:
+  Type: POPULATION_SPAWN_DB
+  Version: 1
+
+Body:
+  - Profile: combat_pve_low
+    FieldsAdd:
+      - ro_isle
+    FieldsPopulationAdd: 12
+```
+
+**To own the table outright instead**, put `Clear: true` in the header.
+rAthena empties a database before reading a file that asks for it, so the
+shipped table goes and only yours remains — which is what you want for a server
+where the AI characters should be nowhere except where you say:
+
+```yaml
+Header:
+  Type: POPULATION_SPAWN_DB
+  Version: 1
+  Clear: true
+```
+
+If another enabled mod also ships this table, the two are combined as usual,
+and a `Clear:` from either one applies to the merged result.
+
+Two things the server will not tell you, which is why
+`third-party/population-engine/validate.py` exists: a job belongs to exactly
+one profile and the last definition silently wins, so a profile that loses all
+its jobs is skipped without a word and its maps just stay empty. Run the
+validator over anything you write here.
+
+The other eight population databases — chat lines, names, gear sets, vendor
+placement — are **not** wired this way yet. A mod's copy of those still lands
+in a directory nothing opens.
+
 ## npc/ — adding things to the world
 
 Every `.txt` under `npc/` is loaded as an rAthena script. That covers NPCs,

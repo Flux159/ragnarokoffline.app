@@ -678,3 +678,18 @@ Body:
       - in_sphinx4
       - in_sphinx5
     DungeonsPopulation: 40
+
+# RAGNAROKMAC: the import a mod's table arrives through.
+#
+# Without this the engine reads this file and nothing else, a mod's
+# db/population_spawn.yml lands at db/import/population_spawn.yml where
+# nothing opens it, and the server reports a clean load either way -- which is
+# indistinguishable from a mod that worked and changed nothing.
+#
+# Entries in the imported file are matched to these by Profile name and only
+# the fields they actually name are touched, so a mod adds a profile or edits
+# one without restating the rest. `Header: Clear: true` in the imported file
+# replaces this table outright instead.
+Footer:
+  Imports:
+  - Path: db/import/population_spawn.yml
