@@ -73,6 +73,57 @@ A signed release needs no change on your side. It is in progress and tracked in
 [#8](https://github.com/Flux159/ragnarokoffline.app/issues/8); the certificate authority has to verify our identity
 first, which takes weeks.
 
+## Windows: Defender says "Trojan:Win32/Bearfoos.B!ml"
+
+Nothing is infected, and **that is not the name of a file** — it is Microsoft
+Defender's name for a detection. Read it in four parts:
+
+| | |
+|---|---|
+| `Trojan` | what Defender thinks it is |
+| `Win32` | the platform |
+| `Bearfoos` | the family Microsoft assigned it to |
+| `.B` | the variant |
+| `!ml` | **a machine-learning model made this call**, not a signature |
+
+That last part is the one that matters. `!ml` means no known-malware signature
+matched. A model scored the file and Defender acted on the score. It is not a
+mangled `.yml`, and there is no file called "Bearfoos" anywhere in this
+project.
+
+**Why this app trips it.** The model weighs things this app genuinely does and
+things it genuinely lacks. It is unsigned, so there is no publisher to vouch
+for it — the same missing certificate as
+[#8](https://github.com/Flux159/ragnarokoffline.app/issues/8) and the Smart App
+Control section above. Every release is a brand-new binary almost nobody has
+run, so it carries no reputation. And it starts a hypervisor, launches several
+child processes and opens local ports, which is an unusual shape for a game.
+None of that is evidence of anything; together they are enough for a
+probabilistic model. Microsoft's own projects get hit by this exact detection —
+their APM repository has [an open issue for
+it](https://github.com/microsoft/apm/issues/487).
+
+**What can actually be checked**, rather than taken on trust:
+
+- Every release is built in public by GitHub Actions, from a public commit,
+  with the log kept. Nothing is uploaded from anyone's machine.
+- Each binary the app ships records its own SHA-256 and the commit it was built
+  from, beside it in `payload/bin`.
+- The only third-party binary in the installer is **Microsoft's own Visual C++
+  redistributable**, fetched from `aka.ms` at packaging time, and the build
+  refuses to ship it if it is not a Windows executable of a plausible size.
+- Download only from the
+  [releases page](https://github.com/Flux159/ragnarokoffline.app/releases). A
+  copy from anywhere else is a copy nobody here can vouch for, and that is the
+  one case where a detection deserves to be believed.
+
+**If you want it to stop**, the fix on our side is the code signing certificate
+in [#8](https://github.com/Flux159/ragnarokoffline.app/issues/8); a signed
+release with an established publisher is what these models are looking for.
+Until then you can report the detection to Microsoft as a false positive at
+<https://www.microsoft.com/wdsi/filesubmission> — reports from people who are
+not the publisher carry weight, and these are usually cleared within days.
+
 ## Windows: the app cannot start its virtual machine
 
 The server runs in a small Linux virtual machine, which needs two separate

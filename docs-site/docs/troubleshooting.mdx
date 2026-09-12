@@ -14,6 +14,28 @@ full walkthrough is in
 start its own server even with its own data folder. Quit the first and let it
 finish quitting.
 
+## Windows calls it a trojan
+
+**`Trojan:Win32/Bearfoos.B!ml` is not the name of a file.** It is Microsoft
+Defender's name for a detection, and the `!ml` on the end means a
+machine-learning model made the call rather than a signature matching known
+malware. There is no file called "Bearfoos" in this project.
+
+The app is unsigned, every release is a new binary with no reputation, and it
+starts a hypervisor and several child processes. None of that is evidence of
+anything, and together it is enough for a probabilistic model. Microsoft's own
+projects get flagged by this same detection.
+
+Download only from the
+[releases page](https://github.com/Flux159/ragnarokoffline.app/releases), where
+every build is produced in public by GitHub Actions from a public commit. The
+real fix is a code signing certificate, tracked in
+[#8](https://github.com/Flux159/ragnarokoffline.app/issues/8). You can also
+report it to Microsoft at [Microsoft's submission page](https://www.microsoft.com/wdsi/filesubmission), which
+usually clears within days. The longer version, including what each part of the
+detection name means, is in
+[TROUBLESHOOTING.md](https://github.com/Flux159/ragnarokoffline.app/blob/main/docs/TROUBLESHOOTING.md).
+
 ## The game window is blank, or sprites are missing
 
 Usually the client files. Check **Settings → General → Client** points at the
