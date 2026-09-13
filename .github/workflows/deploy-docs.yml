@@ -1,0 +1,58 @@
+name: Deploy Documentation
+
+# Builds the Vite/React/MDX site in docs-site/ and publishes it to GitHub Pages
+# (https://flux159.github.io/ragnarokoffline.app/).
+#
+# docs/ also holds notes meant for people working on the app -- crash
+# diagnostics, sanitizer investigation, hosting policy. The site only bundles
+# what is explicitly under docs-site/docs/ and wired into the sidebar, so a new
+# internal note can never publish itself by being added to docs/.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs-site/**"
+      - ".github/workflows/deploy-docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        working-directory: docs-site
+        run: bun install
+      - name: Build site
+        working-directory: docs-site
+        run: bun run build
+      - uses: actions/configure-pages@v4
+        # Pages has never been turned on for this repository, so let the first
+        # run enable it rather than requiring a visit to the settings page.
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs-site/dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

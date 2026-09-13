@@ -1,0 +1,61 @@
+# Ragnarok Offline
+
+Your own Ragnarok Online server and client, in one app, on macOS, Windows and
+Linux. The server, the database and the browser client are all inside it —
+there is no Docker to install, no rAthena to compile and no client to patch.
+
+You supply your own Ragnarok client files. Nothing copyrighted ships with the
+app.
+
+## What actually happens when you press play
+
+The app starts a microVM, runs the Ragnarok server and its database inside it,
+and opens the game client in a window. The server is Linux-only, so the VM is
+how the same server runs on macOS, Windows and Linux without being ported.
+
+Your characters live on your machine, in a database only this app talks to.
+Nothing is sent anywhere.
+
+## First run
+
+1. **Install and open the app.**
+2. **Point it at your Ragnarok files** — the folder holding `data.grf`, and
+   usually `rdata.grf` beside it.
+
+   **You need to find these yourself.** They are the client files from a
+   Ragnarok Online installation, and nothing copyrighted ships with this app.
+   **Please do not ask for links in the Discord** — we cannot help with that,
+   and posts asking for them will be removed.
+3. **Press play.** The first start takes a few minutes while it unpacks the
+   server images; later starts take seconds.
+4. **Log in.** A fresh install ships with a ready-made admin account:
+
+   | Username | Password |
+   |---|---|
+   | `ragnarok` | `ragnarok` |
+
+   It is in the Admin group, so `@` commands work straight away. Change its
+   password in **Settings → Accounts**.
+
+5. **Or make your own account** at the login screen. Type the username you want
+   with `_M` or `_F` on the end — `myname_M` or `myname_F` — and a password of
+   your choice, 8 to 23 characters. That creates the account. From then on log
+   in as `myname` with the same password, without the suffix.
+
+See [Installing](./installing) for the details, including where the app keeps
+its data on each platform.
+
+## Getting help
+
+**[Join the Discord](https://discord.gg/jUYC9dMbu5)** — for help getting set up,
+showing off a server, or reporting something odd. Bugs are also welcome as
+[GitHub issues](https://github.com/Flux159/ragnarokoffline.app/issues), and
+**Copy diagnostics** in the app gathers everything a report needs.
+
+## Where to go next
+
+- [Playing from the keyboard](./keyboard) — WASD, camera turning, and where
+  skills live.
+- [Playing with friends](./friends) — over your network, or over the internet.
+- [Settings](./settings-general) — a page for each tab.
+- [Making mods](./modding) — sprites, maps, NPCs and item tables, as folders.

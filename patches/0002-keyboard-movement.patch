@@ -1,12 +1,28 @@
 From: RagnarokMac <noreply@ragnarokmac>
-Subject: [PATCH] Add WASD / arrow-key movement
+Subject: [PATCH] Configurable shared directional movement (client API 1)
 
 Ragnarok has no directional walk packet, only "walk to this cell", so held
 keys are translated into a repeated destination a few cells ahead - the same
 approach the on-screen joystick already uses. The vector is rotated by the
 camera so "up" means up the screen, not up the map.
 
-Adds src/Controls/KeyboardMove.js and initialises it alongside MapControl.
-Guards against walking while typing in chat, ignores Cmd/Ctrl/Alt combinations
-so shortcuts still work, supports diagonals, and clears held keys on window
-blur so the character does not keep walking after a Cmd-Tab.
+Implemented by patches/client/, scripts/patch-client-controls.py and the
+bundled mods/wasd-movement adapter. The old unconditional KeyboardMove hook
+is removed. Keyboard and touch share intent ownership, bounded pathfinding
+and native movement packets. Map/network/GUI hooks provide lifecycle and
+component notifications without exposing engine globals to plugins.
+
+Q and E turn the camera while held, clamped to the same limits the mouse
+drag obeys -- indoor maps allow only a narrow window, so a key press there
+turns as far as it can and stops. Space attacks the nearest living monster,
+walking into range first when needed; it sends RO's continuous attack, so the
+server keeps swinging until the target falls and nothing loops client-side.
+Skills stay on roBrowser's own shortcut bar.
+
+The Controls dialog provides per-browser enablement, physical-key rebinding,
+arrows, turning, attack and movement/battle-shortcut priority. Text entry, IME, shortcut capture,
+modals, blur and hidden pages cancel movement. A fresh physical press is
+required after cancellation; OS key repeat cannot revive stale intent.
+
+Tests: tests/client-extensions.test.cjs and tests/e2e/controls.spec.cjs.
+The latter requires a real disposable rAthena world and owned Rust server.

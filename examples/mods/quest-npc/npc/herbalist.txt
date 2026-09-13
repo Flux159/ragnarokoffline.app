@@ -1,0 +1,82 @@
+// A quest, in the only sense rAthena has one: an NPC, a menu, a variable that
+// persists on the character, and a reward that is given exactly once.
+//
+// Placement is <map>,<x>,<y>,<facing> and the separators are TABS. Facing 4 is
+// south-west. 4_F_KAFRA1 is a sprite that every client has.
+
+prontera,150,193,4	script	Herbalist Yuna#quest	4_F_KAFRA1,{
+	// A variable with no prefix is a *permanent character* variable: it is
+	// written to the char_reg_num table and it comes back after a relog, an
+	// era switch or a server restart. That is what makes this a quest rather
+	// than a conversation.
+	//
+	//   .@name   disappears at the end of this script run
+	//   @name    disappears when the character logs out
+	//   name     stays with the character, in the database
+	//   $name    stays with the *server*, shared by everyone
+	//
+	// Prefixing with the mod's name is a convention, not a rule, and it is the
+	// only thing standing between two mods that both wanted to call a variable
+	// "progress".
+	if (ro_herbs == 2) {
+		mes "[Herbalist Yuna]";
+		mes "You already brought me the jellopy. Thank you again!";
+		close;
+	}
+
+	if (ro_herbs == 1) {
+		mes "[Herbalist Yuna]";
+		if (countitem(Jellopy) < 10) {
+			mes "Still ten jellopy. Porings, mostly — south gate, then west.";
+			mes "You have " + countitem(Jellopy) + " so far.";
+			close;
+		}
+		mes "Ten jellopy, just as I asked. Here, take this.";
+		// delitem before getitem, and both before the variable is set: if the
+		// script is interrupted between them, the worse failure is the one
+		// where the player is paid twice.
+		delitem Jellopy, 10;
+		getitem Red_Potion, 10;
+		set Zeny, Zeny + 2000;
+		set ro_herbs, 2;
+		close;
+	}
+
+	mes "[Herbalist Yuna]";
+	mes "Oh — hello. You look like you can walk a way without complaining.";
+	next;
+	mes "[Herbalist Yuna]";
+	mes "I make potions, and I am out of jellopy. It is sticky, it is";
+	mes "everywhere, and I cannot leave the stall to go and get it.";
+	next;
+
+	// select() shows a menu and returns which line was chosen, counting from 1.
+	// The lines are separated by colons.
+	switch (select("I'll get your jellopy:What's in it for me?:Not right now")) {
+	case 1:
+		mes "[Herbalist Yuna]";
+		mes "Ten of them. Porings drop it, and there are plenty of those";
+		mes "outside the south gate.";
+		set ro_herbs, 1;
+		close;
+
+	case 2:
+		mes "[Herbalist Yuna]";
+		mes "Ten red potions and two thousand zeny. That is more than the";
+		mes "jellopy is worth and we both know it.";
+		next;
+		mes "[Herbalist Yuna]";
+		if (select("Fine, I'll do it:Still no") == 1) {
+			mes "Good. Ten jellopy, whenever you have them.";
+			set ro_herbs, 1;
+		} else {
+			mes "Suit yourself.";
+		}
+		close;
+
+	case 3:
+		mes "[Herbalist Yuna]";
+		mes "I'll be here. I am always here.";
+		close;
+	}
+}

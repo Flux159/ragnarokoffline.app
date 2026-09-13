@@ -1,0 +1,7 @@
+{
+  "name": "custom-map",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "A new map that did not exist before: its own ground, its own monsters, its own NPC.",
+  "requires": { "app": ">=1.0.6", "era": "any" }
+}

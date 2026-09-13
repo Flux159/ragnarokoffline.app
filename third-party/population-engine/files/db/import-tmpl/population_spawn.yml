@@ -1,0 +1,34 @@
+# Population Engine Spawn Database — import stub.
+#
+# Copied into db/import by `make import`, the same way rAthena's own sixty
+# stubs are, so db/population_spawn.yml can import it unconditionally. An
+# import that names a file which is not there is an error on every start.
+#
+# A mod's db/population_spawn.yml replaces this file. Entries are matched to
+# the shipped table by Profile name, and only the fields an entry names are
+# touched:
+#
+#   Body:
+#     - Profile: combat_pve_low
+#       FieldsAdd:
+#         - ro_isle              # added to the profile's field list
+#       FieldsPopulationAdd: 12  # added to its field population
+#
+# Towns/Fields/Dungeons replace a profile's list; TownsAdd/FieldsAdd/
+# DungeonsAdd append to it. The same pair exists for the population and
+# per-map cap of each category. A Profile that is not in the shipped table is
+# added whole.
+#
+# To replace the shipped table outright rather than add to it, put
+# `Clear: true` in the Header below: rAthena empties the database before
+# reading a file that asks for it, so only this file's entries survive.
+
+Header:
+  Type: POPULATION_SPAWN_DB
+  Version: 1
+
+#Body:
+#  - Profile: combat_pve_low
+#    FieldsAdd:
+#      - ro_isle
+#    FieldsPopulationAdd: 12

@@ -12,15 +12,14 @@
 
 	The viewers are still reachable at api.html?app=GRFVIEWER and friends.
 
-	replace() rather than a plain assignment, so Back leaves the game instead of
-	bouncing through the redirect again. The meta refresh covers a browser with
-	scripting disabled, and the link covers both.
+	replace() keeps Back useful. Preserve an invitation fragment for the game
+	bootstrap to exchange; it must never become a query parameter or be lost
+	when a browser friend opens the root link.
 -->
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
 		<title>Ragnarok Offline</title>
-		<meta http-equiv="refresh" content="0; url=./api.html?app=ONLINE" />
 		<style>
 			html, body { margin: 0; height: 100%; background: #060810; }
 			p {
@@ -32,6 +31,12 @@
 	</head>
 	<body>
 		<p>Opening the game… <a href="./api.html?app=ONLINE">continue</a></p>
-		<script>location.replace('./api.html?app=ONLINE');</script>
+		<noscript><p>Enable JavaScript to open the game and use an invitation.</p></noscript>
+		<script>
+			const game = new URL('./api.html?app=ONLINE', location.href);
+			game.hash = location.hash;
+			document.querySelector('a').href = game.href;
+			location.replace(game.href);
+		</script>
 	</body>
 </html>

@@ -11,28 +11,8 @@ and game window in one icon. Double-click it and you are in Midgard after obtain
 the assets. macOS, Linux and Windows.
 
 **[Join the Discord](https://discord.gg/jUYC9dMbu5)** for help getting set up, or
-read the [Troubleshooting](#troubleshooting) section below. Bugs and feature
+read [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md). Bugs and feature
 requests are welcome as [issues](../../issues).
-
----
-
-> [!IMPORTANT]
-> **Two things to know on Windows.**
->
-> **1. Windows may block the app from starting.** Our files are not code-signed
-> yet, so on a newer Windows 11 install Smart App Control refuses to run them —
-> from 1.0.2 the app says so directly, with the error *"An Application Control
-> policy has blocked this file"*. If you hit it, read
-> [this troubleshooting section](https://github.com/Flux159/ragnarokoffline.app/tree/main#windows-an-application-control-policy-has-blocked-this-file)
-> before changing anything. Signing is in progress ([#8](../../issues/8)) and
-> will need nothing from you.
->
-> **2. Close kernel-level anti-cheat before starting.** Riot Vanguard
-> (Valorant, League of Legends) and similar always-on anti-cheat drivers load at
-> boot and take exclusive control of the hypervisor. Running one alongside this
-> app has put at least one machine into a **reboot loop**. Fully exit the game
-> and its anti-cheat service — or reboot without it — before launching. Faceit,
-> ESEA and EasyAntiCheat's kernel mode are likely to behave the same way.
 
 ## Getting started
 
@@ -42,9 +22,19 @@ assets, first launch — or follow the same three steps below.
 **1. Download a build.** Grab the latest release for your platform from the
 [releases page](../../releases).
 
-**2. Get a Ragnarok client.** You supply your own — see [License](#license). Put it
+**2. Get the game files for your Ragnarok client.** You will need to obtain these from another source. Put it
 somewhere you can find again; unzipping a full client gives you a folder containing
-`data.grf`, `rdata.grf` and a `BGM` folder, which is what the app looks for.
+`data.grf`, `rdata.grf` and a `BGM` folder, which is what the app looks for. **kRO '23 and a current 2026 client are both tested.**
+
+Renewal or pre-renewal is a setting you can change in Settings → Game era, which keeps a separate set of
+characters for each.
+
+`rdata.grf` is optional. Older clients split renewal content into it; newer ones
+ship a single `data.grf` with everything merged in, and either is fine.
+
+A Latin American client is one of the newer kind: one `data.grf`, plus an
+`event.grf` holding the seasonal versions of a few towns. Point the third
+picker at `event.grf` if you want those, or leave it empty.
 
 If you only want to join a friend who is hosting a server, see
 [Hosting and playing with friends on your LAN](#hosting-and-playing-with-friends-on-your-lan)
@@ -54,12 +44,25 @@ If you only want to join a friend who is hosting a server, see
 picker: choose the folder you unzipped and it finds the rest. Then it starts the
 server and drops you at the login screen.
 
+The first launch takes a few minutes: it unpacks the runtime, boots the microVM, loads
+the container images and initialises the database. You can see each step as it
+progresses. Every launch after that is ~10-15 seconds.
+
 Log in with **`ragnarok`** / **`ragnarok`** — the account is created for you on
 first run — and make a character.
 
-First launch takes a few minutes: it unpacks the runtime, boots the microVM, loads
-the container images and initialises the database. The window names each step as it
-goes, so you can see where it is. Every launch after that is seconds.
+**`ragnarok` is a GM account.** It can use every `@` command including warping. 
+With GM accounts your outfit generally always looks like a GM, so if you don't want that create your own non-GM account.
+
+**To play as an ordinary character, make your own account.** On the login
+screen, type your username with **`_M`** or **`_F`** suffix on the end, pick a
+password, and press Login (example: `flux159_M` as the username). Note that it
+doesn't matter if you pick `_M` or `_F`, you are still able to create male and
+female characters after logging in. After your first account creation, you can 
+login as `myname`  without the suffix. Both the name and the password need at least four characters.
+
+Ordinary accounts have almost no `@` commands — rAthena keeps `@autoloot` and
+`@showexp` for GMs. Settings → Mods → **player-commands** gives player characters some common commands.
 
 **4. Optional: fill the world with people.** A private server is empty by
 default. Settings → **Population** puts AI characters on the map with you —
@@ -67,6 +70,14 @@ hunting in the fields, standing around town, running vending stalls you can
 actually buy from. See [Filling the world](#filling-the-world) below.
 
 ---
+
+## Sharing with friends over the internet
+
+Use **Settings → Multiplayer → Set up sharing over the internet**, then choose
+**Share with friends → Copy invitation link**. Temporary session links need no
+Cloudflare account or token; connecting your own fixed hostname is optional.
+Friends open the HTTPS link in their browser and play on your running world.
+See [setup, invitation expiry and Stop sharing](docs/FRIENDS_SHARING.md).
 
 ## Hosting and playing with friends on your LAN
 
@@ -99,18 +110,23 @@ their owners.
 Joining a friend's server does not require you to download assets. On the setup
 screen, just click **Join a friend** and paste the link that your friend sent.
 
+Full links keep their HTTP or HTTPS scheme and port. A bare LAN address such as
+`192.168.1.20` uses port 3338. HTTPS certificate failures must be fixed by the
+host; the app does not bypass certificate verification.
+
 <img src="docs/assets/joinafriend.png" alt="First-run setup screen on the Join a friend tab, asking for the host's server address" width="640">
 
 The host serves the client and the artwork, so joining starts in seconds instead
 of the few minutes a first run takes. You make your own character on their
 server: on the login screen, add `_M` or `_F` to the end of a new username and
-that account is created as you log in.
+that account is created as you log in, if the host allows signup. Internet
+invitations instead offer account creation before entering the game.
 
 ### Joining from a browser, with nothing installed
 
 The client is roBrowserLegacy, and the host is already serving it over HTTP — so
 the same link opens the game in a normal browser. **Paste it into the address
-bar and play. No download, no app, no game files.**
+bar and play.**
 
 ```
 http://192.168.1.20:3338/
@@ -157,7 +173,8 @@ part of running an RO server on a Mac is not the server — it is that the serve
 never meant to run on one. So we do not port it; we bring Linux. The same holds for
 Windows, which is how one codebase covers three platforms.
 
-roBrowserLegacy carries three small client patches in `patches/`. rAthena is
+roBrowserLegacy is built with the client fixes in `patches/` and
+`scripts/patch-client.sh`. rAthena is
 built from a clean upstream clone with one optional server modification compiled
 in: the [Population Engine](https://github.com/YlenXWalker/Population-Engine),
 which fills a solo world with AI characters and is **off unless you turn it on**
@@ -215,7 +232,7 @@ flowchart TB
 Ports are published to `127.0.0.1` unless you turn on
 [LAN hosting](#hosting-and-playing-with-friends-on-your-lan), which binds them to
 your network interface instead. The GRFs stay wherever you keep them —
-the app symlinks them into a server root and reads them where they lie, so a
+the app reads them in place through a private archive manifest, so a
 3.5 GB client is never duplicated.
 
 ### What actually happens when you press play
@@ -316,6 +333,15 @@ kRO is Korean, and the translation comes from
 [**ROenglishRE**](https://github.com/llchrisll/ROenglishRE). Its text tables ship
 inside the app, so the game is in English out of the box with no extra step.
 
+**If your client is not Korean, you can turn this off.** Settings → **Game
+text** switches between the English translation and the text your client came
+with, which is the one to use for a Latin American download that is already in
+Spanish and Portuguese. It also picks how that text is decoded, so choose
+*Western* for a Latin American, international or European client and *Korean*
+for kRO. A few system messages the server sends by number show as `NO MSG 2580`
+that way, because newer clients keep those in a format roBrowser does not read;
+names, dialogue and quest text all come across.
+
 If you also have that project's supplementary art pack — `official_data.grf`, which
 contains no text at all, only translated sprites and textures — put it in the same
 folder as your other GRFs. The app picks it up automatically and gives it priority
@@ -326,176 +352,63 @@ too.
 
 ## Troubleshooting
 
-Answers to the things people have actually hit. If yours is not here, the
-Settings window has a **Report a problem** button that copies everything a fix
-needs — logs, paths, versions — and opens a new issue ready to paste it into.
-Or ask in the [Discord](https://discord.gg/jUYC9dMbu5).
+Answers to the things people have actually hit — Windows blocking the app,
+a client folder on the wrong drive, the virtual machine refusing to start,
+the first login not taking, and moving your characters to another machine —
+are collected in **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)**.
 
-### "Could not link … needs the client and the app data directory on the same drive"
+Unexpected game-server exits also retain private [crash evidence](docs/CRASH_DIAGNOSTICS.md) before container cleanup. Native stack traces and the intermittent crash investigation remain in progress.
 
-Windows only, and it means your client folder is on a different drive from where
-the app keeps its data (usually `C:`).
-
-The app does not copy your GRFs — they are gigabytes — it links them. Windows
-allows that in two ways, and both can be unavailable at once: a *hard link*
-cannot cross drives, and a *symlink* needs Developer Mode. A client on `D:` with
-Developer Mode off has neither.
-
-Any one of these fixes it:
-
-1. **Move the client folder to your `C:` drive** and pick it again. Simplest, and
-   the one that has worked for people so far.
-2. **Turn on Developer Mode** — Settings → System → For developers → Developer
-   Mode — then pick the folder again.
-3. **Run the app as Administrator** once while selecting the folder.
-
-macOS and Linux are unaffected. Tracked as [#5](../../issues/5); the long-term
-fix is to stop linking the GRFs at all.
-
-### Windows: a reboot loop, or the machine restarts on launch
-
-Kernel-level anti-cheat and this app cannot both drive the hypervisor. **Riot
-Vanguard** (Valorant, League of Legends) loads at boot as a kernel driver and
-claims virtualisation exclusively; starting the virtual machine alongside it has
-put at least one machine into a reboot loop.
-
-If you are in one: boot into Safe Mode, disable or uninstall the anti-cheat
-service, and reboot normally.
-
-To avoid it, fully quit the game **and** its anti-cheat service before launching
-— for Vanguard that means the tray icon, `Exit Vanguard`, and often a restart,
-since it starts with Windows. EasyAntiCheat in kernel mode, Faceit and ESEA are
-likely to behave the same way. Anti-cheat that runs only while a game is open is
-generally fine.
-
-This is not something the app can work around: both want exclusive use of the
-same hardware feature.
-
-### Windows: "An Application Control policy has blocked this file"
-
-Windows refused to run the app because our files are not code-signed yet, and
-**Smart App Control** blocks programs it does not recognise. Nothing is wrong
-with your computer and nothing is infected — it is a certificate we have not
-finished buying.
-
-It affects newer Windows 11 installs, because Smart App Control is on by default
-there and turns itself off on machines that have been in use for a while. That
-is why it works for some people and not others.
-
-> [!NOTE]
-> Unless you know what you are doing, it is not recommended to do this. Please
-> wait for [#8](../../issues/8) to be completed to have a seamless experience,
-> or try the app on Mac or Linux.
-
-If you understand the trade and want to play now:
-
-```
-Windows Security -> App & browser control -> Smart App Control settings -> Off
-```
-
-**Turning it off is permanent** — Windows will not let it be switched back on
-without reinstalling Windows. You would be disabling a security feature for
-every program on that machine, not just this one, and you cannot undo it.
-
-A signed release needs no change on your side. It is in progress and tracked in
-[#8](../../issues/8); the certificate authority has to verify our identity
-first, which takes weeks.
-
-### Windows: the app cannot start its virtual machine
-
-The server runs in a small Linux virtual machine, which needs two separate
-things switched on. They fail the same way and are fixed differently, so check
-in this order.
-
-**1. Is virtualisation on in your firmware?**
-
-Open **Task Manager** (Ctrl+Shift+Esc) → **Performance** → **CPU**, and look for
-**Virtualization** on the right.
-
-- *Enabled* — good, go to step 2.
-- *Disabled* — turn it on in your BIOS/UEFI. It is usually called
-  **Intel VT-x**, **AMD-V** or **SVM Mode**, and the key to enter setup is shown
-  briefly when the machine starts. Nothing on Windows can enable this for you.
-- *You do not see the line at all* — a hypervisor is already running, which
-  means it is on. Go to step 2.
-
-**2. Is kernel-level anti-cheat running?** See the section above — Riot Vanguard
-and similar drivers take the hypervisor exclusively.
-
-**3. Is the Windows Hypervisor Platform switched on?**
-
-Press Windows+R, run **`optionalfeatures`**, and make sure **Windows Hypervisor
-Platform** is ticked. Reboot if you change it.
-
-Or, in a **Command Prompt opened as Administrator**:
-
-```
-dism.exe /Online /Enable-Feature /FeatureName:HypervisorPlatform /All
-```
-
-Then restart the machine.
-
-**Windows 11 Home is fine.** This is not the full Hyper-V role, which is
-Pro-only — it is the same feature WSL2 and Docker Desktop use, and it is
-available on Home.
-
-To check what Windows itself thinks, in PowerShell:
-
-```powershell
-(Get-CimInstance Win32_ComputerSystem).HypervisorPresent
-```
-
-`True` means a hypervisor is running and the app should work.
-
-### Windows: it starts, then hangs with nothing happening
-
-If the app reports that the virtual machine did not come up, and repairing does
-not help, the guest image may have been damaged as it was written. Installing it
-writes over a gigabyte, and antivirus software inspects every byte — a file
-quarantined or truncated mid-write leaves a virtual machine that starts and then
-does nothing at all.
-
-Version 1.0.2 and later check for this on startup and say so. On earlier
-versions, **Repair…** in Settings reinstalls the image. If it recurs, allow this
-folder in your antivirus and repair once more:
-
-```
-%APPDATA%\Ragnarok Offline\nebula
-```
-
-### `ragnarok` / `ragnarok` does not work on the very first login
-
-**Close the app and open it again**, then log in. This has fixed it for everyone
-who has hit it.
-
-The account is created the first time the server starts, and on a fresh install
-that could race the database still importing its schema — the account creation
-failed and nothing reported it. Reopening the app runs it again, against a
-database that is now ready.
-
-Fixed in the next release: the app now waits for the schema rather than just a
-connection, and refuses to start with an error if the account is not there,
-instead of leaving you at a login screen that cannot work.
-
-### My characters are gone / I want to move them to another machine
-
-Settings → **Back up…** writes everything to a single file, and **Restore…**
-reads it back. Characters live inside the app's database, not in a folder you
-can copy.
-
-### It is slow, or my machine gets hot
-
-Turn down **How busy** in Settings, or switch off **Fake players** entirely. The
-AI characters are the only part of the server that costs meaningful CPU, and the
-game itself runs on very little.
+If yours is not there, the Settings window has a **Report a problem** button
+that copies everything a fix needs — logs, paths, versions — and opens a new
+issue ready to paste it into. Or ask in the
+[Discord](https://discord.gg/jUYC9dMbu5).
 
 ---
+
+## Modding
+
+A mod is a folder. Drop it in the mods directory, restart, and it is live — no
+rebuild, no compiler, no Docker.
+
+You can change what monsters are worth and what they drop, add NPCs with real
+quests, replace the login screen and the loading screens with your own art,
+build a map that is in nobody's GRF and put monsters and NPCs on it, decide
+where new characters wake up, and restyle the client itself. Settings → Mods
+lists what is installed, with a checkbox each.
+
+**[docs/MODDING.md](docs/MODDING.md)** is the guide, and
+**[examples/mods/](examples/mods)** has eight worked examples — each one a mod
+that has actually been run, with a README saying what it demonstrates. Copy the
+folder closest to what you want.
+
+<img src="docs/assets/modlogin.jpg" alt="A custom login screen from the login-screen example mod" width="640">
+
+## Documentation
+
+**[flux159.github.io/ragnarokoffline.app](https://flux159.github.io/ragnarokoffline.app/)**
+— installing, a page for each Settings tab, playing with friends, making mods
+and troubleshooting. Source is in [docs-site/docs](docs-site/docs); the deeper
+references for people working on the app stay in [docs/](docs).
+
+## Playing from the keyboard
+
+Skills and items go on the shortcut bar — `F1`–`F9`, `1`–`9`, and two more rows
+— which is roBrowser's own and always there. The bundled `wasd-movement` mod
+adds walking, `Q`/`E` camera turning and a spacebar attack on the nearest
+monster. Those two share some keys, and you choose which wins:
+**[docs/KEYBOARD_CONTROLS.md](docs/KEYBOARD_CONTROLS.md)**.
 
 ## Advanced features
 
 Backing up and restoring your characters, where the app keeps its data on each
 platform, how much disk it uses, and how to reset an install to a fresh state:
 **[docs/ADVANCED_FEATURES.md](docs/ADVANCED_FEATURES.md)**.
+
+The server's database can also be read and repaired directly, for the states
+the game has no button for — a homunculus that cannot be called or replaced, a
+character the server still thinks is online. `ragnarok-stack sql` is in the app
+you already have: **[docs/DATABASE.md](docs/DATABASE.md)**.
 
 ---
 

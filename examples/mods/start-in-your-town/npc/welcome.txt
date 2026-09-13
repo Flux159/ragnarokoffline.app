@@ -1,0 +1,11 @@
+// Somebody to meet on the way out of the boat, since a starting town with
+// nobody in it is a field.
+ro_isle,42,44,4	script	Harbourmaster#start	4_M_01,{
+	mes "[Harbourmaster]";
+	mes "New here? Everyone is.";
+	next;
+	mes "[Harbourmaster]";
+	mes "Prontera is a boat ride away — the jetty is at the south end of";
+	mes "the island. Mind the Porings on the way.";
+	close;
+}

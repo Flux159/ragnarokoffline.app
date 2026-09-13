@@ -1,0 +1,15 @@
+// Somebody to get one from, because an item you cannot obtain proves nothing.
+prontera,148,193,4	script	Island Brewer#item	4_F_ALCHE,{
+	mes "[Island Brewer]";
+	mes "Try this. I make it from what grows on the island.";
+	next;
+	if (checkweight(Islander_Brew, 1) == 0) {
+		mes "[Island Brewer]";
+		mes "You are carrying too much already.";
+		close;
+	}
+	getitem Islander_Brew, 3;
+	mes "[Island Brewer]";
+	mes "Three of them. Mind the aftertaste.";
+	close;
+}

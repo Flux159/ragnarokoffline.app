@@ -6,6 +6,7 @@
 # floating: MariaDB cannot open a data directory written by a newer major
 # version, so an unannounced upgrade would leave existing characters unreadable.
 FROM alpine:3.23
+LABEL app.ragnarokoffline.private-db-files="v1"
 
 # One layer on purpose. A later `rm` only hides files from the filesystem view —
 # they stay in the layer that added them, and both layers ship. The install and

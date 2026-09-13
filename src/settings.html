@@ -14,6 +14,21 @@
     background: var(--panel); border: 1px solid var(--line);
     border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;
   }
+  /* A class that sets display beats the user agent's [hidden] rule, so
+     hidden did nothing on a .row -- and every row here sets display:flex.
+     Global, because the next person to hide one should not rediscover it. */
+  [hidden] { display: none !important; }
+  /* The whole invitation, elided. Shown in full rather than as a hostname
+     because a hostname looks copyable and is useless to whoever receives it --
+     the token is the part that lets a friend in. Clicking copies, so nobody
+     has to select an elided string by hand. */
+  .linkcopy {
+    flex: 1 1 auto; min-width: 0; margin: 0 10px; padding: 2px 6px;
+    background: transparent; border: 1px dashed var(--line); border-radius: 5px;
+    color: var(--text); font: inherit; font-size: 12px; text-align: left;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
+  }
+  .linkcopy:hover, .linkcopy:focus-visible { border-color: var(--accent); border-style: solid; }
   .row {
     display: flex; justify-content: space-between; align-items: center;
     padding: 5px 0; border-bottom: 1px solid var(--line);
@@ -22,7 +37,25 @@
   .name { color: var(--dim); }
   .state { font-variant-numeric: tabular-nums; }
   .up { color: var(--ok); } .down { color: var(--bad); }
-  .actions { display: flex; gap: 8px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* A button that hyphenates its own label to fit is worse than one that moves
+     to the next line, so wrap the row and never the label. */
+  .actions button { flex: 0 0 auto; white-space: nowrap; }
+  /* Buttons sat flush against the row above them. Three callers already
+     worked around it with an inline margin-top:10px, so match that rather
+     than introduce a second spacing. Excluded for .row actions, which take
+     their spacing from .row's own padding. */
+  .actions:not(.row) { margin-top: 10px; }
+  /* Disclosure sections. Their bodies are direct children -- no wrapper and no
+     .actions row -- so nothing spaced them: the first control sat flush under
+     the summary, the loose buttons inside had no margin at all, and the last
+     line sat against whatever followed the section. Indent the body against
+     its summary and give those buttons the same 10px .actions uses. */
+  details { margin: 12px 0; padding-left: 14px; }
+  details > summary { cursor: pointer; margin-left: -14px; padding: 3px 0; }
+  details[open] { padding-bottom: 12px; }
+  details[open] > summary { margin-bottom: 6px; }
+  details button { margin-top: 10px; }
   button {
     background: var(--accent); color: #0d0f15; border: 0; border-radius: 6px;
     padding: 8px 16px; font-weight: 600; font-size: 13px; cursor: pointer;
@@ -33,37 +66,151 @@
   }
   button.ghost:hover:not(:disabled) { border-color: var(--accent-dim); color: var(--text); }
   button:disabled { opacity: .4; cursor: default; }
+  .spinner {
+    width: 12px; height: 12px; border: 2px solid var(--line);
+    border-top-color: var(--accent); border-radius: 50%;
+    display: inline-block; vertical-align: -2px; margin-right: 8px;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .seg { display: flex; gap: 0; margin-left: auto; }
+  .seg button {
+    background: transparent; color: var(--dim); border: 1px solid var(--line);
+    border-radius: 0; padding: 7px 18px; font-weight: 600;
+  }
+  .seg button:first-child { border-radius: 6px 0 0 6px; }
+  .seg button:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #0d0f15; border-color: var(--accent); }
+  .seg button[aria-pressed="true"]:hover { background: var(--accent-hi); }
+  .seg button[aria-pressed="false"]:hover { color: var(--text); border-color: var(--accent-dim); }
   label { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
   label > span:first-child { color: var(--dim); width: 128px; flex: none; }
   input[type=range] { flex: 1; accent-color: var(--accent); }
   .val { width: 50px; text-align: right; font-variant-numeric: tabular-nums; color: var(--accent-hi); }
+  /* The slider is a shortcut; this box is the value. Typing here is the only
+     way past the slider's ceiling, which is deliberately not the server's. */
+  .mult { display: flex; align-items: baseline; gap: 2px; color: var(--accent-hi); flex: none; }
+  input.num { background: var(--panel-2, #1b1b1f); color: var(--accent-hi); border: 1px solid var(--line, #333);
+              border-radius: 4px; padding: 2px 4px; width: 68px; font: inherit;
+              font-variant-numeric: tabular-nums; text-align: right; }
+  input.num:focus { outline: none; border-color: var(--accent); }
   /* The multiplayer section is the first place this window asks for typed
      input or a choice, so these controls have no styles yet. Browser defaults
      on a dark panel are unreadable rather than merely plain. */
-  select, input[type=text] {
+  /* input:not([type]) as well as [type=text]: an <input> with no type
+     attribute defaults to text but does not match [type=text], and falls
+     through to the browser's own white box. */
+  select, input[type=text], input:not([type]), input[type=password] {
     background: var(--panel-hi); border: 1px solid var(--line);
     border-radius: 6px; padding: 7px 10px; font-size: 13px;
     color: var(--text); font-family: inherit; min-width: 200px;
   }
-  select:focus, input[type=text]:focus { outline: none; border-color: var(--accent-dim); }
+  select:focus, input[type=text]:focus, input:not([type]):focus, input[type=password]:focus { outline: none; border-color: var(--accent-dim); }
   input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
-  .row select, .row input[type=text] { margin-left: auto; }
+  .row select, .row input[type=text], .row input:not([type]) { margin-left: auto; }
   .row input[type=checkbox] { margin-left: auto; }
 
   .note { color: var(--dim); font-size: 11px; margin-top: 8px; line-height: 1.6; }
+  /* Failures used to render in the same dim grey as every other note, so a
+     refusal was indistinguishable from progress text and read as "nothing
+     happened". Errors get their own colour and weight. */
+  .note.bad, .bad { color: #ff8080; font-weight: 600; }
+  /* Actions that take something away from people who already have it. */
+  button.danger { background: transparent; color: #ff8080; border: 1px solid #ff808066; }
+  button.danger:hover:not(:disabled) { background: #ff80801a; border-color: #ff8080; }
+  .note.good { color: #7fd88f; }
   pre { margin: 0; color: var(--dim); font-size: 11px; white-space: pre-wrap; }
+  /* One long scroll made everything past Multiplayer effectively hidden.
+     The cards are unchanged; only their grouping is new. */
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; position: sticky; top: 0; z-index: 5;
+    background: var(--bg, #0d0f15); padding: 8px 0 10px; margin: 0 0 4px;
+    border-bottom: 1px solid var(--line); }
+  .tab { background: transparent; color: var(--dim); border: 1px solid transparent;
+    border-radius: 6px; padding: 7px 12px; font: inherit; font-weight: 600; cursor: pointer; }
+  .tab:hover { color: var(--text); }
+  .tab[aria-selected="true"] { background: var(--accent); color: #0d0f15; }
+  .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The first heading in a panel would otherwise sit oddly far from the tabs. */
+  .tabpanel > h2:first-child { margin-top: 10px; }
 </style>
 </head>
 <body>
+  <div class="tabs" role="tablist" aria-label="Settings sections">
+    <button role="tab" class="tab" id="tab-general" aria-controls="panel-general" aria-selected="true" tabindex="0">General</button>
+    <button role="tab" class="tab" id="tab-multiplayer" aria-controls="panel-multiplayer" aria-selected="false" tabindex="-1">Multiplayer</button>
+    <button role="tab" class="tab" id="tab-accounts" aria-controls="panel-accounts" aria-selected="false" tabindex="-1">Accounts</button>
+    <button role="tab" class="tab" id="tab-savedata" aria-controls="panel-savedata" aria-selected="false" tabindex="-1">Save data</button>
+    <button role="tab" class="tab" id="tab-mods" aria-controls="panel-mods" aria-selected="false" tabindex="-1">Mods</button>
+    <button role="tab" class="tab" id="tab-population" aria-controls="panel-population" aria-selected="false" tabindex="-1">Population</button>
+    <button role="tab" class="tab" id="tab-rates" aria-controls="panel-rates" aria-selected="false" tabindex="-1">Rates</button>
+  </div>
+  <div class="tabpanel" id="panel-general" role="tabpanel" aria-labelledby="tab-general">
+  <h2>Game era</h2>
+  <div class="panel">
+    <div class="row" style="border-bottom:0; padding-bottom:14px">
+      <span class="name">Which rules the server runs</span>
+      <div class="seg">
+        <button id="era-re" aria-pressed="true">Renewal</button>
+        <button id="era-pre" aria-pressed="false">Pre-renewal</button>
+      </div>
+    </div>
+    <p class="note" id="era-status" hidden style="margin:0 0 8px; color: var(--text)"></p>
+    <p class="note" style="margin:0">Each era keeps its own characters. Switching does not
+       convert them &mdash; your other era's characters stay where they are and come back when
+       you switch back. They cannot be shared: pre-renewal stops at level 99 and has no third
+       or fourth jobs. Switching restarts the server.</p>
+  </div>
+
+  <h2>Game text</h2>
+  <div class="panel">
+    <label><span>Item, quest and NPC text</span><select id="game_text">
+      <option value="english">English translation</option>
+      <option value="client_western">Your client's own text &mdash; Western</option>
+      <option value="client_korean">Your client's own text &mdash; Korean</option>
+    </select></label>
+    <p class="note" id="game-text-status" hidden style="margin:8px 0 0; color: var(--text)"></p>
+    <p class="note">The app ships an English translation and lays it over your client's own
+       files. Turn it off and the game reads the text your client came with, which is what
+       you want if that client is not Korean &mdash; a Latin American one is in Spanish and
+       Portuguese already.</p>
+    <p class="note"><b>Western</b> covers Latin American, international, Brazilian and
+       European clients. <b>Korean</b> is for kRO. The two differ only in how the client's
+       text is decoded, and the wrong one turns every accented letter into gibberish, so
+       pick the one that matches the client you downloaded. Changing this rebuilds the
+       assets and restarts the server.</p>
+  </div>
+
+  <h2>Startup</h2>
+  <div class="panel">
+    <label>
+      <span>At startup</span>
+      <input type="checkbox" id="open_settings_first" style="accent-color: var(--accent); flex: none" />
+      <span class="val" style="width:auto; color: var(--dim)">open Settings instead of the game</span>
+    </label>
+    <p class="note" id="startup-status" hidden style="margin:8px 0 0; color: var(--text)"></p>
+    <p class="note">For anyone who changes settings more often than they play. With
+       this on, launching opens Settings and nothing else &mdash; the server does not
+       start on its own, so press <b>Start</b> and then <b>Open game</b> under
+       <b>Server</b> when you want to play. Leave it off and launching goes straight
+       to the game, which starts the server itself.</p>
+  </div>
+
   <h2>Server</h2>
   <div class="panel">
     <div class="row"><span class="name">Assets &amp; client (:3338)</span><span class="state" id="s-assets">—</span></div>
     <div class="row"><span class="name">Database</span><span class="state" id="s-db">—</span></div>
     <div class="row"><span class="name">Login / Char / Map</span><span class="state" id="s-servers">—</span></div>
-    <div class="row actions" style="padding-top:10px">
+    <!-- Running the server, and everything else. Two rows rather than one: six
+         buttons across a 650px window squeezed every label into two lines, and
+         the split is a real distinction -- the first three are what you press
+         to play, the rest are what you press when something is wrong. .row's
+         own border draws the separator between them. -->
+    <div class="row actions" style="padding-top:10px; justify-content: flex-start">
       <button id="start">Start</button>
       <button id="stop" class="ghost">Stop</button>
       <button id="play" class="ghost">Open game</button>
+    </div>
+    <div class="row actions" style="padding-top:10px; justify-content: flex-start">
       <button id="repair" class="ghost">Repair…</button>
       <button id="report" class="ghost">Report a problem…</button>
       <button id="diagnostics" class="ghost">Copy diagnostics</button>
@@ -79,7 +226,9 @@
     <p class="note">The GRFs and music stay where they are — Ragnarok Offline only
        references them, so nothing is copied or duplicated.</p>
   </div>
+  </div>
 
+  <div class="tabpanel" id="panel-multiplayer" role="tabpanel" aria-labelledby="tab-multiplayer" hidden>
   <h2>Multiplayer</h2>
   <div class="panel">
     <div class="row">
@@ -91,14 +240,29 @@
     </div>
 
     <div id="mp-host">
+      <label class="row" for="mp-internet-setup">
+        <span class="name" style="width:auto">Set up sharing over the internet (non-LAN)</span>
+        <input type="checkbox" id="mp-internet-setup" aria-controls="internet-hosting" aria-expanded="false" />
+      </label>
       <div class="row">
-        <span class="name">Let other machines connect</span>
+        <span class="name">Allow LAN connections</span>
         <input type="checkbox" id="mp-lan" />
       </div>
       <div class="row">
-        <span class="name">Your link</span>
+        <span class="name">Your link — on this network</span>
         <span class="state" id="mp-addr">—</span>
         <button id="mp-copy" class="ghost" style="margin-left:10px">Copy</button>
+      </div>
+      <div class="row" id="mp-internet-link-row" hidden>
+        <span class="name">Your link — over the internet</span>
+        <button type="button" id="mp-internet-addr" class="linkcopy"
+                title="Click to copy the whole invitation">—</button>
+        <button id="mp-internet-copy" class="ghost" style="margin-left:10px">Copy</button>
+      </div>
+      <div class="row" id="mp-internet-new-row" hidden>
+        <span class="name">Replace this link</span>
+        <span class="val" style="width:auto; color: var(--dim); flex:1 1 auto">the same link keeps working across restarts until you replace it</span>
+        <button id="mp-internet-new" class="danger" style="margin-left:10px">Create a new link</button>
       </div>
       <div class="row actions" style="padding-top:10px">
         <button id="mp-restart" class="ghost">Restart server</button>
@@ -130,28 +294,191 @@
     </div>
   </div>
 
+  <section id="internet-hosting" hidden aria-labelledby="internet-hosting-heading">
+    <h2 id="internet-hosting-heading">Internet sharing</h2>
+    <div class="panel">
+    <p class="note">Share this running world with friends outside your local network.
+      Prepare the account safeguards once, then choose Share with friends.</p>
+    <p class="note">This one-time preparation protects the server and saves a backup. Players disconnect
+      briefly while it restarts. Existing game accounts and characters are preserved.</p>
+    <button id="secure-services" class="ghost">Prepare server for friends</button>
+    <p class="note" id="services-status" role="status" aria-live="polite"></p>
+    <div class="actions"><button id="hosting-check" class="ghost">Check internet account safeguards</button></div>
+    <ul class="note" id="hosting-checks" aria-live="polite"></ul>
+    <p class="note" id="hosting-readiness">Check the account safeguards if sharing asks you to prepare the server. Then choose Share with friends below.</p>
+    </div>
+    <div class="panel">
+      <h3>Play together over the internet</h3>
+      <p class="note">Your friends open an invitation in their browser and join your server. They do not install the app. Keep this computer awake and the app open while playing together.</p>
+      <p class="note">Share creates a temporary invitation link automatically. No Cloudflare account or token is needed. <strong>Cloudflare Quick Tunnels are for testing only:</strong> they have no uptime guarantee and allow at most <strong>200 requests in flight at once</strong> across the tunnel. This is a simultaneous request limit, not a total request allowance or player count; busy asset loading can hit it.</p>
+      <p class="note"><strong>A temporary link changes every time you start sharing.</strong> Cloudflare hands out a new
+         <code>trycloudflare.com</code> address each time, so stopping the app, restarting the server or using
+         <em>Repair</em> means sending your friends a new link. The invitation itself is kept, so only the address moves.</p>
+      <p class="note"><strong>For a link that stays the same, connect a Cloudflare account below</strong> and use your own
+         domain. A named tunnel keeps its address across restarts, and with the saved invitation the whole link stays
+         valid until you choose <em>Create a new link</em>. It needs a free Cloudflare account, a domain on it, and an
+         API token.</p>
+      <p class="note">For regular hosting, connect your Cloudflare account and use a named tunnel with your own domain below. Named tunnels do not have the Quick Tunnel 200-request limit and work behind NAT without port forwarding.</p>
+      <details id="cloudflare-options"><summary>Use a named tunnel for regular hosting</summary>
+      <div id="cloudflare-setup">
+        <label><span>Game hostname</span><input id="sharing-hostname" type="text" placeholder="play.yourdomain.com" autocapitalize="off" spellcheck="false" /></label>
+        <label><span>Cloudflare API token</span><input id="sharing-token" type="password" autocomplete="off" spellcheck="false" /></label>
+        <p class="note">Use an unused hostname on an active Cloudflare domain. Create a scoped API token with <strong>Zone → Zone → Read</strong>, <strong>Zone → DNS → Edit</strong> for that domain and <strong>Account → Cloudflare Tunnel → Edit</strong> for its account. This is an API token, not a tunnel run token.</p>
+        <p class="note">Connect creates a dedicated tunnel and DNS record. The API token is used only during setup; the app saves the tunnel credential in your operating system’s secure password storage. The Cloudflare helper downloads automatically.</p>
+        <button id="sharing-token-help" class="ghost">Open Cloudflare token setup</button>
+        <button id="sharing-connect">Connect Cloudflare</button>
+      </div>
+      <p id="sharing-configured" class="note" hidden></p>
+      <label id="sharing-domain-choice" hidden><input id="sharing-use-domain" type="checkbox"> Use this fixed hostname</label>
+      </details>
+      <div class="actions">
+        <button id="sharing-start" disabled>Share with friends</button>
+        <button id="sharing-copy" class="ghost" disabled>Copy invitation link</button>
+        <button id="sharing-stop" class="ghost" disabled>Stop sharing</button>
+      </div>
+      <p id="sharing-state" class="note" role="status" aria-live="polite">Sharing is off.</p>
+      <p id="sharing-notice" class="note" role="status" aria-live="polite" hidden></p>
+      <p id="sharing-feedback" class="note" role="status" aria-live="polite"></p>
+      <!-- Written by refreshSharing: what happens after a restart depends on
+           whether a domain is connected, and a fixed sentence would be wrong
+           half the time. -->
+      <p class="note" id="share-auto-note"></p>
+      <p class="note" id="sharing-lifetime-note">An invitation lets up to 32 friend browsers connect. Invited friends can create an ordinary game account. Stop sharing disconnects friends without stopping your local game. Starting sharing applies the protected account policy and restarts game services once.</p>
+      <details><summary>Manage invitations and connection</summary>
+        <button id="sharing-replace" class="ghost" disabled>Disconnect friends and replace invitation</button>
+        <button id="sharing-forget" class="ghost" disabled>Forget saved Cloudflare connection</button>
+        <p class="note">Forgetting removes the saved credential. Remove the stopped tunnel and DNS record separately in your Cloudflare dashboard.</p>
+        <p class="note">Copy diagnostics includes the Cloudflare helper version and checksum verification. Keep the app updated: Cloudflare supports helper versions within one year of its most recent release.</p>
+        <label><span>Invitation lasts</span>
+      <span class="mult" style="margin-left:auto"><input type="number" class="val num" id="sharing_invite_days" min="0" max="30" step="1"></span>
+      <span class="val" style="width:auto; color: var(--dim)">days</span></label>
+    <p class="note">How long a link keeps working, in days. <b>0 means it never expires</b> —
+      it lasts until you replace it or stop sharing. This is the invitation, not the tunnel:
+      Cloudflare imposes no limit of its own, and a named domain does not change it.
+      <b>Replace invitation</b> revokes every existing link immediately, and stopping sharing
+      ends them all. Applies to the next invitation you create.</p>
+    <p class="note">Mods that change command permissions — <b>player-commands</b>, for example — apply
+      to invited friends too, so anyone with your link gets whatever commands you granted. Only people
+      holding a current invitation can reach the server at all.</p>
+    <p class="note">Hosting on a separate internet server is another option, with your own DNS and HTTPS/WebSocket setup. That setup is manual; a DNS record alone does not make a server behind NAT reachable.</p>
+      </details>
+    </div>
+  </section>
+  </div>
+
+  <div class="tabpanel" id="panel-accounts" role="tabpanel" aria-labelledby="tab-accounts" hidden>
+  <h2>Accounts</h2>
+  <div class="panel" id="accounts-panel">
+    <p class="note">Manage accounts on your own running server. Renewal and pre-renewal
+      have separate accounts and passwords. Changes disconnect current players and restart
+      game services; account IDs, privileges and characters are preserved.</p>
+    <label><span>New account creation</span><select id="open-registration">
+      <option value="open">Anyone at the game login screen</option>
+      <option value="owner">Owner only, through Settings</option>
+    </select></label>
+    <p class="note" id="registration-note">Owner only disables _M / _F signup. Existing accounts keep working.
+      This policy applies to both eras. Apply and restart to change it.
+      Sharing a link keeps whichever you choose: the invitation already gates the login
+      server, so friends can sign up at the login screen with _M / _F. Choose owner only
+      if you are hosting something larger than a group of friends.</p>
+    <button id="registration-save" class="ghost">Apply account creation policy and restart</button>
+    <p class="note" id="registration-status" role="status" aria-live="polite"></p>
+    <div class="row"><span id="accounts-era">Choose Refresh to load the current era</span>
+      <button id="accounts-refresh" class="ghost">Refresh accounts</button></div>
+    <label><span>Account</span><select id="account-select" disabled></select></label>
+    <p class="note" id="account-detail"></p>
+    <label><span>New password</span><input id="account-password" type="password" autocomplete="new-password" /></label>
+    <label><span>Confirm password</span><input id="account-confirmation" type="password" autocomplete="new-password" /></label>
+    <p class="note">Use 8–23 printable ASCII characters, including letters, numbers, spaces
+      and punctuation, and not the account name itself. The game protocol limits password length;
+      longer or non-ASCII passwords cannot be accepted here. Passwords are never included in
+      diagnostics. A GM or admin account needs a password meeting these rules before internet
+      hosting — you do not have to disable it.</p>
+    <div class="actions">
+      <button id="account-password-save" disabled>Change password</button>
+      <button id="account-disable" class="ghost" disabled>Disable account</button>
+      <button id="account-enable" class="ghost" disabled>Enable account</button>
+    </div>
+    <!-- Beside the buttons, not at the top of the panel. The reply to a click
+         used to render six elements above it, in the same grey as the rules
+         note sitting right next to the button -- so a refusal read as the
+         button doing nothing at all. The character-deletion controls below
+         each carry their own reply for that reason. -->
+    <p class="note" id="accounts-status" role="status" aria-live="polite"></p>
+    <!-- Account-wide rather than part of the row above: a birthday is a fixed
+         value the game needs present, not a per-account preference, and the
+         delete prompt never says which account is missing one. -->
+    <p class="note" id="account-birthdate-detail">Character deletion needs a birthday on the account.</p>
+    <p class="note">The game asks for the account's birthday before it will delete a character.
+      Accounts created before this app started storing one have nothing to match, so the
+      prompt refuses every answer that can be typed. This writes 1 January 2000 to those
+      accounts and leaves any that already have a birthday alone. Enter it as
+      <strong>20000101</strong> when the game asks. To delete a character: choose Delete,
+      wait out any countdown on the slot, then choose the final delete and enter the
+      birthday.</p>
+    <button id="account-birthdates" class="ghost" disabled>Set missing account birthdays</button>
+    <p class="note" id="account-birthdate-status" role="status" aria-live="polite"></p>
+    <label><span>Character deletion</span><select id="delete-delay">
+      <option value="delayed">A day after it is requested</option>
+      <option value="instant">As soon as the birthday is entered</option>
+    </select></label>
+    <p class="note">Choosing Delete does not remove the character. It queues it and starts
+      a countdown on the slot, and only the final delete after that countdown removes it.
+      <b>A day after it is requested</b> is Ragnarok's own behaviour, and the countdown is
+      what lets you cancel a deletion you did not start — keep it if friends can reach your
+      server. <b>As soon as the birthday is entered</b> removes the wait, so the two clicks
+      run back to back. Either way the birthday is still asked for, and a character in a
+      party or guild is still refused. Applying restarts game services.</p>
+    <button id="delete-delay-save" class="ghost">Apply character deletion and restart</button>
+    <p class="note" id="delete-delay-status" role="status" aria-live="polite"></p>
+    <label style="margin-top:12px"><span>New friend account</span><input id="account-username" type="text" autocomplete="off" /></label>
+    <p class="note">Create an ordinary player account with the password entered above.
+      Use 4–23 letters, numbers, underscores or hyphens, without an _M or _F suffix.</p>
+    <button id="account-create" class="ghost" disabled>Create friend account</button>
+  </div>
+  </div>
+
+  <div class="tabpanel" id="panel-savedata" role="tabpanel" aria-labelledby="tab-savedata" hidden>
   <h2>Save data</h2>
   <div class="card">
     <div class="row"><span class="name">Characters &amp; accounts</span><span class="state" id="s-dbfile">—</span></div>
     <div class="actions">
       <button id="backup" class="ghost">Back up…</button>
       <button id="restore" class="ghost">Restore…</button>
+      <button id="open-data" class="ghost">Open data folder</button>
     </div>
-    <div class="note" id="db-note">Everything you have played is inside that disk image; it is not a folder you can open.</div>
+    <div class="note" id="db-note">Backups briefly disconnect players so their latest data can be saved consistently. Restore keeps the game stopped until you restart it and preserves a backup of the current database.</div>
+  </div>
   </div>
 
+  <div class="tabpanel" id="panel-mods" role="tabpanel" aria-labelledby="tab-mods" hidden>
   <h2>Mods</h2>
   <div class="panel">
     <div id="mods-list" class="note">Looking…</div>
     <div class="actions" style="margin-top:10px">
+      <button id="mods-browse" class="ghost">Find mods…</button>
+      <button id="mods-install" class="ghost">Install from a folder…</button>
       <button id="mods-folder" class="ghost">Open mods folder</button>
       <button id="mods-apply" class="ghost">Apply</button>
+    </div>
+    <div id="mods-registry" hidden style="margin-top:12px; border-top:1px solid var(--line, #333); padding-top:12px">
+      <label style="margin-bottom:8px"><span>Search</span>
+        <input type="text" id="mods-search" placeholder="name, author or what it does" /></label>
+      <div id="mods-catalogue" class="note">Looking…</div>
+      <div id="mods-detail" hidden></div>
+      <p class="note" style="margin-top:8px">These are mods people have published to the
+         app's mod list. Each one is a folder in a public repository and gets there by pull
+         request, so somebody has read it before it appears here &mdash; but a mod can change
+         the rules of your server and run code in your game window, so install ones you
+         want, not ones you are merely curious about.</p>
     </div>
     <p class="note">A mod is a folder. Drop one in and it appears here. Server
        changes need the server restarted, which Apply does; client changes —
        sprites, styling — need the app restarted.</p>
   </div>
+  </div>
 
+  <div class="tabpanel" id="panel-population" role="tabpanel" aria-labelledby="tab-population" hidden>
   <h2>Population</h2>
   <div class="panel">
     <label>
@@ -183,18 +510,30 @@
        actually standing on. <b>How busy</b> scales the server's own spawn tables, so
        the world keeps the shape it was authored with and only its crowding changes;
        <b>Limit</b> is a safety ceiling across every map at once, and in a solo game
-       it never comes into play.</p>
+       it never comes into play. <b>How busy</b> above 50 can make the server sluggish
+       on a computer with less than 8&nbsp;GB of RAM.</p>
     <p class="note" id="ram-note"></p>
   </div>
+  </div>
 
+  <div class="tabpanel" id="panel-rates" role="tabpanel" aria-labelledby="tab-rates" hidden>
   <h2>Rates</h2>
   <div class="panel">
-    <label><span>Base EXP</span><input type="range" id="base_exp_rate" min="100" max="5000" step="100"><span class="val" id="v-base_exp_rate"></span></label>
-    <label><span>Job EXP</span><input type="range" id="job_exp_rate" min="100" max="5000" step="100"><span class="val" id="v-job_exp_rate"></span></label>
-    <label><span>Quest EXP</span><input type="range" id="quest_exp_rate" min="100" max="5000" step="100"><span class="val" id="v-quest_exp_rate"></span></label>
-    <label><span>Item drops</span><input type="range" id="item_rate_common" min="100" max="5000" step="100"><span class="val" id="v-item_rate_common"></span></label>
-    <label><span>Equipment drops</span><input type="range" id="item_rate_equip" min="100" max="5000" step="100"><span class="val" id="v-item_rate_equip"></span></label>
-    <label><span>Card drops</span><input type="range" id="item_rate_card" min="100" max="5000" step="100"><span class="val" id="v-item_rate_card"></span></label>
+    <label><span>Base EXP</span><input type="range" id="base_exp_rate" min="100" max="5000" step="100"><span class="mult"><input type="number" class="val num" id="v-base_exp_rate" min="0" step="0.1">x</span></label>
+    <label><span>Job EXP</span><input type="range" id="job_exp_rate" min="100" max="5000" step="100"><span class="mult"><input type="number" class="val num" id="v-job_exp_rate" min="0" step="0.1">x</span></label>
+    <label><span>Quest EXP</span><input type="range" id="quest_exp_rate" min="100" max="5000" step="100"><span class="mult"><input type="number" class="val num" id="v-quest_exp_rate" min="0" step="0.1">x</span></label>
+    <label><span>Item drops</span><input type="range" id="item_rate_common" min="100" max="5000" step="100"><span class="mult"><input type="number" class="val num" id="v-item_rate_common" min="0" step="0.1">x</span></label>
+    <label><span>Equipment drops</span><input type="range" id="item_rate_equip" min="100" max="5000" step="100"><span class="mult"><input type="number" class="val num" id="v-item_rate_equip" min="0" step="0.1">x</span></label>
+    <label><span>Card drops</span><input type="range" id="item_rate_card" min="100" max="5000" step="100"><span class="mult"><input type="number" class="val num" id="v-item_rate_card" min="0" step="0.1">x</span></label>
+    <label><span>Attack speed cap</span>
+      <span class="mult" style="margin-left:auto"><input type="number" class="val num" id="max_aspd" min="190" max="199" step="1"></span></label>
+    <label><span>Stat cap</span>
+      <span class="mult" style="margin-left:auto"><input type="number" class="val num" id="max_parameter" min="99" max="32767" step="1"></span></label>
+    <p class="note">Both raise only. <b>Attack speed</b> is 190 by default and 199 is
+       the server's ceiling — the difference is small but it is the whole gap
+       between fast and instant. <b>Stat cap</b> is 99 by default and goes to
+       32767; third, baby and summoner classes are lifted with it, and left at
+       their own defaults while this is untouched.</p>
     <label>
       <span>Monsters drop Zeny</span>
       <input type="checkbox" id="zeny_from_mobs" style="accent-color: var(--accent); flex: none" />
@@ -208,19 +547,35 @@
     <div class="actions" style="margin-top:10px">
       <button id="save" class="ghost">Apply</button>
     </div>
+    <p class="note">Any <b>EXP</b> rate above 1x also lifts the server's
+       one-level-per-kill cap, which otherwise discards everything a monster
+       gives beyond the level it fills.</p>
     <p class="note">Rates are written to rAthena's <code>conf/import/battle_conf.txt</code>,
        which overrides the shipped config. Applying restarts the map server, so
        log back in afterwards.</p>
   </div>
+  </div>
 
-  <div class="panel"><pre id="log">idle</pre></div>
+  <!-- Shared status line. Several tabs report through it -- an era switch, a
+       server start, the LAN toggle, copying a link, opening the mods folder,
+       applying rates -- so it lives outside the tabs rather than being
+       repeated in each. Hidden until one of them has something to say: a
+       permanent box reading "idle" is a box that says nothing. -->
+  <div class="panel" id="log-panel" hidden><pre id="log"></pre></div>
 
 <script>
-const { invoke } = window.__TAURI__.core;
+const { invoke } = window.__ELECTRON__.core;
 const $ = id => document.getElementById(id);
 const RATES = ['base_exp_rate','job_exp_rate','quest_exp_rate','item_rate_common',
                'item_rate_equip','item_rate_card'];
-const log = m => { $('log').textContent = m; };
+const log = m => {
+  const text = String(m ?? '').trim();
+  $('log').textContent = text;
+  // Failures were as grey as everything else here, same as the status lines
+  // elsewhere in this window used to be.
+  $('log').classList.toggle('bad', /^error\b/i.test(text));
+  $('log-panel').hidden = !text;
+};
 
 function paint(el, ok, text) {
   el.textContent = text;
@@ -234,10 +589,56 @@ async function refreshMode() {
   $('mp-host-addr').value = m.join_host || '';
   $('mp-host').style.display = m.mode === 'host' ? '' : 'none';
   $('mp-join').style.display = m.mode === 'join' ? '' : 'none';
+  paintInternetSetup(m.mode);
   // Only known once the server has started with LAN on: the address comes from
   // what the supervisor actually advertised, not a second guess made here.
   $('mp-addr').textContent = m.join_address
     || (m.lan ? 'starts with the server' : 'not shared');
+  paintRegistration(await invoke('get_settings'));
+}
+
+// This is a Settings disclosure, not a listener or hosting-policy switch.
+// Keep local/LAN play uncluttered and never open access by revealing controls.
+let internetSetup = false;
+try { internetSetup = localStorage.getItem('internet-sharing-setup') === 'true'; } catch {}
+function paintInternetSetup(mode = $('mp-mode').value) {
+  const visible = mode === 'host' && internetSetup;
+  $('mp-internet-setup').checked = internetSetup;
+  $('mp-internet-setup').setAttribute('aria-expanded', String(visible));
+  $('internet-hosting').hidden = !visible;
+}
+$('mp-internet-setup').onchange = () => {
+  internetSetup = $('mp-internet-setup').checked;
+  try { localStorage.setItem('internet-sharing-setup', String(internetSetup)); } catch {}
+  paintInternetSetup();
+  // Revealing the controls must not change hosting, which is what the comment
+  // on paintInternetSetup already says and what this used to contradict: it
+  // turned LAN on, and then Share with friends turned it straight back off.
+  //
+  // Friends hosting and LAN are mutually exclusive on purpose. In friends
+  // scope the game ports bind loopback only and the invitation is the single
+  // way in; LAN would bind them to every interface and let anyone on the
+  // network past the gate that makes sharing safe. So the box unticking
+  // itself when sharing starts is the app closing those ports, not undoing
+  // the setting.
+  refreshSharing();
+};
+
+function paintRegistration(settings) {
+  // The choice is the owner's at every scope. This used to force the control
+  // to "owner", disable it and disable Apply whenever hosting was friends or
+  // public, which showed a policy the saved setting did not actually hold and
+  // left no way to change it.
+  $('open-registration').value = settings.open_registration === false ? 'owner' : 'open';
+  $('sharing_invite_days').value = String(inviteDays(settings.sharing_invite_days));
+  paintInviteLifetime(settings.sharing_invite_days);
+  $('open-registration').disabled = false;
+  $('registration-save').disabled = false;
+  $('registration-note').textContent =
+    'Owner only disables _M / _F signup. Existing accounts keep working. This policy applies to '
+    + 'both eras. Apply and restart to change it. Sharing a link keeps whichever you choose: the '
+    + 'invitation already gates the login server, so friends can sign up at the login screen with '
+    + '_M / _F. Choose owner only if you are hosting something larger than a group of friends.';
 }
 
 $('mp-mode').onchange = async () => {
@@ -309,13 +710,123 @@ $('mp-connect').onclick = async () => {
   }
 };
 
+// Which era the buttons are showing. Held here rather than read back out of
+// the DOM so the save path has one source of truth.
+let eraIsPre = false;
+
+function setEra(pre) {
+  eraIsPre = !!pre;
+  $('era-re').setAttribute('aria-pressed', String(!eraIsPre));
+  $('era-pre').setAttribute('aria-pressed', String(eraIsPre));
+}
+
+// Switching applies immediately. It restarts the server and changes which save
+// is loaded, which is too big a thing to leave sitting behind an Apply button
+// three sections down -- and it is not destructive, because the other era's
+// characters are kept.
+async function chooseEra(pre) {
+  if (pre === eraIsPre) return;
+  const label = pre ? 'pre-renewal' : 'renewal';
+  setEra(pre);
+  $('era-re').disabled = $('era-pre').disabled = true;
+
+  // A switch restarts the servers and can take about a minute. Disabled
+  // buttons and no other sign of life read as a hang, so count the seconds
+  // out loud: a number that keeps moving is the difference between waiting
+  // and wondering whether it broke.
+  const started = Date.now();
+  const status = $('era-status');
+  const elapsed = () => Math.round((Date.now() - started) / 1000);
+  const show = html => { status.hidden = false; status.innerHTML = html; };
+  show(`<span class="spinner"></span>Switching to ${label}… this usually takes about a minute.`);
+  const ticking = setInterval(
+    () => show(`<span class="spinner"></span>Switching to ${label}… ${elapsed()}s`), 1000);
+
+  try {
+    const s = await invoke('get_settings');
+    const out = await invoke('save_settings', { settings: { ...s, prerenewal: pre } });
+    clearInterval(ticking);
+    show(`Switched to ${label} in ${elapsed()}s. Log in again — your character list is the ${label} one.`);
+    // Internet hosting credentials are per era, so an era that was never
+    // prepared for friends starts in Local mode. The supervisor says so; say
+    // it here as well, because the player asked for a different era, not for
+    // their friends' link to stop working, and the log is not where they are
+    // looking.
+    const narrowed = String(out || '').split('\n')
+      .find(line => line.includes('has not been prepared for internet hosting'));
+    if (narrowed) {
+      const note = document.createElement('p');
+      note.textContent = narrowed.trim();
+      status.append(note);
+    }
+    log(`${label} ready`);
+  } catch (e) {
+    clearInterval(ticking);
+    // The DB switch may have succeeded before an asset rebuild failed. Show
+    // the saved selection, not an invented rollback to the previous era.
+    const saved = await invoke('get_settings').catch(() => ({ prerenewal: pre }));
+    setEra(!!saved.prerenewal);
+    status.hidden = false;
+    status.textContent = `Could not finish switching to ${label}: ${String(e)}. Saved era: ${saved.prerenewal ? 'pre-renewal' : 'renewal'}. Start the server to retry.`;
+    log(String(e));
+  } finally {
+    clearInterval(ticking);
+    $('era-re').disabled = $('era-pre').disabled = false;
+    refresh();
+  }
+}
+$('era-re').onclick = () => chooseEra(false);
+$('era-pre').onclick = () => chooseEra(true);
+
+// Which text the assets were built with, so the select can be put back if
+// applying fails. Same reasoning as eraIsPre: one source of truth, not the DOM.
+let gameText = 'english';
+
+// Applied on change rather than behind an Apply button, for the same reason
+// the era is: it rebuilds the served assets and restarts the server, and a
+// pending choice that looks applied and is not is worse than a wait.
+$('game_text').onchange = async () => {
+  const chosen = $('game_text').value;
+  if (chosen === gameText) return;
+  const status = $('game-text-status');
+  $('game_text').disabled = true;
+  status.hidden = false;
+  status.innerHTML = '<span class="spinner"></span>Rebuilding the game files…';
+  try {
+    const s = await invoke('get_settings');
+    await invoke('save_settings', { settings: { ...s, game_text: chosen } });
+    gameText = chosen;
+    status.textContent = chosen === 'english'
+      ? 'The English translation is on. Log in again to see it.'
+      : 'Using your client\'s own text. Log in again to see it.';
+    log('game text: ' + chosen);
+  } catch (e) {
+    // The rebuild may have failed after the setting was written. Show what is
+    // actually saved rather than an invented rollback.
+    const saved = await invoke('get_settings').catch(() => ({ game_text: gameText }));
+    gameText = saved.game_text || 'english';
+    $('game_text').value = gameText;
+    status.textContent = `Could not rebuild the game files: ${String(e)}. Saved setting: ${gameText}.`;
+    log(String(e));
+  } finally {
+    $('game_text').disabled = false;
+    refresh();
+  }
+};
+
 async function refresh() {
   await refreshMode();
   const client = await invoke('get_client_paths');
-  const named = n => (n ? n.split('/').pop() : null);
-  const parts = [named(client.data_grf), named(client.rdata_grf)].filter(Boolean);
-  paint($('s-client'), parts.length === 2,
-        parts.length === 2
+  // Split on both separators: a Windows path has no forward slashes, so the
+  // POSIX-only version showed the whole of C:\Ragnarok\... in a one-line field.
+  const named = n => (n ? n.split(/[\\/]/).pop() : null);
+  // data.grf is the only required one. rdata.grf is optional -- newer clients
+  // merge it in -- so listing whatever is actually configured beats demanding
+  // a fixed pair and calling a working setup "not configured".
+  const parts = [named(client.data_grf), named(client.rdata_grf), named(client.official_grf)]
+    .filter(Boolean);
+  paint($('s-client'), !!client.data_grf,
+        client.data_grf
           ? parts.join(' + ') + (client.bgm_dir || '' ? ' + BGM' : ' (no BGM)')
           : 'not configured');
 
@@ -355,7 +866,7 @@ $('repair').onclick = async () => {
   refresh();
 };
 
-const { save: saveDialog, open: openDialog } = window.__TAURI__.dialog;
+const { save: saveDialog, open: openDialog } = window.__ELECTRON__.dialog;
 
 invoke('data_location').then(p => { if (p) $('s-dbfile').textContent = p; }).catch(() => {});
 
@@ -370,7 +881,7 @@ $('backup').onclick = async () => {
   try {
     $('db-note').textContent = (await invoke('db_backup', { path })).trim();
   } catch (e) {
-    $('db-note').textContent = String(e);
+    setNote('db-note', String(e && e.message || e), 'bad');
   }
 };
 
@@ -385,7 +896,7 @@ $('restore').onclick = async () => {
     $('db-note').textContent = (await invoke('db_restore', { path })).trim()
       + ' — restart the server for it to take effect.';
   } catch (e) {
-    $('db-note').textContent = String(e);
+    setNote('db-note', String(e && e.message || e), 'bad');
   }
 };
 
@@ -402,6 +913,10 @@ const STACK_BASE_MIB = 700;
 // Measured on prt_fild08: 30 from the combat_pve spawn table plus 9 knights.
 // Towns land in the same range.
 const TYPICAL_PER_MAP = 40;
+
+// The host's own RAM, filled in by host_facts below. Zero until it answers,
+// which reads as "not known" rather than "small".
+let hostTotalMib = 0;
 
 function refreshPopulation() {
   const on = $('population_enable').checked;
@@ -439,6 +954,15 @@ function refreshPopulation() {
       + `alone you will see about ${perMap} on your own map, costing `
       + `roughly ${typical} MB of the ${ram / 1024} GB server.`;
     note.style.color = '';
+  }
+  // Separate axis from the ceiling above: this is the host's RAM, not the
+  // guest's. How busy multiplies the spawn tables, and so the map server's
+  // per-tick work, and a machine already short on memory has nothing spare to
+  // absorb it.
+  if (density > 50 && hostTotalMib && hostTotalMib < 8 * 1024) {
+    note.textContent += ' How busy above 50 can make the server sluggish on this '
+      + 'computer, which has under 8 GB of RAM.';
+    note.style.color = 'var(--warn, #d98)';
   }
 }
 
@@ -484,6 +1008,9 @@ $('report').onclick = () =>
 // Mods. Checkboxes are written on Apply rather than on each click, so a player
 // can turn several on and pay for one restart.
 let modState = {};
+// Per-mod option values, and what they were when the list was drawn, so Apply
+// only rebuilds the asset overlay for mods whose options actually moved.
+let modSettings = {}, modSettingsBaseline = {};
 
 async function refreshMods() {
   let mods = [];
@@ -494,38 +1021,618 @@ async function refreshMods() {
     return;
   }
   modState = {};
+  modSettings = {}; modSettingsBaseline = {};
   box.innerHTML = '';
   for (const m of mods) {
-    modState[m.name] = m.enabled;
+    // A refused mod is not a mod the player can turn on, so it does not get a
+    // checkbox that lies about being able to. It stays in the list, next to
+    // the ones that loaded, with the reason it did not.
+    if (!m.refused) modState[m.name] = m.enabled;
     const row = document.createElement('label');
     row.style.cssText = 'display:flex; align-items:flex-start; gap:10px; padding:4px 0';
     const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.checked = m.enabled;
+    cb.type = 'checkbox'; cb.checked = m.enabled; cb.disabled = m.refused;
     cb.style.cssText = 'accent-color: var(--accent); flex:none; margin-top:2px';
     cb.onchange = () => { modState[m.name] = cb.checked; };
     const text = document.createElement('span');
-    text.innerHTML = `<b>${m.name}</b>`
-      + (m.description ? `<br><span style="color:var(--dim)">${m.description}</span>` : '');
+    const by = [m.version && 'v' + m.version, m.author && 'by ' + m.author]
+      .filter(Boolean).join(' ');
+    text.innerHTML = `<b>${esc(m.name)}</b>`
+      + (m.bundled ? ' <span style="color:var(--dim); font-size:11px">included</span>' : '')
+      + (by ? ` <span style="color:var(--dim); font-size:11px">${esc(by)}</span>` : '')
+      + (m.description ? `<br><span style="color:var(--dim)">${esc(m.description)}</span>` : '')
+      // Not from the mod's own description: a mod that changes what commands
+      // players may use should say so in text the mod did not write.
+      + (m.grantsCommands
+        ? '<br><span style="color:var(--dim)">Changes which commands players can use.</span>'
+        : '')
+      + (m.refused
+        ? `<br><span style="color:var(--bad, #e5534b)">Not loaded — ${esc(m.reason)}</span>`
+        : '')
+      // The server's own words about this mod's tables, from the last start.
+      // Separate from `refused`: the mod is on and the rest of it is working,
+      // so this is a warning about one layer rather than a refusal.
+      + ((!m.refused && Array.isArray(m.problems) ? m.problems : [])
+        .map(p => `<br><span style="color:var(--warn, #d98)">Server could not read part of this mod — ${esc(p)}</span>`)
+        .join(''));
     row.append(cb, text);
+    box.append(row);
+    // Options the mod declared for itself. Built with DOM calls and
+    // textContent: a label and a description come out of somebody's mod.json,
+    // and nothing about a mod folder is trusted markup.
+    if (!m.refused && Array.isArray(m.settings) && m.settings.length) {
+      const values = {};
+      const options = document.createElement('div');
+      options.style.cssText = 'margin:2px 0 8px 28px; display:flex; flex-direction:column; gap:6px';
+      for (const setting of m.settings) {
+        values[setting.key] = setting.value;
+        const line = document.createElement('label');
+        line.style.cssText = 'display:flex; align-items:center; gap:8px; font-size:12px; min-height:0';
+        const input = document.createElement('input');
+        if (setting.type === 'boolean') {
+          input.type = 'checkbox';
+          input.checked = setting.value === true;
+          input.style.cssText = 'accent-color: var(--accent); flex:none';
+          input.onchange = () => { values[setting.key] = input.checked; };
+        } else if (setting.type === 'number') {
+          input.type = 'number';
+          input.value = String(setting.value ?? 0);
+          if (setting.min !== undefined) input.min = String(setting.min);
+          if (setting.max !== undefined) input.max = String(setting.max);
+          input.style.cssText = 'width:96px; flex:none';
+          input.onchange = () => { values[setting.key] = Number(input.value); };
+        } else {
+          input.type = 'text';
+          input.value = String(setting.value ?? '');
+          if (setting.maxLength) input.maxLength = setting.maxLength;
+          input.style.cssText = 'flex:1 1 auto; min-width:0';
+          input.onchange = () => { values[setting.key] = input.value; };
+        }
+        const caption = document.createElement('span');
+        caption.textContent = setting.label || setting.key;
+        line.append(input, caption);
+        options.append(line);
+        if (setting.description) {
+          const hint = document.createElement('span');
+          hint.textContent = setting.description;
+          hint.style.cssText = 'color:var(--dim); font-size:11px; margin-left:26px';
+          options.append(hint);
+        }
+      }
+      modSettings[m.name] = values;
+      modSettingsBaseline[m.name] = JSON.stringify(values);
+      box.append(options);
+    }
+  }
+}
+
+// Tabs. Every panel stays in the DOM and is only hidden, so nothing here has
+// to care which section an element lives in -- the rest of this file still
+// looks elements up by id exactly as it did when the page was one scroll.
+const TAB_KEYS = ['general', 'multiplayer', 'accounts', 'savedata', 'mods', 'population', 'rates'];
+function showTab(key, focus = false) {
+  if (!TAB_KEYS.includes(key)) key = TAB_KEYS[0];
+  for (const other of TAB_KEYS) {
+    const tab = $('tab-' + other);
+    const panel = $('panel-' + other);
+    const on = other === key;
+    tab.setAttribute('aria-selected', String(on));
+    tab.tabIndex = on ? 0 : -1;
+    panel.hidden = !on;
+  }
+  if (focus) $('tab-' + key).focus();
+  // Coming back to a section should not also restore someone else's scroll.
+  window.scrollTo(0, 0);
+  try { localStorage.setItem('settings-tab', key); } catch { /* private window */ }
+}
+for (const [index, key] of TAB_KEYS.entries()) {
+  $('tab-' + key).onclick = () => showTab(key);
+  $('tab-' + key).onkeydown = event => {
+    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (step) {
+      event.preventDefault();
+      showTab(TAB_KEYS[(index + step + TAB_KEYS.length) % TAB_KEYS.length], true);
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      showTab(event.key === 'Home' ? TAB_KEYS[0] : TAB_KEYS[TAB_KEYS.length - 1], true);
+    }
+  };
+}
+try { showTab(localStorage.getItem('settings-tab') || 'general'); } catch { showTab('general'); }
+
+// 0 is a real answer here -- "until you stop sharing" -- so it cannot go
+// through the usual `|| default` clamp, which would silently turn it into 7.
+function inviteDays(value) {
+  const days = Number(value);
+  if (days === 0) return 0;
+  return Math.min(30, Math.max(1, days || 7));
+}
+function paintInviteLifetime(days) {
+  const note = $('sharing-lifetime-note');
+  if (!note) return;
+  const span = inviteDays(days);
+  note.textContent = (span === 0
+    ? 'An invitation lasts until you replace it or stop sharing, and lets up to 32 friend browsers connect.'
+    : `An invitation lasts ${span} day${span === 1 ? '' : 's'} and lets up to 32 friend browsers connect.`)
+    + ' Invited friends can create an ordinary game account. Stop sharing disconnects friends'
+    + ' without stopping your local game. Starting sharing applies the protected account policy'
+    + ' and restarts game services once.'
+    // Said here because the checkbox visibly unticks itself a moment later,
+    // which reads as the app undoing your setting rather than closing a door.
+    + ' It also turns off Allow LAN connections: friends reach you through the'
+    + ' invitation only, so the game ports stop listening on your network.';
+}
+
+// Status lines that answer a button. A failure has to look like one: these all
+// used to render in the same dim note colour as the explanatory text around
+// them, so a refusal read as the button doing nothing.
+function setNote(id, message, kind = '') {
+  const node = $(id);
+  if (!node) return;
+  node.classList.remove('bad', 'good');
+  if (kind) node.classList.add(kind);
+  node.textContent = message;
+  if (kind === 'bad') node.scrollIntoView({ block: 'nearest' });
+}
+
+// Saved the moment it is clicked. Nothing the server reads is involved, so
+// there is nothing to restart and nothing to confirm -- and Apply, which does
+// restart the server, would be the wrong place for it. The box goes back if the
+// write fails: one left ticked over a settings.json that never took it is worse
+// than the failure. The element id is the settings key, and main.js will write
+// no name that is not on its own list.
+$('open_settings_first').onchange = async () => {
+  const on = $('open_settings_first').checked;
+  try {
+    await invoke('set_app_preference', { key: 'open_settings_first', value: on });
+    setNote('startup-status', on ? 'Next launch opens this window.' : 'Next launch opens the game.');
+  } catch (error) {
+    $('open_settings_first').checked = !on;
+    setNote('startup-status', `Could not save that: ${error.message || String(error)}`, 'bad');
+  }
+  $('startup-status').hidden = false;
+};
+
+// Mod names, descriptions and refusal reasons are written by whoever made the
+// mod, and land in innerHTML. Nothing about a mod folder is trusted markup.
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// The registry listing, fetched once per opening so a mod taken down since is
+// not still offered from a cache.
+let catalogue = null;
+
+// Search runs here, over the one document the index already is. At the scale
+// this is built for -- hundreds of mods, not hundreds of thousands -- a
+// request per keystroke would be worse in every way than scoring in memory.
+function matchScore(mod, terms) {
+  if (!terms.length) return 1;
+  const name = mod.name.toLowerCase();
+  const tags = mod.tags.join(' ');
+  const haystack = `${name} ${mod.author} ${mod.description} ${tags}`.toLowerCase();
+  let score = 0;
+  for (const term of terms) {
+    // Every term has to appear somewhere, so two words narrow rather than widen.
+    if (!haystack.includes(term)) return 0;
+    if (name === term) score += 100;
+    else if (name.startsWith(term)) score += 40;
+    else if (name.includes(term)) score += 20;
+    if (mod.tags.some(tag => tag === term)) score += 30;
+    else if (tags.includes(term)) score += 10;
+    if (mod.author.toLowerCase().includes(term)) score += 5;
+    score += 1;
+  }
+  return score;
+}
+
+// Pictures arrive as data URLs from the main process, which checks them
+// against the index the same way it checks anything else it downloads.
+async function showPicture(element, mod, relative) {
+  try {
+    element.src = await invoke('registry_image', { name: mod.name, path: relative });
+  } catch { element.remove(); }
+}
+
+function detailFor(mod) {
+  const box = $('mods-detail');
+  box.hidden = false;
+  $('mods-catalogue').hidden = true;
+  box.innerHTML = '';
+  const back = document.createElement('button');
+  back.className = 'ghost';
+  back.textContent = '← All mods';
+  back.onclick = () => { box.hidden = true; $('mods-catalogue').hidden = false; };
+  box.append(back);
+
+  const head = document.createElement('div');
+  head.style.cssText = 'display:flex; align-items:flex-start; gap:12px; margin:12px 0 6px';
+  if (mod.icon) {
+    const icon = document.createElement('img');
+    icon.style.cssText = 'width:64px; height:64px; object-fit:contain; flex:none; border-radius:6px';
+    icon.alt = '';
+    head.append(icon);
+    showPicture(icon, mod, mod.icon);
+  }
+  const title = document.createElement('div');
+  const name = document.createElement('div');
+  name.innerHTML = '';
+  const strong = document.createElement('b');
+  strong.textContent = mod.name;
+  name.append(strong);
+  const by = [mod.version && 'v' + mod.version, mod.author && 'by ' + mod.author].filter(Boolean).join(' ');
+  if (by) {
+    const meta = document.createElement('span');
+    meta.style.cssText = 'color:var(--dim); font-size:11px';
+    meta.textContent = ' ' + by;
+    name.append(meta);
+  }
+  title.append(name);
+  const install = document.createElement('button');
+  install.className = 'ghost';
+  install.style.marginTop = '6px';
+  install.textContent = Object.hasOwn(modState, mod.name) ? 'Reinstall' : 'Install';
+  install.onclick = () => installMod(mod, install);
+  title.append(install);
+  head.append(title);
+  box.append(head);
+
+  if (mod.description) {
+    const description = document.createElement('p');
+    description.className = 'note';
+    description.style.whiteSpace = 'pre-wrap';
+    description.textContent = mod.description;
+    box.append(description);
+  }
+  if (mod.tags.length) {
+    const tags = document.createElement('div');
+    tags.style.cssText = 'display:flex; flex-wrap:wrap; gap:6px; margin:6px 0';
+    for (const tag of mod.tags) {
+      const chip = document.createElement('span');
+      chip.style.cssText = 'font-size:11px; color:var(--dim); border:1px solid var(--line,#333); border-radius:10px; padding:1px 8px; cursor:pointer';
+      chip.textContent = tag;
+      chip.onclick = () => { $('mods-search').value = tag; back.onclick(); paintCatalogue(); };
+      tags.append(chip);
+    }
+    box.append(tags);
+  }
+  // What it needs, so nobody installs a mod that will refuse to load.
+  const needs = mod.requires.mods.filter(Boolean);
+  if (needs.length || mod.requires.era) {
+    const line = document.createElement('p');
+    line.className = 'note';
+    const parts = [];
+    if (needs.length) parts.push('Needs ' + needs.join(', ') + ' installed and switched on.');
+    if (mod.requires.era) parts.push(`For the ${mod.requires.era} era.`);
+    line.textContent = parts.join(' ');
+    box.append(line);
+  }
+  if (mod.screenshots.length) {
+    const strip = document.createElement('div');
+    strip.style.cssText = 'display:flex; flex-wrap:wrap; gap:8px; margin-top:8px';
+    for (const shot of mod.screenshots) {
+      const picture = document.createElement('img');
+      picture.style.cssText = 'max-width:100%; width:260px; border-radius:6px; border:1px solid var(--line,#333)';
+      picture.alt = '';
+      strip.append(picture);
+      showPicture(picture, mod, shot);
+    }
+    box.append(strip);
+  }
+  if (mod.homepage) {
+    const link = document.createElement('p');
+    link.className = 'note';
+    link.textContent = mod.homepage;
+    box.append(link);
+  }
+}
+
+async function installMod(mod, button) {
+  const was = button.textContent;
+  button.disabled = true; button.textContent = 'Installing…';
+  try {
+    const result = await invoke('install_registry_mod', { name: mod.name });
+    log(`installed ${result.name} ${result.version}`);
+    button.textContent = 'Installed';
+    await refreshMods();
+  } catch (e) {
+    log('error: ' + e);
+    button.textContent = was; button.disabled = false;
+  }
+}
+
+function paintCatalogue() {
+  const box = $('mods-catalogue');
+  const query = $('mods-search').value.trim().toLowerCase();
+  box.innerHTML = '';
+  if (!catalogue) { box.textContent = 'Looking…'; return; }
+  const terms = query.split(/\s+/).filter(Boolean);
+  const matches = catalogue
+    .map(mod => ({ mod, score: matchScore(mod, terms) }))
+    .filter(entry => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.mod.name.localeCompare(b.mod.name))
+    .map(entry => entry.mod);
+  if (!matches.length) {
+    box.textContent = catalogue.length ? 'Nothing matches that.' : 'The mod list is empty.';
+    return;
+  }
+  // Built with DOM calls and textContent throughout: every string here came
+  // off the internet, and none of it is trusted markup.
+  for (const mod of matches.slice(0, 100)) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; align-items:flex-start; gap:10px; padding:6px 0';
+    const button = document.createElement('button');
+    button.className = 'ghost';
+    button.style.cssText = 'flex:none';
+    button.textContent = Object.hasOwn(modState, mod.name) ? 'Reinstall' : 'Install';
+    button.onclick = () => installMod(mod, button);
+    if (mod.icon) {
+      const icon = document.createElement('img');
+      icon.style.cssText = 'width:32px; height:32px; object-fit:contain; flex:none; border-radius:4px';
+      icon.alt = '';
+      row.append(button, icon);
+      showPicture(icon, mod, mod.icon);
+    } else {
+      row.append(button);
+    }
+    // The name opens the mod rather than installing it: reading first is the
+    // ordinary thing to want, and installing is the irreversible one.
+    const text = document.createElement('span');
+    const title = document.createElement('a');
+    title.href = '#';
+    title.style.cssText = 'font-weight:600; color:inherit; text-decoration:none; border-bottom:1px dotted var(--dim)';
+    title.textContent = mod.name;
+    title.onclick = event => { event.preventDefault(); detailFor(mod); };
+    text.append(title);
+    const by = [mod.version && 'v' + mod.version, mod.author && 'by ' + mod.author].filter(Boolean).join(' ');
+    if (by) {
+      const meta = document.createElement('span');
+      meta.style.cssText = 'color:var(--dim); font-size:11px';
+      meta.textContent = ' ' + by;
+      text.append(meta);
+    }
+    if (mod.tags.length) {
+      const tags = document.createElement('span');
+      tags.style.cssText = 'color:var(--dim); font-size:11px';
+      tags.textContent = '  ' + mod.tags.join(' · ');
+      text.append(tags);
+    }
+    if (mod.description) {
+      const description = document.createElement('div');
+      description.style.color = 'var(--dim)';
+      description.textContent = mod.description;
+      text.append(description);
+    }
+    row.append(text);
     box.append(row);
   }
 }
 
+$('mods-search').addEventListener('input', paintCatalogue);
+
+$('mods-browse').onclick = async () => {
+  const panel = $('mods-registry');
+  if (!panel.hidden) { panel.hidden = true; $('mods-browse').textContent = 'Find mods…'; return; }
+  panel.hidden = false;
+  $('mods-detail').hidden = true;
+  $('mods-catalogue').hidden = false;
+  $('mods-browse').textContent = 'Hide the mod list';
+  catalogue = null;
+  paintCatalogue();
+  try {
+    catalogue = await invoke('list_registry_mods');
+    paintCatalogue();
+  } catch (e) {
+    catalogue = [];
+    $('mods-catalogue').textContent = 'Could not read the mod list: ' + String(e);
+  }
+};
+
+$('mods-install').onclick = () => withButton('mods-install', 'Installing…', 'Install from a folder…', async () => {
+  const msg = await invoke('install_mod');
+  await refreshMods();
+  return msg;
+});
+
 $('mods-folder').onclick = async () => log('Mods folder: ' + await invoke('open_mods_folder'));
+$('open-data').onclick = async () => setNote('db-note', 'Data folder: ' + await invoke('open_data_folder'));
 
 $('mods-apply').onclick = () => withButton('mods-apply', 'Applying…', 'Apply', async () => {
   for (const [name, enabled] of Object.entries(modState)) {
     await invoke('set_mod_enabled', { name, enabled });
+  }
+  // Only for mods whose options moved: saving one regenerates the client
+  // config, and doing that per mod on every Apply would rebuild the overlay
+  // several times over for nothing.
+  for (const [name, values] of Object.entries(modSettings)) {
+    if (JSON.stringify(values) !== modSettingsBaseline[name]) {
+      await invoke('set_mod_settings', { name, values });
+    }
   }
   await invoke('stack_up');
   await refreshMods();
   return 'Mods applied. Restart the app for client-side changes.';
 });
 
+// The second half of "Your link": the internet one, beside the LAN one, so
+// both live where somebody looks for a link rather than in two places.
+//
+// The hostname is shown, never the invitation itself. The link carries a
+// bearer token -- anyone holding it is in -- and this window is the thing
+// people screenshot when asking for help. Copy puts the real link on the
+// clipboard without ever painting it on screen.
+function paintInternetLink(state) {
+  const row = $('mp-internet-link-row');
+  if (!row) return;
+  const live = state && state.state === 'sharing' && state.invitation;
+  row.hidden = !live;
+  const newRow = $('mp-internet-new-row');
+  if (newRow) newRow.hidden = !live;
+  if (live) {
+    const field = $('mp-internet-addr');
+    field.textContent = state.invitation;
+    // Elided on screen, whole on the clipboard.
+    field.dataset.link = state.invitation;
+  }
+}
+
+let sharingBusy = false, sharingConfigured = false;
+async function refreshSharing() {
+  // Closing the disclosure, or leaving host mode, must also take the internet
+  // link away -- it is in a different panel and would otherwise linger.
+  if ($('internet-hosting').hidden) { paintInternetLink(null); return; }
+  try {
+    const state = await invoke('sharing_status');
+    $('cloudflare-setup').hidden = state.configured;
+    $('sharing-configured').hidden = !state.configured && !state.configurationError;
+    $('sharing-configured').textContent = state.configurationError || (state.configured ? `Cloudflare connected: ${state.configuredHostname}` : '');
+    $('sharing-domain-choice').hidden = !state.configured;
+    if (state.configured !== sharingConfigured) $('sharing-use-domain').checked = state.configured;
+    sharingConfigured = state.configured;
+    $('sharing-start').disabled = sharingBusy || !['stopped', 'failed'].includes(state.state);
+    $('sharing-connect').disabled = sharingBusy;
+    $('sharing-copy').disabled = state.state !== 'sharing';
+    $('sharing-stop').disabled = !sharingBusy && ['stopped', 'failed'].includes(state.state);
+    $('sharing-replace').disabled = !['sharing', 'reconnecting'].includes(state.state);
+    $('sharing-forget').disabled = sharingBusy || (!state.configured && !state.configurationError);
+    setNote('sharing-state', state.message || 'Sharing is off.');
+    // What the pre-flight checks could not confirm on a start that worked.
+    setNote('sharing-notice', state.notice || '');
+    $('sharing-notice').hidden = !state.notice;
+    // What happens the next time the server restarts, which is different with
+    // a domain connected and is the main thing connecting one buys you.
+    setNote('share-auto-note', state.configured
+      ? 'Your hostname does not change, so sharing comes back by itself once the server is up again '
+        + '— after applying a setting, a Repair, a crash you recovered from, or the next time you start '
+        + 'the server — and the link your friends already have starts working again with nothing sent to '
+        + 'anyone. Stop sharing still means stopped: that holds until you share again or relaunch.'
+      : 'A temporary link gets a new address every time, so anything that restarts the server — applying '
+        + 'a setting, a Repair, a crash, quitting — ends the session and the next one needs a new link. '
+        + 'Connect your own domain below and sharing comes back by itself, at the same address.');
+    if (state.state === 'sharing') {
+      const expiry = Number.isFinite(state.expires)
+        ? ` Invitation expires ${new Date(state.expires).toLocaleString()}.`
+        : ' Invitation does not expire.';
+      $('sharing-state').textContent += `${expiry} ${state.connectedFriends} friend browser(s) connected.`;
+    }
+    paintInternetLink(state);
+  } catch (error) { setNote('sharing-state', error.message || String(error), 'bad'); }
+}
+async function sharingAction(name, request) {
+  sharingBusy = true; setNote('sharing-feedback', name === 'sharing_connect' ? 'Connecting Cloudflare…' : name === 'sharing_start' ? 'Preparing your world and starting sharing…' : '');
+  await refreshSharing();
+  try {
+    const result = await invoke(name, request);
+    setNote('sharing-feedback', typeof result === 'string' ? result : name === 'sharing_connect' ? 'Cloudflare connected. Choose Share with friends when your server is ready.' : '');
+  } catch (error) { setNote('sharing-feedback', error.message || String(error), 'bad'); }
+  finally { sharingBusy = false; $('sharing-token').value = ''; await refreshSharing(); }
+}
+$('sharing-connect').onclick = () => sharingAction('sharing_connect', { publicHostname: $('sharing-hostname').value, apiToken: $('sharing-token').value });
+$('sharing-start').onclick = () => sharingAction('sharing_start', { useDomain: $('sharing-use-domain').checked });
+$('sharing-stop').onclick = () => sharingAction('sharing_stop');
+$('sharing-copy').onclick = () => sharingAction('sharing_copy');
+$('mp-internet-copy').onclick = () => sharingAction('sharing_copy');
+// Clicking the link copies it. Selecting an elided string by hand is how
+// somebody ends up sending half a link, or the hostname without its token.
+$('mp-internet-new').onclick = async () => {
+  if (!confirm('Create a new link?\n\nThe link you have already shared will stop working, and anyone playing through it will be disconnected.')) return;
+  await sharingAction('sharing_replace');
+};
+$('mp-internet-addr').onclick = async () => {
+  const link = $('mp-internet-addr').dataset.link;
+  if (!link) return;
+  await invoke('copy_text', { text: link });
+  log('copied the invitation link');
+};
+$('sharing-replace').onclick = () => sharingAction('sharing_replace');
+$('sharing-forget').onclick = () => sharingAction('sharing_forget');
+$('sharing-token-help').onclick = () => invoke('sharing_token_help');
+setInterval(refreshSharing, 3000);
+refreshSharing();
+
+$('secure-services').onclick = async () => {
+  const button = $('secure-services');
+  button.disabled = true;
+  setNote('services-status', 'Backing up and securing this era’s internal credentials…');
+  try { setNote('services-status', (await invoke('secure_services')).trim(), 'good'); }
+  catch (error) { setNote('services-status', String(error && error.message || error), 'bad'); }
+  finally { button.disabled = false; }
+};
+
+$('hosting-check').onclick = async () => {
+  const button = $('hosting-check');
+  button.disabled = true;
+  $('hosting-checks').replaceChildren();
+  $('hosting-readiness').textContent = 'Checking this era’s account safeguards…';
+  try {
+    const report = await invoke('hosting_check');
+    for (const check of report.checks) {
+      const item = document.createElement('li');
+      item.textContent = `${check.passed ? 'Passed' : 'Needs attention'}: ${check.detail}`;
+      $('hosting-checks').appendChild(item);
+    }
+    $('hosting-readiness').textContent = `${report.era === 'renewal' ? 'Renewal' : 'Pre-renewal'} (${report.scope}). ${report.accountPolicyReady ? 'Account safeguards passed. Choose Share with friends to make an invitation.' : 'Complete the items above before sharing.'}`;
+  } catch (error) { setNote('hosting-readiness', error.message || String(error), 'bad'); }
+  finally { button.disabled = false; }
+};
+
+$('registration-save').onclick = async () => {
+  const button = $('registration-save');
+  const status = $('registration-status');
+  button.disabled = true;
+  status.textContent = 'Saving account creation policy and restarting…';
+  try {
+    // Merge this one preference inside the serialized owner operation, so a
+    // concurrent era change cannot be overwritten by an older UI snapshot.
+    const settings = { open_registration: $('open-registration').value === 'open' };
+    await invoke('save_settings', { settings });
+    const mode = await invoke('get_mode');
+    status.textContent = mode.mode === 'join'
+      ? 'Saved for your own server. It will apply when you next host.'
+      : settings.open_registration && !['friends', 'public'].includes(mode.hosting_scope) ? 'Game login signup is enabled.'
+        : 'Only the owner can create accounts through Settings. Existing accounts can still log in.';
+  } catch (error) {
+    status.textContent = `Could not apply account creation policy: ${String(error)}. Start the server to retry.`;
+  } finally {
+    button.disabled = false;
+  }
+};
+
+$('delete-delay-save').onclick = async () => {
+  const button = $('delete-delay-save');
+  const status = $('delete-delay-status');
+  button.disabled = true;
+  status.textContent = 'Saving character deletion and restarting…';
+  try {
+    // One preference at a time, for the same reason as the policy above: the
+    // owner operation is serialized, and a whole-settings write from an older
+    // snapshot of this window would take a concurrent change with it.
+    const instant = $('delete-delay').value === 'instant';
+    await invoke('save_settings', { settings: { instant_character_deletion: instant } });
+    const mode = await invoke('get_mode');
+    status.textContent = mode.mode === 'join'
+      ? 'Saved for your own server. It will apply when you next host.'
+      : instant
+        ? 'Characters are deleted as soon as the birthday is entered.'
+        : 'Characters are deleted a day after they are requested, and can be cancelled until then.';
+  } catch (error) {
+    status.textContent = `Could not apply character deletion: ${String(error)}. Start the server to retry.`;
+  } finally {
+    button.disabled = false;
+  }
+};
+
 $('save').onclick = async () => {
   const settings = await invoke('get_settings');
-  for (const k of RATES) settings[k] = Number($(k).value);
+  for (const k of RATES) settings[k] = rateOf(k);
+  settings.max_aspd = Number($('max_aspd').value) || 190;
+  settings.max_parameter = Number($('max_parameter').value) || 99;
   settings.free_kafra_warp = $('free_kafra_warp').checked;
+  settings.open_registration = $('open-registration').value === 'open';
+  settings.instant_character_deletion = $('delete-delay').value === 'instant';
+  settings.sharing_invite_days = inviteDays($('sharing_invite_days').value);
+  settings.prerenewal = eraIsPre;
   settings.zeny_from_mobs = $('zeny_from_mobs').checked;
   $('save').disabled = true;
   try { log(await invoke('save_settings', { settings })); }
@@ -534,13 +1641,36 @@ $('save').onclick = async () => {
   refresh();
 };
 
+// The typed box holds the multiplier and is the value that gets saved; the
+// slider is a shortcut to it. They are bound both ways, and the slider pins at
+// its own maximum when the typed value goes past it -- 50x is the top of the
+// slider but nowhere near the server's limit, which is effectively unbounded
+// for experience and 10000x for drops.
+const rateOf = k => Math.max(0, Math.round((Number($('v-' + k).value) || 0) * 100));
+
+function showRate(k, rate) {
+  $('v-' + k).value = rate / 100;
+  $(k).value = Math.min(rate, Number($(k).max));
+}
+
 for (const k of RATES) {
-  $(k).addEventListener('input', () => { $('v-' + k).textContent = ($(k).value / 100) + 'x'; });
+  $(k).addEventListener('input', () => { $('v-' + k).value = $(k).value / 100; });
+  // Not 'input': re-pinning the slider mid-keystroke fights the typist, and an
+  // empty box during editing would read as 0.
+  $('v-' + k).addEventListener('change', () => showRate(k, rateOf(k)));
 }
 invoke('get_settings').then(s => {
-  for (const k of RATES) { $(k).value = s[k]; $('v-' + k).textContent = (s[k] / 100) + 'x'; }
+  for (const k of RATES) showRate(k, s[k]);
+  $('max_aspd').value = s.max_aspd ?? 190;
+  $('max_parameter').value = s.max_parameter ?? 99;
   $('free_kafra_warp').checked = !!s.free_kafra_warp;
+  paintRegistration(s);
+  $('delete-delay').value = s.instant_character_deletion ? 'instant' : 'delayed';
+  setEra(!!s.prerenewal);
+  gameText = s.game_text || 'english';
+  $('game_text').value = gameText;
   $('zeny_from_mobs').checked = !!s.zeny_from_mobs;
+  $('open_settings_first').checked = !!s.open_settings_first;
   $('population_enable').checked = !!s.population_enable;
   $('population_max').value = s.population_max;
   $('population_density').value = s.population_density;
@@ -551,6 +1681,8 @@ invoke('get_settings').then(s => {
 // guest memory to the host, Windows and Linux do not, so there it is held for
 // as long as the server runs.
 invoke('host_facts').then(f => {
+  hostTotalMib = Number(f.total_mib) || 0;
+  refreshPopulation();
   $('ram-note').textContent = f.balloons
     ? 'Server memory is a ceiling rather than a reservation: the virtual machine '
       + 'hands back what it is not using. Changing it restarts the virtual machine.'
@@ -576,5 +1708,6 @@ refresh();
 refreshMods();
 setInterval(refresh, 4000);
 </script>
+<script src="accounts-settings.js"></script>
 </body>
 </html>

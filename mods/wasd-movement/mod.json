@@ -1,0 +1,19 @@
+{
+  "name": "wasd-movement",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "Keyboard movement, Q/E camera turning and a spacebar attack, with per-device bindings and shortcut priority. Open Controls in game to configure or turn it off.",
+  "requires": {
+    "app": ">=1.0.9",
+    "era": "any"
+  },
+  "settings": [
+    {
+      "key": "show_controls_button",
+      "type": "boolean",
+      "default": true,
+      "label": "Show the Controls button in game",
+      "description": "Hides the on-screen button. Movement, Q/E turning and the spacebar attack keep working with whatever is already configured, but the in-game Controls dialog is the only place to rebind keys, so turn this back on if you need to change them."
+    }
+  ]
+}

@@ -18,6 +18,16 @@
 -- Guarded with NOT EXISTS rather than INSERT IGNORE: rAthena indexes userid
 -- with a plain KEY, not a UNIQUE one, so IGNORE has no conflict to suppress and
 -- happily inserts a second 'ragnarok' every startup.
-INSERT INTO `login` (`userid`, `user_pass`, `sex`, `email`, `group_id`)
-SELECT 'ragnarok', 'ragnarok', 'M', 'ragnarok@localhost', 99 FROM DUAL
+--
+-- The birthdate is 2000-01-01 rather than the NULL the schema defaults to,
+-- because it is what lets a player delete a character. rAthena asks the client
+-- for the account's birthday and compares it to this column
+-- (chclif_delchar_check in src/char/char_clif.cpp), and nothing else in this
+-- app ever writes it. A NULL one cannot be matched: the sole value that would
+-- pass is an empty birthday, and roBrowser's input box will not submit an empty
+-- field, so the delete prompt refuses everything the player can type. The same
+-- date is written by account creation in stack/src/accounts.rs, and by the
+-- Accounts panel's migration for databases seeded before this line existed.
+INSERT INTO `login` (`userid`, `user_pass`, `sex`, `email`, `group_id`, `birthdate`)
+SELECT 'ragnarok', 'ragnarok', 'M', 'ragnarok@localhost', 99, '2000-01-01' FROM DUAL
  WHERE NOT EXISTS (SELECT 1 FROM `login` WHERE `userid` = 'ragnarok');

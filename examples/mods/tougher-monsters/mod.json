@@ -1,0 +1,7 @@
+{
+  "name": "tougher-monsters",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "Poring hits back and drops better, and Prontera South Field grows teeth.",
+  "requires": { "app": ">=1.0.6", "era": "any" }
+}

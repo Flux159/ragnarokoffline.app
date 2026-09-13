@@ -1,0 +1,28 @@
+# Twelve AI characters on the custom island from the custom-map mod.
+#
+# The whole file is four lines of body, and that is the point. Profiles are
+# matched by name against the shipped table and only the fields named here are
+# touched, so everywhere else in the world is left exactly as it was.
+#
+# FieldsAdd rather than Fields: the plain form *replaces* the profile's field
+# list, which would take combat_pve_low's low-level characters off every field
+# map they are supposed to be on and strand them all here. FieldsPopulationAdd
+# for the same reason -- adding a map without adding shells only spreads the
+# existing ones thinner.
+#
+# To own the table outright instead, add `Clear: true` to the Header: the
+# shipped table is emptied and only what is here survives.
+#
+# Check anything you write with:
+#   python3 third-party/population-engine/validate.py
+
+Header:
+  Type: POPULATION_SPAWN_DB
+  Version: 1
+
+Body:
+  - Profile: combat_pve_low
+    FieldsAdd:
+      - ro_isle
+    FieldsPopulationAdd: 12
+    FieldsMaxPerMap: 12

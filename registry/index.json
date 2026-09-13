@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "mods": [
+    {
+      "name": "no-seed-cost",
+      "version": "1.0.1",
+      "author": "Ragnarok Offline",
+      "description": "Call Homunculus no longer costs a Seed of Life. The Embryo is still required.",
+      "homepage": "https://github.com/Flux159/ragnarokoffline.app/tree/main/registry/mods/no-seed-cost",
+      "tags": [
+        "alchemist",
+        "homunculus",
+        "quality-of-life"
+      ],
+      "icon": "images/icon.png",
+      "screenshots": [
+        "images/homunculus.png"
+      ],
+      "requires": {
+        "mods": [],
+        "era": "renewal",
+        "app": ">=1.0.6"
+      },
+      "files": [
+        {
+          "path": "db/skill_db.yml",
+          "sha256": "42dcdf20f7c4b315c03f28a17e8da306ed477500b8c84d7b46e37eb1d39c5098"
+        },
+        {
+          "path": "images/homunculus.png",
+          "sha256": "119b807cfff7338e597f79a03b431c02e0ba0c4e5066695103632bbfcbce1e3e"
+        },
+        {
+          "path": "images/icon.png",
+          "sha256": "c6e056cd43d664572377aba15011247bf2a3471d4a3e02fb802f1d0ff93b3d9f"
+        },
+        {
+          "path": "mod.json",
+          "sha256": "e256016b9a6e83b3b1fea49f281866c4002f0e5dcfb511fa7d404c920792f8aa"
+        }
+      ]
+    }
+  ]
+}

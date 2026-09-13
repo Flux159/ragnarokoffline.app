@@ -1,0 +1,111 @@
+# Troubleshooting
+
+## The server will not start
+
+**Virtualisation.** The app runs the server in a microVM. On Windows that needs
+three separate things: virtualisation enabled in the BIOS, the Windows
+Hypervisor Platform feature ticked, and the hypervisor not switched off at boot
+by `bcdedit`. On Linux it needs `/dev/kvm` and your user in the `kvm` group. The
+app checks each one and says which is missing rather than failing vaguely. The
+full walkthrough is in
+[TROUBLESHOOTING.md](https://github.com/Flux159/ragnarokoffline.app/blob/main/docs/TROUBLESHOOTING.md).
+
+**One copy at a time.** The ports are fixed, so a second copy of the app cannot
+start its own server even with its own data folder. Quit the first and let it
+finish quitting.
+
+## Windows calls it a trojan
+
+**`Trojan:Win32/Bearfoos.B!ml` is not the name of a file.** It is Microsoft
+Defender's name for a detection, and the `!ml` on the end means a
+machine-learning model made the call rather than a signature matching known
+malware. There is no file called "Bearfoos" in this project.
+
+The file it flags is `ragnarok-stack.exe`, the supervisor, which lives in
+`%APPDATA%\Ragnarok Offline\runtime\bin`. That is worth knowing because the
+supervisor is what starts everything else: if Defender quarantines it, the app
+opens and then cannot start the server, and the error talks about a process
+that would not launch rather than about antivirus. Check Protection history
+first if the server stopped working after an alert. A `ragnarok-stack.sha256`
+sits beside the binary, so you can confirm your copy is the one we shipped.
+
+The app is unsigned, every release is a new binary with no reputation, and it
+starts a hypervisor and several child processes. None of that is evidence of
+anything, and together it is enough for a probabilistic model. Microsoft's own
+projects get flagged by this same detection.
+
+Download only from the
+[releases page](https://github.com/Flux159/ragnarokoffline.app/releases), where
+every build is produced in public by GitHub Actions from a public commit. The
+real fix is a code signing certificate, tracked in
+[#8](https://github.com/Flux159/ragnarokoffline.app/issues/8). You can also
+report it to Microsoft at [Microsoft's submission page](https://www.microsoft.com/wdsi/filesubmission), which
+usually clears within days. The longer version, including what each part of the
+detection name means, is in
+[TROUBLESHOOTING.md](https://github.com/Flux159/ragnarokoffline.app/blob/main/docs/TROUBLESHOOTING.md).
+
+## The game window is blank, or sprites are missing
+
+Usually the client files. Check **Settings → General → Client** points at the
+folder holding `data.grf`. If a specific sprite is missing rather than all of
+them, the asset server logs the exact filename it could not find.
+
+The browser client also caches what it downloads, so a mod replacing a stock
+file can appear to do nothing while everything reports success. Toggling the
+mod and applying clears it.
+
+## The map server crashed
+
+The app keeps the evidence. **Copy diagnostics** includes preserved crash
+reports with a symbolised stack, which is usually enough to name the exact
+function at fault.
+
+If you have the **population engine** on, turn it off and see whether the crash
+follows — it is the most complex part of the server and the easiest thing to
+rule out.
+
+## A friend cannot connect
+
+**Over your network:** LAN connections must be on, and the server restarted
+after turning them on. Your friend needs to be on the same network.
+
+**Over the internet:** a temporary link changes every time sharing starts, so
+the link they have may simply be the old one. Copy the current one from
+**Settings → Multiplayer**.
+
+If sharing itself will not start, the reason appears in red under the buttons,
+and `sharing.log` in the data folder has the whole story including the
+Cloudflare helper's own output.
+
+## Character creation is denied
+
+Character names need **at least 4 characters**, and only letters, numbers and
+spaces. The server returns the same generic refusal for several different
+problems, so the app checks the length before sending.
+
+## A character will not delete, and the birthday is refused
+
+The game checks the birthday against the account, and an account with none
+stored refuses every answer. Open **Settings → Accounts** and choose **Set
+missing account birthdays**, then answer `20000101`.
+
+Answers such as `000000` or `00-00-00`, suggested for other rAthena servers,
+never work here.
+
+If the birthday is accepted and the deletion is still refused, the character is
+waiting out its countdown. Deletion is queued for a day by default, and the
+same panel has **Character deletion** to make it immediate. A character in a
+party or guild is refused whichever you choose.
+
+## Accounts and passwords
+
+Passwords are **8–23 printable ASCII characters** and cannot be the account
+name. Renewal and Pre-Renewal have separate accounts, so check which era you are
+on.
+
+## Reporting a problem
+
+**Copy diagnostics** and paste the result into a
+[GitHub issue](https://github.com/Flux159/ragnarokoffline.app/issues). It
+carries the app version, your settings, server logs, preserved crash reports and
+the sharing log. It never includes passwords or invitation tokens.

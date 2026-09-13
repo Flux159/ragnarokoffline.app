@@ -1,0 +1,59 @@
+name: diagnostic-images
+
+# Development-only, manual builds. No release/publish path or production tags.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare pinned server and diagnostic sources
+        run: |
+          set -eu
+          ./scripts/vendor-fetch.sh rathena /tmp/rathena
+          ./scripts/apply-server-mods.sh /tmp/rathena
+          cp containers/rathena/Dockerfile.sanitizers /tmp/rathena/Dockerfile.sanitizers
+          cp -R tests/diagnostics /tmp/rathena/ragnarok-sanitizer-tests
+          ver=$(sed -n 's/^PACKETVER=//p' scripts/bootstrap.sh | head -1)
+          test -n "$ver"
+          echo "PACKETVER=$ver" >> "$GITHUB_ENV"
+      - name: Build diagnostic image and validate real sanitizer faults
+        run: |
+          set -eu
+          image="ragnarokmac/rathena-diagnostics:${{ github.sha }}"
+          docker build -f /tmp/rathena/Dockerfile.sanitizers \
+            --build-arg "PACKETVER=$PACKETVER" --build-arg BUILD_JOBS=2 \
+            -t "$image" /tmp/rathena
+          docker run --rm "$image" sh /diagnostics/verify.sh /tmp/runtime-fixture
+          cid=$(docker create "$image" true)
+          mkdir diagnostic-evidence
+          docker cp "$cid:/diagnostics/." diagnostic-evidence/
+          docker rm "$cid" >/dev/null
+          docker image inspect "$image" --format '{{.Id}}' > diagnostic-evidence/image-id.txt
+          printf '%s\n' '${{ github.sha }}' > diagnostic-evidence/app-source.txt
+          cp config/VENDOR_PINS diagnostic-evidence/VENDOR_PINS
+          docker save "$image" | gzip -1 > "rathena-diagnostics-${{ matrix.arch }}.tar.gz"
+          sha256sum "rathena-diagnostics-${{ matrix.arch }}.tar.gz" > "rathena-diagnostics-${{ matrix.arch }}.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-image-${{ matrix.arch }}
+          path: |
+            rathena-diagnostics-${{ matrix.arch }}.tar.gz
+            rathena-diagnostics-${{ matrix.arch }}.sha256
+            diagnostic-evidence/
+          if-no-files-found: error
+          retention-days: 14

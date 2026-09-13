@@ -1,0 +1,88 @@
+name: Test
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  server-language:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/vendor-fetch.sh rathena vendor/rathena
+      - run: python3 tests/diagnostics/verify-language.py vendor/rathena --expect-fault
+      - run: python3 tests/diagnostics/verify-base-sp.py vendor/rathena --expect-fault
+      - run: python3 tests/diagnostics/verify-skill-level.py vendor/rathena --expect-fault
+      - run: python3 tests/diagnostics/verify-weapon-bounds.py vendor/rathena --expect-fault
+      - run: bash scripts/apply-server-mods.sh vendor/rathena
+      - run: bash scripts/apply-server-mods.sh vendor/rathena
+      - run: python3 tests/diagnostics/verify-language.py vendor/rathena
+      - run: python3 tests/diagnostics/verify-base-sp.py vendor/rathena
+      - run: python3 tests/diagnostics/verify-skill-level.py vendor/rathena
+      - run: python3 tests/diagnostics/verify-weapon-bounds.py vendor/rathena
+  client-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: bash scripts/vendor-fetch.sh roBrowserLegacy vendor/roBrowserLegacy
+      - name: Apply the patch set twice to the release pin
+        run: |
+          bash scripts/patch-client.sh
+          git -C vendor/roBrowserLegacy diff --binary > /tmp/client-first.patch
+          bash scripts/patch-client.sh
+          git -C vendor/roBrowserLegacy diff --binary > /tmp/client-second.patch
+          cmp /tmp/client-first.patch /tmp/client-second.patch
+      - run: npm ci --prefix vendor/roBrowserLegacy
+      - run: npm --prefix vendor/roBrowserLegacy run build -- --O --T --H
+      - run: node --test tests/client-extensions.test.cjs
+      # A mod cannot be merged without its digests matching its files, or the
+      # app refuses the download and nobody can tell which half is wrong.
+      - name: The mod index matches the mod folders
+        run: python3 scripts/mod-index.py --check
+  supervisor-and-lifecycle:
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: stack
+      - run: cargo test --locked --manifest-path stack/Cargo.toml
+      - run: cargo build --locked --manifest-path stack/Cargo.toml
+      - run: node --check electron/main.js
+      - name: Check Windows acceptance script syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'scripts/test-windows-install.ps1'), [ref]$null, [ref]$parseErrors) | Out-Null
+          if ($parseErrors) { throw ($parseErrors | Out-String) }
+      - name: Build the pinned Rust dependency
+        timeout-minutes: 12
+        shell: bash
+        run: bash scripts/build-remoteclient.sh
+      - name: Build the pinned container client and verify private stdin capability
+        shell: bash
+        run: bash scripts/build-docker-slim.sh
+      - name: Test lifecycle and the real process protocol
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          binary_path="$(node -p 'require("node:path").resolve("bin/robrowser-remoteclient" + (process.platform === "win32" ? ".exe" : ""))')"
+          stack_path="$(node -p 'require("node:path").resolve("stack/target/debug/ragnarok-stack" + (process.platform === "win32" ? ".exe" : ""))')"
+          REMOTECLIENT_BIN="$binary_path" STACK_BIN="$stack_path" node --test --test-timeout=45000 --test-reporter=spec tests/*.test.cjs

@@ -2,6 +2,7 @@
 name = "ragnarok-stack"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.89"
 description = "Bring the Ragnarok Offline server stack up or down inside nebula's microVM"
 
 # No dependencies, deliberately. This is a process supervisor: it spawns

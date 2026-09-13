@@ -2,8 +2,11 @@
 
 use crate::config::{data_root, home, lan_ip, Config, DB_CONTAINER, NET, SERVERS};
 use crate::docker::{older_than, Docker, Mount};
+// Every use of it is Windows-only; the module itself is not.
+#[cfg(windows)]
+use crate::host;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread::sleep;
@@ -24,8 +27,9 @@ pub fn phase(cfg: &Config, msg: &str) {
 /// they do, both remove the containers and then both try to create them, and
 /// the loser fails with "container name is already in use".
 ///
-/// Directory creation is the atomic primitive on every platform we ship to,
-/// which advisory file locking is not.
+/// Retained for compatibility with older supervisors. main.rs also takes a
+/// kernel file lock covering accounts, lifecycle, backup and restore; Repair
+/// may clear this legacy directory but cannot break that live operation lock.
 pub struct Lock(PathBuf);
 
 impl Lock {
@@ -191,13 +195,32 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
             } else {
                 "Updating the virtual machine image…"
             });
+            // Stop the engine first: nebula refuses to install an image while
+            // it is running, and nebulad deliberately outlives the app so the
+            // next launch is quick. Those two together mean an upgrade that
+            // ships a new kernel or rootfs fails on the very machines that
+            // have run the app before -- "Updating the virtual machine
+            // image..." and then "the engine is running - stop it first",
+            // which no amount of restarting the app can clear because the app
+            // is what leaves it running.
+            //
+            // Only on the path that is about to install. A start that has
+            // nothing to update leaves a healthy engine alone, which is the
+            // whole point of it outliving us.
+            let _ = nebula(cfg, &["down"]);
+            for _ in 0..20 {
+                if !engine_running(cfg) {
+                    break;
+                }
+                sleep(Duration::from_millis(500));
+            }
             nebula(cfg, &["install-image",
                 "--kernel", &k.display().to_string(),
                 "--rootfs", &r.display().to_string()])
                 .map_err(|e| {
                     #[cfg(windows)]
                     if is_app_control_block(&e) {
-                        return app_control_help(&e);
+                        return host::app_control_help(&e);
                     }
                     e
                 })?;
@@ -213,10 +236,25 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
     // waiting to misread the failure. Only when our own binary is genuinely
     // unsigned: once signing lands this goes quiet on its own.
     #[cfg(windows)]
-    if sac_enforcing() && !pe_is_signed(&cfg.nebula) {
-        return Err(app_control_help(
+    if host::app_control_blocks(&cfg.nebula) {
+        return Err(host::app_control_help(
             "Smart App Control is enforcing, and this app is not signed yet",
         ));
+    }
+    // Same reasoning: check the condition rather than read it back out of a
+    // failure that cannot be told apart from three other causes.
+    #[cfg(windows)]
+    if vc_runtime_missing() {
+        return Err(vc_runtime_help(
+            "The Microsoft Visual C++ runtime is missing",
+        ));
+    }
+    // Same again: ask the condition rather than read it out of a failure that
+    // arrives twenty seconds later as "agent did not become healthy", with the
+    // real reason logged by libkrun and thrown away.
+    #[cfg(windows)]
+    if host::whp_capability() == Some(false) {
+        return Err(host::blocked_help());
     }
 
     // Before starting it: an image that was damaged on the way in produces a
@@ -236,7 +274,7 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
         #[cfg(windows)]
         if let Err(e) = &repair {
             if is_app_control_block(e) {
-                return Err(app_control_help(e));
+                return Err(host::app_control_help(e));
             }
         }
         let _ = repair;
@@ -247,9 +285,36 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
     if let Err(e) = nebula(cfg, &["up"]) {
         #[cfg(windows)]
         if is_app_control_block(&e) {
-            return Err(app_control_help(&e));
+            return Err(host::app_control_help(&e));
         }
-        return Err(engine_failure_help(&e));
+        // Closing the game and opening it again is the ordinary way to hit
+        // this, and the previous engine needs about a minute to finish
+        // leaving. Waiting is the whole remedy, so wait rather than hand the
+        // player a virtualisation error for a stack that is simply busy.
+        let mut last = e;
+        if engine_still_departing(&last) {
+            phase(cfg, "Waiting for the previous engine to stop…");
+            for _ in 0..40 {
+                sleep(Duration::from_secs(2));
+                match nebula(cfg, &["up"]) {
+                    Ok(()) => {
+                        last.clear();
+                        break;
+                    }
+                    Err(again) => {
+                        last = again;
+                        // A different failure is a real one: stop retrying and
+                        // report it now rather than after another 80 seconds.
+                        if !engine_still_departing(&last) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if !last.is_empty() {
+            return Err(engine_failure_help(&last));
+        }
     }
     // Its own phase. Installing the image and waiting for the engine are
     // different steps with very different durations, and leaving the install
@@ -270,20 +335,38 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
 }
 
 fn nebula(cfg: &Config, args: &[&str]) -> Result<(), String> {
-    // stderr captured rather than discarded: when the engine cannot start, what
-    // it says is the whole diagnosis, and throwing it away left the player with
-    // a stack that failed several steps later for no stated reason.
-    let out = Command::new(&cfg.nebula)
+    // stderr to a file, not a pipe.
+    //
+    // It has to be captured at all because when the engine cannot start, what
+    // it says is the whole diagnosis, and discarding it left players with a
+    // stack that failed several steps later for no stated reason.
+    //
+    // But it must not be a pipe. `nebula up` spawns nebulad as a daemon that
+    // deliberately outlives the command, and on Windows the daemon inherits
+    // the pipe's write handle. Reading such a pipe to EOF -- which is exactly
+    // what Command::output() does -- therefore blocks until *nebulad* exits,
+    // not until nebula exits. The observable failure is the app sitting on
+    // "Installing the virtual machine image..." forever while the images are
+    // already complete on disk and the nebula process has long since gone:
+    // the first Windows bug report was fifteen minutes of that before the
+    // supervisor's own timeout killed it.
+    //
+    // A file has no EOF to wait for. Same diagnosis, no deadlock.
+    let log = std::env::temp_dir().join(format!("nebula-{}-{}.err", args[0], std::process::id()));
+    let sink = fs::File::create(&log).map_err(|e| format!("running nebula: {e}"))?;
+    let status = Command::new(&cfg.nebula)
         .args(args)
         .env("NEBULA_HOME", &cfg.nebula_home)
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()
+        .stderr(Stdio::from(sink))
+        .status()
         .map_err(|e| format!("running nebula: {e}"))?;
-    if out.status.success() {
+    let captured = fs::read_to_string(&log).unwrap_or_default();
+    let _ = fs::remove_file(&log);
+    if status.success() {
         return Ok(());
     }
-    let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    let why = captured.trim().to_string();
     Err(if why.is_empty() {
         format!("nebula {} failed", args[0])
     } else {
@@ -491,6 +574,164 @@ fn end_process(pid: u32, hard: bool) {
     let _ = c.stdout(Stdio::null()).stderr(Stdio::null()).status();
 }
 
+/// Move characters off maps a mod used to provide and no longer does.
+///
+/// This is the one way a mod can lock a player out of their own save. A
+/// character's position is stored as a map *name*: uninstall the mod that
+/// provided `ro_isle` and everyone standing on it has nowhere to log in to.
+/// rAthena does offer a list of major cities when that happens, but roBrowser
+/// discards it and shows an untranslated error, so in this app the character
+/// simply cannot be selected.
+///
+/// Rather than try to know every valid map -- the stock list lives inside the
+/// container and is 1,265 long -- this remembers only what *mods* provided last
+/// time. A map in the previous list and not the current one is a map a mod took
+/// away, which is precisely the case worth acting on and cannot misfire on a
+/// stock map.
+///
+/// `save_map` matters as much as `last_map`: it is where death returns you, and
+/// a start-point mod sets it on every character it creates.
+fn rescue_stranded_characters(cfg: &Config, dk: &Docker, current: &[String]) {
+    let marker = cfg.state.join("modmaps.txt");
+    let previous: Vec<String> = fs::read_to_string(&marker)
+        .map(|b| b.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect())
+        .unwrap_or_default();
+    let _ = fs::write(&marker, current.join("\n"));
+
+    let gone: Vec<&String> = previous.iter().filter(|m| !current.contains(m)).collect();
+    if gone.is_empty() {
+        return;
+    }
+
+    // Prontera, because it exists in both eras and is where rAthena's own
+    // fallback list starts. The coordinates are its default spawn.
+    let list = gone
+        .iter()
+        .map(|m| format!("'{}'", m.replace('\'', "")))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "UPDATE `char` SET last_map='prontera', last_x=156, last_y=191 WHERE last_map IN ({list}); \
+         UPDATE `char` SET save_map='prontera', save_x=156, save_y=191 WHERE save_map IN ({list}); \
+         SELECT ROW_COUNT();"
+    );
+    match dk.exec_sql(&sql) {
+        Ok(_) => eprintln!(
+            "mods: no mod provides {} any more -- any character standing there \
+             has been moved to Prontera",
+            gone.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+        ),
+        // Not fatal. A character on a removed map is a problem; failing to
+        // start the server over it is a bigger one.
+        Err(e) => eprintln!("mods: could not move characters off {list}: {e}"),
+    }
+}
+
+/// Write the conf files mods supply whole, into the directory the server
+/// imports.
+///
+/// `state/conf` is bound at `/rathena/conf/import`, and rAthena's own
+/// `conf/groups.yml` ends with `Footer: Imports: conf/import/groups.yml` -- so
+/// dropping the file here is the whole mechanism.
+///
+/// Files no mod provides are **removed**, for the same reason `modbuild` is
+/// rebuilt from scratch: a stale `groups.yml` left behind by a mod that has
+/// been uninstalled would go on granting commands, and would be indistinguish-
+/// able from the mod still being installed.
+fn write_mod_conf_files(cfg: &Config, mods: &crate::mods::Assembled) -> Result<(), String> {
+    let conf = cfg.state.join("conf");
+    for file in ["groups.yml", "atcommands.yml"] {
+        let path = conf.join(file);
+        match mods.conf.get(&format!("file:{file}")) {
+            None => {
+                let _ = fs::remove_file(&path);
+            }
+            Some(entries) => {
+                // Last name wins, as everywhere else -- but say so, because a
+                // whole-file layer silently discarding another mod's copy is
+                // worse than a table doing it.
+                if entries.len() > 1 {
+                    let names: Vec<&str> = entries.iter().map(|(n, _)| n.as_str()).collect();
+                    eprintln!(
+                        "mods: {} all supply conf/{file}; only {} is in effect",
+                        names.join(", "),
+                        names.last().copied().unwrap_or("")
+                    );
+                }
+                let (name, body) = entries.last().unwrap();
+                fs::write(&path, body)
+                    .map_err(|e| format!("writing conf/{file} from {name}: {e}"))?;
+                eprintln!("mods: {name} supplies conf/{file}");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The settings mods asked for in one conf file, ready to append.
+///
+/// Empty for every file no mod named, which is the usual case, and the reason
+/// this returns a string rather than taking a writer: the caller can drop it
+/// into a format! and the generated file is unchanged when no mod is
+/// installed.
+fn conf_lines(mods: &crate::mods::Assembled, file: &str) -> String {
+    match mods.conf.get(file) {
+        None => String::new(),
+        Some(pairs) => pairs.iter().map(|(k, v)| format!("{k}: {v}\n")).collect(),
+    }
+}
+
+/// Is the server running pre-renewal?
+///
+/// A marker file rather than a parsed setting, matching free_kafra_warp: the
+/// supervisor only needs to know which way, and the app owns the setting.
+///
+/// This decides which binaries run, which start point new characters get, and
+/// which database they are saved in -- all three have to agree, so they are
+/// all derived from this one answer.
+pub fn is_prerenewal(cfg: &Config) -> bool {
+    cfg.state.join("prerenewal").exists()
+}
+
+/// Where a mode's characters live.
+///
+/// Separate volumes, not a shared database, and not a second schema inside
+/// one. rAthena ships a single set of sql-files with no era variants, so the
+/// schema is identical and a renewal character loads into a pre-renewal server
+/// without complaint -- which is exactly the problem. The data means different
+/// things either side of the flag:
+///
+///   - pre-renewal exp tables stop at level 99; renewal reaches 275
+///   - third and fourth job classes do not exist pre-renewal
+///   - MAX_WEAPON_LEVEL is 5 vs 4, MAX_ARMOR_LEVEL 2 vs 1, and enchant grades
+///     only exist on one side (src/common/mmo.hpp)
+///   - MAX_GUILDSKILL is 20 vs 15
+///   - a character saved on a renewal-only map has nowhere to log in to
+///
+/// None of that is a schema error, so nothing would refuse it. A level 150
+/// fourth-job character in a pre-renewal server is off the end of every table
+/// that describes them. Giving each mode its own volume means switching is
+/// reversible and neither save can corrupt the other; the cost is that the
+/// first start in a new mode creates a fresh account and character.
+fn db_volume(cfg: &Config) -> String {
+    if is_prerenewal(cfg) { "ragnarokmac-db-prere".into() } else { "ragnarokmac-db".into() }
+}
+
+/// Is the engine up right now?
+///
+/// Asked by running `nebula status`, so the answer is the engine's own rather
+/// than one inferred from a pid file that an unclean exit may have left behind.
+fn engine_running(cfg: &Config) -> bool {
+    Command::new(&cfg.nebula)
+        .arg("status")
+        .env("NEBULA_HOME", &cfg.nebula_home)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("nebula: running"))
+        .unwrap_or(false)
+}
+
 /// The uncompressed size a gzip file claims, from its ISIZE trailer.
 ///
 /// The last four bytes of a gzip stream are the uncompressed length. Reading
@@ -566,93 +807,55 @@ fn is_app_control_block(msg: &str) -> bool {
         || ((msg.contains("0xC0000135")
             || msg.contains("-1073741515")
             || msg.contains("os error 126"))
-            && sac_enforcing())
+            && host::app_control_state() == host::AppControl::Enforcing)
 }
 
-/// Is Smart App Control enforcing right now?
+/// Is the Microsoft Visual C++ runtime present?
 ///
-/// Read rather than inferred from a failure. Under enforcement an unsigned
-/// binary is refused at load with 0xC0000135, which is indistinguishable from
-/// a genuinely missing DLL -- so the state has to be checked, not guessed from
-/// the corpse. Values: 0 off, 1 enforcement, 2 evaluation.
-#[cfg(windows)]
-fn sac_enforcing() -> bool {
-    let out = Command::new("reg")
-        .args([
-            "query",
-            r"HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy",
-            "/v",
-            "VerifiedAndReputablePolicyState",
-        ])
-        .output();
-    match out {
-        Ok(o) => {
-            let t = String::from_utf8_lossy(&o.stdout);
-            // "VerifiedAndReputablePolicyState    REG_DWORD    0x1"
-            t.split_whitespace()
-                .last()
-                .map(|v| v.eq_ignore_ascii_case("0x1"))
-                .unwrap_or(false)
-        }
-        Err(_) => false,
-    }
-}
-
-/// Does this PE carry an Authenticode signature?
+/// Every binary we ship in payload/bin -- ragnarok-stack, nebula, nebulad,
+/// docker-slim, robrowser-remoteclient -- imports VCRUNTIME140.dll. The
+/// Electron shell does not, so the app opens perfectly and then fails the
+/// instant it runs any of them. Windows refuses the load with 0xC0000135,
+/// which is the same code Smart App Control produces, and without this check
+/// the failure falls through to the hypervisor advice -- sending someone into
+/// their BIOS over a missing DLL.
 ///
-/// The certificate table is data directory 4 in the optional header; a size of
-/// zero means nothing signed it. Parsed here rather than shelling out to
-/// PowerShell, because this runs on every start and a process spawn to answer
-/// "did we sign our own binary" is a poor trade.
+/// The api-ms-win-crt-* imports resolve from the UCRT that ships with Windows
+/// 10 and later; VCRUNTIME140.dll is the one that needs the redistributable.
 #[cfg(windows)]
-fn pe_is_signed(path: &Path) -> bool {
-    use std::io::{Read, Seek, SeekFrom};
-    let Ok(mut f) = fs::File::open(path) else { return false };
-    let mut buf = [0u8; 4];
-    // e_lfanew at 0x3C points at the PE header.
-    if f.seek(SeekFrom::Start(0x3C)).is_err() || f.read_exact(&mut buf).is_err() {
+fn vc_runtime_missing() -> bool {
+    let root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into());
+    // System32 is the 64-bit system directory for a 64-bit process. A copy
+    // beside the executable satisfies the loader too, so accept either.
+    let system32 = Path::new(&root).join("System32").join("VCRUNTIME140.dll");
+    if system32.exists() {
         return false;
     }
-    let pe = u32::from_le_bytes(buf) as u64;
-    let mut magic = [0u8; 2];
-    if f.seek(SeekFrom::Start(pe + 24)).is_err() || f.read_exact(&mut magic).is_err() {
-        return false;
-    }
-    // PE32 puts the data directories at +96, PE32+ at +112.
-    let dir_off = match u16::from_le_bytes(magic) {
-        0x10b => pe + 24 + 96,
-        0x20b => pe + 24 + 112,
-        _ => return false,
-    };
-    // Directory 4 is the certificate table: 8 bytes in, size is the second u32.
-    let mut entry = [0u8; 8];
-    if f.seek(SeekFrom::Start(dir_off + 4 * 8)).is_err() || f.read_exact(&mut entry).is_err() {
-        return false;
-    }
-    u32::from_le_bytes([entry[4], entry[5], entry[6], entry[7]]) != 0
+    !std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|d| d.join("VCRUNTIME140.dll").exists()))
+        .unwrap_or(false)
+}
+
+/// A load failure that means a DLL could not be found.
+#[cfg(windows)]
+fn is_dll_not_found(msg: &str) -> bool {
+    msg.contains("0xC0000135") || msg.contains("-1073741515") || msg.contains("os error 126")
 }
 
 #[cfg(windows)]
-fn app_control_help(reason: &str) -> String {
+fn vc_runtime_help(reason: &str) -> String {
     format!(
         "{reason}\n\n\
-         Windows blocked this app from running. Its files are not code-signed \
-         yet, and Smart App Control refuses programs it does not recognise.\n\n\
-         This is not a problem with your computer, and it is not a virus -- it \
-         is a signature we have not bought yet. It affects people on newer \
-         Windows 11 installs, because Smart App Control is on by default there \
-         and switches itself off on older machines.\n\n\
-         To play now, turn Smart App Control off:\n\n\
-         \x20   Windows Security -> App & browser control -> \
-         Smart App Control settings -> Off\n\n\
-         Read this part before you do: turning it off is PERMANENT. Windows \
-         will not let it be switched back on without reinstalling Windows. If \
-         you would rather not, waiting for a signed release costs you nothing \
-         but time.\n\n\
-         We are working on signing, which fixes this properly and needs no \
-         change on your side. It takes a few weeks -- the certificate authority \
-         has to verify our identity first. Progress:\n\n\
-         \x20   https://github.com/Flux159/ragnarokoffline.app/issues/8"
+         This app needs the Microsoft Visual C++ Redistributable (x64), and it \
+         is not installed on this machine. It is a Microsoft component that a \
+         lot of software relies on, so most Windows machines already have it -- \
+         yours does not yet.\n\n\
+         Install it, then start Ragnarok Offline again:\n\n\
+         \x20   https://aka.ms/vs/17/release/vc_redist.x64.exe\n\n\
+         Nothing is wrong with your computer or your install. The app window \
+         opens without it because only the parts that run the game servers need \
+         it, which is why the failure shows up a few seconds in."
     )
 }
 
@@ -662,12 +865,51 @@ fn app_control_help(reason: &str) -> String {
 /// player never runs the installer -- nebula is embedded in the app -- so the
 /// check has to live here too. Without it the failure surfaces as a timeout
 /// several steps later with nothing to act on.
+/// Has nebula already said what went wrong?
+///
+/// It explains a port collision itself now, naming the ports, the process
+/// holding them and three ways out. Appending "check /dev/kvm and your BIOS" to
+/// that is worse than saying nothing: it contradicts a correct diagnosis the
+/// player is looking straight at, and sends them to reboot into firmware for a
+/// problem that is a config line.
+fn nebula_explained_itself(reason: &str) -> bool {
+    reason.contains("already in use")
+        || reason.contains("port_conflict")
+        || reason.contains("Either:")
+        || reason.contains("cannot share a port")
+}
+
+/// A previous engine that has not finished leaving yet.
+///
+/// Quitting stops the engine, but stopping it is not instant: the supervisor
+/// asks the VM to shut down, waits, and only then does nebulad record its exit
+/// and release the run directory. Reopening the app inside that window finds an
+/// engine that is alive enough to refuse a second one ("nebulad already
+/// running") or dying fast enough that the socket goes away mid-request
+/// ("Connection reset by peer", "Broken pipe").
+///
+/// None of that is a fault to report. It is the previous run finishing, and the
+/// only thing to do about it is wait -- which is why the start is retried
+/// rather than explained. It matters that it is not explained: the Linux
+/// fallback below sends the player to their BIOS for it, which is both wrong
+/// and unfixable, and it is the message they actually see when they close the
+/// game and open it straight away.
+fn engine_still_departing(reason: &str) -> bool {
+    reason.contains("already running")
+        || reason.contains("Connection reset by peer")
+        || reason.contains("Broken pipe")
+}
+
 fn engine_failure_help(reason: &str) -> String {
-    // A port conflict is not a virtualisation problem, and the diagnosis is
-    // already in the message. Sending someone to their BIOS over a busy socket
-    // wastes an evening on the wrong machine setting. Only reached once the
-    // engine holding the port has turned out not to be ours -- ours are
-    // stopped and the start retried before anyone sees this.
+    // Before nebula_explained_itself, deliberately: that returns nebula's own
+    // text unchanged for anything it has already diagnosed, and a port
+    // conflict is one of the things it matches. Nebula's message is accurate
+    // but its three remedies -- stop the holder, renumber the ports, set
+    // port_conflict -- are all things a player cannot do. This one names the
+    // button that does it for them, and still quotes nebula in full.
+    //
+    // Only reached once the engine holding the port has turned out not to be
+    // ours; ours are stopped and the start retried before anyone sees this.
     if reason.contains("already in use") {
         return format!(
             "{reason}\n\n\
@@ -677,6 +919,25 @@ fn engine_failure_help(reason: &str) -> String {
              Settings, will stop it and start again. If you run Nebula \
              yourself, stop that instance or give one of the two its own ports."
         );
+    }
+    if nebula_explained_itself(reason) {
+        return reason.to_string();
+    }
+    // Only reached after the retries in ensure_engine have run out, so the
+    // previous engine is not merely slow -- it is stuck. Say that, rather than
+    // blaming the hypervisor for it.
+    if engine_still_departing(reason) {
+        return format!(
+            "{reason}\n\n\
+             A previous engine is still running and did not stop on its own. \
+             Repair, in Settings, will stop it and start again."
+        );
+    }
+    // A missing DLL is not a virtualisation fault, and the hypervisor advice
+    // below would send someone into their BIOS for one.
+    #[cfg(windows)]
+    if is_dll_not_found(reason) && vc_runtime_missing() {
+        return vc_runtime_help(reason);
     }
 
     if cfg!(target_os = "macos") {
@@ -699,45 +960,19 @@ fn engine_failure_help(reason: &str) -> String {
         );
     }
 
-    // Ask Windows whether a hypervisor is running at all. Cheap, and it splits
-    // the two failures that look identical: firmware virtualisation off (fixed
-    // in the BIOS) versus the Windows feature off (fixed with a checkbox).
-    let present = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "(Get-CimInstance Win32_ComputerSystem).HypervisorPresent",
-        ])
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
-
-    if present {
-        format!(
-            "{reason}\n\n\
-             Windows reports a hypervisor is running, so virtualisation itself \
-             is fine and something else stopped the virtual machine. The \
-             Settings window has a Report a problem button that collects the \
-             logs needed to work out what."
-        )
-    } else {
-        format!(
-            "{reason}\n\n\
-             The virtual machine could not start: Windows reports no hypervisor \
-             running. Two things have to be on, and they are fixed differently.\n\n\
-             1. Virtualisation in your BIOS/UEFI. Open Task Manager \
-             (Ctrl+Shift+Esc), go to Performance then CPU, and look for \
-             \"Virtualization\". If it says Disabled, turn on Intel VT-x, AMD-V \
-             or SVM Mode in your BIOS. Windows cannot enable this for you.\n\n\
-             2. The Windows Hypervisor Platform. Press Windows+R, run \
-             \"optionalfeatures\", tick \"Windows Hypervisor Platform\", and \
-             restart. Or, in a Command Prompt opened as Administrator:\n\n\
-             \x20   dism.exe /Online /Enable-Feature /FeatureName:HypervisorPlatform /All\n\n\
-             Windows 11 Home is fine for this -- it is not the Hyper-V role, \
-             which is Pro only, but the same feature WSL2 and Docker Desktop use."
-        )
-    }
+    // Ask the machine what is actually wrong rather than reading it back out
+    // of a failure that cannot be told from three others. Three unrelated
+    // faults land here identically -- virtualisation off in firmware, the
+    // Windows Hypervisor Platform feature off, and the hypervisor switched off
+    // at boot -- and the old text named only the middle one, so anyone with
+    // either of the other two was told to tick a box that was already ticked.
+    //
+    // Costs a couple of process spawns, on a path where the start has already
+    // failed and the alternative is a wrong answer.
+    #[cfg(windows)]
+    return format!("{reason}\n\n{}", host::probe().advice());
+    #[cfg(not(windows))]
+    unreachable!("every non-Windows platform returned above");
 }
 
 /// Load the bundled image tarball when the images are not already present.
@@ -747,37 +982,38 @@ fn engine_failure_help(reason: &str) -> String {
 /// guards is unforgiving: with no images, `run` falls through to pulling
 /// `ragnarokmac/mariadb` from a registry that has never heard of it, and the
 /// error is about a network we should never have touched.
-fn ensure_images(cfg: &Config, dk: &Docker) -> Result<(), String> {
-    if dk.image_exists(&cfg.image) && dk.image_exists(&cfg.db_image) {
-        return Ok(());
+// Cache identity, not a security signature. Release provenance/checksums
+// authenticate the packaged archive; this detects changed bytes under fixed tags.
+fn image_bundle_fingerprint(mut reader: impl Read) -> Result<String, String> {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    let mut block = [0u8; 64 * 1024];
+    loop {
+        let count = reader.read(&mut block).map_err(|_| "Cannot read the server image bundle")?;
+        if count == 0 { break; }
+        for byte in &block[..count] { hash ^= *byte as u64; hash = hash.wrapping_mul(0x0000_0100_0000_01b3); }
     }
+    Ok(format!("{hash:016x}"))
+}
+
+fn ensure_images(cfg: &Config, dk: &Docker) -> Result<(), String> {
+    let present = dk.image_exists(&cfg.image) && dk.image_exists(&cfg.db_image);
     let bundle = cfg.root.join("dist/images.tar.gz");
     if !bundle.exists() {
+        if present { return Ok(()); }
         return Err(format!("no server images, and no bundle at {}", bundle.display()));
     }
-    // Only announce it when there is one to do: a phase that says "first run
-    // only" on every run trains people to ignore it.
-    phase(cfg, "Loading the server images… (first run only)");
-    // `docker load` reads gzip directly, so this needs no external gunzip —
-    // which is the whole point of not shelling out here.
-    let f = fs::File::open(&bundle).map_err(|e| format!("opening the image bundle: {e}"))?;
-    let st = Command::new(&cfg.docker)
-        .arg("load")
-        .env("NEBULA_HOME", &cfg.nebula_home)
-        .stdin(Stdio::from(f))
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .status()
-        .map_err(|e| format!("running docker load: {e}"))?;
-    if !st.success() {
-        return Err("could not load the bundled server images".into());
-    }
-    // Verify rather than trust the exit status: a partial load leaves the
-    // caller to run an image that is not there.
+    let fingerprint = image_bundle_fingerprint(fs::File::open(&bundle).map_err(|_| "Cannot open the server image bundle")?)?;
+    let identity = format!("v1:{fingerprint}:{}:{}\n", cfg.image, cfg.db_image);
+    let marker = cfg.state.join("image-bundle.id");
+    if present && fs::read_to_string(&marker).ok().as_deref() == Some(identity.as_str()) { return Ok(()); }
+    phase(cfg, "Loading the bundled server images…");
+    // Always use Docker's owned-engine transport, including Windows' loopback
+    // proxy. Existing fixed image tags are replaced when bundled bytes change.
+    dk.load_bundle(&bundle, || dk.image_exists(&cfg.image) && dk.image_exists(&cfg.db_image))?;
     if !dk.image_exists(&cfg.image) || !dk.image_exists(&cfg.db_image) {
         return Err(format!("image load did not produce {} and {}", cfg.image, cfg.db_image));
     }
-    Ok(())
+    fs::write(marker, identity).map_err(|_| "Cannot record the loaded server image bundle".to_string())
 }
 
 /// The Kafra teleport prices are hardcoded in the NPC script with no config
@@ -851,13 +1087,10 @@ fn zero_numbers(line: &str) -> String {
 /// rather than a container healthcheck.
 fn wait_for_db(dk: &Docker) -> Result<(), String> {
     for _ in 0..90 {
-        // Not `SELECT 1`. mariadb's entrypoint starts a temporary server on the
-        // same socket we exec against, and only then imports the schema from
-        // docker-entrypoint-initdb.d -- so a bare connection succeeds long
-        // before `login` exists. The account insert that follows was landing on
-        // a missing table, its error discarded, and the player was left with a
-        // server that had no ragnarok/ragnarok account until the next launch
-        // ran the insert again. Waiting for the table, not the socket.
+        // exec_sql uses loopback TCP: the entrypoint's temporary bootstrap
+        // server has networking disabled. A Unix-socket connection can see the
+        // login table before 03-account.sql has seeded the first-run GM. Wait
+        // for the final server and the schema, without recreating credentials.
         if dk.exec_sql("SELECT 1 FROM login LIMIT 1").is_ok() {
             return Ok(());
         }
@@ -936,6 +1169,8 @@ fn strip_ansi(s: &str) -> String {
 }
 
 fn run_server(cfg: &Config, dk: &Docker, name: &str, port: u16, binary: &str, lan: bool) -> Result<(), String> {
+    // Before the container goes, and with it its log.
+    crate::crashes::capture_all(cfg, dk);
     dk.remove_container(name);
 
     // One directory mount, not five file mounts: a single-file bind whose host
@@ -988,7 +1223,132 @@ fn run_server(cfg: &Config, dk: &Docker, name: &str, port: u16, binary: &str, la
         .map_err(|e| format!("starting {name}: {e}"))
 }
 
+fn stop_game_services(cfg: &Config, dk: &Docker) -> Result<(), String> {
+    crate::crashes::capture_all(cfg, dk);
+    for service in ["ragnarok-map", "ragnarok-char", "ragnarok-login"] {
+        if dk.is_running(service) && (dk.output(["stop", "-t", "30", service]).is_err() || dk.is_running(service)) {
+            return Err(format!("Could not stop {service} cleanly; database credentials were not changed."));
+        }
+    }
+    Ok(())
+}
+
+fn require_private_database_image(cfg: &Config, dk: &Docker) -> Result<(), String> {
+    let body = dk.output(["image", "inspect", &cfg.db_image]).map_err(|_| "Cannot inspect the database image")?;
+    let parsed = crate::json::parse(&body).map_err(|_| "Cannot inspect the database image")?;
+    let config = match &parsed { crate::json::Value::Array(images) => images.first(), _ => Some(&parsed) }
+        .and_then(|image| image.get("Config")).and_then(|config| config.get("Labels"));
+    if config.and_then(|labels| labels.str("app.ragnarokoffline.private-db-files")) != Some("v1") {
+        return Err("Service credential protection needs an updated bundled database image with private-db-files v1. Update the runtime images before continuing.".into());
+    }
+    Ok(())
+}
+
+fn protect_game_config(cfg: &Config) -> Result<(), String> {
+    crate::private_fs::directory(&cfg.state)?;
+    let conf = cfg.state.join("conf");
+    crate::private_fs::directory(&conf)?;
+    for entry in fs::read_dir(&conf).map_err(|_| "Cannot protect game configuration")? {
+        let entry = entry.map_err(|_| "Cannot protect game configuration")?;
+        // Reject links before writing any secret: a config alias into the
+        // asset root could otherwise expose its bytes through HTTP.
+        crate::private_fs::protect(&entry.path(), false)?;
+    }
+    Ok(())
+}
+
+fn finish_game_config(cfg: &Config) -> Result<(), String> {
+    let conf = cfg.state.join("conf");
+    for entry in fs::read_dir(&conf).map_err(|_| "Cannot protect generated game configuration")? {
+        let entry = entry.map_err(|_| "Cannot protect generated game configuration")?;
+        crate::private_fs::protect(&entry.path(), false)?;
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(entry.path(), fs::Permissions::from_mode(0o644)).map_err(|_| "Cannot prepare container game configuration")?;
+        }
+    }
+    #[cfg(unix)] {
+        use std::os::unix::fs::PermissionsExt;
+        // The host's state ancestor stays 0700, but this mount root must be
+        // traversable by USER rathena inside the VM. Windows copies preserve
+        // its private host DACL independently of the guest file mode.
+        fs::set_permissions(&conf, fs::Permissions::from_mode(0o755)).map_err(|_| "Cannot prepare container game configuration")?;
+    }
+    Ok(())
+}
+
+fn audit_service_accounts(dk: &Docker, legacy: bool) -> Result<(), String> {
+    let services = dk.root_sql("SELECT COUNT(*) FROM login WHERE sex='S' AND state=0; SELECT COUNT(*) FROM login WHERE account_id=1 AND BINARY userid='s1' AND sex='S' AND state=0;", legacy)?;
+    if services.lines().collect::<Vec<_>>() != ["1", "1"] {
+        return Err("This database has custom or disabled interserver accounts. Migrate those accounts explicitly before enabling managed service credentials; player accounts were not changed.".into());
+    }
+    let users = dk.root_sql("SELECT COUNT(*) FROM mysql.user WHERE User='root' AND Host='localhost'; SELECT COUNT(*) FROM mysql.user WHERE User='ragnarok' AND Host='%'; SELECT COUNT(*) FROM mysql.user WHERE (User='root' AND Host<>'localhost') OR (User='ragnarok' AND Host<>'%');", legacy)?;
+    if users.lines().collect::<Vec<_>>() != ["1", "1", "0"] {
+        return Err("This database has custom SQL service accounts. Migrate them explicitly before enabling managed credentials; player accounts were not changed.".into());
+    }
+    Ok(())
+}
+
+fn migrate_service_credentials(dk: &Docker, credentials: &crate::service_credentials::Credentials) -> Result<(), String> {
+    // Pending journals may be retried after any individual ALTER succeeds.
+    // Ready journals never fall back to the published legacy root password.
+    let mut legacy = false;
+    let mut connected = false;
+    for _ in 0..90 {
+        if dk.root_sql("SELECT 1 FROM login LIMIT 1;", false).is_ok() { connected = true; break; }
+        if !credentials.ready && dk.root_sql("SELECT 1 FROM login LIMIT 1;", true).is_ok() { legacy = true; connected = true; break; }
+        sleep(Duration::from_secs(2));
+    }
+    if !connected { return Err("Cannot authenticate the era's database using its credential journal. Preserve the journal and database; restore a matching backup to recover.".into()); }
+    audit_service_accounts(dk, legacy)?;
+    // All inserted values are generated/validated ASCII tokens, never player
+    // input. DDL commits individually, which is why the journal precedes this.
+    dk.root_sql(&format!("ALTER USER 'ragnarok'@'%' IDENTIFIED BY '{}'; UPDATE login SET user_pass='{}' WHERE account_id=1 AND BINARY userid='s1' AND sex='S'; ALTER USER 'root'@'localhost' IDENTIFIED BY '{}';", credentials.database, credentials.interserver, credentials.root), legacy)?;
+    if dk.root_sql("SELECT 1;", false)?.trim() != "1" || dk.private_sql("SELECT 1;")?.trim() != "1" {
+        return Err("New service credentials did not verify. Keep the journal and retry startup; no game service was started.".into());
+    }
+    let verified = dk.private_sql(&format!("SELECT COUNT(*) FROM login WHERE account_id=1 AND BINARY userid='s1' AND sex='S' AND state=0 AND BINARY user_pass='{}';", credentials.interserver))?;
+    if verified.trim() != "1" { return Err("Interserver credentials did not verify; game services remain stopped.".into()); }
+    credentials.mark_ready()
+}
+
+pub fn secure_services(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<(), String> {
+    crate::registration::enabled(&cfg.state)?;
+    dk.require_private_sql()?;
+    crate::accounts::verify_era(cfg, dk, crate::service_credentials::era(cfg))?;
+    ensure_images(cfg, dk)?;
+    require_private_database_image(cfg, dk)?;
+    if crate::service_credentials::load(&cfg.state, crate::service_credentials::era(cfg))?.is_none() {
+        audit_service_accounts(dk, true)?;
+        // The backup must complete before publishing a migration journal. It
+        // includes all player data; secure its host directory before writing.
+        crate::private_fs::directory(&cfg.state)?;
+        let backups = cfg.state.join("backups"); crate::private_fs::directory(&backups)?;
+        stop_game_services(cfg, dk)?;
+        let destination = backups.join(format!("before-service-credentials-{}-{}.sql", crate::service_credentials::era(cfg), crate::private_fs::random_hex(8)?));
+        if let Err(error) = backup(cfg, dk, &destination.to_string_lossy()) {
+            return Err(format!("Service credentials were not changed: {error}. Start the server to reconnect."));
+        }
+        crate::private_fs::protect(&destination, false)?;
+    }
+    crate::service_credentials::prepare(cfg)?;
+    up(cfg, dk, lan, ram_mib)?;
+    println!("Internal service credentials secured for {}. Player accounts and characters were preserved.", crate::service_credentials::era(cfg));
+    Ok(())
+}
+
 pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<(), String> {
+    // Validate before touching the engine or replacing any running service.
+    let open_registration = crate::registration::enabled(&cfg.state)?;
+    // Era-aware: a scope saved against an era that was never prepared for
+    // internet hosting starts Local rather than refusing to start at all.
+    let (scope, hosting_notice) = crate::hosting::effective_for_start(cfg, lan)?;
+    crate::hosting::before_start(cfg, scope)?;
+    if let Some(notice) = &hosting_notice {
+        println!("{notice}");
+    }
+    let lan = scope.lan();
+    let credentials = crate::service_credentials::load(&cfg.state, crate::service_credentials::era(cfg))?;
     let conf = cfg.state.join("conf");
     for d in ["conf", "sql", "backups"] {
         fs::create_dir_all(cfg.state.join(d)).map_err(|e| format!("creating {d}: {e}"))?;
@@ -1000,6 +1360,17 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     let _lock = Lock::acquire(cfg)?;
     phase(cfg, "Starting the virtual machine…");
     ensure_engine(cfg, dk, lan, ram_mib)?;
+    if let Some(credentials) = &credentials {
+        credentials.write_files()?;
+        protect_game_config(cfg)?;
+        // Recreate the database with the private bind/copy, including after a
+        // failed migration or a runtime update. Flush players first.
+        stop_game_services(cfg, dk)?;
+        if dk.is_running(DB_CONTAINER) && (dk.output(["stop", "-t", "30", DB_CONTAINER]).is_err() || dk.is_running(DB_CONTAINER)) {
+            return Err("Could not stop the database cleanly; credentials were not changed".into());
+        }
+        dk.remove_container(DB_CONTAINER);
+    }
 
     // A failed single-file bind leaves a directory behind at the source path.
     // Clear anything in conf/ that is not a regular file so a stale one cannot
@@ -1032,11 +1403,36 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     }
 
     ensure_images(cfg, dk)?;
+    if credentials.is_some() { require_private_database_image(cfg, dk)?; }
     dk.quiet(["network", "create", NET]);
+
+    // The era decides which volume holds the characters, and a running database
+    // is otherwise left alone -- so without this, switching era keeps the
+    // database that is already up and the player stays on the wrong save with
+    // nothing to say why. Recorded rather than inspected: the container may not
+    // exist yet, and the answer has to survive a restart.
+    let want_volume = db_volume(cfg);
+    let volume_marker = cfg.state.join(".db-volume");
+    let had_volume = fs::read_to_string(&volume_marker).ok().map(|s| s.trim().to_string());
+    if had_volume.as_deref() != Some(want_volume.as_str()) {
+        // Flush the old era while its database is still available. Replacing
+        // MariaDB first leaves live game services with stale connections and
+        // kills their chance to save when run_server later removes them.
+        // Stop MariaDB cleanly too; rm -f would make every era switch a crash
+        // recovery (including MyISAM tables such as loginlog).
+        for service in ["ragnarok-map", "ragnarok-char", "ragnarok-login", DB_CONTAINER] {
+            if dk.is_running(service)
+                && (dk.output(["stop", "-t", "30", service]).is_err() || dk.is_running(service))
+            {
+                return Err(format!("Could not stop {service}; the era database was not switched. Start again to retry."));
+            }
+        }
+        dk.remove_container(DB_CONTAINER);
+    }
 
     if !dk.is_running(DB_CONTAINER) {
         dk.remove_container(DB_CONTAINER);
-        let mounts = vec![
+        let mut mounts = vec![
             Mount::Bind {
                 host: cfg.state.join("sql"),
                 container: "/docker-entrypoint-initdb.d".into(),
@@ -1050,43 +1446,28 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
             } else {
                 Mount::Bind { host: cfg.state.join("backups"), container: "/backups".into(), ro: false }
             },
-            Mount::Volume { name: "ragnarokmac-db".into(), container: "/var/lib/mysql".into() },
+            Mount::Volume { name: want_volume.clone(), container: "/var/lib/mysql".into() },
         ];
-        let opts: Vec<String> = [
-            "--network", NET,
-            "-e", "MARIADB_ROOT_PASSWORD=ragnarok",
-            "-e", "MARIADB_DATABASE=ragnarok",
-            "-e", "MARIADB_USER=ragnarok",
-            "-e", "MARIADB_PASSWORD=ragnarok",
-        ].iter().map(|s| s.to_string()).collect();
+        let mut opts: Vec<String> = ["--network", NET, "-e", "MARIADB_DATABASE=ragnarok", "-e", "MARIADB_USER=ragnarok"].iter().map(|s| s.to_string()).collect();
+        if let Some(credentials) = &credentials {
+            mounts.push(Mount::Bind { host: credentials.directory.clone(), container: crate::service_credentials::CONTAINER_DIR.into(), ro: true });
+            opts.extend(["-e", "MARIADB_ROOT_PASSWORD_FILE=/run/ragnarok-private/root.secret", "-e", "MARIADB_PASSWORD_FILE=/run/ragnarok-private/database.secret"].iter().map(|s| s.to_string()));
+        } else {
+            opts.extend(["-e", "MARIADB_ROOT_PASSWORD=ragnarok", "-e", "MARIADB_PASSWORD=ragnarok"].iter().map(|s| s.to_string()));
+        }
         dk.run_container(DB_CONTAINER, &cfg.db_image, &[], &mounts, &opts)
             .map_err(|e| format!("starting the database: {e}"))?;
     }
+    // After a successful start, so a failed one does not record a database
+    // that is not running.
+    let _ = fs::write(&volume_marker, &want_volume);
     phase(cfg, "Starting the database…");
+    if let Some(credentials) = &credentials { migrate_service_credentials(dk, credentials)?; }
     wait_for_db(dk)?;
 
-    // Applied here, not only in the seed SQL: the entrypoint imports
-    // initdb.d exactly once, when it creates the data directory, so an install
-    // predating this would never get the account.
-    // NOT EXISTS rather than INSERT IGNORE: userid carries a plain KEY, not a
-    // UNIQUE one, so IGNORE suppresses nothing and adds a duplicate account on
-    // every start.
-    // Checked, not discarded: this is the only account a player has, and a
-    // silent failure here is indistinguishable from the game being broken.
-    if let Err(e) = dk.exec_sql(
-        "INSERT INTO login (userid, user_pass, sex, email, group_id)
-         SELECT 'ragnarok', 'ragnarok', 'M', 'ragnarok@localhost', 99 FROM DUAL
-          WHERE NOT EXISTS (SELECT 1 FROM login WHERE userid = 'ragnarok');",
-    ) {
-        return Err(format!("could not create the ragnarok account: {e}"));
-    }
-    // And confirm it is actually there. The insert can succeed against a schema
-    // that is still being replaced underneath it.
-    match dk.exec_sql("SELECT COUNT(*) FROM login WHERE userid = 'ragnarok';") {
-        Ok(out) if out.contains('1') => {}
-        Ok(_) => return Err("the ragnarok account was not created; try Repair".into()),
-        Err(e) => return Err(format!("could not verify the ragnarok account: {e}")),
-    }
+    // Only sql/03-account.sql seeds the GM, during first database creation.
+    // An existing database may intentionally have renamed, disabled or deleted
+    // it. Startup, Repair and era switches must never recreate known credentials.
 
     // The population engine writes its live shell count here on every autosummon
     // tick. Created here rather than in sql/ for the same reason as the account
@@ -1112,10 +1493,11 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
         "login_server_ip: ragnarok-db\n", "ipban_db_ip: ragnarok-db\n",
         "char_server_ip: ragnarok-db\n", "map_server_ip: ragnarok-db\n",
         "web_server_ip: ragnarok-db\n", "log_db_ip: ragnarok-db\n"))?;
-    // rAthena ships new_account: no, so roBrowser's simplified registration has
-    // nothing to talk to. This is a single-player server on loopback.
-    write_conf(&conf, "login_conf.txt",
-        "new_account: yes\nacc_name_min_length: 4\npassword_min_length: 4\n")?;
+    if let Some(credentials) = &credentials {
+        let file = conf.join("inter_conf.txt");
+        let existing = fs::read_to_string(&file).map_err(|_| "Cannot read generated SQL configuration")?;
+        write_conf(&conf, "inter_conf.txt", &format!("{existing}{}", credentials.inter_config()))?;
+    }
     // The address char and map hand the client to reconnect to. This is the
     // one that actually decides whether a LAN player can play: everything can
     // be bound wide and reachable, and the client will still be told to go to
@@ -1145,9 +1527,58 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     // Those duplicates exist to spread load across a live server's population.
     // This is a handful of friends, so the split costs everything and buys
     // nothing.
+    // iz_int is a renewal map and MAP_NOVICE is "new_1-1" pre-renewal
+    // (src/common/mapindex.hpp). A pre-renewal char-server reads
+    // start_point_pre and ignores start_point entirely, so writing the wrong
+    // key leaves new characters with no start point at all.
+    let start_point = if is_prerenewal(cfg) {
+        "start_point_pre: new_1-1,53,111"
+    } else {
+        "start_point: iz_int,18,26"
+    };
+
+    // Mods are assembled here, before the map server is started and before
+    // map_conf names their scripts: the mount and the config have to agree, and
+    // both are derived from the same pass over state/mods. It also has to
+    // happen before char_conf is written, because a mod may set the start
+    // point and that line has to be in the file rather than after it.
+    let mods = crate::mods::assemble(cfg)?;
+    if !mods.names.is_empty() {
+        println!("mods: {}", mods.names.join(", "));
+    }
+    if !mods.maps.is_empty() {
+        println!("mod maps: {}", mods.maps.join(", "));
+    }
+    // Named, one per line, so the reason reaches the log as well as Settings.
+    for (name, why) in &mods.refused {
+        eprintln!("mods: {name} was not applied -- {why}");
+    }
+    // Before the servers start, and after the database is up: a character left
+    // on a map that a removed mod used to provide cannot be selected at all.
+    rescue_stranded_characters(cfg, dk, &mods.maps);
+    write_mod_conf_files(cfg, &mods)?;
+    // Owner account policy is final, after mod assembly, and regenerated for
+    // startup, Repair and each era. Mods cannot reopen suffix registration.
+    let mut login_config = crate::registration::login_config(open_registration);
+    // Browser clients share the proxy's source IP. Friends mode replaces
+    // automatic IP-wide password bans with the gateway's account/session
+    // attempt limits. Local/LAN mode and explicit IP bans retain defaults.
+    if scope == crate::hosting::Scope::Friends {
+        login_config.push_str("ipban_dynamic_pass_failure_ban: no\n");
+    }
+    write_conf(&conf, "login_conf.txt", &login_config)?;
+    if scope.internet() { crate::hosting::require_game_policy(cfg, dk)?; }
+
+    // A mod's allowlisted settings go after ours, because rAthena's config
+    // reader takes the last assignment of a key: start_point in particular is
+    // parsed by char_config_split_startpoint, which clears the array before
+    // filling it, so the last line is the whole answer rather than an addition.
+    let instant_deletion = crate::registration::instant_character_deletion(&cfg.state)?;
     write_conf(&conf, "char_conf.txt",
-        &format!("login_ip: ragnarok-login\nchar_ip: {advertise}\npincode_enabled: no\n\
-                  start_point: iz_int,18,26\n"))?;
+        &format!("login_ip: ragnarok-login\nchar_ip: {advertise}\npincode_enabled: no\n{}\
+                  {start_point}\n{}{}", crate::registration::character_config(instant_deletion),
+                  conf_lines(&mods, "char_conf.txt"),
+                  credentials.as_ref().map(|c| format!("userid: s1\npasswd: {}\n", c.interserver)).unwrap_or_default()))?;
 
     let product = if cfg!(target_os = "macos") { "RagnarokMac" }
         else if cfg!(windows) { "RagnarokWindows" }
@@ -1155,16 +1586,10 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
         else { "Ragnarok" };
     write_conf(&conf, "motd.txt",
         &format!("Welcome to {product} Offline! Please report any bugs on Github\n"))?;
-    // Mods are assembled here, before the map server is started and before
-    // map_conf names their scripts: the mount and the config have to agree, and
-    // both are derived from the same pass over state/mods.
-    let mods = crate::mods::assemble(cfg)?;
-    if !mods.names.is_empty() {
-        println!("mods: {}", mods.names.join(", "));
-    }
     write_conf(&conf, "map_conf.txt",
-        &format!("char_ip: ragnarok-char\nmap_ip: {advertise}\nmotd_txt: conf/import/motd.txt\n{}",
-                 mods.npc_lines))?;
+        &format!("char_ip: ragnarok-char\nmap_ip: {advertise}\nmotd_txt: conf/import/motd.txt\n{}{}{}{}",
+                 conf_lines(&mods, "map_conf.txt"), mods.map_lines, mods.npc_lines,
+                 credentials.as_ref().map(|c| format!("userid: s1\npasswd: {}\n", c.interserver)).unwrap_or_default()))?;
 
     let endpoint = format!(
         "{{\"host\":\"{advertise}\",\"login\":6900,\"char\":6121,\"map\":5121}}\n");
@@ -1177,13 +1602,26 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
         let _ = fs::write(web.join("endpoint.json"), &endpoint);
     }
 
+    if credentials.is_some() { finish_game_config(cfg)?; }
     prepare_kafra_scripts(cfg, dk);
     phase(cfg, "Starting the login, character and map servers…");
+    // login and web are era-independent -- neither src/login nor src/web
+    // mentions RENEWAL -- so only char and map come in two builds. They must
+    // match each other: src/common/mmo.hpp changes shape under RENEWAL and the
+    // two talk over those structures.
+    // A suffix, not a subdirectory: rAthena chdirs to the directory of argv[0]
+    // and then reads conf/, db/ and npc/ relative to it, so both eras have to
+    // live in /rathena itself.
+    let era = if is_prerenewal(cfg) { "-prere" } else { "" };
     run_server(cfg, dk, "ragnarok-login", 6900, "/rathena/login-server", lan)?;
-    run_server(cfg, dk, "ragnarok-char", 6121, "/rathena/char-server", lan)?;
-    run_server(cfg, dk, "ragnarok-map", 5121, "/rathena/map-server", lan)?;
+    run_server(cfg, dk, "ragnarok-char", 6121, &format!("/rathena/char-server{era}"), lan)?;
+    run_server(cfg, dk, "ragnarok-map", 5121, &format!("/rathena/map-server{era}"), lan)?;
     phase(cfg, "Loading maps and NPCs…");
     wait_for_maps(dk)?;
+    // After the map server has read its tables and before anyone is told the
+    // world is ready: this is the only moment rAthena's verdict on the mods'
+    // own tables exists, and it exists in its log and nowhere else.
+    crate::mods::record_load_report(cfg, dk);
     phase(cfg, "Ready");
     println!("stack up");
     // The one string a host pastes to a friend. Printed rather than only
@@ -1196,12 +1634,13 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
 
 pub fn down(cfg: &Config, dk: &Docker) -> Result<(), String> {
     let _lock = Lock::acquire(cfg)?;
-    // Game servers hold no state, so killing them is fine. The database does:
-    // stop it gracefully so InnoDB closes cleanly rather than recovering.
+    stop_game_services(cfg, dk)?;
     for c in SERVERS {
         dk.remove_container(c);
     }
-    dk.quiet(["stop", "-t", "10", DB_CONTAINER]);
+    if dk.is_running(DB_CONTAINER) && (dk.output(["stop", "-t", "30", DB_CONTAINER]).is_err() || dk.is_running(DB_CONTAINER)) {
+        return Err("Could not stop the database cleanly; the VM was left running to protect the save.".into());
+    }
     dk.remove_container(DB_CONTAINER);
 
     // And the microVM itself, last -- after the database has closed cleanly,
@@ -1239,17 +1678,228 @@ pub fn status(dk: &Docker) {
     print!("{out}");
 }
 
+/// Run SQL against the running era's game database.
+///
+/// The app never calls this. It exists because questions like "is that
+/// homunculus still attached to my character?" have no answer anywhere in the
+/// UI, and the database is three layers down -- a container, inside a microVM,
+/// on a network that publishes no port -- so before this there was no way to
+/// look that did not involve rebuilding this path by hand.
+///
+/// Reads run against the live server. Writes do not: `--write` stops the game
+/// first, because rAthena holds characters, homunculi and pets in memory and
+/// writes them back on save, so an edit made underneath a running map server
+/// is either ignored or overwritten within the minute. That is the single
+/// most expensive thing to get wrong here, and it is invisible when it
+/// happens -- the UPDATE reports a row changed and the game changes nothing.
+pub fn sql(cfg: &Config, dk: &Docker, args: &[String]) -> Result<(), String> {
+    let mut write = false;
+    let mut from_file: Option<String> = None;
+    let mut words: Vec<&str> = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--write" => write = true,
+            "--file" => {
+                let path = args.get(i + 1).ok_or("--file needs a path")?;
+                from_file = Some(fs::read_to_string(path).map_err(|e| format!("reading {path}: {e}"))?);
+                i += 1;
+            }
+            other if other.starts_with("--") => return Err(format!("unknown option {other}")),
+            other => words.push(other),
+        }
+        i += 1;
+    }
+
+    let script = match from_file {
+        Some(body) if !words.is_empty() => {
+            let _ = body;
+            return Err("Give either --file or a statement, not both".into());
+        }
+        Some(body) => body,
+        // argv, or stdin when there is nothing in argv: a heredoc is the only
+        // comfortable way to type a statement carrying quotes.
+        None if words.is_empty() => {
+            let mut body = String::new();
+            std::io::stdin()
+                .take(crate::docker::SQL_INPUT_LIMIT as u64 + 1)
+                .read_to_string(&mut body)
+                .map_err(|e| format!("reading the statement: {e}"))?;
+            body
+        }
+        None => words.join(" "),
+    };
+    if script.trim().is_empty() {
+        return Err("No statement given. Pass one as an argument, with --file, or on stdin.".into());
+    }
+
+    // Before anything is started or stopped: this is a check on what was
+    // typed, and it should answer without a server running.
+    if !write {
+        read_only(&script)?;
+    }
+
+    // Which era's database is actually mounted, not which one settings prefer:
+    // the two disagree after a failed era switch, and the wrong answer here
+    // means editing the characters of a world the player is not in.
+    crate::accounts::verify_era(cfg, dk, crate::service_credentials::era(cfg))?;
+
+    let output = if write {
+        crate::accounts::with_servers_stopped(cfg, dk, "SQL", || {
+            // The same safety copy `restore` takes, and for the same reason:
+            // whatever is about to run was typed by hand, and MyISAM -- which
+            // is what `char` and `homunculus` are -- has no transaction to
+            // roll back.
+            let safety = cfg.state.join("backups").join(format!(
+                "before-sql-{}-{}.sql",
+                crate::service_credentials::era(cfg),
+                crate::private_fs::random_hex(8)?
+            ));
+            backup_snapshot(cfg, dk, &safety.to_string_lossy(), false)?;
+            eprintln!("saved {} first", safety.display());
+            dk.console_sql(&script)
+        })?
+    } else {
+        dk.console_sql(&script)?
+    };
+
+    // Rows to stdout, everything else to stderr, so the output stays a
+    // pipeable TSV table for whoever or whatever is reading it.
+    print!("{output}");
+    if write {
+        eprintln!("applied; game services are back as they were");
+    }
+    Ok(())
+}
+
+/// Statements a read may begin with.
+///
+/// `WITH` is absent on purpose: MariaDB lets a common table expression lead
+/// into UPDATE and DELETE, so it is not the read-only keyword it looks like.
+const READS: [&str; 5] = ["select", "show", "describe", "desc", "explain"];
+
+fn read_only(script: &str) -> Result<(), String> {
+    for word in leading_words(script) {
+        if !READS.contains(&word.to_ascii_lowercase().as_str()) {
+            let named = if word.is_empty() { "That".into() } else { format!("`{word}`") };
+            return Err(format!(
+                "{named} is not a read, and sql reads by default. Run it again with --write, \
+                 which saves a backup, stops the game, applies the statements and starts it again."
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The first word of every statement in a script.
+///
+/// Not a SQL parser and not a sandbox: it is here so that a mistyped UPDATE is
+/// refused instead of run, which is the failure that actually happens. All it
+/// has to know is where one statement ends and the next begins, and that means
+/// recognising the `;` that does not count -- inside a string, inside an
+/// identifier, inside a comment.
+///
+/// A statement that starts with anything but a bare word yields an empty
+/// string, which no keyword matches, so the guard refuses it rather than
+/// guessing.
+fn leading_words(script: &str) -> Vec<String> {
+    let chars: Vec<char> = script.chars().collect();
+    let mut out = Vec::new();
+    let mut word = String::new();
+    let mut captured = false;
+    let mut i = 0;
+    while i < chars.len() {
+        let ch = chars[i];
+
+        if ch == '/' && chars.get(i + 1) == Some(&'*') {
+            // `/*!` is MySQL's executable comment: the body runs, so it is read
+            // as code and only the marker is skipped.
+            if chars.get(i + 2) == Some(&'!') {
+                i += 3;
+                while chars.get(i).is_some_and(char::is_ascii_digit) {
+                    i += 1;
+                }
+                continue;
+            }
+            i += 2;
+            while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                i += 1;
+            }
+            i = (i + 2).min(chars.len());
+            continue;
+        }
+        // `--` opens a comment only when whitespace follows it; `a--b` is a
+        // subtraction.
+        if ch == '#'
+            || (ch == '-' && chars.get(i + 1) == Some(&'-')
+                && chars.get(i + 2).is_none_or(|c| c.is_whitespace()))
+        {
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if ch == '\'' || ch == '"' || ch == '`' {
+            i += 1;
+            while i < chars.len() {
+                if chars[i] == '\\' && ch != '`' {
+                    i += 2;
+                    continue;
+                }
+                if chars[i] == ch {
+                    // A doubled quote is a literal one, not the end.
+                    if chars.get(i + 1) == Some(&ch) {
+                        i += 2;
+                        continue;
+                    }
+                    break;
+                }
+                i += 1;
+            }
+            i += 1;
+            captured = true;
+            continue;
+        }
+        if ch == ';' {
+            out.push(std::mem::take(&mut word));
+            captured = false;
+            i += 1;
+            continue;
+        }
+        if !captured {
+            if ch.is_alphanumeric() || ch == '_' || ch == '$' {
+                word.push(ch);
+            } else if !word.is_empty() || !ch.is_whitespace() {
+                captured = true;
+            }
+        }
+        i += 1;
+    }
+    if captured || !word.is_empty() {
+        out.push(word);
+    }
+    out
+}
+
 pub fn backup(cfg: &Config, dk: &Docker, dest: &str) -> Result<(), String> {
+    crate::accounts::verify_era(cfg, dk, crate::service_credentials::era(cfg))?;
+    crate::accounts::with_servers_stopped(cfg, dk, "backup", || backup_snapshot(cfg, dk, dest, true))
+}
+
+/// `announce` is off for the safety copies taken on someone else's behalf, so
+/// their line cannot land in the middle of output a caller is parsing.
+fn backup_snapshot(cfg: &Config, dk: &Docker, dest: &str, announce: bool) -> Result<(), String> {
     let backups = cfg.state.join("backups");
     fs::create_dir_all(&backups).map_err(|e| e.to_string())?;
-    let tmp = format!("ragnarokmac-{}.sql", std::process::id());
+    let tmp = format!("ragnarokmac-{}-{}.sql", std::process::id(), crate::private_fs::random_hex(12)?);
 
-    // --single-transaction keeps the server writable during the dump, which
-    // matters because the player may well be logged in while taking one.
+    crate::private_fs::directory(&backups)?;
+    // Players have been saved and game services stopped. This also makes the
+    // mixed-engine rAthena tables consistent; --single-transaction alone would
+    // only protect InnoDB, not all of the schema.
     dk.output([
         "exec", DB_CONTAINER, "sh", "-c",
-        &format!("mariadb-dump -uragnarok -pragnarok --single-transaction --routines \
-                  --databases ragnarok > /backups/{tmp}"),
+        &format!("umask 077; {} --single-transaction --routines --databases ragnarok > /backups/{tmp}", dk.database_client("mariadb-dump")?),
     ])
     .map_err(|_| "the database did not produce a dump (is the server running?)".to_string())?;
 
@@ -1263,12 +1913,16 @@ pub fn backup(cfg: &Config, dk: &Docker, dest: &str) -> Result<(), String> {
         let _ = fs::remove_file(&staged);
         return Err("the dump came out empty".into());
     }
-    fs::rename(&staged, dest)
-        .or_else(|_| fs::copy(&staged, dest).map(|_| ()))
-        .map_err(|e| format!("could not write {dest}: {e}"))?;
+    crate::private_fs::protect(&staged, false)?;
+    if fs::canonicalize(&staged).ok() == fs::canonicalize(dest).ok() {
+        return Err("Choose a backup destination outside the internal staging file".into());
+    }
+    crate::private_fs::export_file(&staged, Path::new(dest))?;
     let _ = fs::remove_file(&staged);
     dk.quiet(["exec", DB_CONTAINER, "rm", "-f", &format!("/backups/{tmp}")]);
-    println!("wrote {dest} ({})", human(size));
+    if announce {
+        println!("wrote {dest} ({})", human(size));
+    }
     Ok(())
 }
 
@@ -1276,11 +1930,17 @@ pub fn restore(cfg: &Config, dk: &Docker, src: &str) -> Result<(), String> {
     if !Path::new(src).is_file() {
         return Err(format!("no such backup: {src}"));
     }
+    crate::accounts::verify_era(cfg, dk, crate::service_credentials::era(cfg))?;
+    stop_game_services(cfg, dk)?;
     let backups = cfg.state.join("backups");
-    fs::create_dir_all(&backups).map_err(|e| e.to_string())?;
-    let tmp = format!("restore-{}.sql", std::process::id());
+    crate::private_fs::directory(&backups)?;
+    let safety = backups.join(format!("before-restore-{}-{}.sql", crate::service_credentials::era(cfg), crate::private_fs::random_hex(8)?));
+    backup_snapshot(cfg, dk, &safety.to_string_lossy(), true)?;
+    let tmp = format!("restore-{}-{}.sql", std::process::id(), crate::private_fs::random_hex(12)?);
     let staged = backups.join(&tmp);
+    if staged.exists() { crate::private_fs::protect(&staged, false)?; }
     fs::copy(src, &staged).map_err(|e| format!("staging the backup: {e}"))?;
+    crate::private_fs::protect(&staged, false)?;
     if cfg!(windows) {
         dk.copy_into(DB_CONTAINER, &backups, "/backups")?;
     }
@@ -1288,12 +1948,17 @@ pub fn restore(cfg: &Config, dk: &Docker, src: &str) -> Result<(), String> {
     // wholesale rather than merging into whatever is there now.
     let r = dk.output([
         "exec", DB_CONTAINER, "sh", "-c",
-        &format!("mariadb -uragnarok -pragnarok < /backups/{tmp}"),
+        &format!("{} < /backups/{tmp}", dk.database_client("mariadb")?),
     ]);
     let _ = fs::remove_file(&staged);
     dk.quiet(["exec", DB_CONTAINER, "rm", "-f", &format!("/backups/{tmp}")]);
-    r.map_err(|_| "restore failed; the database is unchanged".to_string())?;
-    println!("restored from {src}");
+    r.map_err(|_| "Restore failed and may have partially changed the database. Keep game services stopped and restore a verified backup.".to_string())?;
+    if let Some(credentials) = crate::service_credentials::load(&cfg.state, crate::service_credentials::era(cfg))? {
+        // An older dump may carry the old interserver login. Restore the
+        // managed service row before any subsequent player reconnect.
+        migrate_service_credentials(dk, &credentials)?;
+    }
+    println!("restored from {src}; game services are stopped. Restart the server to reconnect. A pre-restore backup was preserved.");
     Ok(())
 }
 
@@ -1304,6 +1969,15 @@ pub fn restore(cfg: &Config, dk: &Docker, src: &str) -> Result<(), String> {
 /// container-level can be cleaned because the daemon is not answering.
 /// Player data is untouched — characters live in the ragnarokmac-db volume.
 pub fn repair(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<(), String> {
+    crate::registration::enabled(&cfg.state)?;
+    // Repair is the escape hatch, so it must not be the thing that is stuck:
+    // see effective_for_start.
+    let (repair_scope, hosting_notice) = crate::hosting::effective_for_start(cfg, lan)?;
+    crate::hosting::before_start(cfg, repair_scope)?;
+    if let Some(notice) = &hosting_notice {
+        println!("{notice}");
+    }
+    crate::crashes::capture_all(cfg, dk);
     phase(cfg, "Repairing…");
     // Break the lock rather than wait: the usual reason to reach for repair is
     // a previous run that died holding one.
@@ -1343,6 +2017,14 @@ fn human(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn changed_image_bytes_invalidate_the_same_tag_cache() {
+        let first = super::image_bundle_fingerprint(&b"same-size-old"[..]).unwrap();
+        let second = super::image_bundle_fingerprint(&b"same-size-new"[..]).unwrap();
+        assert_ne!(first, second);
+        assert_eq!(first, super::image_bundle_fingerprint(&b"same-size-old"[..]).unwrap());
+    }
+
     use super::*;
 
     /// The one contract this file has with another program's prose.
@@ -1367,6 +2049,23 @@ mod tests {
         );
     }
 
+    /// The three ways a departing engine shows up, and the one case that must
+    /// not be mistaken for one.
+    ///
+    /// Pinned because getting this wrong is expensive in both directions: too
+    /// narrow and the player is sent to their BIOS for a stack that is merely
+    /// busy, too wide and a genuine failure is retried for eighty seconds
+    /// before it is reported.
+    #[test]
+    fn reads_an_engine_that_is_still_leaving() {
+        assert!(engine_still_departing("nebulad failed to start:\n\nnebulad already running (pid 3093)"));
+        assert!(engine_still_departing("Error: Connection reset by peer (os error 104)"));
+        assert!(engine_still_departing("Error: Broken pipe (os error 32)"));
+        // A hypervisor that is genuinely unavailable is not a wait: retrying
+        // it changes nothing, and the KVM advice is the right answer.
+        assert!(!engine_still_departing("failed to open /dev/kvm: Permission denied"));
+    }
+
     /// A path may contain a bracket, so the home ends at the last one on the
     /// line rather than the first.
     #[test]
@@ -1377,6 +2076,58 @@ mod tests {
             port_holders(err)[0].home,
             PathBuf::from("/Users/p/Ragnarok Offline (old)/nebula"),
         );
+    }
+
+    /// The guard's whole job: an edit typed where a read was meant.
+    #[test]
+    fn a_read_is_a_read_and_a_write_is_not() {
+        assert!(read_only("SELECT * FROM homunculus WHERE char_id = 150000").is_ok());
+        assert!(read_only("  show tables ").is_ok());
+        assert!(read_only("EXPLAIN DELETE FROM `char`").is_ok());
+        assert!(read_only("UPDATE `char` SET homun_id = 0").is_err());
+        assert!(read_only("DELETE FROM homunculus").is_err());
+        // WITH is deliberately not a read keyword: MariaDB accepts a CTE in
+        // front of DELETE.
+        assert!(read_only("WITH x AS (SELECT 1) SELECT * FROM x").is_err());
+    }
+
+    /// The second statement is the one that gets you, and it is the one a
+    /// single-statement check would miss.
+    #[test]
+    fn every_statement_is_checked_not_just_the_first() {
+        assert!(read_only("SELECT 1; DELETE FROM homunculus").is_err());
+        assert!(read_only("SELECT 1;\nSELECT 2;\n").is_ok());
+    }
+
+    /// A semicolon that does not end a statement, in each of the three places
+    /// one can hide.
+    #[test]
+    fn punctuation_inside_quotes_and_comments_does_not_split() {
+        assert!(read_only("SELECT 'a; DROP'").is_ok());
+        assert!(read_only("SELECT \"a; DROP\"").is_ok());
+        assert!(read_only("SELECT `odd;name` FROM t").is_ok());
+        assert!(read_only("SELECT 'it\\'s; fine'").is_ok());
+        assert!(read_only("SELECT 'two''quotes; here'").is_ok());
+        assert!(read_only("SELECT 1 -- ; DELETE FROM t\n").is_ok());
+        assert!(read_only("SELECT 1 # ; DELETE FROM t\n").is_ok());
+        assert!(read_only("/* ; DELETE FROM t */ SELECT 1").is_ok());
+        assert!(read_only("-- a note\nSELECT 1").is_ok());
+    }
+
+    /// `/*! ... */` is run by the server, so it is read as code here too.
+    #[test]
+    fn an_executable_comment_is_not_a_comment() {
+        assert!(read_only("/*!40000 DELETE FROM `char` */").is_err());
+        assert!(read_only("/*! SELECT 1 */").is_ok());
+    }
+
+    /// Anything that is not a plain keyword is refused rather than guessed at.
+    #[test]
+    fn a_statement_that_starts_with_no_keyword_is_refused() {
+        assert!(read_only("(SELECT 1)").is_err());
+        assert!(read_only("`char`").is_err());
+        assert!(leading_words("   \n -- nothing but a comment\n  ").is_empty());
+        assert!(leading_words("SELECT 1;  ").len() == 1);
     }
 
     /// Every other failure yields nothing, so the caller reports it as it

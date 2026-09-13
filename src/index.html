@@ -39,11 +39,13 @@
     <div class="status" id="status">Starting the server…</div>
     <div class="fail" id="fail" hidden></div>
     <button id="retry" hidden>Retry</button>
+    <button id="reports" class="ghost" hidden>Open crash reports</button>
+    <button id="setup" class="ghost" hidden>Choose client files…</button>
     <button id="repair" class="ghost" hidden>Repair…</button>
     <button id="local" class="ghost" hidden>Play on this computer</button>
   </div>
 <script>
-const { invoke } = window.__TAURI__.core;
+const { invoke } = window.__ELECTRON__.core;
 
 const status = document.getElementById('status');
 // Remembered so a failure can name the step it died on, which is the one thing
@@ -54,6 +56,9 @@ const retry = document.getElementById('retry');
 const repair = document.getElementById('repair');
 const local = document.getElementById('local');
 const mark = document.getElementById('mark');
+const setup = document.getElementById('setup');
+const reports = document.getElementById('reports');
+let booting = false;
 // Which failures make sense to offer a way out of. Read once per boot rather
 // than assumed: the two modes fail for entirely different reasons and have
 // entirely different remedies.
@@ -75,12 +80,20 @@ function plain(e) {
 // three rAthena servers will connect to each other.
 const DEADLINE_MS = 180000;
 
-// Asked through Rust rather than fetch(): this page is served from
-// tauri://localhost, a secure origin, so a plain-http request from here is
-// blocked as mixed content and fails silently forever.
+// Asked through the main process rather than fetch(): this page is loaded
+// from file://, so a plain-http request to the asset server is blocked as a
+// cross-origin/mixed-content request and fails silently forever.
 const ready = () => invoke('assets_ready');
 
 async function boot() {
+  if (booting) return;
+  booting = true;
+  let ticking = false;
+  try {
+  await invoke('clear_boot_failure');
+  setup.hidden = true;
+  reports.hidden = true;
+  lastPhase = 'Starting the server…';
   fail.hidden = true; retry.hidden = true; repair.hidden = true;
   local.hidden = true; mark.hidden = false;
 
@@ -89,6 +102,8 @@ async function boot() {
   // No client configured yet: hand off to the setup window and stop here.
   if (!(await invoke('client_ready'))) {
     status.textContent = 'Waiting for your client…';
+    mark.hidden = true;
+    setup.hidden = false;
     await invoke('open_setup');
     return;
   }
@@ -99,13 +114,13 @@ async function boot() {
   // launch, so the phase has to be polled *alongside* it rather than after —
   // otherwise the window shows one unchanging line for the whole wait and a
   // hang looks exactly like slow progress.
-  let ticking = true;
+  ticking = true;
   const show = async () => {
     while (ticking) {
       const p = await invoke('stack_phase').catch(() => '');
       if (p && p !== 'Ready') lastPhase = p;
       const secs = Math.round((Date.now() - started) / 1000);
-      status.textContent = `${lastPhase} ${secs}s`;
+      if (ticking) status.textContent = `${lastPhase} ${secs}s`;
       await new Promise(r => setTimeout(r, 1000));
     }
   };
@@ -134,6 +149,12 @@ async function boot() {
   }
   ticking = false;
   giveUp(`Stalled at: ${lastPhase}\nThe server did not come up in time.`);
+  } catch (error) {
+    giveUp(plain(error));
+  } finally {
+    ticking = false;
+    booting = false;
+  }
 }
 
 function giveUp(message) {
@@ -148,7 +169,9 @@ function giveUp(message) {
   fail.style.textAlign = instructions ? 'left' : 'center';
   fail.style.maxWidth = instructions ? '620px' : '460px';
   fail.hidden = false;
+  reports.hidden = !message.includes('A private crash report was saved.');
   retry.hidden = false;
+  setup.hidden = mode !== 'host';
   // Repair restarts the engine, and a joining player is running no engine --
   // offering it there is a button that cannot help. What can help is the game
   // they already own: the host may be offline, their own server never is.
@@ -157,6 +180,8 @@ function giveUp(message) {
 }
 
 retry.onclick = boot;
+reports.onclick = () => invoke('open_crash_reports').catch(error => { fail.textContent = plain(error); });
+setup.onclick = () => invoke('open_setup').catch(error => giveUp(plain(error)));
 
 // Restarting the engine is the one recovery that works when the daemon itself
 // is stuck, and it is the only one available to someone with no terminal.
@@ -187,7 +212,14 @@ local.onclick = async () => {
     local.disabled = false;
   }
 };
-boot();
+(async () => {
+  try {
+    mode = (await invoke('get_mode')).mode || 'host';
+    const failure = await invoke('boot_failure');
+    if (failure) giveUp(failure);
+    else await boot();
+  } catch (error) { giveUp(plain(error)); }
+})();
 </script>
 </body>
 </html>

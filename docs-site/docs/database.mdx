@@ -1,0 +1,122 @@
+# Repairing the database
+
+Almost nobody needs this page. It is for the two cases nothing else covers: a
+character that has got into a state the game has no button for, and a question
+about what the server actually saved, as opposed to what the client is drawing.
+
+Everything the server remembers — accounts, characters, their bags, their
+homunculi, their guilds — is rows in a database the app runs for you. The
+supervisor that starts the server can also query it.
+
+## Running a query
+
+The command ships inside the app. It is not on your `PATH`, so give the full
+path, or make an alias for it.
+
+| Platform | Path |
+|---|---|
+| macOS | `~/Library/Application Support/Ragnarok Offline/runtime/bin/ragnarok-stack` |
+| Linux | `~/.local/share/Ragnarok Offline/runtime/bin/ragnarok-stack` |
+| Windows | `%APPDATA%\Ragnarok Offline\runtime\bin\ragnarok-stack.exe` |
+
+```sh
+# macOS
+alias rostack="$HOME/Library/Application Support/Ragnarok Offline/runtime/bin/ragnarok-stack"
+
+# Linux
+alias rostack="$HOME/.local/share/Ragnarok Offline/runtime/bin/ragnarok-stack"
+
+rostack sql "SELECT char_id, name, base_level FROM \`char\`"
+```
+
+On Windows, in PowerShell. Single quotes rather than double, because PowerShell
+reads the backquote that `char` needs as its own escape character:
+
+```powershell
+Set-Alias rostack "$env:APPDATA\Ragnarok Offline\runtime\bin\ragnarok-stack.exe"
+
+rostack sql 'SELECT char_id, name, base_level FROM `char`'
+```
+
+**The server has to be running.** The database lives inside the virtual machine
+the app carries, on a network that publishes no port to your computer, so there
+is no address for an ordinary database client to connect to. Open the app and
+press play first.
+
+Renewal and pre-renewal have separate databases with separate characters. The
+command always talks to whichever one is running.
+
+Results come back as tab-separated columns with a header row. A mistake in your
+SQL prints what the database said and stops.
+
+## Changing something
+
+Add `--write`:
+
+```sh
+rostack sql --write "UPDATE homunculus SET vaporize = 1 WHERE homun_id = 1"
+```
+
+`--write` saves a backup first and tells you where, then stops the game
+servers, applies your statements, and starts again whatever was running. You
+are disconnected while it runs.
+
+Stopping the game is the part that matters, and it is why you should use this
+rather than reaching into the container yourself. The server keeps characters,
+homunculi, pets and inventories in memory and writes them back as it goes, so
+an edit made while it is running is quietly overwritten — the database reports
+a row changed and the game carries on with the old value.
+
+## A homunculus that is not there
+
+The example this page was written for. The homunculus is invisible, autofeed
+has stopped, and Call, Rest and Resurrect all fail with no message — and so
+does a fresh Embryo, because the game is sure you still have one.
+
+```sh
+rostack sql "SELECT c.name, c.homun_id, h.vaporize, h.hp, h.max_hp, h.level
+             FROM \`char\` c LEFT JOIN homunculus h ON h.homun_id = c.homun_id
+             WHERE c.name = 'YourCharacter'"
+```
+
+Two columns explain almost every case.
+
+| What comes back | What it is |
+|---|---|
+| `vaporize` 0, `hp` above 0 | out and active, so nothing is wrong here |
+| `vaporize` 0, `hp` 0 | dead, and Resurrect needs a skill and a Blue Gemstone you may not have |
+| `vaporize` 1 | resting, so Call brings it back |
+| `vaporize` 2 | the Homunculus S mutation, half finished, with no way out in game |
+| the homunculus columns are all empty | the character points at a homunculus that no longer exists |
+
+A dead one, brought back and put to rest so that Call works. Use the `homun_id`
+the query printed:
+
+```sh
+rostack sql --write "UPDATE homunculus SET hp = max_hp, sp = max_sp, vaporize = 1 WHERE homun_id = 1"
+```
+
+One stuck mid-mutation, put back to resting:
+
+```sh
+rostack sql --write "UPDATE homunculus SET vaporize = 1 WHERE homun_id = 1"
+```
+
+One that no longer exists, unhooked from the character so the next Embryo makes
+a new one:
+
+```sh
+rostack sql --write "UPDATE \`char\` SET homun_id = 0 WHERE char_id = 150000"
+```
+
+Run whichever of those applies with `--write`, then log in and check it took.
+
+## Before you change anything
+
+Settings → **Save data** → Back up writes the whole database to a file you
+choose. `--write` keeps its own copy too, but that one lives inside the app's
+folder; a backup you can find later is worth the minute.
+
+The full reference — every table, more repairs, and the limits on a query — is
+in [docs/DATABASE.md](https://github.com/Flux159/ragnarokoffline.app/blob/main/docs/DATABASE.md)
+in the repository.

@@ -59,13 +59,52 @@ pub struct Config {
     pub docker: PathBuf,
     pub image: String,
     pub db_image: String,
+    /// The app's release version -- "1.0.5" -- or `None` when this build
+    /// cannot tell. Only mods use it, to say what they need.
+    pub app_version: Option<String>,
+}
+
+/// What version of the app this runtime tree belongs to.
+///
+/// One source, `package.json`, reaching here two ways: `package.sh` copies the
+/// version into `APP_VERSION` beside the payload it builds, and a source
+/// checkout is recognised by the `package.json` sitting one level above the
+/// payload directory. The supervisor never carries a version constant of its
+/// own -- a second number that has to agree with the first forever is a number
+/// that eventually will not.
+fn app_version(root: &Path) -> Option<String> {
+    if let Ok(s) = std::fs::read_to_string(root.join("APP_VERSION")) {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            return Some(s);
+        }
+    }
+    for pkg in [root.join("package.json"), root.join("../package.json")] {
+        let Ok(body) = std::fs::read_to_string(&pkg) else { continue };
+        if let Ok(v) = crate::json::parse(&body) {
+            if let Some(v) = v.str("version") {
+                return Some(v.to_string());
+            }
+        }
+    }
+    None
 }
 
 impl Config {
     pub fn load(root: PathBuf) -> Result<Config, String> {
+        Self::load_inner(root, true)
+    }
+
+    /// Asset assembly is host filesystem work and must also run before the
+    /// VM tooling is installed. It never invokes the Docker client.
+    pub fn load_for_assets(root: PathBuf) -> Result<Config, String> {
+        Self::load_inner(root, false)
+    }
+
+    fn load_inner(root: PathBuf, require_docker: bool) -> Result<Config, String> {
         let state = env::var_os("RAGNAROKMAC_STATE")
             .map(PathBuf::from)
-            .unwrap_or_else(|| root.join(".ragnarokmac"));
+            .unwrap_or_else(|| default_state(&root, &data_root()));
 
         // A fixed path, not one derived from state: `nebula up` registers a
         // service label derived from this, and it must be stable across runs.
@@ -85,10 +124,14 @@ impl Config {
             .filter(|p| p.exists())
             .unwrap_or_else(|| root.join(format!("bin/nebula{EXE}")));
 
-        let docker = resolve_docker(&root)
-            .ok_or_else(|| "no docker client found (bundled or installed)".to_string())?;
+        let docker = match resolve_docker(&root) {
+            Some(path) => path,
+            None if require_docker => return Err("no docker client found (bundled or installed)".into()),
+            None => root.join(format!("bin/docker-slim{EXE}")),
+        };
 
         Ok(Config {
+            app_version: app_version(&root),
             root,
             state,
             nebula_home,
@@ -106,6 +149,32 @@ impl Config {
 
     pub fn lock_dir(&self) -> PathBuf {
         self.state.join(".stack.lock")
+    }
+}
+
+/// Where state lives when nothing says otherwise.
+///
+/// The app always passes `RAGNAROKMAC_STATE`, so this is the path a terminal
+/// takes -- and until there was a reason to run this binary by hand, a
+/// terminal run against a shipped install was never right. An installed
+/// runtime lives at `<data root>/runtime`, so `.ragnarokmac` beside it would
+/// be `<data root>/runtime/.ragnarokmac`: inside the very tree an app update
+/// deletes and replaces. Its state is the app's own `<data root>/state`.
+///
+/// A source checkout keeps the directory it always had.
+fn default_state(root: &Path, data_root: &Path) -> PathBuf {
+    let installed = data_root.join("runtime");
+    // Canonicalised where both paths exist, because /Users and
+    // /System/Volumes/Data/Users are the same directory and only one of them
+    // is what `current_exe` returned.
+    let same = std::fs::canonicalize(root)
+        .ok()
+        .zip(std::fs::canonicalize(&installed).ok())
+        .map_or(root == installed, |(a, b)| a == b);
+    if same {
+        data_root.join("state")
+    } else {
+        root.join(".ragnarokmac")
     }
 }
 
@@ -171,5 +240,36 @@ pub fn lan_ip() -> Option<std::net::IpAddr> {
         None
     } else {
         Some(addr)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Running the shipped binary from a terminal has to reach the same state
+    /// the app uses. It did not: the default put it inside the runtime tree,
+    /// which an update deletes and replaces, so a hand-run command answered
+    /// about an install that does not exist.
+    #[test]
+    fn an_installed_runtime_finds_the_app_s_own_state() {
+        let data = Path::new("/data/Ragnarok Offline");
+        assert_eq!(
+            default_state(&data.join("runtime"), data),
+            data.join("state"),
+        );
+    }
+
+    /// A source checkout keeps the directory it has always had, and nothing
+    /// else is mistaken for an install.
+    #[test]
+    fn any_other_tree_keeps_its_own_state_directory() {
+        let data = Path::new("/data/Ragnarok Offline");
+        for root in ["/src/ragnarokmac", "/data/Ragnarok Offline/runtime/bin", "/data/Ragnarok Offline"] {
+            assert_eq!(
+                default_state(Path::new(root), data),
+                Path::new(root).join(".ragnarokmac"),
+            );
+        }
     }
 }

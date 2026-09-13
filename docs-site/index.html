@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/ragnarokoffline.app/icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Ragnarok Offline - your own Ragnarok Online server and client on macOS, Windows and Linux. One app, no setup."
+    />
+    <title>Ragnarok Offline - your own Ragnarok Online server, in one app</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // SPA redirect restoration for GitHub Pages: 404.html stores the path,
+      // this puts it back before the router mounts.
+      var redirect = sessionStorage.getItem('spa-redirect');
+      if (redirect) {
+        sessionStorage.removeItem('spa-redirect');
+        try {
+          var data = JSON.parse(redirect);
+          var newPath = data.path ? '/' + data.path : '';
+          window.history.replaceState(null, '',
+            '/ragnarokoffline.app' + newPath + (data.search || '') + (data.hash || '')
+          );
+        } catch (e) {
+          console.error('Failed to restore redirect path:', e);
+        }
+      }
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

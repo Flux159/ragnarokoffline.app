@@ -13,10 +13,62 @@
 #
 #   .\test-windows-install.ps1 -Runs 5
 #
-# Destructive: removes the nebula directory in %APPDATA%\Ragnarok Offline
-# between runs. Save data lives in state\, which is left alone.
+# The legacy install loop is destructive: the nebula directory also contains
+# the VM data disk and its databases. Use only disposable state and pass
+# -ConfirmDestructive. -CrossVolume uses temporary synthetic assets only.
 
-param([int]$Runs = 3)
+param(
+    [int]$Runs = 3,
+    [switch]$ConfirmDestructive,
+    [switch]$CrossVolume,
+    [string]$ClientTestRoot,
+    [string]$StateTestRoot = $env:TEMP,
+    [string]$AppTestRoot = $env:TEMP,
+    [string]$StackBinary,
+    [string]$RemoteClientBinary
+)
+
+if ($CrossVolume) {
+    $ErrorActionPreference = 'Stop'
+    if (-not $ClientTestRoot -or -not $StackBinary -or -not $RemoteClientBinary) {
+        throw 'CrossVolume needs ClientTestRoot on a second volume, StackBinary and RemoteClientBinary from the test build.'
+    }
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    if ($identity.Groups.Value -contains 'S-1-5-32-544') {
+        throw 'Run this acceptance test from a standard Windows account, not an administrator account.'
+    }
+    $development = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' -ErrorAction SilentlyContinue
+    if ($development.AllowDevelopmentWithoutDevLicense -eq 1) { throw 'Turn Developer Mode off for this acceptance test.' }
+    # Get-Volume resolves the actual volume, so SUBST letters do not count as
+    # separate disks. https://learn.microsoft.com/powershell/module/storage/get-volume
+    $clientVolume = Get-Volume -FilePath (Resolve-Path $ClientTestRoot).Path
+    $stateVolume = Get-Volume -FilePath (Resolve-Path $StateTestRoot).Path
+    if (-not $clientVolume.UniqueId -or -not $stateVolume.UniqueId -or $clientVolume.UniqueId -eq $stateVolume.UniqueId) {
+        throw 'ClientTestRoot and StateTestRoot must be writable folders on distinct local volumes.'
+    }
+    $settings = @{
+        STACK_BIN = (Resolve-Path $StackBinary).Path
+        REMOTECLIENT_BIN = (Resolve-Path $RemoteClientBinary).Path
+        RAGNAROK_TEST_CLIENT_ROOT = (Resolve-Path $ClientTestRoot).Path
+        RAGNAROK_TEST_STATE_ROOT = (Resolve-Path $StateTestRoot).Path
+        RAGNAROK_TEST_APP_ROOT = (Resolve-Path $AppTestRoot).Path
+        RAGNAROK_REQUIRE_CROSS_VOLUME = '1'
+    }
+    $previous = @{}
+    try {
+        foreach ($key in $settings.Keys) {
+            $previous[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
+            [Environment]::SetEnvironmentVariable($key, $settings[$key], 'Process')
+        }
+        & node --test --test-timeout=60000 "$PSScriptRoot/../tests/assets.integration.test.cjs"
+        $testExit = $LASTEXITCODE
+    } finally {
+        foreach ($key in $previous.Keys) { [Environment]::SetEnvironmentVariable($key, $previous[$key], 'Process') }
+    }
+    exit $testExit
+}
+
+if (-not $ConfirmDestructive) { throw 'The install loop deletes the VM data disk. Use disposable state and -ConfirmDestructive, or choose -CrossVolume.' }
 
 $data   = "$env:APPDATA\Ragnarok Offline"
 $nebula = "$data\nebula"

@@ -1,16 +1,19 @@
 {
   "name": "ragnarokoffline",
   "productName": "Ragnarok Offline",
-  "version": "1.0.2",
+  "version": "1.2.1",
   "description": "Ragnarok Online, offline, in one app",
   "license": "GPL-3.0",
   "private": true,
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
+    "test": "node --test tests/*.test.cjs",
+    "test:e2e": "playwright test --config playwright.config.cjs",
     "dist": "electron-builder --mac"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8"
   },
@@ -25,7 +28,9 @@
     "files": [
       "electron/**/*",
       "src/**/*",
-      "!**/node_modules/**"
+      "!**/node_modules/**",
+      "!electron/vc_redist.x64.exe",
+      "!electron/installer.nsh"
     ],
     "extraResources": [
       {
@@ -96,7 +101,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "include": "electron/installer.nsh"
     },
     "afterPack": "electron/afterPack.js"
   }

@@ -1,0 +1,90 @@
+# Settings: Accounts
+
+Accounts on your own running server. **Renewal and Pre-Renewal have separate
+accounts and passwords**, so a change in one is not a change in the other.
+
+Changes here disconnect current players and restart game services. Account IDs,
+privileges and characters are preserved.
+
+## New account creation
+
+**Anyone at the game login screen** lets people register with `_M` or `_F` —
+add the suffix to a new username at login, then log in without it. This is the
+default.
+
+**Owner only, through Settings** turns that off. Existing accounts keep working.
+
+The policy applies to both eras, and you must Apply and restart to change it.
+
+Sharing a link keeps whichever you choose: the invitation already gates the
+login server, so friends can sign up at the login screen. Choose owner only if
+you are hosting something larger than a group of friends.
+
+## Passwords
+
+**8–23 printable ASCII characters** — letters, numbers, spaces and punctuation —
+and **not the account name itself**.
+
+The game protocol limits password length, so longer or non-ASCII passwords
+cannot be accepted. Passwords never appear in diagnostics.
+
+### GM and admin accounts before internet hosting
+
+A GM or admin account needs a password meeting those rules before you can host
+over the internet. **You do not have to disable it** — a compliant password is
+enough, and you keep your admin access while friends are connected.
+
+If a change is refused, the reason appears in red under the buttons.
+
+## Creating an account for a friend
+
+**New friend account** makes an ordinary player account with the password
+entered above. Use 4–23 letters, numbers, underscores or hyphens, without an
+`_M` or `_F` suffix.
+
+## Deleting a character: the birthday prompt
+
+The game asks for the **account's birthday** before it deletes a character, and
+refuses the deletion if the answer does not match what the server has stored.
+
+Every account this app creates is given **1 January 2000**. Type it as
+`20000101` when the game asks.
+
+Accounts created before the app started storing a birthday have nothing to
+match, so the prompt rejects every answer — including the `000000` and
+`00-00-00` suggested on rAthena forums. **Set missing account birthdays** gives
+those accounts the same 1 January 2000 and leaves any account that already has
+one alone. It is safe to press twice.
+
+Deletion is three steps by default: choose Delete, wait out the countdown shown
+on the character slot, then choose the final delete and enter the birthday. A
+character still in a party or guild cannot be deleted at all.
+
+## Character deletion
+
+**A day after it is requested** is Ragnarok's own behaviour and the default
+here. Choosing Delete queues the character and starts a countdown on the slot;
+until that runs out, the deletion can be cancelled. That is what protects a
+character from someone else who can reach the game, so keep it if you share
+your server with friends.
+
+**As soon as the birthday is entered** removes the wait, and the two clicks run
+back to back. On a server only you can reach there is nobody to cancel a
+deletion against, and the day only costs you time.
+
+Either way the birthday is still asked for, a character in a party or guild is
+still refused, and the deletion is permanent once it goes through. Applying
+restarts game services.
+
+## Character names
+
+Not a setting, but the rule that surprises people: character names need **at
+least 4 characters**, and only letters, numbers and spaces.
+
+## Preparing the server for friends
+
+Internet hosting needs this era's internal service credentials secured. It backs
+up the database first and preserves every account and character.
+
+Sharing does this for you the first time you use it, so the button in
+**Multiplayer** is only there if you would rather do it deliberately.

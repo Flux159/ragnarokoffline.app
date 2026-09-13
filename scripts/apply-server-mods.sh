@@ -21,6 +21,20 @@ MOD="$ROOT/third-party/population-engine"
 [ -f "$TARGET/src/map/map.cpp" ] || { echo "not a rAthena checkout: $TARGET" >&2; exit 1; }
 [ -d "$MOD" ] || { echo "missing $MOD" >&2; exit 1; }
 
+python3 "$ROOT/scripts/apply-crash-trace.py" "$TARGET"
+
+# Small upstream corrections also apply to both normal and diagnostic images.
+for fix in "$ROOT"/third-party/server-fixes/*.patch; do
+    if patch -d "$TARGET" -p1 --dry-run --forward < "$fix" >/dev/null 2>&1; then
+        patch -d "$TARGET" -p1 --forward < "$fix"
+    elif patch -d "$TARGET" -p1 --dry-run --reverse < "$fix" >/dev/null 2>&1; then
+        echo "    already applied $(basename "$fix")"
+    else
+        echo "server fix no longer matches: $fix" >&2
+        exit 1
+    fi
+done
+
 echo "==> population engine: files"
 # Copied every time: these are ours alone, nothing upstream writes here, so
 # re-copying is how a third-party/ update reaches an existing checkout.

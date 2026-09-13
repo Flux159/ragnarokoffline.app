@@ -1,0 +1,114 @@
+:host {
+	width: 230px;
+	height: 208px;
+}
+
+#Stylist {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	background-color: #d3d0c8;
+	border: 1px solid #7a7768;
+	border-radius: 3px;
+	font-family: Arial, sans-serif;
+	font-size: 11px;
+	color: #202020;
+}
+
+#Stylist .titlebar {
+	width: 100%;
+	height: 17px;
+	background-color: white;
+	background-repeat: repeat-x;
+	border-radius: 3px 3px 0 0;
+	cursor: move;
+}
+#Stylist .titlebar .base {
+	width: 11px;
+	height: 11px;
+	border: none;
+	background-color: transparent;
+	background-repeat: no-repeat;
+	vertical-align: middle;
+}
+#Stylist .titlebar .text {
+	text-shadow: 1px 1px white;
+	vertical-align: -2px;
+	white-space: nowrap;
+	display: inline-block;
+	height: 13px;
+	font-size: 11px;
+	font-weight: bold;
+}
+#Stylist .titlebar .left {
+	margin-left: 3px;
+	float: left;
+}
+#Stylist .titlebar .right {
+	float: right;
+	margin-right: 3px;
+}
+#Stylist .titlebar .clear {
+	clear: both;
+}
+
+#Stylist .panel {
+	padding: 8px 10px;
+}
+
+#Stylist .row {
+	height: 22px;
+	line-height: 22px;
+	white-space: nowrap;
+}
+#Stylist .row .label {
+	display: inline-block;
+	width: 74px;
+}
+#Stylist .row .value {
+	display: inline-block;
+	width: 34px;
+	text-align: center;
+	font-weight: bold;
+}
+
+/* Buttons are drawn rather than sprited: the stylist has no artwork of its
+   own in any client generation this app supports, and borrowing another
+   window's sprites would break the moment that window's assets move. */
+#Stylist .arrow {
+	width: 20px;
+	height: 17px;
+	padding: 0;
+	font-size: 9px;
+	line-height: 15px;
+	cursor: pointer;
+	border: 1px solid #7a7768;
+	border-radius: 2px;
+	background: linear-gradient(#fdfdfd, #dcdad2);
+}
+#Stylist .arrow:active {
+	background: linear-gradient(#dcdad2, #fdfdfd);
+}
+
+#Stylist .note {
+	margin: 6px 0 8px;
+	line-height: 13px;
+	color: #4a4a4a;
+}
+
+#Stylist .buttons {
+	text-align: right;
+}
+#Stylist .buttons button {
+	min-width: 62px;
+	height: 20px;
+	margin-left: 5px;
+	cursor: pointer;
+	border: 1px solid #7a7768;
+	border-radius: 2px;
+	background: linear-gradient(#fdfdfd, #dcdad2);
+	font-size: 11px;
+}
+#Stylist .buttons button:active {
+	background: linear-gradient(#dcdad2, #fdfdfd);
+}

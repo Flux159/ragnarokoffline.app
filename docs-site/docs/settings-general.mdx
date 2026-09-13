@@ -1,0 +1,64 @@
+# Settings: General
+
+Game era, game text, the server, and your client files.
+
+## Game era
+
+**Renewal** or **Pre-Renewal**. These are two different builds of the server,
+not a runtime option, so switching restarts it.
+
+**Each era keeps its own characters.** They are separate databases on purpose —
+a Renewal character in a Pre-Renewal world would have stats the world does not
+agree with. Switching back finds everything where you left it.
+
+Accounts are per-era too, so a password changed in one is not changed in the
+other.
+
+## Game text
+
+Where the item names, quest text and NPC dialogue come from.
+
+**English translation** is the default. The app ships
+[ROenglishRE](https://github.com/llchrisll/ROenglishRE) and lays it over your
+client's own files, so a Korean client is in English with no extra step.
+
+**Your client's own text** turns that off and reads what your client came with.
+That is the one to pick when your client is not Korean — a Latin American
+download is already in Spanish and Portuguese, and the translation is only
+covering it up.
+
+The two "your client's own text" options differ in one thing: how that text is
+decoded. **Western** covers Latin American, international, Brazilian and
+European clients; **Korean** is for kRO. Picking the wrong one does not fail —
+it turns every accented letter into gibberish, so if the game comes back looking
+like `Configuraç` became Korean, switch to the other.
+
+Changing this rebuilds the served files and restarts the server. Log in again
+afterwards.
+
+One thing does not come across in full. Newer clients keep their system
+messages — the ones the server sends by number, such as the notices at login —
+in a format the client here does not read, so a few of them show as
+`NO MSG 2580` instead of the sentence. Item names, map names, NPC dialogue and
+quest text are unaffected. The English translation has all of them, so switch
+back if those messages matter to you.
+
+## Server
+
+Whether the server is running, and a **Restart server** button.
+
+Most settings that need a restart say so, and restarting takes seconds after
+the first run. Players are disconnected while it happens, so log back in
+afterwards.
+
+## Client
+
+Where your Ragnarok files are: `data.grf`, and `rdata.grf` and
+`official_data.grf` if you have them, plus the `BGM` folder for music.
+
+Files are **read in place** and never copied into the app, so a 2.4 GB GRF does
+not become two. They can live on any drive, including a different one from the
+app itself.
+
+Changing them rebuilds the asset overlay, which takes a moment and does not
+touch your characters.

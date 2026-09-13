@@ -6,27 +6,110 @@
 
 FROM alpine:3.23 AS build
 
+# libunwind is pinned by upstream version, not by Alpine's package revision.
+# Alpine's repository carries only the current -rN for a branch: the moment
+# libunwind is rebuilt as -r1, an `=1.8.1-r0` pin stops resolving and the image
+# build fails outright -- on a release tag, most likely. `~1.8.1` keeps the
+# version deterministic while tolerating a repackage. The build-time -dev and
+# the runtime library must move together.
+
 RUN apk add --no-cache \
         bash git make cmake gcc g++ \
-        zlib-dev mariadb-dev linux-headers
+        zlib-dev mariadb-dev linux-headers libunwind-dev~1.8.1 binutils
 
 WORKDIR /rathena
 COPY . /rathena
 
 # Must match roBrowser's `packetver` and the era of the client GRFs.
 ARG PACKETVER=20221005
+ENV CXXFLAGS="-g -O2 -fno-omit-frame-pointer -fno-optimize-sibling-calls"
+ENV CPPFLAGS="-DRAGNAROK_CRASH_TRACE"
+ENV LIBS="-lunwind"
+ENV LDFLAGS="-Wl,--build-id=sha1 -rdynamic"
+
+RUN sh /rathena/ragnarok-crash-tests/verify.sh
+
+# Renewal, and then the same source again for pre-renewal.
+#
+# Pre-renewal is a compile-time decision in rAthena, not a setting:
+# --enable-prere becomes -DPRERE, which switches every RENEWAL define in
+# src/config/renewal.hpp and selects db/pre-re and npc/pre-re over db/re and
+# npc/re. There is no runtime flag to add; the only way to offer both is to
+# carry both binaries.
+#
+# Only char and map: src/login and src/web contain no reference to RENEWAL or
+# PRERE, so their binaries are identical either way. char does -- and more to
+# the point src/common/mmo.hpp changes under RENEWAL, so a char-server must be
+# built to match the map-server it talks to.
+#
+# make clean between the passes is load-bearing. PRERE arrives through
+# CPPFLAGS, and make does not rebuild on a changed compiler flag -- without the
+# clean the second pass relinks the first pass's objects and produces a
+# renewal binary under a pre-renewal name.
 RUN ./configure --enable-packetver=${PACKETVER} \
     && make -j"$(nproc)" server \
-    && strip login-server char-server map-server web-server || true
+    && mkdir -p /symbols/re \
+    && for binary in login-server char-server map-server web-server; do \
+        objcopy --only-keep-debug "$binary" "/symbols/re/$binary.debug" \
+        && readelf -n "$binary" | sed -n "s/.*Build ID: /$binary /p" >> "/symbols/re/BUILD_IDS" \
+        && strip --strip-debug "$binary" \
+        && objcopy --add-gnu-debuglink="/symbols/re/$binary.debug" "$binary" || exit 1; \
+    done
+RUN mkdir -p /out/re \
+    && cp login-server char-server map-server web-server /out/re/
+RUN make clean \
+    && ./configure --enable-packetver=${PACKETVER} --enable-prere \
+    && make -j"$(nproc)" char map \
+    && mkdir -p /symbols/pre-re \
+    && for binary in char-server map-server; do \
+        objcopy --only-keep-debug "$binary" "/symbols/pre-re/$binary.debug" \
+        && readelf -n "$binary" | sed -n "s/.*Build ID: /$binary /p" >> "/symbols/pre-re/BUILD_IDS" \
+        && strip --strip-debug "$binary" \
+        && objcopy --add-gnu-debuglink="/symbols/pre-re/$binary.debug" "$binary" || exit 1; \
+    done \
+    && mkdir -p /out/pre-re \
+    && cp char-server map-server /out/pre-re/
+# Prove the two binaries are actually different eras.
+#
+# map_reloadnpc names one of two paths under #ifdef RENEWAL, so exactly one of
+# these literals is compiled into any given map-server. It is the cheapest
+# unambiguous marker of which branch was taken, and it survives stripping
+# because it is a string constant rather than a symbol.
+#
+# Worth checking because the way this goes wrong is silent: a missed `make
+# clean` relinks the first pass's objects under the second pass's name, and the
+# result is a server that runs perfectly and is quietly the wrong era. Nobody
+# would find that until a player reported damage numbers that felt off.
+RUN set -e; \
+    grep -qa "npc/re/scripts_main.conf"     /out/re/map-server     || { echo "re map-server is not renewal"      >&2; exit 1; }; \
+    ! grep -qa "npc/pre-re/scripts_main.conf" /out/re/map-server   || { echo "re map-server has pre-re in it"    >&2; exit 1; }; \
+    grep -qa "npc/pre-re/scripts_main.conf" /out/pre-re/map-server || { echo "pre-re map-server is not pre-re"   >&2; exit 1; }; \
+    ! grep -qa "npc/re/scripts_main.conf"   /out/pre-re/map-server || { echo "pre-re map-server has renewal in it" >&2; exit 1; }; \
+    echo "era check: re and pre-re map-servers differ as expected"
+
+FROM scratch AS debug-symbols
+COPY --from=build /symbols/ /
 
 FROM alpine:3.23
 
-RUN apk add --no-cache mariadb-connector-c zlib libstdc++ libgcc bash tzdata \
+RUN apk add --no-cache mariadb-connector-c zlib libstdc++ libgcc bash tzdata libunwind~1.8.1 \
     && adduser -D -h /rathena rathena
 
 WORKDIR /rathena
-COPY --from=build /rathena/login-server /rathena/char-server \
-                  /rathena/map-server /rathena/web-server /rathena/
+COPY --from=build /rathena/ragnarok-crash-tests/libunwind-COPYING /usr/share/licenses/libunwind/COPYING
+COPY --from=build /out/re/login-server /out/re/char-server \
+                  /out/re/map-server /out/re/web-server /rathena/
+# The pre-renewal pair sits beside them under its own names, in the same
+# directory rather than a subdirectory.
+#
+# rAthena chdirs to the directory of argv[0] at startup (src/common/core.cpp),
+# then reads conf/, db/ and npc/ relative to that. A binary in /rathena/pre-re/
+# therefore looks for /rathena/pre-re/conf and dies with "File not found:
+# conf/inter_athena.conf". Same directory, different name, and every relative
+# path keeps working -- the era comes from how the binary was compiled, not
+# from where it sits.
+COPY --from=build /out/pre-re/char-server /rathena/char-server-prere
+COPY --from=build /out/pre-re/map-server  /rathena/map-server-prere
 COPY --from=build /rathena/conf       /rathena/conf
 COPY --from=build /rathena/db         /rathena/db
 COPY --from=build /rathena/npc        /rathena/npc

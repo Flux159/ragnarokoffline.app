@@ -1,0 +1,71 @@
+# Development-only image. Never used by bootstrap, release images or packaging.
+# Keep the runtime layout/packet version identical to the normal rAthena image.
+FROM alpine:3.23 AS diagnostic-runtime
+RUN apk add --no-cache mariadb-connector-c zlib libstdc++ libgcc bash tzdata \
+        compiler-rt=21.1.2-r0 llvm21=21.1.2-r1 \
+    && ln -s /usr/bin/llvm21-symbolizer /usr/local/bin/llvm-symbolizer \
+    && adduser -D -h /rathena rathena
+# Stop at the first error. Do not let the game's save handler replace ASan's
+# original-fault handler, and do not produce raw cores or exit-time leak noise.
+ENV ASAN_SYMBOLIZER_PATH=/usr/local/bin/llvm-symbolizer
+ENV ASAN_OPTIONS="detect_leaks=0:halt_on_error=1:abort_on_error=0:disable_coredump=1:handle_segv=2:handle_sigbus=2:handle_sigfpe=2:fast_unwind_on_fatal=0"
+ENV UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1"
+
+FROM diagnostic-runtime AS build
+RUN apk add --no-cache git make cmake clang21=21.1.2-r2 g++ \
+        zlib-dev mariadb-dev linux-headers binutils
+WORKDIR /rathena
+COPY . /rathena
+ARG PACKETVER=20221005
+ARG BUILD_JOBS=2
+ENV CC=clang CXX=clang++
+# The pinned packet FIFO macros dereference integers at byte offsets (e.g.
+# char_logif.cpp offset 50). Exclude alignment to reach gameplay; keep ASan
+# and every other undefined-behavior check fatal. See SANITIZER_INVESTIGATION.md.
+ENV CFLAGS="-g -O1 -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address,undefined -fno-sanitize=alignment -fno-sanitize-recover=all"
+ENV CXXFLAGS="-g -O1 -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address,undefined -fno-sanitize=alignment -fno-sanitize-recover=all"
+ENV LDFLAGS="-fsanitize=address,undefined -Wl,--build-id=sha1 -rdynamic"
+# Do not enable RAGNAROK_CRASH_TRACE: sanitizer diagnostics own fault handling.
+# NO_MEMMGR exposes allocation/free boundaries that the built-in pool obscures.
+RUN mkdir -p /diagnostics \
+    && clang++ $CXXFLAGS $LDFLAGS ragnarok-sanitizer-tests/fixture.cpp -o /diagnostics/sanitizer-fixture \
+    && FIXTURE_BIN=/diagnostics/sanitizer-fixture sh ragnarok-sanitizer-tests/verify.sh /diagnostics/fixture-evidence \
+    && apk info -v > /diagnostics/packages.txt \
+    && clang++ --version > /diagnostics/compiler.txt
+RUN ./configure --enable-packetver=${PACKETVER} --enable-manager=no \
+    && make -j"$BUILD_JOBS" server \
+    && mkdir -p /out/re \
+    && cp login-server char-server map-server web-server /out/re/ \
+    && make clean \
+    && ./configure --enable-packetver=${PACKETVER} --enable-manager=no --enable-prere \
+    && make -j"$BUILD_JOBS" char map \
+    && mkdir -p /out/pre-re \
+    && cp char-server map-server /out/pre-re/
+RUN set -e; \
+    grep -qa 'npc/re/scripts_main.conf' /out/re/map-server; \
+    ! grep -qa 'npc/pre-re/scripts_main.conf' /out/re/map-server; \
+    grep -qa 'npc/pre-re/scripts_main.conf' /out/pre-re/map-server; \
+    ! grep -qa 'npc/re/scripts_main.conf' /out/pre-re/map-server; \
+    for era in re pre-re; do \
+        for binary in /out/$era/*; do \
+            readelf -n "$binary" | sed -n "s/.*Build ID: /$era $(basename "$binary") /p" >> /diagnostics/BUILD_IDS; \
+            nm "$binary" | grep -q '__asan_init'; \
+            nm "$binary" | grep -q '__ubsan_handle'; \
+        done; \
+    done
+
+FROM diagnostic-runtime
+LABEL org.ragnarokoffline.diagnostic="asan-ubsan" org.ragnarokoffline.production="false"
+WORKDIR /rathena
+COPY --from=build /out/re/ /rathena/
+COPY --from=build /out/pre-re/char-server /rathena/char-server-prere
+COPY --from=build /out/pre-re/map-server /rathena/map-server-prere
+COPY --from=build /rathena/conf /rathena/conf
+COPY --from=build /rathena/db /rathena/db
+COPY --from=build /rathena/npc /rathena/npc
+COPY --from=build /rathena/sql-files /rathena/sql-files
+COPY --from=build /diagnostics/ /diagnostics/
+COPY --from=build /rathena/ragnarok-sanitizer-tests/verify.sh /diagnostics/verify.sh
+RUN mkdir -p /rathena/log /rathena/save /rathena/conf/import \
+    && chown -R rathena:rathena /rathena
+USER rathena

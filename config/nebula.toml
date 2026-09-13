@@ -22,6 +22,15 @@ data_disk_gib = 16
 
 dns_zone = "ragnarok.local"
 
+# Bind somewhere else rather than refusing, when something already holds these.
+#
+# The ports above avoid a standalone nebula install, but they cannot avoid every
+# other embedder -- another app on the same machine, or a second copy of this
+# one. Nebula 0.1.9 reports a collision clearly instead of failing obscurely,
+# which is an improvement on nothing at all, but a player who has done nothing
+# wrong should not have to read it. Let the engine pick free ports.
+port_conflict = "auto"
+
 # Published ports bind 127.0.0.1 unless this is on. The supervisor sets it to
 # match the app's LAN switch on every start, so the value here is only the
 # default a fresh instance begins with — off, because exposing the game servers

@@ -10,7 +10,8 @@ name: build
 #   payload/dist    rAthena + MariaDB images — needs a real Docker daemon, and
 #                   must match the *guest* architecture, not the runner's, so
 #                   images.yml builds them on native Linux runners
-#   payload/bin     ragnarok-stack (built here from stack/), plus nebula,
+#   payload/bin     ragnarok-stack (built here from stack/) and ro-randomizer
+#                   (from examples/mods/randomizer/), plus nebula,
 #                   nebulad, docker-slim, robrowser-remoteclient —
 #   payload/lib     private repos, built there and consumed here. Three
 #   payload/guest   separate release assets: the embed kit (nebula, nebulad,
@@ -61,7 +62,7 @@ on:
 #
 # Bump deliberately, once the kits for the new version exist.
 env:
-  NEBULA_VERSION: v0.1.9
+  NEBULA_VERSION: v0.2.3
 
 permissions:
   contents: write
@@ -77,15 +78,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 22 here and in the app job. The client used to need 24: with no
+      # lockfile upstream, `npm install` re-resolved the whole tree and npm 10
+      # crashed doing it. patch-client.sh now installs a lockfile and this job
+      # runs `npm ci`, so there is no resolution step left to crash -- verified
+      # on npm 10.9.8, which installs and builds the pinned tree cleanly.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
 
+      # Pinned in config/VENDOR_PINS, not cloned from a branch: what a tag
+      # shipped has to stay knowable after upstream moves on.
       - name: Fetch roBrowserLegacy and ROenglishRE
         run: |
           mkdir -p vendor
-          git clone --depth 1 https://github.com/MrAntares/roBrowserLegacy.git vendor/roBrowserLegacy
-          git clone --depth 1 https://github.com/llchrisll/ROenglishRE.git vendor/ROenglishRE
+          scripts/vendor-fetch.sh roBrowserLegacy vendor/roBrowserLegacy
+          scripts/vendor-fetch.sh ROenglishRE vendor/ROenglishRE
 
       - name: Apply our patches
         run: scripts/patch-client.sh
@@ -93,8 +101,15 @@ jobs:
       - name: Build the client
         working-directory: vendor/roBrowserLegacy
         run: |
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm run build:all
+
+      # After the build, because these edit the bundle rather than src/.
+      # Missing this step is invisible: the app builds, ships, and is simply
+      # short a feature, which is how the navigation patch reached no release
+      # while working in every local build.
+      - name: Apply our patches to the built bundle
+        run: scripts/patch-bundle.sh vendor/roBrowserLegacy/dist/Web
 
       # build:all emits seven ~12 MB bundles and the game loads one. package.sh
       # prunes too, but pruning here keeps the artifact small enough to be worth
@@ -108,7 +123,8 @@ jobs:
           name: client
           path: |
             vendor/roBrowserLegacy/dist/Web
-            vendor/ROenglishRE/Translation/Renewal
+            vendor/ROenglishRE/Translation
+            vendor/ROenglishRE/Addons/Navigation Legacy
           retention-days: 1
 
   # ---------------------------------------------------------------------------
@@ -165,14 +181,17 @@ jobs:
         with:
           node-version: 22
 
-      # The one thing this workflow compiles. stack/ is a small dependency-free
-      # crate, so a cached build is under a minute; it is built per-platform
-      # here rather than fetched, because unlike nebula and the asset server it
-      # is our own code in this repo.
+      # Build the supervisor here, and the exact RemoteClient source pin below.
+      # Source pinning also supports coordinated, unmerged dependency PRs.
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: stack
+          # Both crates in the repo. ro-randomizer is small and has no
+          # dependencies either, but leaving it out of the cache means it is
+          # the one thing rebuilt from scratch on every run.
+          workspaces: |
+            stack
+            examples/mods/randomizer
 
       - uses: actions/download-artifact@v4
         with:
@@ -202,25 +221,21 @@ jobs:
              --pattern 'nebula-slim-embed-${{ matrix.triple }}.tar.gz' --dir /tmp
           tar xzf /tmp/nebula-slim-embed-${{ matrix.triple }}.tar.gz -C /tmp/kit
 
-          # docker-slim ships separately, as one of the three slim host CLIs.
-          # The Linux and Windows embed kits do not include it, and the app
-          # cannot talk to the engine without it.
-          if [ ! -e /tmp/kit/bin/docker-slim ] && [ ! -e /tmp/kit/bin/docker-slim.exe ]; then
-            gh release download "$NEBULA_VERSION" --repo Flux159/nebula \
-               --pattern 'nebula-slim-clis-*-${{ matrix.clis }}.tar.gz' --dir /tmp/clis
-            tar xzf /tmp/clis/*.tar.gz -C /tmp/clis --strip-components=1
-            echo "DOCKER_SLIM_BIN=$(ls /tmp/clis/docker-slim*)" >> "$GITHUB_ENV"
-          fi
+          # Build the private-account stdin contract from its immutable source
+          # pin, even when the embed kit carries an older docker-slim.
+          bash scripts/build-docker-slim.sh
+          docker_bin="$PWD/bin/docker-slim"
+          [ "${{ matrix.platform }}" = "win" ] && docker_bin="$docker_bin.exe"
+          echo "DOCKER_SLIM_BIN=$docker_bin" >> "$GITHUB_ENV"
 
-          # Pinned to this platform's binary. A `robrowser-remoteclient-*` glob
-          # matches all three and copies whichever the shell lists last.
-          bin=robrowser-remoteclient-${{ matrix.triple }}
+          # The shell and asset-server lifecycle protocol move together.
+          # Build the immutable source pin, including dependency PR commits,
+          # instead of silently downloading whichever release is latest.
+          bash scripts/build-remoteclient.sh
+          bin="$PWD/bin/robrowser-remoteclient"
           [ "${{ matrix.platform }}" = "win" ] && bin="$bin.exe"
-          gh release download --repo Flux159/roBrowserLegacy-RemoteClient-Rust \
-             --pattern "$bin" --dir /tmp
-          chmod +x "/tmp/$bin" || true
           echo "NEBULA_EMBED_KIT=/tmp/kit" >> "$GITHUB_ENV"
-          echo "REMOTECLIENT_BIN=/tmp/$bin" >> "$GITHUB_ENV"
+          echo "REMOTECLIENT_BIN=$bin" >> "$GITHUB_ENV"
         shell: bash
 
       # Built by images.yml on native Linux runners and fetched by its rolling
@@ -374,6 +389,16 @@ jobs:
           case "$out" in
             *usage*) ;;
             *) echo "the bundled ragnarok-stack did not print usage: $out" >&2; exit 1 ;;
+          esac
+          # The same proof for the randomizer: it goes through afterPack's
+          # signing loop like every other payload binary, and a signed binary
+          # that will not launch is exactly what that loop can produce.
+          # --help, because with no arguments it goes looking for a running
+          # server and there is not one on a build runner.
+          out=$("$APP/Contents/Resources/payload/bin/ro-randomizer" --help 2>&1 || true)
+          case "$out" in
+            *"--seed"*) ;;
+            *) echo "the bundled ro-randomizer did not print usage: $out" >&2; exit 1 ;;
           esac
           # No scripts/ check: the payload deliberately carries none. Everything
           # the app runs is the supervisor binary, verified above.

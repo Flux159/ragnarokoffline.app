@@ -1,0 +1,27 @@
+# How GitHub counts this repository.
+#
+# The language bar was reporting JavaScript, which is not what this project
+# mostly is: the supervisor, the randomiser and the asset server contract are
+# Rust, and the JavaScript is the Electron shell plus a very large test suite.
+# Nothing here is hidden from search or diffs -- linguist-detectable only keeps
+# a path out of the statistics, and linguist-documentation and linguist-vendored
+# are the categories these paths already belong to.
+
+# Tests. Over 300 KB of acceptance and unit suites, which say how much testing
+# there is rather than what the project is written in.
+tests/** linguist-detectable=false
+
+# The documentation site. It is documentation that happens to be a React app.
+docs-site/** linguist-documentation
+
+# Patch payload for the vendored client: files copied into roBrowserLegacy's
+# own tree, so they are that project's code shape rather than ours.
+patches/** linguist-vendored
+
+# Vendored third-party sources we carry and modify -- the population engine is
+# GPL-3.0 from upstream, with our changes marked RAGNAROKMAC.
+third-party/** linguist-vendored
+
+# Generated or fetched at build time and never edited by hand.
+docs-site/bun.lock linguist-generated
+patches/package-lock.json linguist-generated

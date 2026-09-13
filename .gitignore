@@ -55,5 +55,11 @@ data.ini
 /node_modules/
 /dist/electron/
 
+# Local gameplay screenshots, traces and baseline client builds.
+/artifacts/
+
 # The supervisor crate build output.
 stack/target/
+
+# Fetched by scripts/package.sh for the Windows installer (25 MB, Microsoft's binary)
+/electron/vc_redist.x64.exe

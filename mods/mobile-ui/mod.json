@@ -1,0 +1,19 @@
+{
+  "name": "mobile-ui",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "Phone layout with compact controls, readable game windows, separate desktop positions and per-browser display settings.",
+  "requires": {
+    "app": ">=1.0.6",
+    "era": "any"
+  },
+  "settings": [
+    {
+      "key": "show_display_button",
+      "type": "boolean",
+      "default": true,
+      "label": "Show the Display button in game",
+      "description": "Turn this off to keep the phone layout without the on-screen button."
+    }
+  ]
+}

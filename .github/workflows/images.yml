@@ -1,7 +1,7 @@
 name: images
 
 # Builds the two container images the app ships with, and publishes them as a
-# rolling release asset.
+# rolling release asset on main. Manual runs produce review artifacts only.
 #
 # These cannot be built in the app workflow. Two reasons, either sufficient:
 #
@@ -33,6 +33,7 @@ on:
     paths:
       - 'containers/**'
       - '.github/workflows/images.yml'
+      - 'tests/integration/mariadb-secrets.py'
       # The packetver lives here and is a build arg for the rAthena image, so a
       # bump has to rebuild. It over-triggers on unrelated bootstrap edits;
       # a stale image is the worse failure.
@@ -44,13 +45,23 @@ on:
       # unbuilt behind a workflow watching only the Dockerfile.
       - 'third-party/**'
       - 'scripts/apply-server-mods.sh'
+      - 'scripts/apply-crash-trace.py'
   workflow_dispatch:
+    inputs:
+      diagnostics:
+        description: Build development-only ASan/UBSan images instead of release images
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
+  diagnostics:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostics }}
+    uses: ./.github/workflows/diagnostics.yml
   build:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics }}
     strategy:
       fail-fast: false
       matrix:
@@ -80,17 +91,37 @@ jobs:
       - name: Build the database image
         run: docker build -t ragnarokmac/mariadb:11.4 containers/mariadb
 
+      - name: Validate database secret bootstrap against the image
+        run: python3 tests/integration/mariadb-secrets.py
+
       # rAthena's source is the build context, so our Dockerfile is copied into
       # the checkout — the same thing bootstrap.sh does locally.
       - name: Build rAthena
         run: |
           set -e
-          git clone --depth 1 https://github.com/rathena/rathena.git /tmp/rathena
+          ./scripts/vendor-fetch.sh rathena /tmp/rathena
           ./scripts/apply-server-mods.sh /tmp/rathena
           cp containers/rathena/Dockerfile /tmp/rathena/Dockerfile.ragnarokmac
           docker build -f /tmp/rathena/Dockerfile.ragnarokmac \
             --build-arg "PACKETVER=$PACKETVER" \
             -t "ragnarokmac/rathena:$PACKETVER" /tmp/rathena
+
+      - name: Export matching native debug symbols
+        run: |
+          set -e
+          docker build -f /tmp/rathena/Dockerfile.ragnarokmac \
+            --build-arg "PACKETVER=$PACKETVER" --target debug-symbols \
+            -t ragnarokmac/debug-symbols /tmp/rathena
+          cid=$(docker create ragnarokmac/debug-symbols true)
+          mkdir -p native-symbols
+          docker cp "$cid:/re" native-symbols/
+          docker cp "$cid:/pre-re" native-symbols/
+          docker cp "$cid:/trace-tests" native-symbols/
+          docker rm "$cid" >/dev/null
+          printf '%s\n' '${{ github.sha }}' > native-symbols/app-source.txt
+          docker image inspect "ragnarokmac/rathena:$PACKETVER" --format '{{.Id}}' > native-symbols/image-id.txt
+          tar czf "rathena-symbols-${{ matrix.arch }}-${{ github.sha }}.tar.gz" -C native-symbols .
+          sha256sum "rathena-symbols-${{ matrix.arch }}-${{ github.sha }}.tar.gz" > "rathena-symbols-${{ matrix.arch }}-${{ github.sha }}.sha256"
 
       - name: Save the bundle
         run: |
@@ -119,12 +150,25 @@ jobs:
           tar czf rathena-sql.tar.gz -C sql .
           ls -lh rathena-sql.tar.gz
 
+      - name: Upload reviewable image artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-images-${{ matrix.arch }}
+          path: |
+            images-${{ matrix.arch }}.tar.gz
+            rathena-sql.tar.gz
+            rathena-symbols-${{ matrix.arch }}-${{ github.sha }}.tar.gz
+            rathena-symbols-${{ matrix.arch }}-${{ github.sha }}.sha256
+          retention-days: 30
+          if-no-files-found: error
+
       # A rolling tag, not a version. These track the Dockerfiles, which change
       # on their own schedule, and the app build fetches them by this tag
       # explicitly — so cutting an app release never has to carry a fresh copy
       # of two container images with it. Marked prerelease so it does not
       # present itself as a version of the app on the releases page.
       - name: Publish
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: images
@@ -137,3 +181,5 @@ jobs:
           files: |
             images-${{ matrix.arch }}.tar.gz
             rathena-sql.tar.gz
+            rathena-symbols-${{ matrix.arch }}-${{ github.sha }}.tar.gz
+            rathena-symbols-${{ matrix.arch }}-${{ github.sha }}.sha256

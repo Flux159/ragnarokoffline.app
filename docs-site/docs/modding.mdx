@@ -1,0 +1,67 @@
+# Making mods
+
+A mod is a folder. Drop it in, tick it in **Settings → Mods**, apply.
+
+Nothing needs repacking: the asset server serves loose files *ahead of* your
+GRFs, so a `.spr` you put in a mod wins over the one in the archive without
+touching the archive.
+
+## The shape of one
+
+```
+my-mod/
+├── mod.json      name, version, author, description, what it requires
+├── data/         sprites, textures, map geometry, Lua tables
+├── BGM/          music
+├── System/       item names and descriptions
+├── npc/          NPCs and quests
+├── db/           what monsters drop, what items do
+├── conf/         a few server settings, from a narrow allowlist
+└── client/       JavaScript the game page runs
+```
+
+Everything is optional, including `mod.json` — the smallest useful mod is a
+folder with one thing in it.
+
+## Settings the app renders for you
+
+A mod that wants one switch should not have to ship a settings window. Declare
+options in `mod.json` and they appear under the mod's checkbox:
+
+```json
+{
+  "name": "my-mod",
+  "settings": [
+    {
+      "key": "show_button",
+      "type": "boolean",
+      "default": true,
+      "label": "Show the on-screen button",
+      "description": "Turn this off to keep the mod without its button."
+    }
+  ]
+}
+```
+
+`boolean`, `number` and `string`, up to twenty, with optional bounds. They reach
+your client entry point as its first argument:
+
+```js
+export default function init(parameters, api) {
+  const showButton = parameters?.show_button !== false;
+}
+```
+
+Read them defensively: a value you no longer declare is dropped, a wrong type
+falls back to your default, and a number outside your own bounds is clamped.
+
+## The full guide
+
+The repository's
+[MODDING.md](https://github.com/Flux159/ragnarokoffline.app/blob/main/docs/MODDING.md)
+is the complete reference — custom maps, item tables, NPC scripts, the client
+API and the mojibake rules for non-ASCII filenames.
+
+[examples/mods/](https://github.com/Flux159/ragnarokoffline.app/tree/main/examples/mods)
+has worked examples, each one a mod that has actually been run, with a README
+saying what it demonstrates. Copy the folder closest to what you want.

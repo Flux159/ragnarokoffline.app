@@ -1,0 +1,46 @@
+# Player group 0 -- everybody, unless an account was given a GM group.
+#
+# rAthena puts @autoloot and @showexp in group 1 (Super Player) and leaves
+# group 0 with two commands: @changedress and @resurrect. On a server you run
+# for yourself and a few friends that split is backwards -- the account the app
+# creates is group 99 and has everything, and anyone who joins and makes their
+# own account gets almost nothing.
+#
+# rAthena merges this into the group rather than replacing it, so Name, Level
+# and Permissions are deliberately absent: group 0 keeps can_trade, can_party
+# and attendance from the base file. Only the commands listed here are added.
+#
+# Every command below must be one group 0 does *not* already have. Listing
+# @changedress or @resurrect here would abort the whole group with "Group
+# already has command", and the server would start with group 0 unchanged.
+Header:
+  Type: PLAYER_GROUP_DB
+  Version: 1
+
+Body:
+  - Id: 0
+    Commands:
+      # Picking loot up. The reason this mod exists.
+      autoloot: true
+      alootid: true
+      autoloottype: true
+      # Seeing what a kill was worth.
+      showexp: true
+      showzeny: true
+      showdelay: true
+      # So the grant is discoverable: without these a player has no way to
+      # find out any of the rest arrived.
+      commands: true
+      help: true
+      # Information. None of these change anything.
+      rates: true
+      mobinfo: true
+      iteminfo: true
+      whodrops: true
+      servertime: true
+      uptime: true
+      # Convenience. @noks and @noask refuse other people rather than granting
+      # anything; @refresh re-syncs a character the client has drawn wrong.
+      noks: true
+      noask: true
+      refresh: true

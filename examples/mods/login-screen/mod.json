@@ -1,0 +1,7 @@
+{
+  "name": "login-screen",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "Your own art on the login screen, cut into the twelve tiles the client actually draws.",
+  "requires": { "app": ">=1.0.6", "era": "any" }
+}

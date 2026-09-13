@@ -54,7 +54,7 @@ KIT_NEBULA=$("$EMBED/bin/nebula$EXE" --version 2>/dev/null | awk '{print $NF}')
 # Keep this in step with NEBULA_VERSION in .github/workflows/build.yml:
 # CI downloads that kit and then packages with this script, so a minimum
 # above the pin fails every release build rather than catching anything.
-MIN_NEBULA=$(cat "$ROOT/config/NEBULA_MIN_VERSION" 2>/dev/null || echo 0.1.9)
+MIN_NEBULA=$(cat "$ROOT/config/NEBULA_MIN_VERSION" 2>/dev/null || echo 0.2.2)
 if [ -z "$KIT_NEBULA" ]; then
     echo "cannot read a version from the embed kit at $EMBED" >&2; exit 1
 fi
@@ -74,13 +74,28 @@ echo "    embed kit: nebula $KIT_NEBULA"
 # nebula + nebulad, with docker-slim shipping as a separate release asset.
 cp "$EMBED"/bin/* "$PAYLOAD/bin/"
 rm -f "$PAYLOAD"/bin/kubectl-slim* "$PAYLOAD"/bin/helm-slim*
-# docker-slim is nebula-slim's docker client and the app cannot start without
-# it, so accept it from outside the kit when the kit does not carry it.
-if [ ! -e "$PAYLOAD/bin/docker-slim$EXE" ]; then
-    [ -n "${DOCKER_SLIM_BIN:-}" ] && [ -e "$DOCKER_SLIM_BIN" ] \
-        || { echo "the embed kit has no docker-slim and DOCKER_SLIM_BIN is unset" >&2; exit 1; }
-    cp "$DOCKER_SLIM_BIN" "$PAYLOAD/bin/docker-slim$EXE"
+# Account changes require the pinned client's stdin EOF contract. Override even
+# a kit that contains a client: an older kit must not silently hide this build.
+if [ -z "${DOCKER_SLIM_BIN:-}" ]; then
+    bash "$ROOT/scripts/build-docker-slim.sh"
+    DOCKER_SLIM_BIN="$ROOT/bin/docker-slim$EXE"
 fi
+node - "$DOCKER_SLIM_BIN" "$ROOT/config/DOCKER_SLIM_PIN" <<'JS'
+const fs = require('node:fs'), crypto = require('node:crypto');
+const [binary, pin] = process.argv.slice(2);
+const result = require('node:child_process').spawnSync(binary, ['capabilities'], { encoding: 'utf8', timeout: 10000 });
+if (result.error || result.status !== 0 || !result.stdout.split(/\r?\n/).includes('exec-stdin-eof-v1')
+    || fs.readFileSync(binary + '.source-commit', 'utf8').trim() !== fs.readFileSync(pin, 'utf8').trim()
+    || fs.readFileSync(binary + '.sha256', 'utf8').trim() !== crypto.createHash('sha256').update(fs.readFileSync(binary)).digest('hex')) {
+    throw new Error('docker-slim must match DOCKER_SLIM_PIN and support private stdin; run scripts/build-docker-slim.sh');
+}
+JS
+cp "$DOCKER_SLIM_BIN" "$PAYLOAD/bin/docker-slim$EXE"
+cp "$DOCKER_SLIM_BIN.source-commit" "$PAYLOAD/bin/docker-slim.source-commit"
+sha256_of "$PAYLOAD/bin/docker-slim$EXE" > "$PAYLOAD/bin/docker-slim.sha256"
+mkdir -p "$PAYLOAD/licenses"
+cp "$ROOT/third-party/cloudflared/LICENSE" "$PAYLOAD/licenses/cloudflared-LICENSE"
+cp "$DOCKER_SLIM_BIN.LICENSE" "$PAYLOAD/licenses/nebula-docker-slim-LICENSE"
 # libkrun, which nebula loads from ../lib next to bin/. Only on Linux and
 # Windows: macOS drives the microVM through Virtualization.framework instead,
 # and the shipped app has never carried a libkrun. The macOS kit does contain
@@ -128,15 +143,38 @@ sha256_of "$PAYLOAD/bin/ragnarok-stack$EXE" > "$PAYLOAD/bin/ragnarok-stack.sha25
 
 # The asset server: one 1.7 MB static binary in place of a 106 MB Node runtime
 # plus its dependency tree.
-cp "${REMOTECLIENT_BIN:-${REMOTECLIENT_SRC:-$HOME/Projects/roBrowserLegacy-RemoteClient-Rust}/target/release/robrowser-remoteclient$EXE}" \
-   "$PAYLOAD/bin/robrowser-remoteclient$EXE"
+if [ -z "${REMOTECLIENT_BIN:-}" ]; then
+    bash "$ROOT/scripts/build-remoteclient.sh"
+    REMOTECLIENT_BIN="$ROOT/bin/robrowser-remoteclient$EXE"
+fi
+# A stale sibling binary used to be silently packaged. Validate the contract
+# before copying any helper; an explicit override is useful for test builds.
+node - "$REMOTECLIENT_BIN" <<'JS'
+const result = require('child_process').spawnSync(process.argv[2], ['--capabilities'], { encoding: 'utf8', timeout: 10000 });
+if (result.error || result.status !== 0 || JSON.parse(result.stdout).managedProtocol !== 1) {
+    throw new Error('RemoteClient must support managed protocol 1; run scripts/build-remoteclient.sh');
+}
+JS
+cp "$REMOTECLIENT_BIN" "$PAYLOAD/bin/robrowser-remoteclient$EXE"
+sha256_of "$PAYLOAD/bin/robrowser-remoteclient$EXE" > "$PAYLOAD/bin/robrowser-remoteclient.sha256"
+if [ -f "$REMOTECLIENT_BIN.source-commit" ]; then
+    cp "$REMOTECLIENT_BIN.source-commit" "$PAYLOAD/bin/robrowser-remoteclient.source-commit"
+fi
 
 echo "==> config"
 # No scripts. Everything the app does at runtime is in bin/ragnarok-stack now,
 # and the rest of scripts/ is development tooling -- packaging, releasing, GRF
 # inspection -- which has no business inside a player's app bundle.
 cp "$ROOT"/config/*                          "$PAYLOAD/config/"
-cp "$ROOT"/patches/*                         "$PAYLOAD/patches/"
+# patches/client/ is a build-time source directory: patch-client-controls.py
+# copies it into the client tree before the bundle is built, so those hooks are
+# already compiled into dist/Web. Only the top-level files belong in a payload.
+for f in "$ROOT"/patches/*; do [ -f "$f" ] && cp "$f" "$PAYLOAD/patches/"; done
+
+# The app's own client artwork (the quest window's tab strip). Copied whole:
+# link-assets reads it from the runtime root the same way it reads config/.
+mkdir -p "$PAYLOAD/client-assets"
+cp -R "$ROOT"/client-assets/* "$PAYLOAD/client-assets/"
 
 echo "==> guest images"
 # nebula downloads these from its GitHub releases on first `up`. Shipping them
@@ -218,9 +256,66 @@ if [ -d "$ROOT/vendor/rathena/db/import-tmpl" ]; then
 else
     echo "warning: no vendor/rathena/db/import-tmpl -- mods overriding a db table will warn" >&2
 fi
+# The population engine's stubs, from third-party/ rather than the checkout:
+# they only reach vendor/rathena when apply-server-mods.sh has run, and a
+# packaging run that skipped bootstrap would otherwise ship a db/import with a
+# hole in it -- which the map server reports as a missing import on every
+# start, once per table.
+if [ -d "$ROOT/third-party/population-engine/files/db/import-tmpl" ]; then
+    mkdir -p "$PAYLOAD/db-import"
+    cp "$ROOT"/third-party/population-engine/files/db/import-tmpl/* "$PAYLOAD/db-import/"
+fi
+
+# Mods that ship with the app. The supervisor reads these alongside the ones a
+# player installs, and a player's mod of the same name replaces the shipped
+# one -- so this is a starting point, not a locked cabinet.
+echo "==> bundled mods"
+if [ -d "$ROOT/mods" ]; then
+    mkdir -p "$PAYLOAD/mods"
+    cp -R "$ROOT"/mods/* "$PAYLOAD/mods/"
+
+    # This compatibility mod is deliberately off by default. Its tables come
+    # from the same pinned ROenglishRE checkout as the rest of the translation,
+    # rather than from any developer's local GRF.
+    NAVIGATION_SRC="$ROOT/vendor/ROenglishRE/Addons/Navigation Legacy"
+    NAVIGATION_DST="$PAYLOAD/mods/navigation-english-tables/data/luafiles514/lua files/navigation"
+    mkdir -p "$NAVIGATION_DST"
+    cp "$NAVIGATION_SRC"/navi_{map,mob,npc,link,linkdistance,npcdistance}_{krpri,krsak}.lub \
+        "$NAVIGATION_DST/"
+    [ "$(find "$NAVIGATION_DST" -maxdepth 1 -type f -name 'navi_*.lub' | wc -l | tr -d ' ')" = 12 ] || {
+        echo "English navigation table set is incomplete" >&2
+        exit 1
+    }
+
+    ls "$PAYLOAD/mods"
+fi
+
+# The randomizer, shipped as a binary so that generating a seed needs no
+# toolchain and no scripting runtime. It reads rAthena's tables out of the
+# running map-server container, so it has nothing to bundle and cannot go
+# stale against the image.
+echo "==> randomizer"
+if [ -d "$ROOT/examples/mods/randomizer" ]; then
+    ( cd "$ROOT/examples/mods/randomizer" && cargo test --quiet && cargo build --release --quiet )
+    cp "$ROOT/examples/mods/randomizer/target/release/ro-randomizer$EXE" "$PAYLOAD/bin/"
+    echo "ro-randomizer $(du -h "$PAYLOAD/bin/ro-randomizer$EXE" | cut -f1)"
+fi
 
 echo "==> english translation"
-EN="$PAYLOAD/vendor/ROenglishRE/Translation/Renewal"
+# Both eras, not just renewal.
+#
+# Pre-Renewal is not a wording variant of Renewal: it carries its own map
+# geometry -- prontera/alberta/izlude/morocc .gnd/.gat/.rsw and prt_fild05/08,
+# plus the worldmap textures -- so a pre-renewal player served the renewal tree
+# walks around renewal-era towns. 7.7 MB and 12.6 MB compressed respectively,
+# on a ~200 MB installer, which is not a trade worth deliberating.
+for ERA in Renewal Pre-Renewal; do
+SRC="$ROOT/vendor/ROenglishRE/Translation/$ERA"
+if [ ! -d "$SRC" ]; then
+    echo "warning: no translation tree at $SRC -- that era will fall back" >&2
+    continue
+fi
+EN="$PAYLOAD/vendor/ROenglishRE/Translation/$ERA"
 mkdir -p "$EN"
 # As a tar, not a directory tree.
 #
@@ -236,12 +331,67 @@ mkdir -p "$EN"
 # unpacked at runtime is never code-signed. Nothing else in the bundle has a
 # name that changes under normalisation -- this one subtree is the whole
 # problem.
-tar -cf "$EN/data.tar" -C "$ROOT/vendor/ROenglishRE/Translation/Renewal" data
-cp -R "$ROOT/vendor/ROenglishRE/Translation/Renewal/SystemEN" "$EN/SystemEN"
+tar -cf "$EN/data.tar" -C "$SRC" data
+cp -R "$SRC/SystemEN" "$EN/SystemEN"
+done
+
+# The Visual C++ runtime, for the Windows installer to hand to Windows.
+#
+# Every binary in payload/bin imports VCRUNTIME140.dll; the Electron shell does
+# not. So on a machine without the redistributable the app opens and then dies
+# the moment it starts a server, with 0xC0000135 -- which is also what Smart
+# App Control produces, and what a genuinely missing DLL produces. A player hit
+# this and worked it out alone. electron/installer.nsh installs it during setup
+# when Windows does not already have it.
+#
+# Fetched rather than committed: it is 25 MB of Microsoft's binary, and the URL
+# is their evergreen one. Only on Windows, because that is the only packaging
+# run that builds an NSIS installer.
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        VCREDIST="$ROOT/electron/vc_redist.x64.exe"
+        VCREDIST_URL="https://aka.ms/vs/17/release/vc_redist.x64.exe"
+        if [ ! -s "$VCREDIST" ]; then
+            echo "fetching the Visual C++ redistributable"
+            curl -fsSL --retry 3 -o "$VCREDIST.part" "$VCREDIST_URL"
+            mv "$VCREDIST.part" "$VCREDIST"
+        fi
+        # No pinned hash -- Microsoft revises the file behind that URL, and a
+        # pin would fail every release until someone updated it. Check instead
+        # that what arrived is a Windows executable of a plausible size: the
+        # failure this guards against is a truncated download or an error page
+        # saved as a .exe, both of which would produce an installer that ships
+        # a broken redistributable and fails only on a user's machine.
+        vcsize=$(wc -c < "$VCREDIST")
+        if [ "$vcsize" -lt 10000000 ]; then
+            echo "vc_redist.x64.exe is only $vcsize bytes; refusing to ship it" >&2
+            rm -f "$VCREDIST"
+            exit 1
+        fi
+        if [ "$(head -c 2 "$VCREDIST")" != "MZ" ]; then
+            echo "vc_redist.x64.exe is not a Windows executable; refusing to ship it" >&2
+            rm -f "$VCREDIST"
+            exit 1
+        fi
+        echo "vc_redist.x64.exe ready ($((vcsize / 1048576)) MB)"
+        ;;
+esac
 
 # A marker the app compares against, so a new build refreshes the copy it
 # materialises into Application Support.
 git -C "$ROOT" rev-parse --short HEAD 2>/dev/null > "$PAYLOAD/VERSION" || echo dev > "$PAYLOAD/VERSION"
+
+# The release version, which is a different thing from the build marker above:
+# VERSION changes on every commit and exists so the app knows to re-materialise
+# this tree, APP_VERSION is the number a human sees and a mod's
+# `"requires": {"app": ">=1.0.6"}` is compared against.
+#
+# package.json is the one source. The supervisor reads this file when it is
+# there and falls back to package.json itself in a source checkout, so nothing
+# in stack/ carries a version constant that could drift.
+sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/package.json" \
+    | head -1 > "$PAYLOAD/APP_VERSION"
+echo "app version $(cat "$PAYLOAD/APP_VERSION")"
 
 echo
 du -sh "$PAYLOAD"
