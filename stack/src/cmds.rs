@@ -165,7 +165,9 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
     if changed && dk.quiet(["ps"]) {
         phase(cfg, "Restarting the virtual machine to apply the change…");
         let _ = nebula(cfg, &["down"]);
-        sleep(Duration::from_secs(2));
+        // Two seconds was a guess at how long the engine takes to leave, and
+        // on Windows it was wrong by minutes (#119).
+        wait_for_engine_exit(cfg, ENGINE_DEPART_BUDGET);
     }
 
     // Install the guest images when they are missing *or* when the ones we
@@ -208,12 +210,10 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
             // nothing to update leaves a healthy engine alone, which is the
             // whole point of it outliving us.
             let _ = nebula(cfg, &["down"]);
-            for _ in 0..20 {
-                if !engine_running(cfg) {
-                    break;
-                }
-                sleep(Duration::from_millis(500));
-            }
+            // Until the daemon is gone, not until its VM stops saying
+            // "running": install-image refuses while any daemon is there, and
+            // a departing one says "failed" or "stopped" long before it exits.
+            wait_for_engine_exit(cfg, ENGINE_DEPART_BUDGET);
             nebula(cfg, &["install-image",
                 "--kernel", &k.display().to_string(),
                 "--rootfs", &r.display().to_string()])
@@ -281,6 +281,16 @@ fn ensure_engine(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> 
         let _ = fs::write(cfg.nebula_home.join(".guest-images"), guest_fingerprint(&[&k, &r]));
     }
     check_guest_images(cfg)?;
+
+    // An engine still on its way out -- a Stop moments ago, or one from before
+    // `down` learned to wait -- is waited out rather than started into. An
+    // older `nebula up` reports such an engine as already running and returns,
+    // and the start then fails three minutes later saying the virtual machine
+    // did not come up (#119).
+    if engine_state(cfg) == EngineState::Departing {
+        phase(cfg, "Waiting for the previous engine to stop…");
+        wait_for_engine_exit(cfg, ENGINE_DEPART_BUDGET);
+    }
 
     if let Err(e) = nebula(cfg, &["up"]) {
         #[cfg(windows)]
@@ -715,21 +725,6 @@ pub fn is_prerenewal(cfg: &Config) -> bool {
 /// first start in a new mode creates a fresh account and character.
 fn db_volume(cfg: &Config) -> String {
     if is_prerenewal(cfg) { "ragnarokmac-db-prere".into() } else { "ragnarokmac-db".into() }
-}
-
-/// Is the engine up right now?
-///
-/// Asked by running `nebula status`, so the answer is the engine's own rather
-/// than one inferred from a pid file that an unclean exit may have left behind.
-fn engine_running(cfg: &Config) -> bool {
-    Command::new(&cfg.nebula)
-        .arg("status")
-        .env("NEBULA_HOME", &cfg.nebula_home)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).contains("nebula: running"))
-        .unwrap_or(false)
 }
 
 /// The uncompressed size a gzip file claims, from its ISIZE trailer.
@@ -1657,11 +1652,107 @@ pub fn down(cfg: &Config, dk: &Docker) -> Result<(), String> {
     //
     // Booting the VM again costs a couple of seconds, which is the right side
     // of that trade.
+    phase(cfg, "Stopping the virtual machine…");
     let _ = nebula(cfg, &["down"]);
+    // "Stopped" only once it is. `nebula down` used to return as soon as the
+    // daemon had been asked, and on Windows the engine then took another two
+    // and a half minutes to leave -- with "Stopped" on screen the whole time,
+    // so the next Start ran into it and failed after three minutes blaming
+    // the hypervisor (#119). Newer engines wait themselves; this covers the
+    // ones that do not.
+    if !wait_for_engine_exit(cfg, ENGINE_DEPART_BUDGET) {
+        return Err("The virtual machine is still shutting down. Wait a minute, then start again.".into());
+    }
 
     phase(cfg, "Stopped");
     println!("stack down");
     Ok(())
+}
+
+/// Long enough for the slowest stop measured: about 150 s, on Windows, from an
+/// engine that has to time out twice before it forces the VM off.
+const ENGINE_DEPART_BUDGET: Duration = Duration::from_secs(180);
+
+/// What the engine is doing, by its own account.
+#[derive(Debug, PartialEq, Eq)]
+enum EngineState {
+    /// No daemon: nothing to wait for and nothing in the way.
+    Gone,
+    Running,
+    /// A daemon that answers but has no running VM. The watchdog ends one of
+    /// those within seconds, so it is always on its way out.
+    Departing,
+}
+
+/// Read `nebula status` output.
+///
+/// Anything short of the two definite answers counts as departing, including
+/// no output at all: an engine too busy stopping to answer is the case this
+/// exists for.
+fn engine_state_from_status(out: &str) -> EngineState {
+    if out.contains("daemon not running") {
+        EngineState::Gone
+    } else if out.contains("nebula: running") {
+        EngineState::Running
+    } else {
+        EngineState::Departing
+    }
+}
+
+/// Ask the engine, with a deadline.
+///
+/// A deadline because the question can hang: an older daemon answers `status`
+/// by asking a guest that may already have halted, and never gives up. Output
+/// goes to a file for the reason given in `nebula`.
+fn engine_state(cfg: &Config) -> EngineState {
+    let log = std::env::temp_dir().join(format!("nebula-status-{}.out", std::process::id()));
+    let Ok(sink) = fs::File::create(&log) else {
+        return EngineState::Departing;
+    };
+    let child = Command::new(&cfg.nebula)
+        .arg("status")
+        .env("NEBULA_HOME", &cfg.nebula_home)
+        .stdout(Stdio::from(sink))
+        .stderr(Stdio::null())
+        .spawn();
+    let Ok(mut child) = child else {
+        // No engine binary is no engine.
+        let _ = fs::remove_file(&log);
+        return EngineState::Gone;
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        match child.try_wait() {
+            Ok(None) if std::time::Instant::now() < deadline => sleep(Duration::from_millis(100)),
+            Ok(Some(_)) => break,
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break;
+            }
+        }
+    }
+    let out = fs::read_to_string(&log).unwrap_or_default();
+    let _ = fs::remove_file(&log);
+    engine_state_from_status(&out)
+}
+
+/// Wait until no engine daemon is left. False if one still is after `budget`.
+///
+/// For an engine that has been asked to stop. That includes one still saying
+/// "running": an older daemon reports its VM as running for the whole graceful
+/// timeout, because the guest has halted and the worker has not.
+fn wait_for_engine_exit(cfg: &Config, budget: Duration) -> bool {
+    let deadline = std::time::Instant::now() + budget;
+    loop {
+        if engine_state(cfg) == EngineState::Gone {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        sleep(Duration::from_secs(1));
+    }
 }
 
 /// Emitted as "<name>\tUp|<state>" rather than raw `ps` output: the name is the
@@ -1983,7 +2074,9 @@ pub fn repair(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Res
     // a previous run that died holding one.
     let _ = fs::remove_dir_all(cfg.lock_dir());
     let _ = nebula(cfg, &["down"]);
-    sleep(Duration::from_secs(2));
+    // Bounded like everywhere else, but not optional: repair's own `up` below
+    // must not land on the engine it just stopped (#119).
+    wait_for_engine_exit(cfg, ENGINE_DEPART_BUDGET);
     // The one place that will end another process to get the engine started.
     //
     // An update renames the folder an engine is running from without stopping
@@ -2026,6 +2119,29 @@ mod tests {
     }
 
     use super::*;
+
+    /// Also a contract with nebula's prose, and the cost of misreading it is
+    /// the whole of #119: a departing engine read as gone lets a start run into
+    /// it, and a gone one read as departing holds every start for three
+    /// minutes.
+    #[test]
+    fn reads_the_engine_s_state_from_its_status() {
+        assert_eq!(
+            engine_state_from_status("nebula: stopped (daemon not running)\n  start it:          nebula up\n"),
+            EngineState::Gone
+        );
+        assert_eq!(
+            engine_state_from_status("nebula: running\n  backend:  krun | cpus 4 | max ram 4096 MiB\n"),
+            EngineState::Running
+        );
+        // A newer engine that has begun to stop says so.
+        assert_eq!(engine_state_from_status("nebula: stopping (daemon shutting down)\n"), EngineState::Departing);
+        // An older one answers with its VM's state: halted, or killed.
+        assert_eq!(engine_state_from_status("nebula: failed\n  agent:    UNREACHABLE\n"), EngineState::Departing);
+        assert_eq!(engine_state_from_status("nebula: stopped\n  agent:    UNREACHABLE\n"), EngineState::Departing);
+        // Or does not answer before the deadline at all.
+        assert_eq!(engine_state_from_status(""), EngineState::Departing);
+    }
 
     /// The one contract this file has with another program's prose.
     ///
