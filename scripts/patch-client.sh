@@ -1148,6 +1148,33 @@ elif s.count(old) == 1:
 else:
     sys.exit("EntityWalk.js: computeWalkStartTick no longer matches (%d hits); re-check the patch" % s.count(old))
 
+# 0018 - SkillList: merging a job's ancestors must not rewrite the skill tree.
+# getSkillPosition() put the live SkillTreeView entry for the job itself into
+# positions[list], then Object.assign'd each ancestor's entry on top of it.
+# Those entries are the module-level DB objects, so the merge rewrote
+# SkillTreeView in place, and because an ancestor usually shares the same
+# 'list' it copied the ancestor's 'list' and 'beforeJob' over the job's own.
+# Opening a High Priest's skill window left SkillTreeView[PRIEST_H].beforeJob
+# pointing at Acolyte, which drops Priest out of the lineage that
+# resolveSkillRequirements() walks: Safety Wall fell back to the generic Mage
+# prerequisites (Napalm Beat 7, Soul Strike 5) instead of the Priest ones
+# (Aspersio 4, Sanctuary 3), and no point could be spent on it. 70 job trees
+# are corrupted this way, every trans second class among them. Copy first.
+p = rb / "src/UI/Components/SkillList/SkillListCommon.js"
+s = p.read_text()
+old = """\t\tpositions[SkillTreeView[JobId]['list']] = SkillTreeView[JobId];"""
+new = """\t\t// A copy. The merge below writes into whatever is stored here, and
+\t\t// these are the live SkillTreeView objects: merging an ancestor in
+\t\t// place rewrites this job's own 'list' and 'beforeJob'.
+\t\tpositions[SkillTreeView[JobId]['list']] = { ...SkillTreeView[JobId] };"""
+if "{ ...SkillTreeView[JobId] }" in s:
+    print("SkillListCommon.js already patched")
+elif s.count(old) == 1:
+    p.write_text(s.replace(old, new, 1))
+    print("patched SkillListCommon.js (skill tree job lineage)")
+else:
+    sys.exit("SkillListCommon.js: getSkillPosition() no longer matches (%d hits); re-check the patch" % s.count(old))
+
 PY
 
 python3 "$ROOT/scripts/patch-client-controls.py" "$ROOT" "$RB"
