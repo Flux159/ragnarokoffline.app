@@ -1548,7 +1548,33 @@ async function shareWithFriends({ useDomain, applyScope }) {
 	const policy = JSON.parse(await runStack(['hosting-check']));
 	const missing = policy.checks.filter(check => !check.passed);
 	if (missing.length) throw Error(missing.map(check => check.detail).join(' '));
-	if (applyScope) await saveSettings({ hosting_scope: 'friends' });
+	if (applyScope) {
+		// Only rebuild a server that friends mode would change. Writing a scope
+		// that is already in force used to cost the whole Apply cycle -- asset
+		// server down, supervisor, re-link, asset server up -- and come back
+		// with an identical configuration (#120). See sharing/friends-mode.
+		const client = getClientPaths();
+		const facts = {
+			scope: client.hosting_scope,
+			lan: client.lan,
+			assetsRunning: assetServer.running,
+			assetsReady: assetServer.running && await assetsReady(),
+			phase: readIfExists(path.join(stateDir(), 'phase')).trim(),
+		};
+		const friendsMode = require('./sharing/friends-mode');
+		// The supervisor check costs a few seconds, so it is only asked when
+		// its answer is the one thing left to decide.
+		if (!friendsMode.rebuildNeeded({ ...facts, backendReady: true }).rebuild) {
+			try {
+				facts.backendReady = JSON.parse(await runStack(['sharing-check'])).backendReady === true;
+			} catch (error) {
+				appLog(`sharing: friends mode not confirmed: ${error.message}`);
+			}
+		}
+		const decision = friendsMode.rebuildNeeded(facts);
+		appLog(`sharing: ${decision.rebuild ? 'applying friends mode' : 'no rebuild needed'} (${decision.reason})`);
+		if (decision.rebuild) await saveSettings({ hosting_scope: 'friends' });
+	}
 	await assetsStart();
 	if (request !== sharingStartRequest) return getSharing().status();
 	await getSharing().start(saved);
