@@ -53,8 +53,10 @@ Two things to know before you tick it:
 
 - **`@go` goes to a fixed list.** Its destinations are compiled into the map
   server (`ACMD_FUNC(go)` in `src/map/atcommand.cpp`): the main towns, and —
-  added in our rAthena fork — `@go eden` and `@go para` (Para Market). Type
-  `@go` on its own for the list. A name it does not know shows that list rather
+  added in our rAthena fork, in renewal only — `@go eden` and `@go para` (Para
+  Market). Both are renewal content: in pre-renewal their maps have no NPCs and
+  no way out, so they are not offered there. Type `@go` on its own for the
+  list. A name it does not know shows that list rather
   than warping you anywhere. Dungeons and fields are not on it; the warper in
   `common-npcs` covers those.
 - **It is the only one of these that changes the game** rather than informing

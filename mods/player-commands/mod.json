@@ -11,7 +11,7 @@
       "type": "boolean",
       "default": false,
       "label": "Also give everyone @go",
-      "description": "Free warping to the main towns, Eden and Para Market. Type @go on its own for the list."
+      "description": "Free warping to the main towns, plus Eden and Para Market in renewal. Type @go on its own for the list."
     }
   ]
 }

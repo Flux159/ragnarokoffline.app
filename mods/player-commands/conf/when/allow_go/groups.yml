@@ -6,8 +6,9 @@
 # file, and nothing needs to be -- the two are combined into one import.
 #
 # @go's destinations are compiled into the map server (ACMD_FUNC(go),
-# src/map/atcommand.cpp): the main towns, plus Eden and Para Market, which our
-# rAthena fork adds. A name it does not recognise lists the ones it does.
+# src/map/atcommand.cpp): the main towns, plus Eden and Para Market in renewal,
+# which our rAthena fork adds. A name it does not recognise lists the ones it
+# does.
 Header:
   Type: PLAYER_GROUP_DB
   Version: 1
