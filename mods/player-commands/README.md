@@ -51,11 +51,12 @@ give everyone @go**, then Apply.
 
 Two things to know before you tick it:
 
-- **`@go` does not reach everywhere.** Its destinations are a list of 37 towns
-  compiled into the map server (`ACMD_FUNC(go)` in `src/map/atcommand.cpp`).
-  Eden, Para Market and the other newer places are not on it — and a name it
-  does not recognise, such as `@go eden`, says *Warped.* and puts you in
-  Prontera. The warper in `common-npcs` has both.
+- **`@go` goes to a fixed list.** Its destinations are compiled into the map
+  server (`ACMD_FUNC(go)` in `src/map/atcommand.cpp`): the main towns, and —
+  added in our rAthena fork — `@go eden` and `@go para` (Para Market). Type
+  `@go` on its own for the list. A name it does not know shows that list rather
+  than warping you anywhere. Dungeons and fields are not on it; the warper in
+  `common-npcs` covers those.
 - **It is the only one of these that changes the game** rather than informing
   you about it, which is why it is behind its own switch — the same reason
   `common-npcs` ships its warper switched off.

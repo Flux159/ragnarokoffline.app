@@ -5,9 +5,9 @@
 # it finds after the mod's own conf/groups.yml. Nothing is repeated from that
 # file, and nothing needs to be -- the two are combined into one import.
 #
-# @go knows a fixed list of 37 towns, compiled into the map server
-# (ACMD_FUNC(go), src/map/atcommand.cpp). Eden and Para Market are not on it,
-# and a name it does not recognise sends the player to Prontera.
+# @go's destinations are compiled into the map server (ACMD_FUNC(go),
+# src/map/atcommand.cpp): the main towns, plus Eden and Para Market, which our
+# rAthena fork adds. A name it does not recognise lists the ones it does.
 Header:
   Type: PLAYER_GROUP_DB
   Version: 1
