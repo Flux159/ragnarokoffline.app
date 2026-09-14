@@ -1,15 +1,14 @@
 #!/bin/sh
-# Apply our server-side rAthena modifications to a checkout, in place.
+# Apply our own additions to a rAthena checkout, in place.
 #
-# rAthena itself is never forked: the Dockerfile builds from a clean upstream
-# clone, and everything we add lives in third-party/ so that "what we changed"
-# is one directory rather than a diff against a moving target. Run this after
-# cloning rAthena and before `docker build`.
+# Fixes to rAthena itself are not here. They are commits on the `ragnarokoffline`
+# branch of Flux159/rathena, which is what config/VENDOR_PINS fetches, so they
+# can be offered upstream as they are -- see docs/FORKS.md. What this adds is
+# ours alone: the crash trace, the population engine and its party-chat hook.
+# Run it after scripts/vendor-fetch.sh and before `docker build`.
 #
 # Idempotent, because bootstrap.sh reuses its vendor/ checkout across runs and
-# the second run must not fail on an already-patched tree. See patches/ for the
-# rationale behind each patch, and the client-side equivalent in
-# scripts/patch-client.sh.
+# the second run must not fail on an already-patched tree.
 #
 # usage: apply-server-mods.sh <path-to-rathena-checkout>
 set -eu
@@ -21,19 +20,16 @@ MOD="$ROOT/third-party/population-engine"
 [ -f "$TARGET/src/map/map.cpp" ] || { echo "not a rAthena checkout: $TARGET" >&2; exit 1; }
 [ -d "$MOD" ] || { echo "missing $MOD" >&2; exit 1; }
 
-python3 "$ROOT/scripts/apply-crash-trace.py" "$TARGET"
-
-# Small upstream corrections also apply to both normal and diagnostic images.
-for fix in "$ROOT"/third-party/server-fixes/*.patch; do
-    if patch -d "$TARGET" -p1 --dry-run --forward < "$fix" >/dev/null 2>&1; then
-        patch -d "$TARGET" -p1 --forward < "$fix"
-    elif patch -d "$TARGET" -p1 --dry-run --reverse < "$fix" >/dev/null 2>&1; then
-        echo "    already applied $(basename "$fix")"
-    else
-        echo "server fix no longer matches: $fix" >&2
-        exit 1
+# macOS ships `shasum` and no `sha256sum` before recent releases; Linux images
+# and Git Bash ship `sha256sum`. package.sh picks the same way, for the same
+# reason.
+sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then sha256sum
+    else shasum -a 256
     fi
-done
+}
+
+python3 "$ROOT/scripts/apply-crash-trace.py" "$TARGET"
 
 echo "==> population engine: files"
 # Copied every time: these are ours alone, nothing upstream writes here, so

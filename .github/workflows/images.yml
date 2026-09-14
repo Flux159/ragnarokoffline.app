@@ -46,6 +46,10 @@ on:
       - 'third-party/**'
       - 'scripts/apply-server-mods.sh'
       - 'scripts/apply-crash-trace.py'
+      # The rAthena commit itself. Our fixes to rAthena are commits on the
+      # fork that this pins, so moving the pin changes the server as surely as
+      # editing a patch used to.
+      - 'config/VENDOR_PINS'
   workflow_dispatch:
     inputs:
       diagnostics:

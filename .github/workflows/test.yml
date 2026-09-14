@@ -12,11 +12,20 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      # Upstream, without our fixes: each diagnostic must still find its bug
+      # there. When one stops finding it, upstream has fixed it, and our commit
+      # on the fork's `ragnarokoffline` branch can be dropped at the next merge.
+      - run: bash scripts/vendor-fetch.sh rathena-upstream vendor/rathena-upstream
+      - run: python3 tests/diagnostics/verify-language.py vendor/rathena-upstream --expect-fault
+      - run: python3 tests/diagnostics/verify-base-sp.py vendor/rathena-upstream --expect-fault
+      - run: python3 tests/diagnostics/verify-skill-level.py vendor/rathena-upstream --expect-fault
+      - run: python3 tests/diagnostics/verify-weapon-bounds.py vendor/rathena-upstream --expect-fault
+      # Our fork, which carries the fixes, before and after our own additions.
       - run: bash scripts/vendor-fetch.sh rathena vendor/rathena
-      - run: python3 tests/diagnostics/verify-language.py vendor/rathena --expect-fault
-      - run: python3 tests/diagnostics/verify-base-sp.py vendor/rathena --expect-fault
-      - run: python3 tests/diagnostics/verify-skill-level.py vendor/rathena --expect-fault
-      - run: python3 tests/diagnostics/verify-weapon-bounds.py vendor/rathena --expect-fault
+      - run: python3 tests/diagnostics/verify-language.py vendor/rathena
+      - run: python3 tests/diagnostics/verify-base-sp.py vendor/rathena
+      - run: python3 tests/diagnostics/verify-skill-level.py vendor/rathena
+      - run: python3 tests/diagnostics/verify-weapon-bounds.py vendor/rathena
       - run: bash scripts/apply-server-mods.sh vendor/rathena
       - run: bash scripts/apply-server-mods.sh vendor/rathena
       - run: python3 tests/diagnostics/verify-language.py vendor/rathena
