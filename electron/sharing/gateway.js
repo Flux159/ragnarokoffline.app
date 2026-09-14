@@ -25,7 +25,12 @@ function publicPath(raw) {
   if (pieces.some(p => p.startsWith('.'))) return false;
   if (['logs', 'resources', 'api', '_control', 'control', 'private', 'ws'].includes(pieces[0])) return false;
   if (/\.(grf|gpf|ini|conf|log|sql|pem|key)$/.test(decoded)) return false;
-  if (['/list-files', '/overlay.id'].includes(decoded)) return false;
+  // /list-files enumerates the asset tree, so it stays host-only. /overlay.id
+  // is a 16-hex FNV fingerprint of the client overlay with no paths or secrets
+  // in it, and a joining player needs it to know their cached copies of the
+  // host's files are stale. It is still behind the invitation session checked
+  // below, and still answered private/no-store like everything else here.
+  if (decoded === '/list-files') return false;
   return true;
 }
 async function body(req, limit = LIMIT) {
