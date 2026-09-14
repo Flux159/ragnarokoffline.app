@@ -1,7 +1,7 @@
 {
   "name": "custom-item",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Ragnarok Offline",
-  "description": "A new item that does not exist in any client: server stats, a client name, and an NPC that hands one out.",
-  "requires": { "app": ">=1.0.6", "era": "any" }
+  "description": "A new item that does not exist in any client: server stats, a client name and icon, and an NPC that hands one out.",
+  "requires": { "app": ">=1.2.6", "era": "any" }
 }

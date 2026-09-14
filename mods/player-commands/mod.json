@@ -1,8 +1,17 @@
 {
   "name": "player-commands",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Ragnarok Offline",
   "description": "Gives every account @autoloot, @showexp and the rest of the information commands, instead of reserving them for GMs. Off until you turn it on.",
   "default": "off",
-  "requires": { "app": ">=1.0.6", "era": "any" }
+  "requires": { "app": ">=1.2.6", "era": "any" },
+  "settings": [
+    {
+      "key": "allow_go",
+      "type": "boolean",
+      "default": false,
+      "label": "Also give everyone @go",
+      "description": "Free warping to the main towns. @go does not reach Eden, Para Market or other newer places -- the warper in common-npcs does."
+    }
+  ]
 }

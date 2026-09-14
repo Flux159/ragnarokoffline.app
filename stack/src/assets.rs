@@ -326,8 +326,13 @@ fn overlay_mods(
         copy_over(&m.dir.join("BGM"), &server_root.join("BGM"))?;
         // Client tables. itemInfo is merged rather than replaced; see
         // copy_system_layer.
-        if let Some(table) = copy_system_layer(&m.dir.join("System"), merged, &m.name)? {
-            item_tables.push(table);
+        item_tables.extend(copy_system_layer(&m.dir.join("System"), merged, &m.name)?);
+        for misplaced in item_tables_under(&m.dir.join("data"), "data") {
+            eprintln!(
+                "mods: {} has {misplaced}, but the client reads item tables only from System/ -- \
+                 move it to System/",
+                m.name
+            );
         }
         // A roBrowser plugin: styling, UI, anything the client can be told to
         // load. Served from the root, so the path in the config is
@@ -481,6 +486,10 @@ const PATH_ALIASES: &[(&str, &str)] = &[
     ("sprite/robe",            "sprite/\u{b7}\u{ce}\u{ba}\u{ea}"),                                                              // 로브
     ("sprite/shield",          "sprite/\u{b9}\u{e6}\u{c6}\u{d0}"),                                                              // 방패
     ("sprite/effect",          "sprite/\u{c0}\u{cc}\u{c6}\u{d1}\u{c6}\u{ae}"),                                                  // 이팩트
+    // data/palette. Doram hair first: it is longer than, and not under, hair.
+    ("palette/doram/hair",     "palette/\u{b5}\u{b5}\u{b6}\u{f7}\u{c1}\u{b7}/\u{b8}\u{d3}\u{b8}\u{ae}"),                         // 도람족/머리
+    ("palette/body",           "palette/\u{b8}\u{f6}"),                                                                         // 몸
+    ("palette/hair",           "palette/\u{b8}\u{d3}\u{b8}\u{ae}"),                                                             // 머리
 ];
 
 /// Rewrite a mod-relative asset path through `PATH_ALIASES`.
@@ -497,6 +506,14 @@ fn apply_aliases(rel: &str) -> String {
         }
     }
     rel.to_string()
+}
+
+/// The path a mod's `data/` file is served at: ASCII aliases expanded, then any
+/// Korean written in the path -- folder or file name, anywhere in it -- put in
+/// the client's CP949 spelling, so `palette/body/로그_여_4.pal` is the file
+/// the client asks for as `palette/¸ö/·Î±×_¿©_4.pal`.
+fn client_path(rel: &str) -> String {
+    crate::cp949::client_spelling(&apply_aliases(rel))
 }
 
 /// Copy a mod's `data/` tree, translating ASCII directory aliases as it goes.
@@ -523,7 +540,7 @@ fn copy_data_aliased(src: &Path, dst: &Path) -> Result<(), String> {
             if from.is_dir() {
                 stack.push((from, child));
             } else {
-                let to = dst.join(apply_aliases(&child));
+                let to = dst.join(client_path(&child));
                 if let Some(parent) = to.parent() {
                     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
                 }
@@ -542,19 +559,30 @@ fn copy_data_aliased(src: &Path, dst: &Path) -> Result<(), String> {
 /// translation's five-megabyte copy inside your mod, which nobody will do.
 ///
 /// roBrowser has the way out: `customItemInfo` is a *list* of tables, loaded
-/// with `loadAll`, and `loadItemInfo` assigns `ItemTable[ItemID]` per entry --
-/// so several files merge by item id and the last one wins. This copies a mod's
-/// item table aside under its own name and returns it, so the caller can name
-/// it in that list after the base table.
+/// with `loadAll`, each item registered from the first table that defines it.
+/// This copies each of a mod's item tables aside under its own name and returns
+/// them, so `write_client_config` can put them in that list ahead of the base.
 ///
 /// Nothing is lost by making this additive: a mod that really wants to replace
 /// the whole table can still ship a complete one, and defining every id is
 /// indistinguishable from replacing.
-fn copy_system_layer(src: &Path, merged: &Path, mod_name: &str) -> Result<Option<String>, String> {
+fn copy_system_layer(src: &Path, merged: &Path, mod_name: &str) -> Result<Vec<String>, String> {
+    let mut added = Vec::new();
     if !src.exists() {
-        return Ok(None);
+        return Ok(added);
     }
-    let mut added = None;
+    // Named for the mod so two mods can each ship one, and so the file cannot
+    // collide with the translation's own copy.
+    let safe: String = mod_name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
     for e in entries(src)? {
         if e.file_type().map_err(|e| e.to_string())?.is_symlink() {
             return Err(format!(
@@ -564,27 +592,24 @@ fn copy_system_layer(src: &Path, merged: &Path, mod_name: &str) -> Result<Option
         }
         let from = e.path();
         let name = e.file_name().to_string_lossy().to_string();
-        let lower = name.to_lowercase();
-        let is_item_table =
-            lower.starts_with("iteminfo") && (lower.ends_with(".lua") || lower.ends_with(".lub"));
-        if from.is_file() && is_item_table {
-            // Named for the mod so two mods can each ship one, and so the file
-            // cannot collide with the translation's own copy.
-            let safe: String = mod_name
-                .chars()
-                .map(|c| {
-                    if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                        c
-                    } else {
-                        '-'
-                    }
-                })
-                .collect();
-            let dst_name = format!("itemInfo-{safe}.lua");
-            let to = merged.join(&dst_name);
-            copy_file(&from, &to)?;
-            added = Some(dst_name);
+        if from.is_file() && is_item_table(&name) {
+            // The first keeps the name it always had. A second one -- an
+            // itemInfo.lua beside an itemInfo_C.lua -- used to be copied over
+            // the first; it gets a name of its own. A dot cannot appear in a
+            // sanitised mod name, so this cannot be another mod's file.
+            let dst_name = match added.len() {
+                0 => format!("itemInfo-{safe}.lua"),
+                n => format!("itemInfo-{safe}.{}.lua", n + 1),
+            };
+            copy_file(&from, &merged.join(&dst_name))?;
+            added.push(dst_name);
         } else if from.is_dir() {
+            for nested in item_tables_under(&from, &format!("System/{name}")) {
+                eprintln!(
+                    "mods: {mod_name} has {nested}, but the client only adds item tables that sit \
+                     directly in System/ -- move it there"
+                );
+            }
             copy_over(&from, &merged.join(&name))?;
         } else {
             // This destination belongs to the staged generation.
@@ -593,6 +618,56 @@ fn copy_system_layer(src: &Path, merged: &Path, mod_name: &str) -> Result<Option
         }
     }
     Ok(added)
+}
+
+/// `itemInfo.lua`, `itemInfo_C.lua`, `iteminfo.lub` -- any name the client's
+/// own item tables go by.
+fn is_item_table(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.starts_with("iteminfo") && (lower.ends_with(".lua") || lower.ends_with(".lub"))
+}
+
+/// Item tables anywhere under `dir`, as paths starting with `label`.
+///
+/// For the places a mod author reasonably puts one and the client never reads
+/// it from -- `System/LuaFiles514/`, `data/luafiles514/` -- so the mod says why
+/// its items are nameless instead of just being nameless.
+fn item_tables_under(dir: &Path, label: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let Ok(rd) = fs::read_dir(dir) else { return found };
+    let mut children: Vec<_> = rd.flatten().collect();
+    children.sort_by_key(|e| e.file_name());
+    for e in children {
+        let name = e.file_name().to_string_lossy().to_string();
+        let path = e.path();
+        if path.is_dir() {
+            found.extend(item_tables_under(&path, &format!("{label}/{name}")));
+        } else if is_item_table(&name) {
+            found.push(format!("{label}/{name}"));
+        }
+    }
+    found
+}
+
+/// The base item tables to name in `customItemInfo`: those the staged `System/`
+/// actually holds, in the order the client itself tries them
+/// (`getSystemAliases` in DBManager.js). A client whose table is
+/// `itemInfo_true.lub` used to lose every stock item's name the moment a mod
+/// added one, because only `itemInfo.lub` and `itemInfo.lua` were named.
+fn base_item_tables(web: &Path) -> Vec<String> {
+    let mut names = Vec::new();
+    for suffix in ["", "_true", "_sak", "_Sakray"] {
+        for ext in [".lub", ".lua"] {
+            let file = format!("itemInfo{suffix}{ext}");
+            if web.join("System").join(&file).is_file() {
+                names.push(format!("System/{file}"));
+            }
+        }
+    }
+    if names.is_empty() {
+        names = vec!["System/itemInfo.lub".to_string(), "System/itemInfo.lua".to_string()];
+    }
+    names
 }
 
 /// Copy every file under `src` into `dst`, creating directories as needed.
@@ -678,17 +753,20 @@ fn write_client_config(
         body.replace("langtype: 0,", &format!("langtype: {},", text.langtype()))
     };
     // `customItemInfo` replaces the client's default list rather than adding to
-    // it, so the base table has to be named first or every stock item loses its
+    // it, so the base table has to be named too or every stock item loses its
     // name. Written only when a mod actually ships a table, so an install with
     // no item mods keeps the untouched default path.
+    //
+    // The client registers each item from the *first* table that defines it
+    // (`_processedItems` in DBManager.js), so the order is the reverse of load
+    // order: the last mod first, the base last. That is what lets a mod rename a
+    // stock item, and makes a later mod win over an earlier one here as it does
+    // in db/.
     let body = if item_tables.is_empty() {
         body
     } else {
-        let mut names = vec![
-            "System/itemInfo.lub".to_string(),
-            "System/itemInfo.lua".to_string(),
-        ];
-        names.extend(item_tables.iter().map(|n| format!("System/{n}")));
+        let mut names: Vec<String> = item_tables.iter().rev().map(|n| format!("System/{n}")).collect();
+        names.extend(base_item_tables(web));
         let list = names
             .iter()
             .map(|n| format!("'{n}'"))
@@ -1079,7 +1157,7 @@ mod tests {
 
         let added = copy_system_layer(&src, &merged, "my-mod").unwrap();
 
-        assert_eq!(added.as_deref(), Some("itemInfo-my-mod.lua"));
+        assert_eq!(added, vec!["itemInfo-my-mod.lua".to_string()]);
         // The base is untouched...
         assert_eq!(
             fs::read_to_string(merged.join("itemInfo.lua")).unwrap(),
@@ -1107,12 +1185,80 @@ mod tests {
         fs::create_dir_all(&merged).unwrap();
         write(&src.join("itemInfo.lub"), "x");
         assert_eq!(
-            copy_system_layer(&src, &merged, "../evil name")
-                .unwrap()
-                .as_deref(),
-            Some("itemInfo----evil-name.lua")
+            copy_system_layer(&src, &merged, "../evil name").unwrap(),
+            vec!["itemInfo----evil-name.lua".to_string()]
         );
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// Two item tables in one mod used to land on the same name, and the one
+    /// sorted second silently replaced the first.
+    #[test]
+    fn every_item_table_in_a_mod_is_kept() {
+        let tmp = std::env::temp_dir().join(format!("ro-sys3-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let (src, merged) = (tmp.join("mod/System"), tmp.join("merged"));
+        fs::create_dir_all(&merged).unwrap();
+        write(&src.join("itemInfo.lua"), "FIRST");
+        write(&src.join("itemInfo_C.lua"), "SECOND");
+        write(&src.join("LuaFiles514/itemInfo.lua"), "NESTED");
+        let added = copy_system_layer(&src, &merged, "m").unwrap();
+        assert_eq!(added, vec!["itemInfo-m.lua".to_string(), "itemInfo-m.2.lua".to_string()]);
+        assert_eq!(fs::read_to_string(merged.join("itemInfo-m.lua")).unwrap(), "FIRST");
+        assert_eq!(fs::read_to_string(merged.join("itemInfo-m.2.lua")).unwrap(), "SECOND");
+        // A nested one is still copied, as before, but it is not added -- and
+        // it is what the warning names.
+        assert!(!added.iter().any(|n| n.contains("LuaFiles514")));
+        assert_eq!(merged.join("LuaFiles514/itemInfo.lua").is_file(), true);
+        assert_eq!(
+            item_tables_under(&src.join("LuaFiles514"), "System/LuaFiles514"),
+            vec!["System/LuaFiles514/itemInfo.lua".to_string()]
+        );
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// The client keeps the first definition of an item it reads, so the list
+    /// runs last mod first and base last -- and names only base tables that are
+    /// there, in the client's own order.
+    #[test]
+    fn item_tables_are_listed_later_mod_first_and_base_last() {
+        let cfg = fixture_config("item-order");
+        fs::create_dir_all(cfg.root.join("config")).unwrap();
+        let web = cfg.state.join("web");
+        write(&web.join("System/itemInfo_true.lub"), "base");
+        write(&web.join("System/itemInfo.lua"), "base");
+        fs::write(cfg.root.join("config/Config.local.js"), "window.ROConfigLocal = {\n\tskipIntro: true\n};\n").unwrap();
+        let tables = vec!["itemInfo-a.lua".to_string(), "itemInfo-b.lua".to_string()];
+        write_client_config(&cfg, &web, &[], &tables, GameText::English).unwrap();
+        let body = fs::read_to_string(web.join("Config.local.js")).unwrap();
+        assert!(
+            body.contains("customItemInfo: ['System/itemInfo-b.lua', 'System/itemInfo-a.lua', 'System/itemInfo.lua', 'System/itemInfo_true.lub'],"),
+            "{body}"
+        );
+        fs::remove_dir_all(cfg.state.parent().unwrap()).unwrap();
+    }
+
+    /// Palettes, and Korean written as Korean: both land on the name the
+    /// client asks for, file names included.
+    #[test]
+    fn palettes_and_korean_names_land_on_the_client_s_path() {
+        assert_eq!(client_path("palette/body/rogue.pal"), "palette/\u{b8}\u{f6}/rogue.pal");
+        assert_eq!(
+            client_path("palette/body/로그_여_4.pal"),
+            "palette/\u{b8}\u{f6}/\u{b7}\u{ce}\u{b1}\u{d7}_\u{bf}\u{a9}_4.pal"
+        );
+        assert_eq!(
+            client_path("palette/hair/머리1_여_9.pal"),
+            "palette/\u{b8}\u{d3}\u{b8}\u{ae}/\u{b8}\u{d3}\u{b8}\u{ae}1_\u{bf}\u{a9}_9.pal"
+        );
+        assert_eq!(
+            client_path("palette/doram/hair/x.pal"),
+            "palette/\u{b5}\u{b5}\u{b6}\u{f7}\u{c1}\u{b7}/\u{b8}\u{d3}\u{b8}\u{ae}/x.pal"
+        );
+        // The Korean folder itself works as well as its alias.
+        assert_eq!(client_path("palette/몸/x.pal"), client_path("palette/body/x.pal"));
+        // A name already in the client's spelling is left exactly as it was.
+        assert_eq!(client_path("palette/\u{b8}\u{f6}/x.pal"), "palette/\u{b8}\u{f6}/x.pal");
     }
 
     #[test]

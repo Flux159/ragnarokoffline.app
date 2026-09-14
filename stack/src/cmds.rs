@@ -657,21 +657,21 @@ fn write_mod_conf_files(cfg: &Config, mods: &crate::mods::Assembled) -> Result<(
                 let _ = fs::remove_file(&path);
             }
             Some(entries) => {
-                // Last name wins, as everywhere else -- but say so, because a
-                // whole-file layer silently discarding another mod's copy is
-                // worse than a table doing it.
-                if entries.len() > 1 {
-                    let names: Vec<&str> = entries.iter().map(|(n, _)| n.as_str()).collect();
-                    eprintln!(
-                        "mods: {} all supply conf/{file}; only {} is in effect",
-                        names.join(", "),
-                        names.last().copied().unwrap_or("")
-                    );
+                // Every copy is combined, in load order, the way db/ tables
+                // are; what could not be combined is named, one line each.
+                let atcommands = mods.conf.get("file:atcommands.yml").cloned().unwrap_or_default();
+                let (body, notes) = crate::mods::combine_whole_conf(file, entries, &atcommands);
+                for note in &notes {
+                    eprintln!("mods: {note}");
                 }
-                let (name, body) = entries.last().unwrap();
+                let names: Vec<&str> = entries.iter().map(|(n, _)| n.as_str()).collect();
+                let Some(body) = body else {
+                    let _ = fs::remove_file(&path);
+                    continue;
+                };
                 fs::write(&path, body)
-                    .map_err(|e| format!("writing conf/{file} from {name}: {e}"))?;
-                eprintln!("mods: {name} supplies conf/{file}");
+                    .map_err(|e| format!("writing conf/{file} from {}: {e}", names.join(", ")))?;
+                eprintln!("mods: {} supplies conf/{file}", names.join(", "));
             }
         }
     }

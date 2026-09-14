@@ -1,10 +1,8 @@
 # A new item, in an id range nothing ships.
 #
 # rAthena's own items stop well below 30000, so there is room here that no
-# client update will collide with. The View field is what makes this shippable
-# without any art: it points the *sprite* at an item that already exists, so the
-# client draws a Red Potion and the server treats this as its own item with its
-# own stats and its own name.
+# client update will collide with. This is only what the item *does*; what the
+# client calls it and draws for it is System/itemInfo.lua.
 Header:
   Type: ITEM_DB
   Version: 3
@@ -16,8 +14,5 @@ Body:
     Type: Healing
     Buy: 400
     Weight: 70
-    # Borrowed art. Drop your own .spr/.act into data/sprite/item/ and remove
-    # this line if you would rather draw one.
-    View: 501
     Script: |
       itemheal rand(120,180),0;

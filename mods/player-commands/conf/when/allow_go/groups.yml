@@ -1,0 +1,18 @@
+# Group 0 gets @go -- only while "Also give everyone @go" is ticked.
+#
+# This file is part of the mod only when that setting is on: the supervisor
+# reads conf/when/<setting>/ for each of a mod's yes/no settings and adds what
+# it finds after the mod's own conf/groups.yml. Nothing is repeated from that
+# file, and nothing needs to be -- the two are combined into one import.
+#
+# @go knows a fixed list of 37 towns, compiled into the map server
+# (ACMD_FUNC(go), src/map/atcommand.cpp). Eden and Para Market are not on it,
+# and a name it does not recognise sends the player to Prontera.
+Header:
+  Type: PLAYER_GROUP_DB
+  Version: 1
+
+Body:
+  - Id: 0
+    Commands:
+      go: true

@@ -43,10 +43,26 @@ every one is taken from Super Player, nothing is invented here.
 `@commands` and `@help` are in there on purpose: without them a player has no
 way to discover that any of the rest arrived.
 
-**`@go` is deliberately left out.** Free warping to any town changes how the
-game is played, and that belongs behind its own decision — see `common-npcs`,
-which ships its warper switched off for the same reason. If you want it, add
-`go: true` to `conf/groups.yml`.
+## `@go`, as an option
+
+Free warping to any town changes how the game is played, so it is not in the
+list above. It is one tick away: **Settings → Mods → player-commands → Also
+give everyone @go**, then Apply.
+
+Two things to know before you tick it:
+
+- **`@go` does not reach everywhere.** Its destinations are a list of 37 towns
+  compiled into the map server (`ACMD_FUNC(go)` in `src/map/atcommand.cpp`).
+  Eden, Para Market and the other newer places are not on it — and a name it
+  does not recognise, such as `@go eden`, says *Warped.* and puts you in
+  Prontera. The warper in `common-npcs` has both.
+- **It is the only one of these that changes the game** rather than informing
+  you about it, which is why it is behind its own switch — the same reason
+  `common-npcs` ships its warper switched off.
+
+The option is `conf/when/allow_go/groups.yml`: a file that is part of the mod
+only while the setting of that name is on. See *Options that change the
+server* in [docs/MODDING.md](../../docs/MODDING.md).
 
 Also left out: `@autotrade`, `@request`, `@breakguild`, `@channel`, `@langtype`,
 `@whereis`, `@jailtime`, `@hominfo`, `@homstats`. Nothing is wrong with them;
@@ -81,10 +97,18 @@ no `Permissions`: group 0 keeps `can_trade`, `can_party` and `attendance` from
 the base file. Redefining them here would be a way to take them away by
 accident.
 
-**Never list a command the group already has.** `parseCommands` treats that as
-an error and returns false, which aborts the *whole* group node — the server
-starts, logs one warning, and group 0 is left exactly as it was. This is why
-`@changedress` and `@resurrect` do not appear above.
+**A command the group already has is taken out for you.** rAthena's
+`parseCommands` treats a repeat as an error and aborts the *whole* group node,
+so group 0 would be left exactly as it was. The supervisor removes any command a
+group already holds — from rAthena's own `groups.yml` or from another mod that
+loaded first — before the server sees it, and says so in the log:
+
+```
+mods: my-mod gives group 0 @autoloot, which player-commands already gives it -- left out, ...
+```
+
+That is also why two mods can both grant commands now: every enabled mod's
+`groups.yml` is combined into one, rather than the last one replacing the rest.
 
 Adding commands to group 0 is safe for the groups above it. Groups 1, 2 and the
 rest inherit Player, and inheritance skips anything the child already has

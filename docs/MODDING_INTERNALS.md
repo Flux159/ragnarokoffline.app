@@ -14,9 +14,9 @@ kRO 2022 client. Where something is a hypothesis it says so.
 |---|---|---|
 | `db/` | bound at `/rathena/db/import` | `mods::assemble` |
 | `npc/` | bound at `/rathena/npc/mods/<name>/`, plus `npc:` lines | `mods::assemble` |
-| `conf/` | appended to the generated `conf/import/*.txt` | `mods::assemble` → `cmds::up` |
-| `data/` | copied over `state/assets/data`, served ahead of the GRFs | `assets::overlay_mods` |
-| `System/` | copied over the merged `System/`, after the translation | `assets::overlay_mods` |
+| `conf/` | appended to the generated `conf/import/*.txt`; `groups.yml` and `atcommands.yml`, including a mod's `conf/when/<setting>/` fragments, combined across mods with repeated grants removed (`groups.rs`) | `mods::assemble` → `cmds::write_mod_conf_files` |
+| `data/` | copied over `state/assets/data`, served ahead of the GRFs, ASCII aliases and Korean names put in the client's spelling (`cp949.rs`) | `assets::overlay_mods` |
+| `System/` | copied over the merged `System/`, after the translation; item tables kept aside and listed in `customItemInfo` ahead of the base | `assets::overlay_mods` |
 | `client/index.js` | copied to `state/assets/plugins/<name>/`, named in `Config.local.js` | `assets::overlay_mods` |
 | custom maps | `map_cache.dat` + `map_index.txt` in the `db/import` tree, plus `map:` lines | `mods::assemble` → `mapcache` |
 | `mod.json` | parsed, and `requires` enforced | `mods::read_manifest` |
@@ -336,9 +336,8 @@ files are split between `npc/warps/` and `npc/<era>/warps/`, which overlap.
 - **A mod cannot remove anything.** Stock spawns, stock NPCs and stock warps are
   loaded before any mod and there is no way to unload a script a mod did not
   add. Adding is the whole vocabulary.
-- **`System/` has no worked example.** The layer is wired and `itemInfo.lua` is
-  force-linked from the translation with a mod able to replace it, but nothing
-  in `examples/` exercises it — a custom item needs a `db/item_db.yml` entry, a
-  sprite and an `itemInfo.lua` entry together, and that is the example that
-  would justify the layer.
+- **No generator for palettes.** A mod can ship any `.pal` under its Korean or
+  ASCII name, but there is no `mkpal` beside `mkmap.py` and `mkloginbg.py` to
+  derive colours from a job's existing ones, and the stylist cannot offer more
+  than the server's `max_cloth_color`, which a mod cannot set.
 - **AI population for modded maps**, above.

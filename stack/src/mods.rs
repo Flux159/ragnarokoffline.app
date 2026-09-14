@@ -399,10 +399,10 @@ fn read_manifest(dir: &Path) -> Result<Option<Manifest>, String> {
         // is the kind of mistake that looks like it worked.
         if let json::Value::Object(map) = req {
             for k in map.keys() {
-                if k != "app" && k != "era" {
+                if k != "app" && k != "era" && k != "mods" {
                     return Err(format!(
                         "mod.json: \"requires\" has no setting called \"{k}\" \
-                         (this build understands \"app\" and \"era\")"
+                         (this build understands \"app\", \"era\" and \"mods\")"
                     ));
                 }
             }
@@ -543,6 +543,105 @@ const CONF_ALLOWED: &[(&str, &str)] = &[
 /// than the grant being silent -- see `Installed::grants_commands`.
 const CONF_WHOLE_FILE: &[&str] = &["groups.yml", "atcommands.yml"];
 
+/// Every enabled mod's copy of one whole conf file, made into the one file the
+/// server imports.
+///
+/// Joined the way `db/` tables are, by `merge_tables`, because rAthena treats a
+/// second entry for the same group or command as more of it. `groups.yml` gets
+/// one step more first: a command a group already holds -- from rAthena's own
+/// file or an earlier mod -- is taken out of the later copy, since rAthena
+/// would otherwise discard that copy's whole group entry (see `groups.rs`).
+/// `atcommands` is every mod's `atcommands.yml`, for the aliases a grant may
+/// be spelled with.
+///
+/// Returns the file, when any copy was usable, and one sentence for each thing
+/// that was left out.
+pub fn combine_whole_conf(
+    file: &str,
+    entries: &[(String, String)],
+    atcommands: &[(String, String)],
+) -> (Option<String>, Vec<String>) {
+    let mut notes = Vec::new();
+    let mut grants = crate::groups::Grants::stock();
+    for (_, body) in atcommands {
+        grants.learn_aliases(body);
+    }
+    let mut merged: Option<(String, String)> = None;
+    for (owner, body) in entries {
+        // Checked before the repeats are taken out, so a copy left out whole
+        // is not counted as holding the commands it lists.
+        if let Some((first, existing)) = &merged {
+            if merge_tables(existing, body).is_none() {
+                notes.push(format!(
+                    "{owner}'s conf/{file} is not the same kind of table as {first}'s \
+                     (compare their Header: Type), so it was left out"
+                ));
+                continue;
+            }
+        }
+        let body = if file == "groups.yml" {
+            let (body, dropped) = grants.dedupe(body, owner);
+            notes.extend(dropped);
+            body
+        } else {
+            body.clone()
+        };
+        merged = Some(match merged {
+            None => (owner.clone(), body),
+            Some((first, existing)) => {
+                let joined = merge_tables(&existing, &body).unwrap_or(existing);
+                (first, joined)
+            }
+        });
+    }
+    (merged.map(|(_, body)| body), notes)
+}
+
+/// The fragments under `conf/when/<setting>/` that apply, as (label, file, body).
+///
+/// A mod's own boolean setting decides whether a fragment is part of it. That
+/// is how one mod offers a server-side option -- `player-commands` and `@go` --
+/// rather than shipping a second mod that has to repeat everything the first
+/// one grants. Only the whole-file conf layers can be switched this way.
+fn conditional_conf(dir: &Path, name: &str, settings: &[(String, String)]) -> Vec<(String, String, String)> {
+    let mut out = Vec::new();
+    let Ok(rd) = fs::read_dir(dir.join("conf").join("when")) else { return out };
+    let mut keys: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    keys.sort();
+    for folder in keys {
+        let key = folder.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+        match settings.iter().find(|(k, _)| *k == key).map(|(_, v)| v.as_str()) {
+            Some("true") => {}
+            Some("false") => continue,
+            Some(_) => {
+                eprintln!("mods: {name} has conf/when/{key}/, but \"{key}\" is not a yes/no setting -- ignoring it");
+                continue;
+            }
+            None => {
+                eprintln!("mods: {name} has conf/when/{key}/, but its mod.json declares no setting \"{key}\" -- ignoring it");
+                continue;
+            }
+        }
+        let Ok(files) = fs::read_dir(&folder) else { continue };
+        let mut files: Vec<PathBuf> = files.flatten().map(|e| e.path()).collect();
+        files.sort();
+        for path in files {
+            let file = path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+            if !CONF_WHOLE_FILE.contains(&file.as_str()) {
+                eprintln!(
+                    "mods: {name} has conf/when/{key}/{file}; only {} can be switched by a setting -- ignoring it",
+                    CONF_WHOLE_FILE.join(" and ")
+                );
+                continue;
+            }
+            if let Ok(body) = fs::read_to_string(&path) {
+                out.push((format!("{name} ({key})"), file, body));
+            }
+        }
+    }
+    out
+}
+
 /// Where the player's answers live.
 ///
 /// One file for every mod rather than a file inside each: a bundled mod's
@@ -641,7 +740,21 @@ fn clamp(setting: &Setting, raw: String) -> String {
 }
 
 /// Read a mod's `conf/` layer, keeping only what the allowlist covers.
-fn read_conf(dir: &Path, name: &str, out: &mut BTreeMap<String, Vec<(String, String)>>) {
+fn read_conf(
+    dir: &Path,
+    name: &str,
+    settings: &[(String, String)],
+    out: &mut BTreeMap<String, Vec<(String, String)>>,
+) {
+    // After the mod's own copy, so an option adds to the file it belongs to.
+    let conditional = conditional_conf(dir, name, settings);
+    read_plain_conf(dir, name, out);
+    for (label, file, body) in conditional {
+        out.entry(format!("file:{file}")).or_default().push((label, body));
+    }
+}
+
+fn read_plain_conf(dir: &Path, name: &str, out: &mut BTreeMap<String, Vec<(String, String)>>) {
     let conf = dir.join("conf");
     let Ok(rd) = fs::read_dir(&conf) else { return };
     let mut files: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_file()).collect();
@@ -717,7 +830,13 @@ impl Installed {
     /// list is drawn for mods that are switched *off* too, and nothing has
     /// been assembled for those.
     pub fn grants_commands(&self) -> bool {
-        CONF_WHOLE_FILE.iter().any(|f| self.dir.join("conf").join(f).is_file())
+        let conf = self.dir.join("conf");
+        let whole = |dir: &Path| CONF_WHOLE_FILE.iter().any(|f| dir.join(f).is_file());
+        // A grant behind one of the mod's own options is still a grant.
+        whole(&conf)
+            || fs::read_dir(conf.join("when"))
+                .map(|rd| rd.flatten().any(|e| whole(&e.path())))
+                .unwrap_or(false)
     }
 }
 
@@ -1186,8 +1305,16 @@ pub fn assemble(cfg: &Config) -> Result<Assembled, String> {
         out.npc_lines = lines;
     }
 
+    // The player's answers decide which of a mod's conditional conf fragments
+    // are part of it. A damaged answers file is said, and every mod then gets
+    // its declared defaults rather than the server refusing to start.
+    let saved = read_settings(&cfg.state).unwrap_or_else(|e| {
+        eprintln!("mods: {e}");
+        BTreeMap::new()
+    });
     for m in &live {
-        read_conf(&m.dir, &m.name, &mut out.conf);
+        let settings = effective(&m.manifest, saved.get(&m.name));
+        read_conf(&m.dir, &m.name, &settings, &mut out.conf);
     }
     Ok(out)
 }
@@ -2278,7 +2405,7 @@ mod tests {
         )
         .unwrap();
         let mut out = BTreeMap::new();
-        read_conf(&d, "x", &mut out);
+        read_conf(&d, "x", &[], &mut out);
         let got = out.get("char_conf.txt").unwrap();
         assert_eq!(got, &vec![("start_point".into(), "my_town,50,50".into())]);
     }
@@ -2297,7 +2424,7 @@ mod tests {
         fs::write(d.join("conf/char_conf.txt"), "start_point: my_town,50,50\n").unwrap();
 
         let mut out = BTreeMap::new();
-        read_conf(&d, "x", &mut out);
+        read_conf(&d, "x", &[], &mut out);
 
         let whole = out.get("file:groups.yml").expect("groups.yml is recorded as a whole file");
         assert_eq!(whole, &vec![("x".to_string(), body.to_string())]);
@@ -2354,5 +2481,88 @@ mod tests {
         assert_eq!(body.matches("my_town").count(), 1, "{body}");
         assert!(body.contains("\nmy_cave\n"), "{body}");
         assert!(d.join("map_cache.dat").is_file());
+    }
+
+    /// `requires.mods` was parsed and then refused by the check for unknown
+    /// `requires` keys, so no mod could ever depend on another.
+    #[test]
+    fn a_mod_can_require_another_mod() {
+        let d = tmp("req-mods");
+        fs::write(d.join("mod.json"), r#"{"requires": {"app": ">=1.0.0", "mods": ["base-mod"]}}"#).unwrap();
+        let m = read_manifest(&d).unwrap().unwrap();
+        assert_eq!(m.requires_mods, vec!["base-mod".to_string()]);
+    }
+
+    const GROUP_HEADER: &str = "Header:\n  Type: PLAYER_GROUP_DB\n  Version: 1\n\nBody:\n";
+
+    /// A fragment under conf/when/<setting>/ is part of the mod exactly while
+    /// that yes/no setting is on, and comes after the mod's own copy.
+    #[test]
+    fn a_conditional_conf_fragment_follows_its_setting() {
+        let d = tmp("when");
+        fs::create_dir_all(d.join("conf/when/allow_go")).unwrap();
+        fs::create_dir_all(d.join("conf/when/undeclared")).unwrap();
+        fs::write(d.join("conf/groups.yml"), format!("{GROUP_HEADER}  - Id: 0\n    Commands:\n      autoloot: true\n")).unwrap();
+        fs::write(d.join("conf/when/allow_go/groups.yml"), format!("{GROUP_HEADER}  - Id: 0\n    Commands:\n      go: true\n")).unwrap();
+        fs::write(d.join("conf/when/undeclared/groups.yml"), "ignored").unwrap();
+
+        let mut on = BTreeMap::new();
+        read_conf(&d, "pc", &[("allow_go".into(), "true".into())], &mut on);
+        let labels: Vec<&str> = on["file:groups.yml"].iter().map(|(l, _)| l.as_str()).collect();
+        assert_eq!(labels, vec!["pc", "pc (allow_go)"]);
+
+        let mut off = BTreeMap::new();
+        read_conf(&d, "pc", &[("allow_go".into(), "false".into())], &mut off);
+        assert_eq!(off["file:groups.yml"].len(), 1);
+
+        // And a mod whose only grant is behind an option still says it grants.
+        fs::remove_file(d.join("conf/groups.yml")).unwrap();
+        let m = Installed { name: "pc".into(), dir: d, status: Status::Off, manifest: Manifest::default(), bundled: true };
+        assert!(m.grants_commands());
+    }
+
+    /// Two mods' groups.yml used to resolve last-wins, discarding the first.
+    /// Now both are in effect, and the repeat between them is left out once.
+    #[test]
+    fn two_mods_command_grants_are_combined_and_the_repeat_is_left_out() {
+        let entries = vec![
+            ("a".to_string(), format!("{GROUP_HEADER}  - Id: 0\n    Commands:\n      autoloot: true\n      showexp: true\n")),
+            ("b".to_string(), format!("{GROUP_HEADER}  - Id: 0\n    Commands:\n      autoloot: true\n      go: true\n")),
+            ("c".to_string(), "Header:\n  Type: ATCOMMAND_DB\n  Version: 1\nBody:\n  - Command: go\n".to_string()),
+        ];
+        let (body, notes) = combine_whole_conf("groups.yml", &entries, &[]);
+        let body = body.unwrap();
+        assert_eq!(body.matches("autoloot: true").count(), 1, "{body}");
+        assert!(body.contains("showexp: true") && body.contains("go: true"), "{body}");
+        assert_eq!(notes.len(), 2, "{notes:?}");
+        assert!(notes[0].contains("b gives group 0 @autoloot, which a already gives it"), "{}", notes[0]);
+        assert!(notes[1].contains("c's conf/groups.yml is not the same kind of table"), "{}", notes[1]);
+    }
+
+    /// One mod on its own is written exactly as it shipped, so nothing about a
+    /// mod that worked before changes.
+    #[test]
+    fn a_single_conf_file_is_written_as_it_shipped() {
+        let body = format!("# mine\n{GROUP_HEADER}  - Id: 0\n    Commands:\n      autoloot: true\n");
+        let (out, notes) = combine_whole_conf("groups.yml", &[("a".into(), body.clone())], &[]);
+        assert_eq!(out.unwrap(), body);
+        assert!(notes.is_empty());
+    }
+
+    /// The bundled player-commands grants must not repeat anything rAthena
+    /// already gives group 0, with or without its @go option -- a repeat would
+    /// cost it every other command in the group.
+    #[test]
+    fn the_bundled_player_commands_grant_repeats_nothing() {
+        let own = include_str!("../../mods/player-commands/conf/groups.yml");
+        let go = include_str!("../../mods/player-commands/conf/when/allow_go/groups.yml");
+        let entries = vec![
+            ("player-commands".to_string(), own.to_string()),
+            ("player-commands (allow_go)".to_string(), go.to_string()),
+        ];
+        let (body, notes) = combine_whole_conf("groups.yml", &entries, &[]);
+        assert!(notes.is_empty(), "{notes:?}");
+        let body = body.unwrap();
+        assert!(body.contains("      autoloot: true") && body.contains("      go: true"), "{body}");
     }
 }

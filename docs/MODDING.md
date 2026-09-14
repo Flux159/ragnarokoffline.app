@@ -30,16 +30,19 @@ against a scratch install instead of the one you play on.
 describe what each demonstrates and what to look at first. Start from the one
 closest to what you want.
 
-Mods merge in **name order**, so if two touch the same file the later name
-wins. Everything is reassembled on every start, so removing a folder removes
-its effects.
+Mods are applied in **name order**, unless a mod asks to come `after` another.
+Two mods that ship the same server table, the same `conf/groups.yml` or an item
+table are **combined**, entry by entry; only where both define the *same* entry
+does the later one win. A sprite or texture two mods both replace can only be
+one file, and there the later name wins. Everything is reassembled on every
+start, so removing a folder removes its effects.
 
-When that happens you are told, rather than left to wonder why half of what you
-installed is not in effect:
+Where something could not be combined you are told, rather than left to wonder
+why half of what you installed is not in effect:
 
 ```
-mods: tougher-monsters overwrites mob_db.yml from hello-mod -- later name wins,
-      so hello-mod's copy is not in effect
+mods: b gives group 0 @autoloot, which a already gives it -- left out, because
+      rAthena throws away the rest of a group entry that repeats a command
 ```
 
 ---
@@ -69,6 +72,13 @@ mod safe to hand to a stranger:
 - **`era`** — `"renewal"`, `"pre-renewal"` or `"any"`. A mod that rebalances
   third-job skills is meaningless in pre-renewal, and a mod shipping
   pre-renewal map geometry is meaningless in renewal.
+- **`mods`** — other mods this one cannot work without, by folder name. Each
+  must be installed and switched on. (Before 1.2.6 this key was refused as
+  unknown, so a mod using it did not load at all.)
+
+`"after": ["other-mod"]`, beside `requires`, is about precedence rather than
+need: when both are on, this mod is applied later and wins where the two
+disagree. [Publishing](mods/publishing.md) covers both.
 
 A refused mod is **named in Settings, next to the ones that loaded, with the
 reason**:
@@ -131,6 +141,29 @@ and the game picks the new values up on its next load. Changing an option does
 not disable the mod: it stays on and decides for itself what to do with the
 answer, which is the point — `show_controls_button` hides a button while
 keyboard movement keeps working.
+
+### Options that change the server
+
+A yes/no setting can also switch part of the mod's **server** config on and off,
+with no code: put the files under `conf/when/<setting key>/`, and they are part
+of the mod exactly while that setting is on.
+
+```
+player-commands/
+├── mod.json                          declares "allow_go", a boolean
+└── conf/
+    ├── groups.yml                    always: @autoloot, @showexp, ...
+    └── when/allow_go/groups.yml      only while "allow_go" is ticked: @go
+```
+
+The fragment is added *after* the mod's own copy of the file and combined with
+it like any other copy, so it holds only what it adds. **Apply** restarts the
+server, so the change takes effect then.
+
+Only `groups.yml` and `atcommands.yml` can be switched this way. A folder named
+for a setting the mod does not declare, or for one that is not a boolean, is
+ignored and the log says so. See
+[`mods/player-commands`](../mods/player-commands).
 
 ## Installing a mod
 
@@ -426,6 +459,19 @@ Body:
 A misspelled command is a named error at load, not a silent no-op:
 `Unknown atcommand: autolot`.
 
+**Several mods can each ship one.** Every enabled mod's `groups.yml` is combined
+into the single file the server imports, in load order, and so is every
+`atcommands.yml`.
+
+**A command the group already has is left out for you.** rAthena treats a
+repeated grant as an error that throws away the *whole* group entry — every
+other command in it — so a mod listing `@resurrect` (group 0 already has it)
+used to lose everything else it granted. The supervisor now removes a command a
+group already holds, from rAthena's own `groups.yml` or from a mod applied
+earlier, before the server reads it, and names each one in the log. Taking away
+a command the group does not have (`go: false`) is the same error, and is
+treated the same way. Aliases count: `accountinfo` is `accinfo`.
+
 **`groups.yml` decides what every player on your server can do.** A mod that
 ships one can hand out `@item` or `@zeny` as easily as `@autoloot`. The
 supervisor says which mod supplied it on every start — `mods: my-mod supplies
@@ -464,6 +510,8 @@ translates it as it lays the mod down:
 | `data/sprite/human/…`, `human/body/…` | `인간족/…`, `인간족/몸통/…` |
 | `data/sprite/monster/…` | `data/sprite/몬스터/…` |
 | `data/sprite/item/…`, `accessory`, `robe`, `shield`, `effect` | `아이템`, `악세사리`, `로브`, `방패`, `이팩트` |
+| `data/palette/body/…` | `data/palette/몸/…` |
+| `data/palette/hair/…`, `palette/doram/hair/…` | `data/palette/머리/…`, `data/palette/도람족/머리/…` |
 
 This matters more than tidiness: **a zip containing those bytes unpacks
 differently on different machines**, so a mod that ships them arrives corrupted
@@ -473,9 +521,51 @@ Only whole path segments are translated, and only at the start — a folder of
 your own called `sprite/monsters` is left alone. The real names still work if
 you prefer them; nothing is rewritten on the way out.
 
-Anything not in that table has to be spelled the client's way. Copy it out of a
-GRF viewer or an example; do not retype it, and do not "correct" it to Korean —
-a directory named in Korean is one the client never looks in.
+### Or write it in Korean
+
+Anything not in that table — a job's palette, a monster's sprite file — can be
+written **in Korean**, folder or file name, anywhere in the path:
+
+```
+my-mod/data/palette/body/로그_여_4.pal
+my-mod/data/sprite/monster/포링.spr
+```
+
+The app puts every Hangul syllable into the client's CP949 spelling as it lays
+the mod down, so those land on `palette/¸ö/·Î±×_¿©_4.pal` and
+`sprite/¸ó½ºÅÍ/Æ÷¸µ.spr` — the names the client asks for. Korean in a zip
+travels the way ASCII does, which the mojibake spelling does not. A name already
+in the client's spelling is left alone, so existing mods are unaffected.
+
+### Palettes
+
+A character's colours are a palette file per job, sex and colour number, and
+the stylist's colour choices are those numbers:
+
+| | path |
+|---|---|
+| clothes | `data/palette/body/<job>_<sex>_<n>.pal` |
+| hair | `data/palette/hair/머리<style>_<sex>_<n>.pal` |
+
+`<sex>` is `남` (male) or `여` (female), and `<job>` is the job's Korean name as
+the client spells it — `로그` for Rogue, `스토커` for Stalker; the full list is
+`PalNameTable.js` and `JobNameTable.js` in roBrowserLegacy's `src/DB/Jobs/`.
+Colour 0 is the sprite's own.
+
+**A missing palette is the default colour, silently.** The client draws the
+sprite's built-in palette when the file is not there, and says nothing. The
+official data does not have every colour for every job — Rogue has 1 to 3 —
+while the stylist offers up to the server's `max_cloth_color` (7), so choices 4
+to 7 look like the default until a mod supplies `로그_남_4.pal` through
+`로그_여_7.pal`. `state/assets/logs/missing-files.log` names every palette the
+client asked for and did not get.
+
+A `.pal` is 1024 bytes: 256 colours of red, green, blue and one unused byte,
+with colour 0 transparent. Start from one of the job's existing colours.
+
+**Do not put them in `state/assets/data/palette/` directly.** That folder is
+rebuilt from nothing every time the app starts — which is why files put there
+keep disappearing. A mod's `data/` is the place that lasts.
 
 ### The client caches, hard
 
@@ -632,9 +722,49 @@ wants them named in the client.
 **Item tables are the exception: they are added, not replaced.** The
 translation's `itemInfo.lua` is 22 MB, so replacing it to add one item would
 mean a 22 MB mod. Instead, ship a `System/itemInfo.lua` containing only your
-items — the app copies it aside and names it in the client's `customItemInfo`
-list after the base table, and roBrowser merges them by item id. Ten lines is
-enough. See [`examples/mods/custom-item`](../examples/mods/custom-item).
+items:
+
+```lua
+-- my-mod/System/itemInfo.lua, saved as UTF-8
+tbl = {
+	[30001] = {
+		unidentifiedDisplayName = "Bottle",
+		unidentifiedResourceName = "빨간포션",
+		identifiedDisplayName = "Islander Brew",
+		identifiedResourceName = "빨간포션",
+		identifiedDescriptionName = { "Restores a fair amount of ^0000FFHP^000000." },
+		slotCount = 0,
+		ClassNum = 0
+	}
+}
+```
+
+- **No footer.** The client registers every entry itself. `tbl`, `tbl_custom`
+  and `tbl_override` all work, so the translation's `itemInfo_C.lua` template
+  can be copied as it is.
+- **An entry needs `identifiedDisplayName`.** Everything else is optional.
+- **Save it as UTF-8**, which is what an editor does anyway. Names and
+  descriptions can then hold any character.
+- **The resource name is the art.** It names the inventory icon
+  (`data/texture/ui/item/<name>.bmp`), the item window's picture
+  (`…/ui/collection/<name>.bmp`) and the dropped sprite
+  (`data/sprite/item/<name>.spr`). Write an existing item's in Korean to borrow
+  its art — `빨간포션` is the Red Potion — or ship your own under an ASCII name.
+  An apple icon means the name matched no file; `missing-files.log` names the
+  one the client asked for.
+
+The app copies each item table directly under `System/` aside as
+`itemInfo-<mod>.lua` (a second one in the same mod gets `itemInfo-<mod>.2.lua`)
+and lists them in the client's `customItemInfo` **ahead of the base table,
+last mod first**. The client takes each item from the first table that defines
+it, so a mod's entry wins over the stock one — which is how a mod renames an
+existing item — and a later mod wins over an earlier one, as in `db/`.
+
+A table anywhere else — `System/LuaFiles514/`, `data/luafiles514/` — is not
+read by the client, and the log says so. Editing the copy under
+`state/assets/System/` does not last: that folder is rebuilt on every start.
+
+See [`examples/mods/custom-item`](../examples/mods/custom-item).
 
 Everything else in `System/` still replaces the client's copy, so start from the
 translation's version and add to it.
