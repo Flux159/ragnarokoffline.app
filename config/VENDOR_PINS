@@ -4,7 +4,11 @@
 # on a moving branch means a tag does not describe what was released. Bump a
 # line deliberately, in its own commit, having built it.
 #
-#   name              url                                                    commit
-roBrowserLegacy   https://github.com/MrAntares/roBrowserLegacy.git   6a177d9b4e8da41d6af76f6e7c527d52beb781c3
-ROenglishRE       https://github.com/llchrisll/ROenglishRE.git       66cdfec631603fda6a90ba4bbe26ab07b5204c84
-rathena           https://github.com/rathena/rathena.git             e985006171d2eb320ee512a653f4c83aea3d81b6
+# rAthena and roBrowserLegacy come from our forks. Their `ragnarokoffline`
+# branch is upstream plus our fixes, one commit each; the branch column is only
+# what scripts/vendor-bump.sh resolves -- builds fetch the commit.
+#
+#   name              url                                                commit                                    branch
+roBrowserLegacy   https://github.com/Flux159/roBrowserLegacy.git   6a177d9b4e8da41d6af76f6e7c527d52beb781c3  ragnarokoffline
+ROenglishRE       https://github.com/llchrisll/ROenglishRE.git     66cdfec631603fda6a90ba4bbe26ab07b5204c84
+rathena           https://github.com/Flux159/rathena.git           e985006171d2eb320ee512a653f4c83aea3d81b6  ragnarokoffline

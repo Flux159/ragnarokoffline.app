@@ -17,7 +17,9 @@ PINS="$ROOT/config/VENDOR_PINS"
 NAME="${1:?usage: vendor-fetch.sh <name> <dest>}"
 DEST="${2:?usage: vendor-fetch.sh <name> <dest>}"
 
-read -r _ URL SHA < <(grep -E "^${NAME}[[:space:]]" "$PINS" || true)
+# The fourth column, the branch a row follows, is for vendor-bump.sh. Read it
+# into a throwaway so it cannot run on into SHA.
+read -r _ URL SHA _ < <(grep -E "^${NAME}[[:space:]]" "$PINS" || true)
 [ -n "${URL:-}" ] && [ -n "${SHA:-}" ] || { echo "no pin for '$NAME' in $PINS" >&2; exit 1; }
 
 if [ -d "$DEST/.git" ]; then
