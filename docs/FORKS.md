@@ -205,11 +205,21 @@ in upstream's favour.
 
 ## After a pin moves, locally
 
-`vendor/rathena` and `vendor/roBrowserLegacy` have the build's changes applied
-in place, and a checkout onto a new commit can fail on those or quietly keep
-them. When a pin has moved, start them again:
+Nothing to do but build again:
 
 ```sh
-rm -rf vendor/rathena vendor/roBrowserLegacy
 scripts/bootstrap.sh
 ```
+
+`vendor/rathena` and `vendor/roBrowserLegacy` have the build's changes applied
+in place. Moving git onto a new commit underneath those fails -- git refuses
+with "Please commit your changes or stash them" -- and anything it did carry
+across would be the old build's changes on the new source. So when
+`scripts/vendor-fetch.sh` finds a checkout on a commit other than its pin, it
+fetches the new commit, then discards everything in that checkout except
+`node_modules` (it says so as it does it), and checks the new commit out.
+The build then applies its changes again from nothing.
+
+That includes anything you edited in `vendor/` yourself. Work on a fix belongs
+in a fork checkout; see [Working on a fix](#working-on-a-fix). A checkout that
+is already on its pin is never touched.

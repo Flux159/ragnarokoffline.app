@@ -171,9 +171,9 @@ Check the vendor checkouts are on their pins before you trust a local result:
 `vendor/roBrowserLegacy` means `patch-client.sh` is patching a tree the release
 never builds — the CI job clones the `config/VENDOR_PINS` commit fresh every
 time, so a patch anchor that matches locally can still fail there. When a pin
-has *moved*, delete `vendor/rathena` and `vendor/roBrowserLegacy` and fetch
-again: the build's in-place changes do not survive a checkout onto a new commit
-cleanly.
+has *moved*, `vendor-fetch.sh` (and so `bootstrap.sh`) discards everything in
+that checkout except `node_modules` before moving it, and says so -- including
+anything edited there by hand, which is why fix work happens in a fork checkout.
 
 **CI runs on every pull request** and every push to `main`: `test.yml`. It
 covers less than it sounds like, so know what it leaves out:
