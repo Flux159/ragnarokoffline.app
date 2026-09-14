@@ -4,7 +4,7 @@ Server-side fake players for rAthena: "shells" that walk, fight, sit, chat and
 open real vending stalls, and that appear to any client as ordinary players in
 the player list. Ambient shells and party recruitment use normal rAthena
 packets. Companion resurrection additionally needs the generic dead-PC
-lifecycle correction installed by `scripts/patch-client.sh`, described below.
+lifecycle correction on our roBrowserLegacy fork, described below.
 
 | | |
 |---|---|
@@ -106,8 +106,9 @@ an intentionally unlimited virtual Blue Gemstone supply, and Yggdrasil Leaves
 work normally when a player targets the corpse. Leaving the map releases a dead
 companion. Ambient mortal shells retain their original timed-respawn behaviour.
 
-The matching roBrowserLegacy change is installed by `scripts/patch-client.sh`:
-a dead PC keeps its `EntityManager` GID until a genuine removal packet arrives,
+The matching roBrowserLegacy change is a commit on our fork's `ragnarokoffline`
+branch ([docs/FORKS.md](../../docs/FORKS.md)): a dead PC keeps its
+`EntityManager` GID until a genuine removal packet arrives,
 allowing `ZC_RESURRECTION` to update the existing corpse instead of creating a
 second visual actor.
 

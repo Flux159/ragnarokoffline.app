@@ -22,6 +22,9 @@ and game window in one icon.
 - **[Mod system internals](MODDING_INTERNALS.md)** — how each layer is
   assembled, what was measured rather than assumed, and which of the remaining
   limits are decisions rather than bugs.
+- **[How we change rAthena and roBrowserLegacy](FORKS.md)** — fixes are
+  commits on our forks, pinned by commit; what is still applied by scripts, and
+  how to take a newer upstream or send a fix back.
 - **[Example mods](https://github.com/Flux159/ragnarokoffline.app/tree/main/examples/mods)**
   — eight mods that have actually been run, each with a README saying what it
   demonstrates.

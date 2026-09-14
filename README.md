@@ -173,9 +173,13 @@ part of running an RO server on a Mac is not the server — it is that the serve
 never meant to run on one. So we do not port it; we bring Linux. The same holds for
 Windows, which is how one codebase covers three platforms.
 
-roBrowserLegacy is built with the client fixes in `patches/` and
-`scripts/patch-client.sh`. rAthena is
-built from a clean upstream clone with one optional server modification compiled
+Both are built from our forks,
+[Flux159/rathena](https://github.com/Flux159/rathena) and
+[Flux159/roBrowserLegacy](https://github.com/Flux159/roBrowserLegacy): upstream,
+plus our fixes as ordinary commits we can send back upstream
+([docs/FORKS.md](docs/FORKS.md)). What is ours alone is added at build time:
+the client's stylist window, extension hooks and wording from `patches/` and
+`scripts/patch-client.sh`, and on the server one optional modification compiled
 in: the [Population Engine](https://github.com/YlenXWalker/Population-Engine),
 which fills a solo world with AI characters and is **off unless you turn it on**
 in Settings.
@@ -281,7 +285,7 @@ change between macOS, Windows and Linux; only the host-side VM integration does.
 
 | Piece | Origin | Role here |
 |---|---|---|
-| [rAthena](https://github.com/rathena/rathena) | upstream, GPL-3.0 | the server. Built arch-native at image build time from a clean clone, plus the optional population engine below |
+| [rAthena](https://github.com/rathena/rathena) | upstream, GPL-3.0 | the server. Built arch-native at image build time from our fork, [Flux159/rathena](https://github.com/Flux159/rathena), plus the optional population engine below |
 | [Population Engine](https://github.com/YlenXWalker/Population-Engine) | upstream, GPL-3.0 | server-side AI characters, compiled in but off by default. Vendored in `third-party/`, see its README |
 | [roBrowserLegacy](https://github.com/MrAntares/roBrowserLegacy) | upstream, GPL-3.0 | the client. Built from source with a few patches in `patches/` |
 | [RemoteClient](https://github.com/Flux159/roBrowserLegacy-RemoteClient-Rust) | GPL-3.0 | Rust rewrite of roBrowserLegacy's Node asset server |

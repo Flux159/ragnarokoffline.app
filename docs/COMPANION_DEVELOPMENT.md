@@ -146,8 +146,7 @@ listed above.
 | `third-party/population-engine/patches/0001-population-engine-hooks.patch` | rAthena-owned hooks, including party acceptance, membership callbacks, damage/death integration, and population ally semantics |
 | `scripts/apply-party-chat-hook.py` | Idempotently inserts the party-chat command hook into pinned `clif.cpp` without a fragile line-number patch |
 | `scripts/apply-server-mods.sh` | Copies engine-owned files, applies rAthena patches, then installs the party-chat hook |
-| `scripts/patch-client.sh` | Installs the dead-PC GID lifecycle correction into pinned roBrowserLegacy |
-| `patches/0019-companion-resurrection-corpses.md` | Rationale for the client lifecycle correction |
+| [Flux159/roBrowserLegacy](https://github.com/Flux159/roBrowserLegacy/commits/ragnarokoffline) | The dead-PC GID lifecycle correction, as the commit "Entity: keep a dead player's GID so resurrection finds the corpse" on `ragnarokoffline`; its message carries the rationale ([FORKS.md](FORKS.md)) |
 | `third-party/population-engine/files/db/population_names.yml` | Configurable name components |
 | `third-party/population-engine/files/db/population_engine.yml` | Class profiles, roles, appearance ranges, skills, and equipment references |
 | `third-party/population-engine/files/db/population_skill_db.yml` | Configurable skill lists and conditions |

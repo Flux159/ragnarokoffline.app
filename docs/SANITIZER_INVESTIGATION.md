@@ -91,9 +91,11 @@ The corrected diagnostic image from build `34153441798` (source
 `5b4dc29e9dce57b3969af9e84e92c1acf40c2f87048c1f02a62030d60203a8cd`)
 passed the synthetic guest fixture, then found another real startup defect:
 `msg_checklangtype(0)` shifts by -1 before its English early return. The retained
-stack starts at `msg_conf.cpp:133`, called by `map_do_init_msg`. The small
-`third-party/server-fixes/0001-language-mask.patch` moves the early return and
-range checks before the shift. It applies to both normal and diagnostic builds.
+stack starts at `msg_conf.cpp:133`, called by `map_do_init_msg`. The small fix,
+now the commit "Validate the language index before shifting the language mask"
+on our rAthena fork's `ragnarokoffline` branch ([FORKS.md](FORKS.md)), moves the
+early return and range checks before the shift. Normal and diagnostic builds
+both fetch that branch, so both carry it.
 `tests/diagnostics/verify-language.py` compiles that actual source function with
 UBSan: the pinned original fails on English; the patched checker passes English,
 all nine other languages, three enable masks and invalid integer bounds.

@@ -39,12 +39,29 @@ file.
 | Piece | Ours? | Where it runs | Symptoms it owns |
 |---|---|---|---|
 | [nebula](https://github.com/Flux159/nebula) | ours | host | the microVM will not boot; guest images; `NEBULA_MIN_VERSION` |
-| [rAthena](https://github.com/rathena/rathena) | upstream, vendored at `vendor/rathena` | in containers, in the VM | anything about rules: drops, refine, quests, NPCs, what a feature flag switches on |
-| [roBrowserLegacy](https://github.com/MrAntares/roBrowserLegacy) | upstream + `patches/` | Chromium, in Electron | anything you can see: UI windows, sprites, packet parsing |
+| [rAthena](https://github.com/rathena/rathena) | upstream, built from our fork [Flux159/rathena](https://github.com/Flux159/rathena), vendored at `vendor/rathena` | in containers, in the VM | anything about rules: drops, refine, quests, NPCs, what a feature flag switches on |
+| [roBrowserLegacy](https://github.com/MrAntares/roBrowserLegacy) | upstream, built from our fork [Flux159/roBrowserLegacy](https://github.com/Flux159/roBrowserLegacy), plus `patches/` | Chromium, in Electron | anything you can see: UI windows, sprites, packet parsing |
 | RemoteClient (Rust) | ours | host, `:3338` | file resolution, GRF decoding, the WS→TCP proxy |
 
 Everything Linux-side runs in containers inside a microVM the app carries. The
 server is never ported; we bring the platform it is tested on.
+
+### A fix to rAthena or roBrowserLegacy is a commit on the fork, not a patch
+
+[docs/FORKS.md](docs/FORKS.md) is the reference. The short version:
+
+- A bug in either project is fixed by a commit on the **`ragnarokoffline`**
+  branch of our fork, then `scripts/vendor-bump.sh <name>` moves
+  `config/VENDOR_PINS` to it. Do **not** add it to `patch-client.sh` or
+  `apply-server-mods.sh`; those carry only what is ours (the population engine,
+  the stylist, extension hooks, app wording).
+- `ragnarokoffline` refuses force-pushes. Releases pin commits on it, so it only
+  moves forward, and newer upstream is **merged** in, never rebased.
+- Work in a fork checkout beside this one (`~/Projects/rathena`,
+  `~/Projects/roBrowserLegacy`). `vendor/` is a pinned copy the build patches in
+  place, and anything done there is lost.
+- roBrowserLegacy checks files out with CRLF. A whole-file diff means something
+  rewrote the line endings.
 
 ### The seam where bugs actually live
 
@@ -80,6 +97,8 @@ is 1, and nothing handles it.
 | `stack/` | `ragnarok-stack`, the Rust supervisor. **No dependencies** — see below |
 | `electron/` | the shell: `main.js` (privileged), `preload.js`, IPC |
 | `config/Config.local.js` | the roBrowser config **template**; `write_client_config` in `stack/src/assets.rs` rewrites it per era and per mod |
+| `config/VENDOR_PINS` | the exact commit of each upstream source; `vendor-fetch.sh` reads it, `vendor-bump.sh` moves it |
+| `patches/`, `scripts/patch-client.sh` | roBrowserLegacy additions that are ours; its fixes are on the fork |
 | `mods/` | bundled mods, shipped in the app |
 | `examples/mods/` | worked examples, not shipped enabled |
 | `vendor/rathena` | read it to answer "what does the server do?" |
@@ -151,13 +170,17 @@ Check the vendor checkouts are on their pins before you trust a local result:
 `already at <sha>` when it was fine. Nothing warns you otherwise, and a drifted
 `vendor/roBrowserLegacy` means `patch-client.sh` is patching a tree the release
 never builds — the CI job clones the `config/VENDOR_PINS` commit fresh every
-time, so a patch anchor that matches locally can still fail there.
+time, so a patch anchor that matches locally can still fail there. When a pin
+has *moved*, delete `vendor/rathena` and `vendor/roBrowserLegacy` and fetch
+again: the build's in-place changes do not survive a checkout onto a new commit
+cleanly.
 
 **CI runs on every pull request** and every push to `main`: `test.yml`. It
 covers less than it sounds like, so know what it leaves out:
 
-- `server-language` — the rAthena diagnostics in `tests/diagnostics/`, run
-  against the pinned server before and after `apply-server-mods.sh`.
+- `server-language` — the rAthena diagnostics in `tests/diagnostics/`: each
+  must still find its bug in `rathena-upstream`, and must pass on our fork
+  before and after `apply-server-mods.sh`.
 - `client-build` — the patch set applied twice to the pinned roBrowser, a
   client build, `tests/client-extensions.test.cjs` and the mod-index check.
 - `supervisor-and-lifecycle`, on Linux, macOS and Windows — `cargo test` and
