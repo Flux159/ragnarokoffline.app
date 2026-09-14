@@ -11,7 +11,7 @@
 #   name              url                                                commit                                    branch
 roBrowserLegacy   https://github.com/Flux159/roBrowserLegacy.git   5970f7c594ccadde8d2850cea7f760a7cf382dd3  ragnarokoffline
 ROenglishRE       https://github.com/llchrisll/ROenglishRE.git     66cdfec631603fda6a90ba4bbe26ab07b5204c84
-rathena           https://github.com/Flux159/rathena.git           a5a0b030f6632fd41943a8ac1bdac6f44ea11a8b  ragnarokoffline
+rathena           https://github.com/Flux159/rathena.git           361a6d90477b020397d95ea87ab8d92e542c69f9  ragnarokoffline
 #
 # The upstream commit our rAthena fork is based on, without our fixes. Only the
 # diagnostics in test.yml fetch it, to show each bug a fix commit addresses is
