@@ -185,11 +185,14 @@ covers less than it sounds like, so know what it leaves out:
   client build, `tests/client-extensions.test.cjs` and the mod-index check.
 - `supervisor-and-lifecycle`, on Linux, macOS and Windows — `cargo test` and
   a build of `stack/`, `node --check electron/main.js`, the pinned
-  RemoteClient and docker-slim builds, and the lifecycle tests.
+  RemoteClient and docker-slim builds, and the shell suite
+  (`node --test tests/*.test.cjs`) against those binaries.
 
-The rest of the shell suite (`npm test`, `tests/*.test.cjs`) is **not** in CI,
-so run it yourself after touching `electron/`. Nothing in CI starts the app or
-a VM either, so an engine or Windows-only change still needs a real machine.
+Not in CI: the Playwright end-to-end tests (`npm run test:e2e`), the Windows
+install acceptance script, and the docs-site build. Nothing in CI starts the app
+or a VM either, so an engine or Windows-only change still needs a real machine.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the local build steps for each platform
+and which test to run for which change.
 
 `build.yml`, which builds and publishes the installers, runs only on `v*` tags
 and manual dispatch. A tag push starts a public release by itself, so tag only
