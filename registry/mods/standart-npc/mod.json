@@ -3,6 +3,7 @@
   "version": "3.3",
   "author": "Mondo",
   "description": "All-in-one NPC pack: Warper, Buffer, Stylist, Reset (skills/stats), Job Master, Kafra Employee (save/storage), Card Exchanger (cards for Old/Mystical Card Album), and Tool Dealer (potions, wings, arrows, traps).",
-  "default": "off",
+  "tags": ["npc-pack", "quality-of-life", "job-changer", "warper", "shop"],
+  "icon": "images/standart_npc_icon.png",
   "requires": { "app": ">=1.0.6", "era": "any" }
 }
