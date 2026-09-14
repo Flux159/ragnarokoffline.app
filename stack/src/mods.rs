@@ -2550,19 +2550,29 @@ mod tests {
     }
 
     /// The bundled player-commands grants must not repeat anything rAthena
-    /// already gives group 0, with or without its @go option -- a repeat would
-    /// cost it every other command in the group.
+    /// already gives group 0, with or without its @go and @warp options -- a
+    /// repeat would cost it every other command in the group.
     #[test]
     fn the_bundled_player_commands_grant_repeats_nothing() {
         let own = include_str!("../../mods/player-commands/conf/groups.yml");
         let go = include_str!("../../mods/player-commands/conf/when/allow_go/groups.yml");
+        let warp = include_str!("../../mods/player-commands/conf/when/allow_warp/groups.yml");
         let entries = vec![
             ("player-commands".to_string(), own.to_string()),
             ("player-commands (allow_go)".to_string(), go.to_string()),
+            ("player-commands (allow_warp)".to_string(), warp.to_string()),
         ];
         let (body, notes) = combine_whole_conf("groups.yml", &entries, &[]);
         assert!(notes.is_empty(), "{notes:?}");
         let body = body.unwrap();
         assert!(body.contains("      autoloot: true") && body.contains("      go: true"), "{body}");
+        assert!(body.contains("      mapmove: true"), "{body}");
+        // Spelled with its alias, @warp is the same grant as mapmove.
+        let aliased = format!("{GROUP_HEADER}  - Id: 0\n    Commands:\n      warp: true\n");
+        let mut entries = entries;
+        entries.push(("other".to_string(), aliased));
+        let (_, notes) = combine_whole_conf("groups.yml", &entries, &[]);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].contains("@mapmove (as \"warp\")"), "{}", notes[0]);
     }
 }

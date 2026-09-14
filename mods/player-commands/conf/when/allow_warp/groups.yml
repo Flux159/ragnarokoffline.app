@@ -1,0 +1,18 @@
+# Group 0 gets @warp -- only while "Also give everyone @warp" is ticked.
+#
+# Part of the mod only when that setting is on; see conf/when/allow_go for how
+# these fragments work.
+#
+# The command is `mapmove`: @warp and @rura are its aliases (conf/atcommands.yml),
+# and rAthena grants a command under its own name, so this one line gives all
+# three. A player without GM permissions is still refused a map flagged
+# nowarpto, leaving one flagged nowarp, and a map their job cannot enter
+# (ACMD_FUNC(mapmove), src/map/atcommand.cpp) -- everywhere else is open.
+Header:
+  Type: PLAYER_GROUP_DB
+  Version: 1
+
+Body:
+  - Id: 0
+    Commands:
+      mapmove: true

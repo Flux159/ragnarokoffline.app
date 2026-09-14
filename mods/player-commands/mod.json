@@ -1,6 +1,6 @@
 {
   "name": "player-commands",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "Ragnarok Offline",
   "description": "Gives every account @autoloot, @showexp and the rest of the information commands, instead of reserving them for GMs. Off until you turn it on.",
   "default": "off",
@@ -12,6 +12,13 @@
       "default": false,
       "label": "Also give everyone @go",
       "description": "Free warping to the main towns, plus Eden and Para Market in renewal. Type @go on its own for the list."
+    },
+    {
+      "key": "allow_warp",
+      "type": "boolean",
+      "default": false,
+      "label": "Also give everyone @warp",
+      "description": "Warp to any map by name, dungeons and fields included, e.g. @warp prt_fild08 170 200. Maps the server marks as no-warp stay closed."
     }
   ]
 }

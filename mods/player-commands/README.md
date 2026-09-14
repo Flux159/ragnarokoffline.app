@@ -59,13 +59,31 @@ Two things to know before you tick it:
   list. A name it does not know shows that list rather
   than warping you anywhere. Dungeons and fields are not on it; the warper in
   `common-npcs` covers those.
-- **It is the only one of these that changes the game** rather than informing
-  you about it, which is why it is behind its own switch — the same reason
+- **It changes the game** rather than informing you about it, which is why it
+  is behind its own switch — as `@warp` is, below, and for the same reason
   `common-npcs` ships its warper switched off.
 
 The option is `conf/when/allow_go/groups.yml`: a file that is part of the mod
 only while the setting of that name is on. See *Options that change the
 server* in [docs/MODDING.md](../../docs/MODDING.md).
+
+## `@warp`, as a separate option
+
+**Settings → Mods → player-commands → Also give everyone @warp**, then Apply.
+Independent of `@go`: tick either, both or neither.
+
+`@warp <map> [<x> <y>]` goes to any map by its name — `@warp prt_fild08 170 200`,
+`@warp moc_para01` — which makes it a much bigger grant than `@go`: dungeons,
+fields and every town, not `@go`'s fixed list. `@rura` and `@mapmove` are the
+same command and come with it.
+
+What stays closed for a player who is not a GM (`ACMD_FUNC(mapmove)` in
+`src/map/atcommand.cpp`): maps flagged `nowarpto`, leaving maps flagged
+`nowarp`, and maps their job is not allowed into. Everything else is open.
+
+It is `conf/when/allow_warp/groups.yml`, and it grants `mapmove` rather than
+`warp` because `warp` is only an alias, and rAthena records a grant under the
+command's own name.
 
 Also left out: `@autotrade`, `@request`, `@breakguild`, `@channel`, `@langtype`,
 `@whereis`, `@jailtime`, `@hominfo`, `@homstats`. Nothing is wrong with them;
