@@ -2032,6 +2032,28 @@ const handlers = {
 				: 'no balloon activity in the last 400 log lines');
 		}
 
+		// How the guest keeps time. The game servers pace movement and every
+		// other timer off the guest kernel's clock, and when that goes wrong
+		// nothing fails: monsters move in bursts and the report is "lag" from a
+		// machine with power to spare. nebulad (0.2.5 on) logs how fast the
+		// guest clock ran every few minutes, and the kernel's own choices come
+		// at the very start of the worker's stderr -- which the tail above
+		// cuts off, so the lines that answer the question never arrived.
+		const clock = [];
+		if (fs.existsSync(nlog)) {
+			const reports = tail(nlog, 4000).split('\n')
+				.filter(l => l.includes('guest clock:') || l.includes('guest timers:'));
+			clock.push(...reports.slice(-30));
+		}
+		const wlog = path.join(nebulaLogs, 'vessel-console.worker-stderr.log');
+		if (fs.existsSync(wlog)) {
+			const boot = tail(wlog, 4000).split('\n')
+				.filter(l => /clocksource|tsc|apic timer|calibrat|verification|unstable clock/i.test(l));
+			if (boot.length) clock.push('kernel at boot:', ...boot.slice(0, 30));
+		}
+		add('guest clock', clock.length ? clock.join('\n')
+			: 'nothing recorded (an engine before nebula 0.2.5, or one that never booted)');
+
 		const cfgToml = path.join(path.join(dataRoot(), 'nebula'), 'config.toml');
 		if (fs.existsSync(cfgToml)) {
 			add('nebula/config.toml', fs.readFileSync(cfgToml, 'utf8'));
