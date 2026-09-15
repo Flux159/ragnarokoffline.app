@@ -1426,7 +1426,10 @@ const openGame = () => {
 	if (win && !win.isDestroyed()) win.setTitle(gameTitle());
 	return win;
 };
-const openSetup = () => makeWindow('setup', 'setup.html', { width: 620, height: 620, resizable: false, title: `${productName()} — set up your client` });
+// 760 tall because the host pane is about 720 of content, and this height
+// includes the title bar. A screen shorter than that clamps the window and the
+// page scrolls.
+const openSetup = () => makeWindow('setup', 'setup.html', { width: 620, height: 760, resizable: false, title: `${productName()} — set up your client` });
 const openSettings = () => makeWindow('settings', 'settings.html', { width: 650, height: 800, title: `${productName()} — settings` });
 
 
@@ -2221,6 +2224,10 @@ const handlers = {
 		return c.mode === 'join' ? !!c.join_host : clientComplete(c);
 	},
 	get_client_paths: () => getClientPaths(),
+	// Read-only: the System/ and AI/ folders link-assets will take from beside
+	// this data.grf. Kept out of get_client_paths, whose result the setup screen
+	// hands back to set_client_paths to be saved.
+	client_folders: ({ data_grf }) => require('./client-folders').clientFolders(data_grf),
 	set_client_paths: async ({ paths }) => {
 		const next = { ...getClientPaths(), ...paths };
 		if (next.mode === 'join') {

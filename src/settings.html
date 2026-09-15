@@ -220,11 +220,14 @@
   <h2>Client</h2>
   <div class="panel">
     <div class="row"><span class="name">Game assets</span><span class="state" id="s-client">—</span></div>
+    <div class="row"><span class="name">Client folders</span><span class="state" id="s-client-folders">—</span></div>
     <div class="row actions" style="padding-top:10px">
       <button id="change-client" class="ghost">Change asset locations…</button>
     </div>
-    <p class="note">The GRFs and music stay where they are — Ragnarok Offline only
-       references them, so nothing is copied or duplicated.</p>
+    <p class="note">The GRFs, music and AI scripts stay where they are — Ragnarok
+       Offline only references them, so nothing is duplicated. The System and AI
+       folders are not chosen separately: they come from the folder that holds
+       data.grf.</p>
   </div>
   </div>
 
@@ -826,9 +829,16 @@ async function refresh() {
   const parts = [named(client.data_grf), named(client.rdata_grf), named(client.official_grf)]
     .filter(Boolean);
   paint($('s-client'), !!client.data_grf,
-        client.data_grf
-          ? parts.join(' + ') + (client.bgm_dir || '' ? ' + BGM' : ' (no BGM)')
-          : 'not configured');
+        client.data_grf ? parts.join(' + ') : 'not configured');
+  // BGM is chosen; System and AI are taken from beside data.grf. All three are
+  // optional, so a missing one is named rather than painted as a failure.
+  const folders = client.data_grf
+    ? await invoke('client_folders', { data_grf: client.data_grf }).catch(() => ({}))
+    : {};
+  const found = [['BGM', client.bgm_dir], ['System', folders.system_dir], ['AI', folders.ai_dir]];
+  paint($('s-client-folders'), !!client.data_grf,
+        client.data_grf ? found.map(([name, dir]) => (dir ? name : `no ${name}`)).join(' · ') : '—');
+  $('s-client-folders').title = found.filter(([, dir]) => dir).map(([, dir]) => dir).join('\n');
 
   const assets = await invoke('assets_ready');
   paint($('s-assets'), assets, assets ? 'ready' : 'stopped');
