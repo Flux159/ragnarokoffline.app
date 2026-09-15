@@ -2048,7 +2048,7 @@ const handlers = {
 		const wlog = path.join(nebulaLogs, 'vessel-console.worker-stderr.log');
 		if (fs.existsSync(wlog)) {
 			const boot = tail(wlog, 4000).split('\n')
-				.filter(l => /clocksource|tsc|apic timer|calibrat|verification|unstable clock/i.test(l));
+				.filter(l => /clocksource|tsc|apic timer|calibrat|unstable clock/i.test(l));
 			if (boot.length) clock.push('kernel at boot:', ...boot.slice(0, 30));
 		}
 		add('guest clock', clock.length ? clock.join('\n')
