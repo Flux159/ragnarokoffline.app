@@ -87,6 +87,12 @@ After joining it:
 - follows its recruiter between maps and teleports back when separated;
 - uses deterministic free cells around the recruiter while idle;
 - shares EXP through the ordinary rAthena party system;
+- attributes its monster-drop ownership to its recruiter while both remain on
+  the same map, so the recruiter's `@autoloot`, `@alootid`, and
+  `@autoloottype` settings work normally;
+- is excluded as an item-sharing recipient, preventing loot from being placed
+  in an inaccessible shell inventory while preserving normal distribution
+  between real party members;
 - uses the same class, equipment, and skill data it had as an ambient shell;
 - obeys party-wide Attack, Defensive, and Passive modes; and
 - accepts individual Tank, Support, and Attacker roles from the party leader.
@@ -111,6 +117,15 @@ branch ([docs/FORKS.md](../../docs/FORKS.md)): a dead PC keeps its
 `EntityManager` GID until a genuine removal packet arrives,
 allowing `ZC_RESURRECTION` to update the existing corpse instead of creating a
 second visual actor.
+
+Ranged companion ammunition is also virtual because shell inventories are not
+player-accessible. A single runtime module provisions and validates arrows for
+bow-line weapons, bullets (or pre-renewal grenade spheres) for every rAthena
+gun weapon type, and shuriken or elemental kunai when a Ninja skill needs them.
+It selects useful elemental ammo for the current target, repairs the equipped
+stack after map changes, and stops stocking before the shell becomes
+overweight. All ammo uses normal `pc_isequip`/`pc_equipitem` validation;
+invalid items are never forced into the equipment slot.
 
 ### Appearance, names, and ambient chat
 

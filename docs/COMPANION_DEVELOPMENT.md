@@ -144,6 +144,7 @@ listed above.
 | `third-party/population-engine/files/src/map/population_engine/core/population_shell_state.hpp` | Companion runtime state in the normal engine layout |
 | `third-party/population-engine/files/src/map/population_engine/core/population_shell_combat_skills.hpp` | Matching runtime state in the combat-skills layout; keep both state definitions aligned |
 | `third-party/population-engine/patches/0001-population-engine-hooks.patch` | rAthena-owned hooks, including party acceptance, membership callbacks, damage/death integration, and population ally semantics |
+| `third-party/population-engine/patches/0003-companion-loot-owner.patch` | Redirects recruited-shell loot priority to the active same-map owner and excludes recruited shells as item-share recipients; ambient shells, real-player sharing, and EXP attribution are unchanged |
 | `scripts/apply-party-chat-hook.py` | Idempotently inserts the party-chat command hook into pinned `clif.cpp` without a fragile line-number patch |
 | `scripts/apply-server-mods.sh` | Copies engine-owned files, applies rAthena patches, then installs the party-chat hook |
 | [Flux159/roBrowserLegacy](https://github.com/Flux159/roBrowserLegacy/commits/ragnarokoffline) | The dead-PC GID lifecycle correction, as the commit "Entity: keep a dead player's GID so resurrection finds the corpse" on `ragnarokoffline`; its message carries the rationale ([FORKS.md](FORKS.md)) |
@@ -209,6 +210,21 @@ Automated and build verification covered:
   `population_engine.cpp`, producing map-server SHA-256
   `f953290d14f13243a7f71360858cfb8429e0d2cfab03fc189d0940560ba59320`;
 - clean `git diff --check` and a mergeable, conflict-free Draft PR.
+
+## Verification record for companion loot ownership
+
+Manual Windows 1.2.5 acceptance covered:
+
+- loot from a recruited companion being collected by its real owner's
+  `@autoloot` setting;
+- percentage-based `@autoloot` filtering continuing to respect the owner's
+  configured drop-rate threshold; and
+- the test runtime loading the exact x64 container image built from commit
+  `4b3b981` by GitHub Actions run `34884263381`.
+
+Build verification covered a clean x64 Linux container compile, successful
+server-mod application against pinned rAthena commit `361a6d9`, a second
+idempotent application, and a clean Population Engine data validation.
 
 ## Current limitations
 
@@ -291,25 +307,52 @@ Acceptance criteria:
   shell appearances.
 - Fixing mounts does not collapse ordinary character colour variety.
 
-### 4. Town-origin Gunslinger companions do not fight
+### 4. Unified companion ammunition
 
-Observed concern: Gunslingers recruited in town follow the party but remain
-non-combatant. Missing ammunition is the leading hypothesis, not a confirmed
-cause.
+Root cause confirmed: the generic spawn-time item-database scan selected
+`Slug_Bullet_1` (13210) for Gunslingers because it had no level requirement.
+That item is not equippable by any class. The spawn code bypassed rAthena's
+normal validation, so the shell could attack initially, but `pc_setpos`
+correctly unequipped the invalid bullet on a map change.
 
-Investigation:
+The replacement is centralized in `population_shell_ammo.*`:
 
-- Compare town- and field-origin Gunslinger runtime state after recruitment.
-- Inspect combat-session startup, weapon type, equipped ammunition, and
-  `population_shell_ammo.*` provisioning before changing AI targeting.
-- Record failed basic attacks and skill requirements in the map-server log.
+- bows, musical instruments, and whips use a curated arrow pool;
+- revolvers, rifles, Gatling guns and shotguns use valid bullets, and grenade
+  launchers use bullets in renewal and spheres in pre-renewal, matching
+  rAthena's basic-attack ammunition rules;
+- level-appropriate shuriken and elemental kunai are stocked when a skill whose
+  `AmmoType` requires them is about to be used, not carried by every Ninja;
+- elemental ammunition is selected against the current monster where useful;
+- every item is equipped through `pc_equipitem` and must pass `pc_isequip`;
+- inaccessible shell inventories are replenished as a virtual resource, but
+  never past rAthena's first overweight threshold, since a shell at 90% cannot
+  attack; and
+- provisioning runs at spawn, after companion map warps, and immediately
+  before attacks. An equip cooldown (Desperado, Arrow Vulcan) blocks a swap,
+  not an attack with the stack already equipped.
 
-Acceptance criteria:
+The legacy `setarrow` profile scripts and the unsafe direct ammo-slot write are
+no longer part of built-in profile provisioning. The script commands remain
+available for third-party configurations.
 
-- A recruited Gunslinger from town attacks under Attack and Defensive triggers.
-- Required ammunition is provisioned through the shell's virtual resource
-  model without exposing or depending on a player inventory.
-- Passive mode remains passive and non-Gunslinger classes do not regress.
+Verification record (2026-09-15, app 1.2.5 with the branch test image):
+
+- Town- and field-origin Gunslinger companions attacked correctly before and
+  after map changes.
+- Archer-line companions attacked correctly without the profile `setarrow`
+  script and continued after map changes.
+- Attack, Defensive, and Passive mode changes continued to work for both tested
+  class lines.
+- The same source compiled successfully in the x64 and arm64 image workflow.
+
+Remaining coverage, not a blocker for the shared mechanism:
+
+- Repeat the Gunslinger test with rifle, Gatling gun, shotgun, and grenade
+  launcher gear when profiles for those weapon variants are available.
+- Once Ninja attack skills and appropriate equipment are present in the
+  population data, verify both Shuriken and Kunai `AmmoType` requirements
+  across map changes. Current Ninja profiles use daggers only.
 
 ### 5. Persist companions across session end
 
@@ -419,8 +462,8 @@ Acceptance criteria:
 ## Recommended next sequence
 
 1. Keep PR #128 reviewable as the baseline and respond to maintainer feedback.
-2. Reproduce and fix Priest self-buffs and town Gunslinger combat; both exercise
-   server-side skill/resource paths and should be small, isolated branches.
+2. Reproduce and fix Priest self-buffs; the Gunslinger resource-path issue is
+   covered by the unified ammunition implementation above.
 3. Investigate HP-bar visibility and Peco palettes together as client-rendering
    work, but commit them separately if their causes differ.
 4. Agree on the level-gap probability table, then implement refusal as a focused

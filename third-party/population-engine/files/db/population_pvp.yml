@@ -233,9 +233,6 @@ Body:
     TownBehavior: wander
     FieldBehavior: combat
     DungeonBehavior: combat
-    Script: |
-      setarrow;
-
   - Profile: pvp_monk             # Str/Vit/Dex puncher: Monk, Champion
     Jobs:
       Champion: para_monk

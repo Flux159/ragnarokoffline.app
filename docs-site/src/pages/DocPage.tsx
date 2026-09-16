@@ -39,6 +39,7 @@ const sidebarItems = [
       { label: 'Making mods', path: 'modding' },
       { label: 'Publishing a mod', path: 'mods/publishing' },
       { label: 'Where the AI characters go', path: 'mods/ai-characters' },
+      { label: 'Custom homunculus AI', path: 'homunculus-ai' },
       { label: 'Troubleshooting', path: 'troubleshooting' },
       { label: 'Repairing the database', path: 'database' },
     ],

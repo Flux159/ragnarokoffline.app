@@ -573,22 +573,7 @@ void population_shell_target_change(map_session_data *sd, int id)
 		if (!bl_target || bl_target->type != BL_MOB)
 			return;
 		mob_data *md_target = (mob_data *)bl_target;
-		switch (sd->status.weapon) {
-		case W_BOW:
-		case W_WHIP:
-		case W_MUSICAL:
-			population_shell_equip_best_arrow_for_target(sd, md_target);
-			break;
-		case W_REVOLVER:
-		case W_RIFLE:
-		case W_GATLING:
-		case W_SHOTGUN:
-		case W_GRENADE:
-			population_shell_equip_best_bullet_for_target(sd, md_target);
-			break;
-		default:
-			break;
-		}
+		population_shell_equip_best_ammo_for_target(sd, md_target);
 	}
 }
 
@@ -994,6 +979,10 @@ bool population_shell_try_attack(map_session_data *sd, uint32 target_id, uint16 
 	const t_tick now = gettick();
 
 	if (skill_id > 0) {
+		if (!population_shell_equip_ammo_for_skill(sd, md_target, skill_id, skill_lv)) {
+			pe.attack_fail_count++;
+			return false;
+		}
 		if (skill_isNotOk(skill_id, *sd)) {
 			pe.attack_fail_count++;
 			if (pe.attack_fail_count >= PE_SHELL_ATTACK_FAIL_CLEAR_COUNT) {
@@ -1119,6 +1108,10 @@ bool population_shell_try_attack(map_session_data *sd, uint32 target_id, uint16 
 	}
 
 	status_data *sstatus = status_get_status_data(*sd);
+	if (!population_shell_equip_best_ammo_for_target(sd, md_target)) {
+		pe.attack_fail_count++;
+		return false;
+	}
 	int32 range = sstatus->rhw.range;
 	if (!check_distance_client_bl(sd, target_bl, range)) {
 		if (shell_try_walktobl_command(sd, target_bl, range, 1, MovementOwner::Combat, "population_shell:melee_approach"))

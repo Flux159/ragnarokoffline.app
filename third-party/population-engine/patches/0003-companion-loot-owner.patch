@@ -1,0 +1,63 @@
+diff --git a/src/map/mob.cpp b/src/map/mob.cpp
+index c53890961..7b4bde5a7 100644
+--- a/src/map/mob.cpp
++++ b/src/map/mob.cpp
+@@ -38,6 +38,7 @@
+ #include "party.hpp"
+ #include "path.hpp"
+ #include "pc.hpp"
++#include "population_engine.hpp"
+ #include "pet.hpp"
+ #include "quest.hpp"
+ 
+@@ -3028,17 +3029,24 @@ int32 mob_dead(mob_data *md, block_list *src, int32 type)
+ 
+ 		tmpsd[i] = tsd; // record as valid damage-log entry
+ 
++		// A recruited population shell has no usable inventory. Attribute only
++		// its loot priority to its active real owner, so that owner's @autoloot
++		// settings and normal party item sharing apply. EXP still uses tsd above.
++		map_session_data* loot_sd = population_engine_companion_loot_owner(tsd);
++		if (loot_sd == nullptr)
++			loot_sd = tsd;
++
+ 		// Gather data to determine loot priority
+ 		// Check if player already has an entry
+ 		auto it = lootdmg.begin();
+ 		for (; it != lootdmg.end(); ++it)
+-			if (it->sd->id == tsd->id)
++			if (it->sd->id == loot_sd->id)
+ 				break;
+ 
+ 		if (it == lootdmg.end()) {
+ 			// No matching player found, create new entry for player
+ 			s_dmg_entry dmg_entry;
+-			dmg_entry.sd = tsd;
++			dmg_entry.sd = loot_sd;
+ 			dmg_entry.damage = entry.dmg;
+ 			lootdmg.push_back(dmg_entry);
+ 		} else {
+diff --git a/src/map/party.cpp b/src/map/party.cpp
+index 52f3425d3..0975280c0 100644
+--- a/src/map/party.cpp
++++ b/src/map/party.cpp
+@@ -1352,7 +1352,8 @@ int32 party_share_loot(struct party_data* p, map_session_data* sd, struct item*
+ 				if (i >= MAX_PARTY)
+ 					i = 0;	// reset counter to 1st person in party so it'll stop when it reaches "itemc"
+ 
+-				if( (psd = p->data[i].sd) == nullptr || sd->m != psd->m || pc_isdead(psd) || (battle_config.idle_no_share && pc_isidle_party(psd)) )
++				if( (psd = p->data[i].sd) == nullptr || population_engine_is_recruited_companion(psd)
++					|| sd->m != psd->m || pc_isdead(psd) || (battle_config.idle_no_share && pc_isidle_party(psd)) )
+ 					continue;
+ 
+ 				if (pc_additem(psd,item,item->amount,LOG_TYPE_PICKDROP_PLAYER))
+@@ -1369,7 +1370,8 @@ int32 party_share_loot(struct party_data* p, map_session_data* sd, struct item*
+ 
+ 			//Collect pick candidates
+ 			for (i = 0; i < MAX_PARTY; i++) {
+-				if( (psd[count] = p->data[i].sd) == nullptr || psd[count]->m != sd->m || pc_isdead(psd[count]) || (battle_config.idle_no_share && pc_isidle_party(psd[count])) )
++				if( (psd[count] = p->data[i].sd) == nullptr || population_engine_is_recruited_companion(psd[count])
++					|| psd[count]->m != sd->m || pc_isdead(psd[count]) || (battle_config.idle_no_share && pc_isidle_party(psd[count])) )
+ 					continue;
+ 
+ 				count++;

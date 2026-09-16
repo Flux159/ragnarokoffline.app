@@ -241,9 +241,6 @@ Body:
     TownBehavior: wander
     FieldBehavior: combat
     DungeonBehavior: combat
-    Script: |
-      setarrow;
-
   - Profile: pve_monk             # Monk PvE template
     Jobs:
       Monk: para_monk

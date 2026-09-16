@@ -1426,7 +1426,10 @@ const openGame = () => {
 	if (win && !win.isDestroyed()) win.setTitle(gameTitle());
 	return win;
 };
-const openSetup = () => makeWindow('setup', 'setup.html', { width: 620, height: 620, resizable: false, title: `${productName()} — set up your client` });
+// 760 tall because the host pane is about 720 of content, and this height
+// includes the title bar. A screen shorter than that clamps the window and the
+// page scrolls.
+const openSetup = () => makeWindow('setup', 'setup.html', { width: 620, height: 760, resizable: false, title: `${productName()} — set up your client` });
 const openSettings = () => makeWindow('settings', 'settings.html', { width: 650, height: 800, title: `${productName()} — settings` });
 
 
@@ -2032,6 +2035,28 @@ const handlers = {
 				: 'no balloon activity in the last 400 log lines');
 		}
 
+		// How the guest keeps time. The game servers pace movement and every
+		// other timer off the guest kernel's clock, and when that goes wrong
+		// nothing fails: monsters move in bursts and the report is "lag" from a
+		// machine with power to spare. nebulad (0.2.5 on) logs how fast the
+		// guest clock ran every few minutes, and the kernel's own choices come
+		// at the very start of the worker's stderr -- which the tail above
+		// cuts off, so the lines that answer the question never arrived.
+		const clock = [];
+		if (fs.existsSync(nlog)) {
+			const reports = tail(nlog, 4000).split('\n')
+				.filter(l => l.includes('guest clock:') || l.includes('guest timers:'));
+			clock.push(...reports.slice(-30));
+		}
+		const wlog = path.join(nebulaLogs, 'vessel-console.worker-stderr.log');
+		if (fs.existsSync(wlog)) {
+			const boot = tail(wlog, 4000).split('\n')
+				.filter(l => /clocksource|tsc|apic timer|calibrat|unstable clock/i.test(l));
+			if (boot.length) clock.push('kernel at boot:', ...boot.slice(0, 30));
+		}
+		add('guest clock', clock.length ? clock.join('\n')
+			: 'nothing recorded (an engine before nebula 0.2.5, or one that never booted)');
+
 		const cfgToml = path.join(path.join(dataRoot(), 'nebula'), 'config.toml');
 		if (fs.existsSync(cfgToml)) {
 			add('nebula/config.toml', fs.readFileSync(cfgToml, 'utf8'));
@@ -2199,6 +2224,10 @@ const handlers = {
 		return c.mode === 'join' ? !!c.join_host : clientComplete(c);
 	},
 	get_client_paths: () => getClientPaths(),
+	// Read-only: the System/ and AI/ folders link-assets will take from beside
+	// this data.grf. Kept out of get_client_paths, whose result the setup screen
+	// hands back to set_client_paths to be saved.
+	client_folders: ({ data_grf }) => require('./client-folders').clientFolders(data_grf),
 	set_client_paths: async ({ paths }) => {
 		const next = { ...getClientPaths(), ...paths };
 		if (next.mode === 'join') {

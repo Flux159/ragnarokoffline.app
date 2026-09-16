@@ -126,6 +126,16 @@
     </div>
   </div>
 
+  <!-- Not chosen: link-assets takes these from beside data.grf, so the most this
+       screen can do is say whether they are there. -->
+  <div class="field">
+    <div class="label"><span class="name">System &amp; AI folders</span><span class="tag">optional — taken from beside data.grf; AI is homunculus AI</span></div>
+    <div class="picker">
+      <div class="path" id="p-system_dir">System — needs data.grf</div>
+      <div class="path" id="p-ai_dir">AI — needs data.grf</div>
+    </div>
+  </div>
+
   </div><!-- /pane-host -->
 
   <div class="pane" id="pane-join">
@@ -184,6 +194,24 @@ function render() {
     ? !$('join_host').value.trim()
     : !paths.data_grf;
   $('save').textContent = mode === 'join' ? 'Connect' : 'Continue';
+  showFolders();
+}
+
+// System/ and AI/ follow data.grf, so look again only when it changes.
+let foldersFor = null;
+async function showFolders() {
+  const grf = paths.data_grf;
+  if (grf === foldersFor) return;
+  foldersFor = grf;
+  const found = grf ? await invoke('client_folders', { data_grf: grf }).catch(() => ({})) : {};
+  if (grf !== foldersFor) return; // picked again while this was looking
+  // Half a row each, so a status rather than a path; the path is on hover.
+  for (const [k, name] of [['system_dir', 'System'], ['ai_dir', 'AI']]) {
+    const el = $('p-' + k);
+    el.textContent = `${name} — ${found[k] ? 'found' : grf ? 'not found' : 'needs data.grf'}`;
+    el.title = found[k] || '';
+    el.classList.toggle('set', !!found[k]);
+  }
 }
 
 for (const t of document.querySelectorAll('.tab')) {

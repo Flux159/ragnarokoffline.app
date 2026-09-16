@@ -8,6 +8,7 @@
 #include "population_engine.hpp"
 
 #include "population_engine/runtime/population_engine_combat.hpp"
+#include "population_engine/runtime/population_shell_ammo.hpp"
 #include "population_engine/runtime/population_shell_runtime.hpp"
 
 #include <algorithm>
@@ -501,8 +502,6 @@ static void population_engine_shell_equip_item(map_session_data* sd, t_itemid na
 		}
 	}
 }
-static t_itemid find_ammo_item_by_subtype(e_ammo_type sub); // First matching ammo in item_db, or 0
-static t_itemid find_arrow_ammo_item(); // First arrow ammo in item_db, or common fallback
 static void population_engine_sync_vd_weapon_shield(map_session_data* sd);
 static void population_engine_destroy_failed_spawn(map_session_data* sd);
 
@@ -1309,6 +1308,19 @@ static map_session_data *pop_companion_owner(map_session_data *sd)
 	return owner;
 }
 
+map_session_data *population_engine_companion_loot_owner(map_session_data *shell)
+{
+	map_session_data *owner = pop_companion_owner(shell);
+	if (!owner || owner->m != shell->m)
+		return nullptr;
+	return owner;
+}
+
+bool population_engine_is_recruited_companion(const map_session_data *sd)
+{
+	return sd && population_engine_is_population_pc(sd->id) && pop_is_companion(sd);
+}
+
 /// Assign each recruited shell a deterministic, unobstructed idle cell around
 /// its owner. Recomputing from stable shell IDs keeps the layout consistent
 /// without persisting party-slot bookkeeping across map changes.
@@ -1522,6 +1534,7 @@ static bool pop_companion_follow_owner(map_session_data *sd, map_session_data *o
 				sd->status.name, owner->status.name);
 			return false;
 		}
+		population_shell_prepare_ammo(sd);
 		sd->pop.last_teleport = now;
 		pop_shell_broadcast_map_placement(sd);
 		return true;
@@ -2267,6 +2280,7 @@ static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, in
 	PopulationDbSource db_source)
 {
 	PE_PERF_SCOPE("spawn_shell");
+	(void)skip_arrow; // Legacy GearSet Arrow toggle; unified ammo is managed at runtime.
 	if (map_id < 0) {
 		ShowError("Population engine: Invalid map_id %d\n", map_id);
 		return nullptr;
@@ -2746,96 +2760,6 @@ static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, in
 		}
 	}
 
-    // When a Script: block exists, setarrow/setbullet/setkunai in it run once via
-    // run_script at spawn.  Skip the built-in ammo pass to avoid double-equip.
-    if (!skip_arrow && init_script == nullptr && weapon > 0) {
-        struct item_data* wid = itemdb_search(weapon);
-        if (wid && wid->type == IT_WEAPON) {
-            t_itemid ammo_id = 0;
-            const char* ammo_ctx = nullptr;
-            switch (wid->subtype) {
-            case W_BOW:
-            case W_MUSICAL:
-            case W_WHIP:
-                ammo_id = find_arrow_ammo_item();
-                ammo_ctx = "arrow";
-                break;
-            case W_REVOLVER:
-            case W_RIFLE:
-            case W_GATLING:
-                ammo_id = find_ammo_item_by_subtype(AMMO_BULLET);
-                ammo_ctx = "bullet";
-                break;
-            case W_SHOTGUN:
-                ammo_id = find_ammo_item_by_subtype(AMMO_SHELL);
-                ammo_ctx = "shell";
-                break;
-#ifdef RENEWAL
-            case W_GRENADE:
-                ammo_id = find_ammo_item_by_subtype(AMMO_GRENADE);
-                ammo_ctx = "grenade";
-                break;
-#endif
-            case W_HUUMA:
-                ammo_id = find_ammo_item_by_subtype(AMMO_KUNAI);
-                ammo_ctx = "kunai";
-                break;
-            default:
-                break;
-            }
-            if (ammo_id != 0 && ammo_ctx != nullptr) {
-                struct item_data* aid = itemdb_search(ammo_id);
-                if (!aid || !aid->equip) {
-                    ShowWarning("Population engine: builtin %s ammo item %u invalid for population shell %u (weapon item %u)\n",
-                        ammo_ctx, (unsigned)ammo_id, index, (unsigned)weapon);
-                } else {
-                    // Cap amount to what fits by weight; always at least 1 so equip can proceed.
-                    int add_amount = 500;
-                    if (aid->weight > 0) {
-                        const int fits = (sd->max_weight - sd->weight) / static_cast<int>(aid->weight);
-                        add_amount = fits < 1 ? 1 : (fits < 500 ? fits : 500);
-                    }
-                    struct item tmp_item = {};
-                    tmp_item.nameid = ammo_id;
-                    tmp_item.amount = add_amount;
-                    tmp_item.identify = 1;
-                    tmp_item.equip = 0;
-                    enum e_additem_result ares = pc_additem(sd, &tmp_item, add_amount, LOG_TYPE_NONE, false);
-                    if (ares != ADDITEM_SUCCESS) {
-                        ShowWarning("Population engine: builtin %s pc_additem failed result=%d ammo=%u population shell %u (max_w=%d w=%d)\n",
-                            ammo_ctx, (int)ares, (unsigned)ammo_id, index, sd->max_weight, sd->weight);
-                    } else {
-                        bool done = false;
-                        for (int16 i = 0; i < MAX_INVENTORY; i++) {
-                            auto& aslot = sd->inventory.u.items_inventory[i];
-                            if (aslot.nameid == ammo_id && aslot.amount > 0 && aslot.equip == 0) {
-                                // Bypass pc_equipitem so that class-restricted ammo (Classes: All: false)
-                                // can be force-equipped on shells regardless of job. Shells are virtual
-                                // and never go through normal equip validation.
-                                aslot.equip = static_cast<unsigned int>(aid->equip);
-                                sd->equip_index[EQI_AMMO] = i;
-                                done = true;
-                                break;
-                            }
-                        }
-                        if (!done)
-                            ShowWarning("Population engine: builtin %s could not equip ammo %u after additem (population shell %u)\n",
-                                ammo_ctx, (unsigned)ammo_id, index);
-                    }
-                }
-            } else if (wid->subtype == W_BOW || wid->subtype == W_MUSICAL || wid->subtype == W_WHIP
-                || wid->subtype == W_REVOLVER || wid->subtype == W_RIFLE || wid->subtype == W_GATLING
-                || wid->subtype == W_SHOTGUN
-#ifdef RENEWAL
-                || wid->subtype == W_GRENADE
-#endif
-                || wid->subtype == W_HUUMA) {
-                ShowWarning("Population engine: no item_db ammo for weapon subtype %u (item %u) population shell %u\n",
-                    (unsigned)wid->subtype, (unsigned)weapon, index);
-            }
-        }
-    }
-    
     if (shield > 0) {
         struct item tmp_item = {};
         tmp_item.nameid = shield;
@@ -3011,6 +2935,11 @@ static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, in
     // Raise carry limit before status_calc_pc so setriding / setarrow do not fail.
     if (sd->max_weight <= 0 || sd->max_weight < 10000)
         sd->max_weight = 8000 + (sd->status.str * 300);
+
+    // Shell inventories are inaccessible, so ammunition is a managed virtual
+    // resource. Provision valid class/level ammunition through normal rAthena
+    // equip validation; the same helper repairs it after future map changes.
+    population_shell_prepare_ammo(sd);
 
     // Run the full Script: once to execute side-effect commands (setriding, setfalcon, etc.).
     if (init_script != nullptr)
@@ -3610,34 +3539,6 @@ static char get_job_required_sex(uint16_t job_id) {
     
     // Gender-neutral jobs
     return '\0';
-}
-
-static t_itemid find_ammo_item_by_subtype(e_ammo_type sub) {
-    // Prefer lightest ammo with no level requirement so shells of any level can equip it
-    // and the weight-capped add-amount leaves enough room for equipping.
-    // If all matching ammo has a level gate, fall back to the lightest match.
-    t_itemid best = 0;
-    int best_w = INT_MAX;
-    t_itemid fallback = 0;
-    int fallback_w = INT_MAX;
-    for (const auto& it : item_db) {
-        std::shared_ptr<item_data> id = it.second;
-        if (!id || id->nameid == UNKNOWN_ITEM_ID)
-            continue;
-        if (id->type == IT_AMMO && id->subtype == sub && id->equip && (id->equip & EQP_AMMO)) {
-            if (id->elv == 0) {
-                if (id->weight < best_w) { best = it.first; best_w = id->weight; }
-            } else {
-                if (id->weight < fallback_w) { fallback = it.first; fallback_w = id->weight; }
-            }
-        }
-    }
-    return best != 0 ? best : fallback;
-}
-
-static t_itemid find_arrow_ammo_item() {
-    t_itemid id = find_ammo_item_by_subtype(AMMO_ARROW);
-    return id != 0 ? id : 1750; // Steel Arrow fallback
 }
 
 /// Derive weapon/shield sprites from inventory (status.weapon is weapon_type, not a sprite id).

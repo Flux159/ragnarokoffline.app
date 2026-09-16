@@ -1,6 +1,14 @@
 # Mod reference
 
-[Making mods](../MODDING.md) is the guide to read first. It covers the whole
+**New to modding?** Start with the tutorials. They are shorter, and they walk
+through a working mod step by step:
+
+| | |
+|---|---|
+| [Getting started](tutorials/gettingstarted.md) | a first mod in ten minutes: the mods folder, an NPC, switching it on, and what to check when nothing happens |
+| [Adding a `@give` command](tutorials/giveguide.md) | a chat command from one script: reading what the player typed, looking up items, and who may use it |
+
+[Making mods](../MODDING.md) is the full reference. It covers the whole
 mod format: `db/`, `npc/`, `conf/`, `data/`, `System/`, `client/`, and how to
 install, test and share one.
 

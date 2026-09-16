@@ -28,6 +28,17 @@ than standing on top of one another.
 Removing a companion from the party releases it. Companions are temporary and
 are not restored after the local server or app is shut down.
 
+## Loot
+
+Monster drops earned by a recruited companion use its active same-map owner as
+the loot owner. The owner's `@autoloot`, `@alootid`, and `@autoloottype`
+settings therefore work for companion kills as well as the owner's own kills.
+
+Recruited companions are not item-sharing recipients because their inventories
+are not accessible to the player. Party item-sharing settings continue to
+distribute loot normally between eligible real players. Ambient Population
+Engine characters are never redirected and cannot generate loot for a player.
+
 ## Combat Modes
 
 Only the current party leader can issue orders, and only messages sent through

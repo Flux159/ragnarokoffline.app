@@ -53,6 +53,13 @@ bool population_engine_is_running();
 bool population_engine_is_population_pc(int32_t id);
 /// True while this real player's party has fewer than four recruited companions.
 bool population_engine_can_recruit_companion(const map_session_data *owner);
+/// Return the real player who should receive a recruited companion's loot.
+/// Only succeeds for an active owner in the same party and on the same map;
+/// ambient population shells therefore never redirect their drops.
+map_session_data *population_engine_companion_loot_owner(map_session_data *shell);
+/// True for a population shell recruited into a party, wherever its owner is.
+/// Party item sharing skips these: nobody can open a shell's inventory.
+bool population_engine_is_recruited_companion(const map_session_data *sd);
 /// RAGNAROKMAC: true when a real (non-shell) player is standing on this map, or
 /// when demand-driven population is off and every map counts as live.
 bool population_engine_map_has_real_players(int16_t m);
