@@ -897,6 +897,10 @@ const SETTINGS_DEFAULTS = {
 	// spawn tables ask for. This is the dial players actually want; the limit
 	// above is only a safety net.
 	population_density: 100,
+	// How many shells one player may recruit into their party at once. The
+	// server enforces this per recruiter (not per map), and rAthena's MAX_PARTY
+	// of 12 leaves a slot for real players, which is why the UI tops out at 11.
+	population_companion_limit: 4,
 	// Whether deleting a character takes effect at once or a day after it is
 	// queued. rAthena's default is the day, and it stays the default here: the
 	// countdown on the slot is what lets a player undo a deletion somebody else
@@ -1026,17 +1030,9 @@ function toBattleConf(s) {
 		// touched nothing.
 		aspdConf(s.max_aspd) +
 		parameterConf(s.max_parameter) +
-		// The count is always written, even when the engine is off: rAthena
-		// clamps this one to 1..30000 and refuses a 0, so "none" is expressed by
-		// the enable flag alone.
-		`population_engine_enable: ${s.population_enable ? 1 : 0}\n` +
-		`population_engine_max_count: ${Math.max(1, Number(s.population_max) || 1)}\n` +
-		`population_engine_density_pct: ${Math.min(500, Math.max(10, Number(s.population_density) || 100))}\n` +
-		// Off in the compiled defaults. Upstream turns it on in a conf file we
-		// deliberately do not import, so without this line no shell ever opens
-		// a stall -- and a town of people with nothing to sell is most of what
-		// makes one feel dead.
-		`population_engine_vending_enable: ${s.population_enable ? 1 : 0}\n`
+		// Population keys: one module so the Settings window and the server
+		// share their bounds -- see electron/population-conf.js.
+		require('./population-conf').lines(s)
 	);
 }
 

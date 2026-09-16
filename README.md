@@ -326,7 +326,7 @@ live there, so a starting field holds beginners in plain gear and a late-game
 map does not. Applying any of this restarts the server, so log back in
 afterwards.
 
-### Recruit up to four AI companions
+### Recruit up to eleven AI companions
 
 Population characters can join your party and follow you between maps. Whisper
 `party`, `pt`, `join`, or `invite` to one, then send it a normal party

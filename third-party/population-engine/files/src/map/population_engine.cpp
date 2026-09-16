@@ -1277,7 +1277,23 @@ static bool pop_is_companion(const map_session_data *sd)
 		&& sd->pop.companion_owner_account != 0;
 }
 
-static constexpr size_t POP_COMPANION_LIMIT = 4;
+// RAGNAROKMAC -- companion cap, configurable per install. Read from battle_conf:
+// population_engine_companion_limit (default 4, clamped there to [4, 11]).
+// rAthena's MAX_PARTY is 12 (leader + members), so the clamp always leaves a
+// slot for real players in the party; raising it fills the slots that were
+// otherwise unreachable.
+static size_t pop_companion_limit()
+{
+	// Mirror electron/population-conf.js exactly: floor 4, ceiling 11. The
+	// ceiling is one under the rathena fork's MAX_PARTY (12) so a full party of
+	// companions can never leave out the leader plus even one real player. A
+	// hand-edited conf that ignores the UI clamp still cannot overflow the
+	// party slots here.
+	int v = battle_config.population_engine_companion_limit;
+	if (v < 4) return 4;
+	if (v > 11) return 11;
+	return static_cast<size_t>(v);
+}
 
 bool population_engine_can_recruit_companion(const map_session_data *owner)
 {
@@ -1290,7 +1306,7 @@ bool population_engine_can_recruit_companion(const map_session_data *owner)
 			  candidate->status.party_id == owner->status.party_id) ||
 			 (owner->status.party_id == 0 &&
 			  candidate->pop.companion_owner_account == owner->status.account_id)) &&
-			++count >= POP_COMPANION_LIMIT)
+			++count >= pop_companion_limit())
 			return false;
 	}
 	return true;
@@ -4338,8 +4354,10 @@ void population_engine_on_whisper_to_population_pc(map_session_data* from_sd, ma
 			const bool already_recruited = pop_is_companion(bot_sd) &&
 				bot_sd->pop.companion_owner_account == from_sd->status.account_id;
 			if (!already_recruited && !population_engine_can_recruit_companion(from_sd)) {
-				static constexpr char limit_reply[] = "You already have four companions.";
-				clif_wis_message(from_sd, bot_sd->status.name, limit_reply, sizeof(limit_reply),
+				char limit_reply[CHAT_SIZE_MAX];
+				safesnprintf(limit_reply, sizeof(limit_reply), "You already have %zu companions.",
+					pop_companion_limit());
+				clif_wis_message(from_sd, bot_sd->status.name, limit_reply, strlen(limit_reply) + 1,
 					pc_get_group_level(bot_sd));
 				return;
 			}

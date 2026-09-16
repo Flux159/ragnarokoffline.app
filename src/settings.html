@@ -500,6 +500,11 @@
       <span class="val" id="v-population_max"></span>
     </label>
     <label style="margin-top:6px">
+      <span>Party invitations</span>
+      <input type="range" id="population_companion_limit" min="4" max="11" step="1">
+      <span class="val" id="v-population_companion_limit"></span>
+    </label>
+    <label style="margin-top:6px">
       <span>Server memory</span>
       <input type="range" id="vm_ram_mib" min="2048" max="16384" step="1024">
       <span class="val" id="v-vm_ram_mib"></span>
@@ -936,8 +941,10 @@ function refreshPopulation() {
   const perMap = Math.round(TYPICAL_PER_MAP * density / 100);
   $('population_max').disabled = !on;
   $('population_density').disabled = !on;
+  $('population_companion_limit').disabled = !on;
   $('v-population_max').textContent = on ? String(n) : '—';
   $('v-population_density').textContent = on ? `~${perMap} per map` : '—';
+  $('v-population_companion_limit').textContent = on ? $('population_companion_limit').value : '—';
   $('v-vm_ram_mib').textContent = (ram / 1024) + ' GB';
 
   const note = $('population-note');
@@ -979,6 +986,7 @@ function refreshPopulation() {
 $('population_enable').addEventListener('change', refreshPopulation);
 $('population_max').addEventListener('input', refreshPopulation);
 $('population_density').addEventListener('input', refreshPopulation);
+$('population_companion_limit').addEventListener('input', refreshPopulation);
 $('vm_ram_mib').addEventListener('input', refreshPopulation);
 
 $('save-population').onclick = async () => {
@@ -986,6 +994,7 @@ $('save-population').onclick = async () => {
   settings.population_enable = $('population_enable').checked;
   settings.population_max = Number($('population_max').value);
   settings.population_density = Number($('population_density').value);
+  settings.population_companion_limit = Number($('population_companion_limit').value);
   // Machine-level, so it lives in client.json beside the client paths and the
   // LAN switch rather than in settings.json. Written first: save_settings
   // restarts the stack, which is what makes the new ceiling take effect.
@@ -1684,6 +1693,7 @@ invoke('get_settings').then(s => {
   $('population_enable').checked = !!s.population_enable;
   $('population_max').value = s.population_max;
   $('population_density').value = s.population_density;
+  $('population_companion_limit').value = s.population_companion_limit ?? 4;
   refreshPopulation();
 });
 

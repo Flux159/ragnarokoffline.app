@@ -79,8 +79,8 @@ players, and this app is nearly always one person and a couple of friends.
 
 ### Recruitable party companions
 
-A real player can recruit up to four shells into a normal rAthena party. The
-player first whispers `party`, `pt`, `join`, or `invite`; the shell stops for a
+A real player can recruit up to eleven shells into a normal rAthena party; the
+app's Population settings set how many, from four. The player first whispers `party`, `pt`, `join`, or `invite`; the shell stops for a
 60-second invitation window and accepts that player's formal party request.
 After joining it:
 
