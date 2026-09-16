@@ -7,10 +7,10 @@
 // battle-rates.js). Every number goes through one place, so the Settings
 // window and the server always agree on bounds.
 
-// rAthena's MAX_PARTY in our fork is 12: leader plus members. The companion cap
-// may never swallow a slot a real player could take, which is why the UI and
-// this clamp top out at 11. The floor of 4 keeps existing saves meaningful and
-// matches what every guide already documents as the minimum party shape.
+// rAthena's MAX_PARTY in our fork is 12, counting the leader, so 11 companions
+// is a full party and the UI and this clamp top out there. At 11 no second real
+// player can join, which is why the default stays at the historic 4: a party
+// that is meant for friends needs room left for them.
 const COMPANION_LIMIT_MIN = 4;
 const COMPANION_LIMIT_MAX = 11;
 

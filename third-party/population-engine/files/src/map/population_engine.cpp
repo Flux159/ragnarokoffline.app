@@ -1279,16 +1279,15 @@ static bool pop_is_companion(const map_session_data *sd)
 
 // RAGNAROKMAC -- companion cap, configurable per install. Read from battle_conf:
 // population_engine_companion_limit (default 4, clamped there to [4, 11]).
-// rAthena's MAX_PARTY is 12 (leader + members), so the clamp always leaves a
-// slot for real players in the party; raising it fills the slots that were
-// otherwise unreachable.
+// rAthena's MAX_PARTY is 12 including the leader, so 11 is the most that can
+// join one player: at that setting the party is full and no second real player
+// fits, which is the operator's choice to make.
 static size_t pop_companion_limit()
 {
 	// Mirror electron/population-conf.js exactly: floor 4, ceiling 11. The
-	// ceiling is one under the rathena fork's MAX_PARTY (12) so a full party of
-	// companions can never leave out the leader plus even one real player. A
-	// hand-edited conf that ignores the UI clamp still cannot overflow the
-	// party slots here.
+	// ceiling is MAX_PARTY (12) minus the leader, so the recruiter always has a
+	// slot even when every companion accepts. A hand-edited conf that ignores
+	// the UI clamp still cannot overflow the party slots here.
 	int v = battle_config.population_engine_companion_limit;
 	if (v < 4) return 4;
 	if (v > 11) return 11;
@@ -1356,11 +1355,16 @@ static bool pop_companion_formation_cell(map_session_data *sd, map_session_data 
 		return lhs->id < rhs->id;
 	});
 
-	// The first four cells form a symmetric square around the player. The
-	// remaining cells are obstacle fallbacks and normally remain unused.
+	// The first four cells form a symmetric square around the player, and the
+	// rest widen the ring. There is one cell per companion the cap allows
+	// (11), plus one, so a full party still has an obstacle fallback to try:
+	// with fewer cells than companions the last ones found nothing and stood
+	// wherever they happened to stop. Every cell stays within the distance
+	// pop_companion_update_formation keeps formation active over.
 	static constexpr int8 offsets[][2] = {
 		{-2,  1}, { 2,  1}, {-2, -1}, { 2, -1},
-		{ 0,  2}, { 0, -2}, {-2,  0}, { 2,  0}
+		{ 0,  2}, { 0, -2}, {-2,  0}, { 2,  0},
+		{-1,  2}, { 1,  2}, {-1, -2}, { 1, -2}
 	};
 	static constexpr size_t offset_count = sizeof(offsets) / sizeof(offsets[0]);
 	std::vector<std::pair<int16, int16>> reserved;

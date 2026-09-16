@@ -79,7 +79,7 @@ listed above.
 - Server-side placement performs the work a real client's `LoadEndAck` would
   normally finish. Stale cleanup preserves the brief off-grid state created by
   rapid map changes until following repairs it.
-- Up to four idle companions choose stable, unobstructed formation cells around
+- Idle companions choose stable, unobstructed formation cells around
   the owner. Combat, support movement, and owner movement take priority.
 - Ordinary rAthena party EXP sharing is unchanged.
 
