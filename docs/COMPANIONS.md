@@ -2,8 +2,9 @@
 
 Population Engine characters can join a real party as temporary AI companions.
 They follow their recruiter between maps, fight and support the party, and obey
-combat orders from the party leader. Up to four companions can be recruited
-into one party.
+combat orders from the party leader. Four to eleven companions can be
+recruited into one party; **Settings → Population → Party invitations** in
+the app's settings sets how many your server allows.
 
 The feature is available whenever **Settings → Population → Fake players** is
 enabled. It does not alter characters or save data.
@@ -17,8 +18,8 @@ enabled. It does not alter characters or save data.
 4. The character accepts automatically and becomes a companion.
 
 The invitation window expires after 60 seconds, after which an unrecruited
-character resumes its normal behaviour. If the party already has four
-companions, the character replies with the limit instead.
+character resumes its normal behaviour. If your companion limit is
+reached, the character replies with the limit instead.
 
 Companions follow the player who recruited them. They teleport nearby when
 they fall outside the visible area or when their owner changes maps. When the

@@ -1,0 +1,20 @@
+diff --git a/src/custom/battle_config_init.inc b/src/custom/battle_config_init.inc
+--- a/src/custom/battle_config_init.inc
++++ b/src/custom/battle_config_init.inc
+@@ -17,4 +17,5 @@
+ { "population_engine_demand_grace_ms",&battle_config.population_engine_demand_grace_ms,300000,0,3600000,},
+ { "population_engine_density_pct",&battle_config.population_engine_density_pct,100,10,500,},
++{ "population_engine_companion_limit",&battle_config.population_engine_companion_limit,4,4,11,},
+ { "population_engine_level_from_map",&battle_config.population_engine_level_from_map,1,0,1,},
+ { "population_engine_max_count",&battle_config.population_engine_max_count,1000,1,30000,},
+diff --git a/src/custom/battle_config_struct.inc b/src/custom/battle_config_struct.inc
+--- a/src/custom/battle_config_struct.inc
++++ b/src/custom/battle_config_struct.inc
+@@ -25,4 +25,7 @@
+ /// distributed across a map list. 100 = exactly what the YAML asks for.
+ int32 population_engine_density_pct;
++/// Max fake-party invitations one player can hold; UI slider 4..11,
++/// one under our rathena fork MAX_PARTY (12).
++int32 population_engine_companion_limit;
+ /// Take a shell's level from the monsters on its map, within the range its
+ /// profile declares. Lets a mod add a map without curating levels for it.
