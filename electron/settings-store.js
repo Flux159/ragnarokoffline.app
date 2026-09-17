@@ -15,7 +15,7 @@ function validate(settings) {
     throw new Error('Invalid hosting scope. Choose local, lan, friends or public before starting.');
   }
   if (Object.hasOwn(settings, 'game_text') &&
-      !['english', 'client_western', 'client_korean'].includes(settings.game_text)) {
+      !['english', 'client_western', 'client_korean', 'client_taiwan'].includes(settings.game_text)) {
     throw new Error('Cannot read the game text setting. Choose English, or your client\'s own text, in Settings.');
   }
   // Checked here as well as in the supervisor: the supervisor refuses to start

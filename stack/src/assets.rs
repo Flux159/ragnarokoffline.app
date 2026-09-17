@@ -27,6 +27,9 @@ pub enum GameText {
     ClientWestern,
     /// The client's own files, read as windows-949: kRO.
     ClientKorean,
+    /// The client's own files, read as big5: the Taiwanese client, whose
+    /// tables are Traditional Chinese.
+    ClientTaiwan,
 }
 
 impl GameText {
@@ -35,10 +38,12 @@ impl GameText {
     }
 
     /// roBrowser's `servers[].langtype`. 12 is SERVICETYPE_BRAZIL, which is
-    /// one of the eight the client maps to windows-1252; 0 is Korea.
+    /// one of the eight the client maps to windows-1252; 4 is SERVICETYPE_TAIWAN,
+    /// which the client reads as big5; 0 is Korea.
     fn langtype(self) -> u32 {
         match self {
             GameText::ClientWestern => 12,
+            GameText::ClientTaiwan => 4,
             _ => 0,
         }
     }
@@ -51,6 +56,7 @@ impl GameText {
             GameText::English => "english",
             GameText::ClientWestern => "client_western",
             GameText::ClientKorean => "client_korean",
+            GameText::ClientTaiwan => "client_taiwan",
         }
     }
 }
@@ -69,6 +75,7 @@ pub fn game_text(cfg: &Config) -> Result<GameText, String> {
             "english" => Ok(GameText::English),
             "client_western" => Ok(GameText::ClientWestern),
             "client_korean" => Ok(GameText::ClientKorean),
+            "client_taiwan" => Ok(GameText::ClientTaiwan),
             other => Err(format!(
                 "Unknown game text setting {other:?}. Choose one in Settings; no assets were rebuilt."
             )),
@@ -1000,6 +1007,16 @@ mod tests {
             .unwrap()
             .contains("langtype: 0,"));
         assert!(!cfg.state.join("assets/System/itemInfo.lua").exists());
+
+        // Same files, Taiwanese reading: langtype 4, which roBrowser decodes
+        // as big5, and again no English overlay.
+        write(&cfg.state.join("settings.json"), "{\"game_text\":\"client_taiwan\"}");
+        link(&cfg, &args).unwrap();
+        assert!(fs::read_to_string(cfg.state.join("assets/Config.local.js"))
+            .unwrap()
+            .contains("langtype: 4,"));
+        assert!(!cfg.state.join("assets/System/itemInfo.lua").exists());
+        assert!(!cfg.state.join("assets/SystemEN").exists());
 
         // A value nobody wrote is refused rather than read as the default.
         write(&cfg.state.join("settings.json"), "{\"game_text\":\"portuguese\"}");
