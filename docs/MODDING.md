@@ -160,9 +160,11 @@ The fragment is added *after* the mod's own copy of the file and combined with
 it like any other copy, so it holds only what it adds. **Apply** restarts the
 server, so the change takes effect then.
 
-Only `groups.yml` and `atcommands.yml` can be switched this way. A folder named
-for a setting the mod does not declare, or for one that is not a boolean, is
-ignored and the log says so. See
+Only `groups.yml`, `atcommands.yml` and files under `npc/` can be switched this
+way. Put conditional NPC scripts under `npc/when/<setting key>/`; ordinary
+files under `npc/` remain unconditional. A folder named for a setting the mod
+does not declare, or for one that is not a boolean, is ignored and the log says
+so. See
 [`mods/player-commands`](../mods/player-commands).
 
 ## Installing a mod

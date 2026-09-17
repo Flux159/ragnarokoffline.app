@@ -610,17 +610,8 @@ fn conditional_conf(dir: &Path, name: &str, settings: &[(String, String)]) -> Ve
     keys.sort();
     for folder in keys {
         let key = folder.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
-        match settings.iter().find(|(k, _)| *k == key).map(|(_, v)| v.as_str()) {
-            Some("true") => {}
-            Some("false") => continue,
-            Some(_) => {
-                eprintln!("mods: {name} has conf/when/{key}/, but \"{key}\" is not a yes/no setting -- ignoring it");
-                continue;
-            }
-            None => {
-                eprintln!("mods: {name} has conf/when/{key}/, but its mod.json declares no setting \"{key}\" -- ignoring it");
-                continue;
-            }
+        if conditional_setting(name, "conf", &key, settings) != Some(true) {
+            continue;
         }
         let Ok(files) = fs::read_dir(&folder) else { continue };
         let mut files: Vec<PathBuf> = files.flatten().map(|e| e.path()).collect();
@@ -640,6 +631,62 @@ fn conditional_conf(dir: &Path, name: &str, settings: &[(String, String)]) -> Ve
         }
     }
     out
+}
+
+fn conditional_setting(name: &str, layer: &str, key: &str, settings: &[(String, String)]) -> Option<bool> {
+    match settings.iter().find(|(k, _)| *k == key).map(|(_, v)| v.as_str()) {
+        Some("true") => Some(true),
+        Some("false") => Some(false),
+        Some(_) => {
+            eprintln!(
+                "mods: {name} has {layer}/when/{key}/, but \"{key}\" is not a yes/no setting -- ignoring it"
+            );
+            None
+        }
+        None => {
+            eprintln!(
+                "mods: {name} has {layer}/when/{key}/, but its mod.json declares no setting \"{key}\" -- ignoring it"
+            );
+            None
+        }
+    }
+}
+
+fn copy_npc_layer(
+    from: &Path,
+    dst: &Path,
+    name: &str,
+    settings: &[(String, String)],
+) -> Result<(), String> {
+    let Ok(rd) = fs::read_dir(from) else { return Ok(()) };
+    let mut entries: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+    entries.sort();
+    for path in entries {
+        let file = path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+        if file == "when" && path.is_dir() {
+            continue;
+        }
+        let target = dst.join(&file);
+        if path.is_dir() {
+            copy_tree(&path, &target)?;
+        } else {
+            fs::create_dir_all(dst).map_err(|e| format!("creating {}: {e}", dst.display()))?;
+            fs::copy(&path, &target).map_err(|e| format!("copying {}: {e}", path.display()))?;
+        }
+    }
+
+    let when = from.join("when");
+    let Ok(rd) = fs::read_dir(&when) else { return Ok(()) };
+    let mut keys: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    keys.sort();
+    for folder in keys {
+        let key = folder.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+        if conditional_setting(name, "npc", &key, settings) != Some(true) {
+            continue;
+        }
+        copy_tree(&folder, &dst.join("when").join(&key))?;
+    }
+    Ok(())
 }
 
 /// Where the player's answers live.
@@ -1275,6 +1322,14 @@ pub fn assemble(cfg: &Config) -> Result<Assembled, String> {
         out.db = Some(dst);
     }
 
+    // The player's answers decide which of a mod's conditional fragments
+    // are part of it. A damaged answers file is said, and every mod then gets
+    // its declared defaults rather than the server refusing to start.
+    let saved = read_settings(&cfg.state).unwrap_or_else(|e| {
+        eprintln!("mods: {e}");
+        BTreeMap::new()
+    });
+
     // Stock scripts first, so a mod's own can duplicate or disable them.
     let mut stock: Vec<String> = Vec::new();
     for m in &live {
@@ -1290,7 +1345,8 @@ pub fn assemble(cfg: &Config) -> Result<Assembled, String> {
             continue;
         }
         let dst = build.join("npc").join(&m.name);
-        copy_tree(&from, &dst)?;
+        let settings = effective(&m.manifest, saved.get(&m.name));
+        copy_npc_layer(&from, &dst, &m.name, &settings)?;
         // One `npc:` line per script. Paths are container-side, under the mount
         // point rather than the host path, and forward-slashed because rAthena
         // parses them itself rather than handing them to the OS.
@@ -1305,13 +1361,6 @@ pub fn assemble(cfg: &Config) -> Result<Assembled, String> {
         out.npc_lines = lines;
     }
 
-    // The player's answers decide which of a mod's conditional conf fragments
-    // are part of it. A damaged answers file is said, and every mod then gets
-    // its declared defaults rather than the server refusing to start.
-    let saved = read_settings(&cfg.state).unwrap_or_else(|e| {
-        eprintln!("mods: {e}");
-        BTreeMap::new()
-    });
     for m in &live {
         let settings = effective(&m.manifest, saved.get(&m.name));
         read_conf(&m.dir, &m.name, &settings, &mut out.conf);
@@ -2519,6 +2568,44 @@ mod tests {
         fs::remove_file(d.join("conf/groups.yml")).unwrap();
         let m = Installed { name: "pc".into(), dir: d, status: Status::Off, manifest: Manifest::default(), bundled: true };
         assert!(m.grants_commands());
+    }
+
+    #[test]
+    fn conditional_npc_scripts_follow_only_boolean_settings() {
+        let d = tmp("npc-when");
+        fs::create_dir_all(d.join("npc/when/enabled")).unwrap();
+        fs::create_dir_all(d.join("npc/when/disabled")).unwrap();
+        fs::create_dir_all(d.join("npc/when/number")).unwrap();
+        fs::create_dir_all(d.join("npc/when/undeclared")).unwrap();
+        fs::write(d.join("npc/plain.txt"), "plain").unwrap();
+        fs::write(d.join("npc/when/enabled/on.txt"), "on").unwrap();
+        fs::write(d.join("npc/when/disabled/off.txt"), "off").unwrap();
+        fs::write(d.join("npc/when/number/no.txt"), "number").unwrap();
+        fs::write(d.join("npc/when/undeclared/no.txt"), "unknown").unwrap();
+
+        let dst = d.join("build");
+        copy_npc_layer(
+            &d.join("npc"),
+            &dst,
+            "npc-test",
+            &[
+                ("enabled".into(), "true".into()),
+                ("disabled".into(), "false".into()),
+                ("number".into(), "1".into()),
+            ],
+        )
+        .unwrap();
+        let mut lines = String::new();
+        collect_scripts(&dst, "npc/mods/npc-test", &mut lines);
+
+        assert!(dst.join("plain.txt").is_file());
+        assert!(dst.join("when/enabled/on.txt").is_file());
+        assert!(!dst.join("when/disabled/off.txt").exists());
+        assert!(!dst.join("when/number/no.txt").exists());
+        assert!(!dst.join("when/undeclared/no.txt").exists());
+        assert!(lines.contains("npc: npc/mods/npc-test/plain.txt\n"));
+        assert!(lines.contains("npc: npc/mods/npc-test/when/enabled/on.txt\n"));
+        assert!(!lines.contains("off.txt"));
     }
 
     /// Two mods' groups.yml used to resolve last-wins, discarding the first.
