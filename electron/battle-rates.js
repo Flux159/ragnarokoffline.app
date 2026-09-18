@@ -42,4 +42,33 @@ function dropRateConf(settings) {
 		.join('\n') + '\n';
 }
 
-module.exports = { dropRateConf, FAMILIES, CATEGORY_SLIDER };
+// How many monsters a map spawns, as a percentage of rAthena's spawn tables.
+//
+// rAthena accepts anything up to INT_MAX here, which is not a limit: this
+// multiplies every spawn line on every map the player walks onto, and each
+// extra monster is a live entity the map server ticks inside the VM. So the
+// Settings slider stops at 10x and this stops there too, which also keeps a
+// hand-edited settings.json from asking for a map the server cannot walk.
+//
+// Anything that is not a positive number falls back to the stock 100. Nothing
+// below 1% is useful: npc_parse_mob floors each spawn line at one monster
+// (`mob.num < 1` -> 1), so a smaller number thins the tables without ever
+// emptying a map.
+const MOB_COUNT_RATE_STOCK = 100;
+const MOB_COUNT_RATE_MAX = 1000;
+
+function mobCountRateConf(settings) {
+	const want = Math.round(Number(settings.mob_count_rate));
+	const rate = Number.isFinite(want) && want > 0
+		? Math.min(MOB_COUNT_RATE_MAX, want)
+		: MOB_COUNT_RATE_STOCK;
+	return `mob_count_rate: ${rate}\n`;
+}
+
+module.exports = {
+	dropRateConf,
+	mobCountRateConf,
+	FAMILIES,
+	CATEGORY_SLIDER,
+	MOB_COUNT_RATE_MAX,
+};

@@ -880,6 +880,15 @@ const SETTINGS_DEFAULTS = {
 	item_rate_common: 100,
 	item_rate_equip: 100,
 	item_rate_card: 100,
+	// How many monsters spawn per map, as a percentage of rAthena's spawn
+	// tables (stock is 100 = 1x). Read once at boot when the maps parse;
+	// 200 is twice as many as normal. There is no in-game reload that
+	// re-bakes spawn counts without clobbering other mods' NPCs, so this is
+	// a server setting only -- Apply restarts the map server for it.
+	//
+	// Spawn lines that ask for a single monster are left alone by rAthena, so
+	// this thickens the ordinary population without duplicating MVPs.
+	mob_count_rate: 100,
 	zeny_from_mobs: false,
 	// rAthena's own defaults, so leaving these alone changes nothing. Both are
 	// caps a player raises to mess about on their own server; see toBattleConf
@@ -1017,6 +1026,10 @@ function toBattleConf(s) {
 		require('./battle-rates').dropRateConf(s) +
 		`item_rate_mvp: ${s.item_rate_common}\n` +
 		`item_rate_treasure: ${s.item_rate_common}\n` +
+		// Percentage of the spawn tables, read once when the maps parse at
+		// boot; Apply restarts the map server so it takes effect. Clamped in
+		// battle-rates, which is also where the reason for the ceiling is.
+		require('./battle-rates').mobCountRateConf(s) +
 		`zeny_from_mobs: ${s.zeny_from_mobs ? 'yes' : 'no'}\n` +
 		// One cap in the UI, several keys here, because rAthena caps third,
 		// baby, extended and summoner classes separately and a player who

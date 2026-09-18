@@ -533,6 +533,13 @@
     <label><span>Item drops</span><input type="range" id="item_rate_common" min="100" max="5000" step="100"><span class="mult"><input type="number" class="val num" id="v-item_rate_common" min="0" step="0.1">x</span></label>
     <label><span>Equipment drops</span><input type="range" id="item_rate_equip" min="100" max="5000" step="100"><span class="mult"><input type="number" class="val num" id="v-item_rate_equip" min="0" step="0.1">x</span></label>
     <label><span>Card drops</span><input type="range" id="item_rate_card" min="100" max="5000" step="100"><span class="mult"><input type="number" class="val num" id="v-item_rate_card" min="0" step="0.1">x</span></label>
+    <label><span>Monster population</span><input type="range" id="mob_count_rate" min="100" max="1000" step="25"><span class="mult"><input type="number" class="val num" id="v-mob_count_rate" min="1" max="10" step="0.1">x</span></label>
+    <p class="note"><b>Monster population</b> multiplies the counts in the server's
+       spawn tables: 2x is twice as many monsters on a map, 4x four times as many.
+       Spawns that ask for a single monster are left alone, so MVPs stay unique.
+       Unlike the rates above this one stops at 10x — every extra monster is one
+       more the server has to think for. It is read when the maps load, so Apply
+       restarts the server and you log back in afterwards.</p>
     <label><span>Attack speed cap</span>
       <span class="mult" style="margin-left:auto"><input type="number" class="val num" id="max_aspd" min="190" max="199" step="1"></span></label>
     <label><span>Stat cap</span>
@@ -575,7 +582,7 @@
 const { invoke } = window.__ELECTRON__.core;
 const $ = id => document.getElementById(id);
 const RATES = ['base_exp_rate','job_exp_rate','quest_exp_rate','item_rate_common',
-               'item_rate_equip','item_rate_card'];
+               'item_rate_equip','item_rate_card','mob_count_rate'];
 const log = m => {
   const text = String(m ?? '').trim();
   $('log').textContent = text;
@@ -1665,7 +1672,17 @@ $('save').onclick = async () => {
 // its own maximum when the typed value goes past it -- 50x is the top of the
 // slider but nowhere near the server's limit, which is effectively unbounded
 // for experience and 10000x for drops.
-const rateOf = k => Math.max(0, Math.round((Number($('v-' + k).value) || 0) * 100));
+//
+// Most of them are deliberately open above the slider: 50x drops is a fine
+// thing to type and the server's own ceiling is far higher. Monster population
+// is not one of those -- the generated conf clamps it to 10x, so leaving the
+// box open would let someone type 50x, see 50x read back, and play at 10x.
+const RATE_LIMITS = { mob_count_rate: [100, 1000] };
+const rateOf = k => {
+  const typed = Math.max(0, Math.round((Number($('v-' + k).value) || 0) * 100));
+  const [lo, hi] = RATE_LIMITS[k] || [0, Infinity];
+  return Math.min(hi, Math.max(lo, typed));
+};
 
 function showRate(k, rate) {
   $('v-' + k).value = rate / 100;
