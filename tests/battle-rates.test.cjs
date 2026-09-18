@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { dropRateConf } = require('../electron/battle-rates');
+const { dropRateConf, mobCountRateConf, MOB_COUNT_RATE_MAX } = require('../electron/battle-rates');
 
 const settings = { item_rate_common: 400, item_rate_equip: 1000, item_rate_card: 1500 };
 const parse = text => Object.fromEntries(
@@ -55,4 +55,40 @@ test('output is one key per line and parses as battle conf', () => {
 	for (const line of text.trim().split('\n')) {
 		assert.match(line, /^item_rate_[a-z]+(_boss|_mvp)?: \d+$/);
 	}
+});
+
+// Monster population. One key, but the same trap as the drop rates: it is
+// generated rather than typed, so what it does with a value the UI would not
+// normally produce is the part worth pinning down.
+test('the monster population rate is written as the percentage rAthena reads', () => {
+	assert.equal(mobCountRateConf({ mob_count_rate: 400 }), 'mob_count_rate: 400\n');
+	assert.equal(mobCountRateConf({ mob_count_rate: 100 }), 'mob_count_rate: 100\n');
+});
+
+// rAthena takes anything up to INT_MAX, and multiplies every spawn line on
+// every map by it. A hand-edited settings.json must not be able to ask for a
+// map the server cannot walk.
+test('the rate is capped at the ceiling the Settings slider stops at', () => {
+	assert.equal(mobCountRateConf({ mob_count_rate: 50000 }),
+		`mob_count_rate: ${MOB_COUNT_RATE_MAX}\n`);
+	assert.equal(MOB_COUNT_RATE_MAX, 1000, '10x, the top of the slider');
+});
+
+// An install from before this setting existed has no key at all, and the
+// Settings window can hand back a 0 or an empty box. None of those mean
+// "no monsters" -- npc_parse_mob floors every spawn line at one anyway -- so
+// each falls back to the stock tables rather than to something unplayable.
+test('a missing, zero or unreadable rate falls back to the stock tables', () => {
+	for (const value of [undefined, null, 0, -5, '', 'lots', NaN, Infinity]) {
+		assert.equal(mobCountRateConf({ mob_count_rate: value }), 'mob_count_rate: 100\n',
+			`${String(value)} must fall back to stock`);
+	}
+	assert.equal(mobCountRateConf({}), 'mob_count_rate: 100\n', 'key absent entirely');
+});
+
+// The map server parses the conf as integers; a fractional multiplier typed
+// into the Settings box must not reach it as one.
+test('a fractional rate is rounded to a whole percentage', () => {
+	assert.equal(mobCountRateConf({ mob_count_rate: 250.4 }), 'mob_count_rate: 250\n');
+	assert.equal(mobCountRateConf({ mob_count_rate: 0.6 }), 'mob_count_rate: 1\n');
 });
