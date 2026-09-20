@@ -1,0 +1,21 @@
+name: Build Windows supervisor
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        working-directory: stack
+        run: cargo build --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ragnarok-stack-windows
+          path: stack/target/release/*.exe
