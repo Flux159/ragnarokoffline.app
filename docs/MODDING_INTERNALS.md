@@ -13,7 +13,7 @@ kRO 2022 client. Where something is a hypothesis it says so.
 | layer | lands at | assembled by |
 |---|---|---|
 | `db/` | bound at `/rathena/db/import` | `mods::assemble` |
-| `npc/` | bound at `/rathena/npc/mods/<name>/`, plus `npc:` lines | `mods::assemble` |
+| `npc/` | bound at `/rathena/npc/mods/<name>/`, plus `npc:` lines; `npc/when/<setting>/` only while that yes/no setting is on (`copy_npc_layer`) | `mods::assemble` |
 | `conf/` | appended to the generated `conf/import/*.txt`; `groups.yml` and `atcommands.yml`, including a mod's `conf/when/<setting>/` fragments, combined across mods with repeated grants removed (`groups.rs`) | `mods::assemble` → `cmds::write_mod_conf_files` |
 | `data/` | copied over `state/assets/data`, served ahead of the GRFs, ASCII aliases and Korean names put in the client's spelling (`cp949.rs`) | `assets::overlay_mods` |
 | `System/` | copied over the merged `System/`, after the translation; item tables kept aside and listed in `customItemInfo` ahead of the base | `assets::overlay_mods` |
