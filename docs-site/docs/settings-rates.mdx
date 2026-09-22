@@ -1,6 +1,6 @@
 # Settings: Rates
 
-How fast you level, what monsters drop, and a couple of caps.
+How fast you level, what monsters drop, a couple of caps, and how far you can see.
 
 Rates are written to rAthena's `conf/import/battle_conf.txt`, which overrides
 the shipped config. Applying restarts the map server, so log back in afterwards.
@@ -37,6 +37,33 @@ and are lifted with it, rather than being dragged down to yours.
 99 by default, up to 32767. Third, baby, extended and summoner classes are
 lifted with it for the same reason — setting only the base cap would quietly
 nerf third jobs on an untouched install.
+
+## View distance
+
+How far away the server shows you monsters, players and NPCs, for screens wider
+than 16:9. A wider window already draws more of the map, but the server only
+sends what is within 14 cells, so on a 21:9 or 32:9 screen the edges are empty
+ground you cannot click.
+
+| Preset | Shown | Click-to-walk | Monster sight and chase |
+|---|---|---|---|
+| **Official** (default) | 14 cells | 17 cells | 1x |
+| **Wide** (21:9) | 20 cells | 20 cells | 1.4x |
+| **Ultrawide** (32:9) | 28 cells | 24 cells | 2x |
+
+One preset rather than four numbers because they only work together. A view
+past monster sight means hitting monsters that never react; a view past the walk
+limit means clicking ground you can see and not moving. These are rAthena's
+`area_size`, `max_walk_path`, `view_range_rate` and `chase_range_rate`.
+
+- Click-to-walk stops at 24 even on Ultrawide. The server cannot go past 32, and
+  close to that it and the client stop agreeing on paths around obstacles.
+- Separately, the server always stops a walk at 14 cells when something blocks the
+  straight line. That is compiled into rAthena and no setting reaches it.
+- The client draws skill effects only within 20 cells of you, so on Ultrawide
+  a monster at the edge of the screen casts without the animation.
+- Wider views mean more monsters awake at once. Official is the stock game.
+- It applies to your own server. On a friend's server you get their setting.
 
 ## Free Kafra services
 

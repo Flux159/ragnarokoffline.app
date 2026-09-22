@@ -895,6 +895,10 @@ const SETTINGS_DEFAULTS = {
 	// for why raising one writes several keys.
 	max_aspd: 190,
 	max_parameter: 99,
+	// How much of the map the server sends, with the walk limit and monster
+	// sight that have to move alongside it -- see electron/view-distance.js.
+	// 'official' is rAthena's stock numbers.
+	view_distance: 'official',
 	free_kafra_warp: true,
 	population_enable: false,
 	// A ceiling, not a target. Demand-driven spawning builds only the maps
@@ -1043,6 +1047,7 @@ function toBattleConf(s) {
 		// touched nothing.
 		aspdConf(s.max_aspd) +
 		parameterConf(s.max_parameter) +
+		require('./view-distance').viewDistanceConf(s) +
 		// Population keys: one module so the Settings window and the server
 		// share their bounds -- see electron/population-conf.js.
 		require('./population-conf').lines(s)
