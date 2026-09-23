@@ -88,10 +88,10 @@ class Frames extends Transform {
   }
 }
 class FriendGateway {
-  constructor({ origin, upstreamPort = 3338, register, now = Date.now, lifetime = 8 * 60 * 60 * 1000, maxSessions = 32, invite = null }) {
+  constructor({ origin, upstreamPort = 3338, aiPort = 8080, register, now = Date.now, lifetime = 8 * 60 * 60 * 1000, maxSessions = 32, invite = null }) {
     const url = new URL(origin);
     if (url.protocol !== 'https:' || url.origin !== origin || url.username || url.password) throw Error('An HTTPS game hostname is required');
-    Object.assign(this, { origin, upstreamPort, register, now, lifetime, maxSessions });
+    Object.assign(this, { origin, upstreamPort, aiPort, register, now, lifetime, maxSessions });
     this.host = url.host; this.sessions = new Map(); this.sockets = new Set(); this.requests = new Set();
     // A supplied invitation survives restarts, so a link already sent to
     // friends keeps working after a crash or a repair. Only a token of the
@@ -121,6 +121,31 @@ class FriendGateway {
     res.end(type.startsWith('application/json') ? JSON.stringify(data) : data);
   }
   sameOrigin(req) { return req.headers.origin === this.origin; }
+  // Forwards one request to a loopback-only service on this same host machine
+  // (the local AI translation server, never the RO asset/login/map ports) and
+  // relays only status, body and a minimal content-type/length back. Used for
+  // npc-live-translate: a joined friend's browser cannot reach 127.0.0.1 on
+  // the host machine directly, so it asks this gateway, which is already
+  // running on that machine, to make the loopback call on its behalf.
+  proxyUpstream(res, port, reqPath, method, bytes) {
+    return new Promise(resolve => {
+      const headers = { host: '127.0.0.1:' + port };
+      if (bytes) { headers['content-type'] = 'application/json'; headers['content-length'] = bytes.length; }
+      const proxy = http.request({ host: '127.0.0.1', port, path: reqPath, method, headers, agent: false, timeout: 30000 }, response => {
+        const output = { ...safeHeaders };
+        for (const name of ['content-type', 'content-length']) if (response.headers[name]) output[name] = response.headers[name];
+        if (response.statusCode >= 300 && response.statusCode < 400) { response.destroy(); this.reply(res, 502, { error: 'Unexpected response' }); return resolve(); }
+        res.writeHead(response.statusCode, output);
+        response.pipe(res);
+        response.on('end', resolve); response.on('error', () => resolve());
+      });
+      this.requests.add(proxy); proxy.once('close', () => { this.requests.delete(proxy); resolve(); });
+      proxy.on('timeout', () => proxy.destroy());
+      proxy.on('error', () => { if (!res.headersSent) this.reply(res, 502, { error: 'The local AI is not reachable right now.' }); else res.destroy(); resolve(); });
+      res.on('close', () => proxy.destroy());
+      proxy.end(bytes);
+    });
+  }
   async handle(req, res) {
     if (this.closed || req.headers.host !== this.host) return this.reply(res, 421, { error: 'Unknown game host' });
     // Public readiness has no paths, versions, counters, identities or secrets.
@@ -153,6 +178,20 @@ class FriendGateway {
     }
     if (!entry) return this.reply(res, 401, { error: 'A current invitation is required' });
     if (req.url === '/_friend/session' && req.method === 'GET') return this.reply(res, 200, { ok: true });
+    // npc-live-translate's fallback AI, proxied so a joined friend's browser
+    // (which cannot reach 127.0.0.1 on the host machine) can still reach it.
+    // Same session gate as everything else here; never reachable pre-entry.
+    if (req.url === '/_friend/translate/health') {
+      if (req.method !== 'GET') return this.reply(res, 404, { error: 'Not found' });
+      return this.proxyUpstream(res, this.aiPort, '/health', 'GET');
+    }
+    if (req.url === '/_friend/translate/v1/chat/completions') {
+      if (req.method !== 'POST') return this.reply(res, 404, { error: 'Not found' });
+      if (!this.sameOrigin(req) || req.headers['content-type'] !== 'application/json') return this.reply(res, 403, { error: 'Not allowed' });
+      let bytes;
+      try { bytes = await body(req, 200 * 1024); } catch { return this.reply(res, 413, { error: 'Request too large' }); }
+      return this.proxyUpstream(res, this.aiPort, '/v1/chat/completions', 'POST', bytes);
+    }
     if (req.url === '/_friend/register' && req.method === 'POST') {
       if (!this.sameOrigin(req) || req.headers['content-type'] !== 'application/json') return this.reply(res, 403, { error: 'Open the original invitation link' });
       if (this.pendingRegistrations >= 2) return this.reply(res, 429, { error: 'Another friend is creating an account. Try again shortly.' });
