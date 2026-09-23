@@ -896,6 +896,11 @@ const SETTINGS_DEFAULTS = {
 	max_aspd: 190,
 	max_parameter: 99,
 	free_kafra_warp: true,
+	// Discord request (Joel): ammo of every kind never runs out. Maps to
+	// rAthena's arrow_decrement (conf/battle/battle.conf): stock is 1 =
+	// consumed. Off leaves stock behavior; on writes `arrow_decrement: no`.
+	// Read at map-server boot, so Apply restarts the map server for it.
+	unlimited_arrows: false,
 	population_enable: false,
 	// A ceiling, not a target. Demand-driven spawning builds only the maps
 	// somebody is on, and a map holds 20-40 by the spawn tables, so this binds
@@ -1031,6 +1036,11 @@ function toBattleConf(s) {
 		// battle-rates, which is also where the reason for the ceiling is.
 		require('./battle-rates').mobCountRateConf(s) +
 		`zeny_from_mobs: ${s.zeny_from_mobs ? 'yes' : 'no'}\n` +
+		// One arrow is all Joel ever needed: `no` stops rAthena from
+		// decrementing ammo on any ranged attack (battle.cpp
+		// battle_config.arrow_decrement). Default 'yes' == the shipped
+		// battle.conf, so an untouched install writes nothing surprising.
+		`arrow_decrement: ${s.unlimited_arrows ? 'no' : 'yes'}\n` +
 		// One cap in the UI, several keys here, because rAthena caps third,
 		// baby, extended and summoner classes separately and a player who
 		// raises "the" limit means all of them -- setting only max_parameter
