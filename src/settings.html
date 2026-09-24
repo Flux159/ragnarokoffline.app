@@ -550,6 +550,19 @@
        between fast and instant. <b>Stat cap</b> is 99 by default and goes to
        32767; third, baby and summoner classes are lifted with it, and left at
        their own defaults while this is untouched.</p>
+    <label><span>View distance</span><select id="view_distance">
+      <option value="official">Official &mdash; 14 cells, walk 17</option>
+      <option value="wide">Wide (21:9) &mdash; 20 cells, walk 20</option>
+      <option value="ultrawide">Ultrawide (32:9) &mdash; 28 cells, walk 24</option>
+    </select></label>
+    <p class="note" id="view-distance-detail" style="margin:4px 0 0; color: var(--text)"></p>
+    <p class="note"><b>View distance</b> is how far away the server shows you monsters,
+       players and NPCs, for screens wider than 16:9. A wider window already draws more
+       of the map; this fills it. It also raises how far a click can walk you, and how far
+       monsters see and chase, so that nothing you can see is out of reach and nothing that
+       can see you ignores you. <b>Official</b> is the stock game. Wider views mean more
+       monsters awake at once, and it applies to your own server only &mdash; a friend's
+       server uses theirs.</p>
     <label>
       <span>Monsters drop Zeny</span>
       <input type="checkbox" id="zeny_from_mobs" style="accent-color: var(--accent); flex: none" />
@@ -1655,11 +1668,25 @@ $('delete-delay-save').onclick = async () => {
   }
 };
 
+// What each View distance preset sets, spelled out under the picker. The
+// numbers are electron/view-distance.js's; tests/view-distance.test.cjs checks
+// this text against it so the two cannot drift.
+const VIEW_DISTANCE_DETAIL = {
+  official: 'You see 14 cells around you and a click walks up to 17. Monsters see and chase at their normal range.',
+  wide: 'You see 20 cells around you and a click walks up to 20. Monsters see and chase 1.4x as far.',
+  ultrawide: 'You see 28 cells around you and a click walks up to 24. Monsters see and chase 2x as far. Skill effects more than 20 cells away are not drawn.',
+};
+const showViewDistance = () => {
+  $('view-distance-detail').textContent = VIEW_DISTANCE_DETAIL[$('view_distance').value] || '';
+};
+$('view_distance').addEventListener('change', showViewDistance);
+
 $('save').onclick = async () => {
   const settings = await invoke('get_settings');
   for (const k of RATES) settings[k] = rateOf(k);
   settings.max_aspd = Number($('max_aspd').value) || 190;
   settings.max_parameter = Number($('max_parameter').value) || 99;
+  settings.view_distance = $('view_distance').value;
   settings.free_kafra_warp = $('free_kafra_warp').checked;
   settings.open_registration = $('open-registration').value === 'open';
   settings.instant_character_deletion = $('delete-delay').value === 'instant';
@@ -1706,6 +1733,9 @@ invoke('get_settings').then(s => {
   for (const k of RATES) showRate(k, s[k]);
   $('max_aspd').value = s.max_aspd ?? 190;
   $('max_parameter').value = s.max_parameter ?? 99;
+  $('view_distance').value = s.view_distance || 'official';
+  if (!$('view_distance').value) $('view_distance').value = 'official';
+  showViewDistance();
   $('free_kafra_warp').checked = !!s.free_kafra_warp;
   paintRegistration(s);
   $('delete-delay').value = s.instant_character_deletion ? 'instant' : 'delayed';
