@@ -57,6 +57,8 @@ server is never ported; we bring the platform it is tested on.
   the stylist, extension hooks, app wording).
 - `ragnarokoffline` refuses force-pushes. Releases pin commits on it, so it only
   moves forward, and newer upstream is **merged** in, never rebased.
+- Newer upstream comes in weekly, as pull requests that stop short of merging:
+  [docs/UPSTREAM_SYNC.md](docs/UPSTREAM_SYNC.md).
 - Work in a fork checkout beside this one (`~/Projects/rathena`,
   `~/Projects/roBrowserLegacy`). `vendor/` is a pinned copy the build patches in
   place, and anything done there is lost.
