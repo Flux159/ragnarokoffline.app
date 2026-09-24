@@ -560,6 +560,11 @@
       <input type="checkbox" id="free_kafra_warp" style="accent-color: var(--accent); flex: none" />
       <span class="val" style="width:auto; color: var(--dim)">warps and storage at no cost</span>
     </label>
+    <label style="margin-top:6px">
+      <span>Unlimited arrows</span>
+      <input type="checkbox" id="unlimited_arrows" style="accent-color: var(--accent); flex: none" />
+      <span class="val" style="width:auto; color: var(--dim)">ammo is never consumed</span>
+    </label>
     <div class="actions" style="margin-top:10px">
       <button id="save" class="ghost">Apply</button>
     </div>
@@ -1661,6 +1666,7 @@ $('save').onclick = async () => {
   settings.sharing_invite_days = inviteDays($('sharing_invite_days').value);
   settings.prerenewal = eraIsPre;
   settings.zeny_from_mobs = $('zeny_from_mobs').checked;
+  settings.unlimited_arrows = $('unlimited_arrows').checked;
   $('save').disabled = true;
   try { log(await invoke('save_settings', { settings })); }
   catch (e) { log('error: ' + e); }
@@ -1707,6 +1713,7 @@ invoke('get_settings').then(s => {
   gameText = s.game_text || 'english';
   $('game_text').value = gameText;
   $('zeny_from_mobs').checked = !!s.zeny_from_mobs;
+  $('unlimited_arrows').checked = !!s.unlimited_arrows;
   $('open_settings_first').checked = !!s.open_settings_first;
   $('population_enable').checked = !!s.population_enable;
   $('population_max').value = s.population_max;
