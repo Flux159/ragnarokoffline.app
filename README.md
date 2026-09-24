@@ -124,19 +124,16 @@ invitations instead offer account creation before entering the game.
 
 ### Joining from a browser, with nothing installed
 
-The client is roBrowserLegacy, and the host is already serving it over HTTP — so
-the same link opens the game in a normal browser. **Paste it into the address
-bar and play.**
+Ragnarokoffline.app uses roBrowserLegacy as the client interfce, 
+and the host serves it over HTTP — so the same link opens the game 
+in a normal browser. **Paste it into the address bar and play.**
 
+The following is an example link, your host IP on your LAN may be different.
 ```
 http://192.168.1.20:3338/
 ```
-
-That is the whole of it. The app is the more comfortable way to play — it is one
-window with no browser chrome, and it does not ask "Leave site?" when you close
-it — but nothing about the game needs it. Anything on the wifi with a browser
-that does WebGL will do, which includes a Windows or Linux machine with no build
-of this app on it. Chrome and Firefox are the tested ones.
+Anything on the same wifi network with a browser that does WebGL should work, 
+including phones, but the mobile UI is not optimized.
 
 The host still has to be hosting: the link is only live while their app is
 running with *Let other machines connect* on.
