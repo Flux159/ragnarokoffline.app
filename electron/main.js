@@ -943,6 +943,10 @@ const SETTINGS_DEFAULTS = {
 	// better served reading that. See GameText in stack/src/assets.rs for why
 	// the text and the codepage are one setting rather than two.
 	game_text: 'english',
+	// Which client version the server is built for and the client speaks --
+	// see electron/packetvers.js. null follows the app's default rather than
+	// pinning today's, so a later app that moves the default moves this too.
+	packetver: null,
 };
 
 function getSettings() {
@@ -2252,6 +2256,7 @@ const handlers = {
 	// this data.grf. Kept out of get_client_paths, whose result the setup screen
 	// hands back to set_client_paths to be saved.
 	client_folders: ({ data_grf }) => require('./client-folders').clientFolders(data_grf),
+	packetvers: () => require('./packetvers').list(projectRoot()),
 	set_client_paths: async ({ paths }) => {
 		const next = { ...getClientPaths(), ...paths };
 		if (next.mode === 'join') {

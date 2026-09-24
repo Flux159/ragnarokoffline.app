@@ -137,8 +137,10 @@ impl Config {
             nebula_home,
             nebula,
             docker,
+            // Tagged with the default packet version; the others are built
+            // into the same image (see packetver.rs).
             image: env::var("RAGNAROKMAC_IMAGE")
-                .unwrap_or_else(|_| "ragnarokmac/rathena:20221005".into()),
+                .unwrap_or_else(|_| format!("ragnarokmac/rathena:{}", crate::packetver::default())),
             // Pinned deliberately: MariaDB cannot open a data directory written
             // by a newer major version, so a floating tag can silently upgrade
             // the server and leave existing characters unreadable on rollback.

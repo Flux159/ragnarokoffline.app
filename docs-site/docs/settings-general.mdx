@@ -43,6 +43,30 @@ in a format the client here does not read, so a few of them show as
 quest text are unaffected. The English translation has all of them, so switch
 back if those messages matter to you.
 
+## Client version
+
+Which version of the game client the server talks to — the *packet version*,
+named by the date of the client it matches. Players usually name a client by
+episode instead; the default, **2022-10-05**, is an Episode 20 (Undying)-era
+client.
+
+| Choice | Notes |
+|---|---|
+| **2022-10-05** (default) | The one every release is tested with. |
+| **2025-04-02** (experimental) | The newest either rAthena or the client knows about. It builds and starts; nobody has played it through yet. |
+
+The server and the game window always switch together. They have to: a client
+and server one version apart disagree about the size of the messages they send
+each other and the connection drops at login. Your characters are kept.
+
+A newer version uses newer game windows, and those need client files at least
+as new — if windows come up blank or missing after switching up, your client
+download is older than the version you picked. If anything misbehaves, go back
+to the default.
+
+Changing this rebuilds the served files and restarts the server. Reload the game
+window and log in again afterwards.
+
 ## Server
 
 Whether the server is running, and a **Restart server** button.

@@ -34,10 +34,10 @@ on:
       - 'containers/**'
       - '.github/workflows/images.yml'
       - 'tests/integration/mariadb-secrets.py'
-      # The packetver lives here and is a build arg for the rAthena image, so a
-      # bump has to rebuild. It over-triggers on unrelated bootstrap edits;
-      # a stale image is the worse failure.
-      - 'scripts/bootstrap.sh'
+      # The packet versions are build args for the rAthena image, so a change
+      # to the list has to rebuild.
+      - 'config/PACKETVERS'
+      - 'scripts/packetvers.sh'
       # What goes *into* the server. The population engine's sources, patches
       # and spawn tables are compiled and copied into the image, and the script
       # that applies them decides how -- so a change to either changes the
@@ -64,33 +64,90 @@ jobs:
   diagnostics:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostics }}
     uses: ./.github/workflows/diagnostics.yml
-  build:
+  # One source of truth for the packet versions: config/PACKETVERS, whose
+  # first line is also the image tag precache.sh looks for at runtime. A
+  # second copy here would drift and the app would silently pull nothing.
+  versions:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics }}
+    runs-on: ubuntu-latest
+    outputs:
+      default: ${{ steps.read.outputs.default }}
+      all: ${{ steps.read.outputs.all }}
+      matrix: ${{ steps.read.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        run: |
+          set -e
+          echo "default=$(scripts/packetvers.sh default)" >> "$GITHUB_OUTPUT"
+          echo "all=$(scripts/packetvers.sh all | paste -sd' ' -)" >> "$GITHUB_OUTPUT"
+          echo "matrix=[$(scripts/packetvers.sh all | sed 's/.*/"&"/' | paste -sd, -)]" >> "$GITHUB_OUTPUT"
+          echo "packet versions: $(scripts/packetvers.sh all | paste -sd' ' -)"
+
+  # Every packet version is two full rAthena builds (renewal and pre-renewal),
+  # and a runner's cores are already saturated by one -- so the versions go to
+  # separate runners rather than separate stages on one. Each job runs the
+  # Dockerfile's own `build` stage for its one version and exports what it
+  # made; the `build` job below assembles them into the image.
+  compile:
+    needs: versions
+    strategy:
+      fail-fast: true
+      matrix:
+        # Native runners. Emulated cross-builds of rAthena take the better
+        # part of an hour and have their own failure modes; both arches have
+        # a real runner, so neither is worth it.
+        platform:
+          - { runner: ubuntu-24.04, arch: x64 }
+          - { runner: ubuntu-24.04-arm, arch: arm64 }
+        packetver: ${{ fromJSON(needs.versions.outputs.matrix) }}
+    runs-on: ${{ matrix.platform.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # rAthena's source is the build context, so our Dockerfile is copied into
+      # the checkout — the same thing bootstrap.sh does locally.
+      - name: Compile rAthena for ${{ matrix.packetver }}
+        run: |
+          set -e
+          ./scripts/vendor-fetch.sh rathena /tmp/rathena
+          ./scripts/apply-server-mods.sh /tmp/rathena
+          cp containers/rathena/Dockerfile /tmp/rathena/Dockerfile.ragnarokmac
+          args=(-f /tmp/rathena/Dockerfile.ragnarokmac
+            --build-arg "DEFAULT_PACKETVER=${{ needs.versions.outputs.default }}"
+            --build-arg "PACKETVERS=${{ matrix.packetver }}")
+          docker build "${args[@]}" --target compiled --output type=local,dest=out/compiled /tmp/rathena
+          # Same build, cached: only the export differs.
+          docker build "${args[@]}" --target debug-symbols --output type=local,dest=out/symbols /tmp/rathena
+          ls -l out/compiled/bin
+
+      # Tarred, because upload-artifact drops the executable bit.
+      - name: Package
+        run: tar czf "compiled-${{ matrix.platform.arch }}-${{ matrix.packetver }}.tar.gz" -C out .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compiled-${{ matrix.platform.arch }}-${{ matrix.packetver }}
+          path: compiled-${{ matrix.platform.arch }}-${{ matrix.packetver }}.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+
+  build:
+    needs: [versions, compile]
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Native runners. Emulated cross-builds of rAthena take the better
-          # part of an hour and have their own failure modes; both arches have
-          # a real runner, so neither is worth it.
           - runner: ubuntu-24.04
             arch: x64
           - runner: ubuntu-24.04-arm
             arch: arm64
     runs-on: ${{ matrix.runner }}
+    env:
+      PACKETVER: ${{ needs.versions.outputs.default }}
+      PACKETVERS: ${{ needs.versions.outputs.all }}
     steps:
       - uses: actions/checkout@v4
-
-      # One source of truth for the packetver: the value bootstrap.sh builds
-      # with, which is also the image tag precache.sh looks for at runtime. A
-      # second copy here would drift and the app would silently pull nothing.
-      - name: Read the packetver
-        run: |
-          set -e
-          ver=$(grep -m1 '^PACKETVER=' scripts/bootstrap.sh | cut -d= -f2)
-          [ -n "$ver" ] || { echo "no PACKETVER in scripts/bootstrap.sh" >&2; exit 1; }
-          echo "PACKETVER=$ver" >> "$GITHUB_ENV"
-          echo "building for packetver $ver"
 
       - name: Build the database image
         run: docker build -t ragnarokmac/mariadb:11.4 containers/mariadb
@@ -98,30 +155,36 @@ jobs:
       - name: Validate database secret bootstrap against the image
         run: python3 tests/integration/mariadb-secrets.py
 
-      # rAthena's source is the build context, so our Dockerfile is copied into
-      # the checkout — the same thing bootstrap.sh does locally.
-      - name: Build rAthena
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: compiled-${{ matrix.arch }}-*
+          path: compiled
+
+      # Every version's binaries into one directory, which the Dockerfile's
+      # final stage takes in place of compiling them (BINARIES=prebuilt). The
+      # shared conf/, db/ and npc/ are identical in every artifact. The final
+      # stage refuses to build if any version's binaries are missing.
+      - name: Assemble rAthena
         run: |
           set -e
-          ./scripts/vendor-fetch.sh rathena /tmp/rathena
-          ./scripts/apply-server-mods.sh /tmp/rathena
-          cp containers/rathena/Dockerfile /tmp/rathena/Dockerfile.ragnarokmac
-          docker build -f /tmp/rathena/Dockerfile.ragnarokmac \
-            --build-arg "PACKETVER=$PACKETVER" \
-            -t "ragnarokmac/rathena:$PACKETVER" /tmp/rathena
+          mkdir -p prebuilt symbols empty
+          for ver in $PACKETVERS; do
+            mkdir -p "unpacked/$ver"
+            tar xzf "compiled/compiled-${{ matrix.arch }}-$ver/compiled-${{ matrix.arch }}-$ver.tar.gz" -C "unpacked/$ver"
+            cp -a "unpacked/$ver/compiled/." prebuilt/
+            cp -a "unpacked/$ver/symbols/." symbols/
+          done
+          ls -l prebuilt/bin
+          docker build -f containers/rathena/Dockerfile \
+            --build-arg BINARIES=prebuilt --build-context prebuilt=prebuilt \
+            --build-arg "DEFAULT_PACKETVER=$PACKETVER" --build-arg "PACKETVERS=$PACKETVERS" \
+            -t "ragnarokmac/rathena:$PACKETVER" empty
 
       - name: Export matching native debug symbols
         run: |
           set -e
-          docker build -f /tmp/rathena/Dockerfile.ragnarokmac \
-            --build-arg "PACKETVER=$PACKETVER" --target debug-symbols \
-            -t ragnarokmac/debug-symbols /tmp/rathena
-          cid=$(docker create ragnarokmac/debug-symbols true)
           mkdir -p native-symbols
-          docker cp "$cid:/re" native-symbols/
-          docker cp "$cid:/pre-re" native-symbols/
-          docker cp "$cid:/trace-tests" native-symbols/
-          docker rm "$cid" >/dev/null
+          cp -a symbols/. native-symbols/
           printf '%s\n' '${{ github.sha }}' > native-symbols/app-source.txt
           docker image inspect "ragnarokmac/rathena:$PACKETVER" --format '{{.Id}}' > native-symbols/image-id.txt
           tar czf "rathena-symbols-${{ matrix.arch }}-${{ github.sha }}.tar.gz" -C native-symbols .

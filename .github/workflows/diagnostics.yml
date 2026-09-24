@@ -28,8 +28,7 @@ jobs:
           ./scripts/apply-server-mods.sh /tmp/rathena
           cp containers/rathena/Dockerfile.sanitizers /tmp/rathena/Dockerfile.sanitizers
           cp -R tests/diagnostics /tmp/rathena/ragnarok-sanitizer-tests
-          ver=$(sed -n 's/^PACKETVER=//p' scripts/bootstrap.sh | head -1)
-          test -n "$ver"
+          ver=$(scripts/packetvers.sh default)
           echo "PACKETVER=$ver" >> "$GITHUB_ENV"
       - name: Build diagnostic image and validate real sanitizer faults
         run: |

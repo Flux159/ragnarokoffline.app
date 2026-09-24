@@ -28,6 +28,7 @@ mod hosting;
 mod private_fs;
 mod service_credentials;
 mod operation_lock;
+mod packetver;
 
 use config::Config;
 use docker::Docker;
