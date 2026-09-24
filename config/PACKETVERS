@@ -4,10 +4,10 @@
 # version offers every line.
 #
 # Packetver is compiled into rAthena (./configure --enable-packetver), so each
-# line here is another full build of the server in the image -- measured at
-# about 18 MB of compressed image and nine minutes of images.yml per line
-# (three lines: 105 MB, 27 minutes). The supervisor starts the
-# binaries for the chosen one and rewrites roBrowser's `packetver` to match; the
+# line here is another full build of the server in the image -- about 18 MB
+# of compressed image per line. images.yml compiles each line on its own
+# runner, so a line costs runner minutes rather than wall-clock time. The
+# supervisor starts the binaries for the chosen one and rewrites roBrowser's `packetver` to match; the
 # two cannot be chosen separately, because a client and server a packet version
 # apart disagree about the size of packets and drop the connection.
 #
@@ -19,5 +19,4 @@
 #
 #   packetver  label
 20221005     default
-20200401
 20250402     experimental

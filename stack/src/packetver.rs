@@ -2,7 +2,7 @@
 //!
 //! Packetver is compiled into rAthena, so the image carries one build per line
 //! of config/PACKETVERS: the first under the plain names (`map-server`), the
-//! rest with a `-<packetver>` suffix (`map-server-20200401`). Choosing one in
+//! rest with a `-<packetver>` suffix (`map-server-20250402`). Choosing one in
 //! Settings picks which binaries start and rewrites roBrowser's `packetver` to
 //! match. They are one setting, not two: a client a packet version away from
 //! its server disagrees about packet lengths and is disconnected at login.
@@ -75,7 +75,7 @@ pub fn of_binary(path: &str) -> &'static str {
 /// Fail with a sentence, not a dead container, when the image has no build
 /// for this version.
 ///
-/// That happens with a local image built with `EXTRA_PACKETVERS=` for speed,
+/// That happens with a local image built with `PACKETVERS=<default>` for speed,
 /// or one built before the version was added to the list. The container would
 /// otherwise exit at once with "no such file", which reads as a crash.
 /// Checked against login-server alone: every binary for a version comes from

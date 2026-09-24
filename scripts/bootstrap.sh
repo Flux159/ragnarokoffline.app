@@ -11,10 +11,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENDOR="$ROOT/vendor"
 CLIENT="${1:-$HOME/Downloads}"
 # config/PACKETVERS is the list; the first is the default and the image tag.
-# EXTRA_PACKETVERS= (empty) skips the others for a quicker local build -- the
+# PACKETVERS=<default> builds only that one, for a quicker local build -- the
 # app then refuses to start any other client version, and says why.
 PACKETVER=$("$ROOT/scripts/packetvers.sh" default)
-EXTRA_PACKETVERS="${EXTRA_PACKETVERS-$("$ROOT/scripts/packetvers.sh" extra)}"
+PACKETVERS="${PACKETVERS:-$("$ROOT/scripts/packetvers.sh" all | paste -sd' ' -)}"
+case " $PACKETVERS " in *" $PACKETVER "*) ;; *) echo "PACKETVERS must include the default, $PACKETVER" >&2; exit 1 ;; esac
 NEBULA="${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}"
 
 clone() {
@@ -101,11 +102,11 @@ ln -sfn "$MERGED" "$RC/System"
 echo "==> building the database image"
 (cd "$ROOT/containers/mariadb" && "$NEBULA" docker build -t ragnarokmac/mariadb:11.4 .)
 
-echo "==> building rAthena (arm64, packetver $PACKETVER${EXTRA_PACKETVERS:+, and $EXTRA_PACKETVERS})"
+echo "==> building rAthena (arm64, packetvers $PACKETVERS; default $PACKETVER)"
 "$ROOT/scripts/apply-server-mods.sh" "$VENDOR/rathena"
 cp "$ROOT/containers/rathena/Dockerfile" "$VENDOR/rathena/Dockerfile.ragnarokmac"
 (cd "$VENDOR/rathena" && "$NEBULA" docker build -f Dockerfile.ragnarokmac \
-    --build-arg "PACKETVER=$PACKETVER" --build-arg "EXTRA_PACKETVERS=$EXTRA_PACKETVERS" \
+    --build-arg "DEFAULT_PACKETVER=$PACKETVER" --build-arg "PACKETVERS=$PACKETVERS" \
     -t "ragnarokmac/rathena:$PACKETVER" .)
 
 echo "==> seeding server state"
