@@ -166,7 +166,8 @@ endings will show a whole-file diff. Check `git diff --stat` before committing.
 
 ### Taking a newer upstream
 
-In the fork checkout:
+[UPSTREAM_SYNC.md](UPSTREAM_SYNC.md) is the full runbook, written for the weekly
+agent that does this; the short version, in the fork checkout:
 
 ```sh
 git fetch upstream
