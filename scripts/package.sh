@@ -215,7 +215,7 @@ if command -v "${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}" >/dev
     # `set -e` takes the whole script with it. Not being able to check for
     # staleness is not a reason to refuse to package.
     IMG_EPOCH=$({ "${NEBULA_BIN:-$HOME/Projects/nebula/target/release/nebula}" \
-        docker image inspect "ragnarokmac/rathena:${PACKETVER:-20221005}" \
+        docker image inspect "ragnarokmac/rathena:${PACKETVER:-$("$ROOT/scripts/packetvers.sh" default)}" \
         --format '{{.Created}}' 2>/dev/null || true; } | cut -c1-19 | tr 'T' ' ')
     if [ -n "$IMG_EPOCH" ]; then
         # docker reports UTC; -u on both sides or every image looks hours newer

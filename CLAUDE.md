@@ -57,6 +57,8 @@ server is never ported; we bring the platform it is tested on.
   the stylist, extension hooks, app wording).
 - `ragnarokoffline` refuses force-pushes. Releases pin commits on it, so it only
   moves forward, and newer upstream is **merged** in, never rebased.
+- Newer upstream comes in weekly, as pull requests that stop short of merging:
+  [docs/UPSTREAM_SYNC.md](docs/UPSTREAM_SYNC.md).
 - Work in a fork checkout beside this one (`~/Projects/rathena`,
   `~/Projects/roBrowserLegacy`). `vendor/` is a pinned copy the build patches in
   place, and anything done there is lost.
@@ -67,8 +69,14 @@ server is never ported; we bring the platform it is tested on.
 
 rAthena and roBrowserLegacy are developed by different people against different
 assumptions, and **the app is the only thing that makes them agree**. Both are
-compiled/configured to packet version **20221005** (`scripts/bootstrap.sh` sets
-the server's, `config/Config.local.js` the client's — they must move together).
+compiled/configured to the same packet version. The list is
+`config/PACKETVERS` — the first line (**20221005**) is the default and the image
+tag, and each other line is another full rAthena build in the same image under
+a `-<packetver>` suffix (`images.yml` compiles each on its own runner). Settings → General → Client version picks one; the
+supervisor (`stack/src/packetver.rs`) starts that build and rewrites the
+client's `packetver`, so the two cannot drift. Only "main" client dates work:
+rAthena builds 2015-11-05..2018-07-03 and 2020-09-02..2021-11-18 as RagexeRE,
+which roBrowser has no packet tables for.
 
 That still leaves a gap: rAthena will happily use a feature the client has never
 implemented. `conf/battle/feature.conf` ships with `feature.refineui: on` and

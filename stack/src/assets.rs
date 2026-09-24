@@ -163,6 +163,7 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
         .map(|p| readable_path(&p, true))
         .transpose()?;
     let text = game_text(cfg)?;
+    let packetver = crate::packetver::chosen(cfg)?;
     let translation = cfg.root.join("vendor/ROenglishRE/Translation");
     if text.translated() {
         for sub in ["data", "SystemEN"] {
@@ -264,6 +265,12 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
     let mut fingerprint = 0xcbf2_9ce4_8422_2325;
     fnv(&mut fingerprint, b"owned-assets-v2");
     fnv(&mut fingerprint, text.as_str().as_bytes());
+    // Config.local.js carries it, and that file is an ordinary HTTP request
+    // the shell only re-fetches when this fingerprint moves. Left out at the
+    // default so an existing install keeps the fingerprint it already has.
+    if !crate::packetver::suffix(packetver).is_empty() {
+        fnv(&mut fingerprint, packetver.as_bytes());
+    }
     fnv(&mut fingerprint, overlay_fingerprint(cfg).as_bytes());
     hash_tree(&mut fingerprint, &translation, Path::new("translation"));
     hash_tree(
@@ -293,7 +300,7 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
         format!("{fingerprint:016x}"),
     )
     .map_err(|e| e.to_string())?;
-    write_client_config(cfg, &server_root, &plugins, &item_tables, text)?;
+    write_client_config(cfg, &server_root, &plugins, &item_tables, text, packetver)?;
     copy_file(
         &cfg.root.join("config/index.html"),
         &server_root.join("index.html"),
@@ -733,12 +740,23 @@ fn insert_before_close(body: String, block: &str) -> String {
     format!("{head}{sep}\n{block}{}", &body[i + 1..])
 }
 
+/// Replace the number in the template's `packetver: <digits>,` line.
+fn set_packetver(body: &str, packetver: &str) -> String {
+    const KEY: &str = "packetver: ";
+    let Some(start) = body.find(KEY).map(|i| i + KEY.len()) else {
+        return body.to_string();
+    };
+    let end = start + body[start..].bytes().take_while(u8::is_ascii_digit).count();
+    format!("{}{packetver}{}", &body[..start], &body[end..])
+}
+
 fn write_client_config(
     cfg: &Config,
     web: &Path,
     plugins: &[(String, String)],
     item_tables: &[String],
     text: GameText,
+    packetver: &str,
 ) -> Result<(), String> {
     let src = cfg.root.join("config/Config.local.js");
     let body = fs::read_to_string(&src).map_err(|e| format!("reading {}: {e}", src.display()))?;
@@ -751,6 +769,10 @@ fn write_client_config(
     } else {
         body
     };
+    // The client has to speak the packet version the server was built for.
+    // Replaced by pattern rather than by the template's literal, so the
+    // template's own number can move without this following it.
+    let body = set_packetver(&body, packetver);
     // The codepage every client table is read with. The template is Korean,
     // which is right whenever the English overlay is in front of it; see
     // GameText for why the two cannot be chosen separately.
@@ -1024,6 +1046,49 @@ mod tests {
         fs::remove_dir_all(cfg.state.parent().unwrap()).unwrap();
     }
 
+    /// The client's packetver follows the server's, whatever number the
+    /// template happens to carry, and a version the image was not built for
+    /// stops the rebuild instead of producing a client nothing can talk to.
+    #[test]
+    fn the_client_speaks_the_chosen_packet_version() {
+        let body = "servers: [{\n\t\t\tpacketver: 20221005,\n\t\t\trenewal: true,\n}]";
+        assert_eq!(set_packetver(body, "20200401"),
+            "servers: [{\n\t\t\tpacketver: 20200401,\n\t\t\trenewal: true,\n}]");
+        assert_eq!(set_packetver(body, "20221005"), body);
+        assert_eq!(set_packetver("no such key", "20200401"), "no such key");
+        // The shipped template has the line, and at the default.
+        let template = include_str!("../../config/Config.local.js");
+        assert!(template.contains(&format!("packetver: {},", crate::packetver::default())),
+            "config/Config.local.js should carry the first line of config/PACKETVERS");
+
+        let cfg = fixture_config("packetver");
+        let client = cfg.state.parent().unwrap().join("client");
+        write(&client.join("data.grf"), "archive");
+        let en = cfg.root.join("vendor/ROenglishRE/Translation");
+        write(&en.join("Renewal/data/table.txt"), "renewal table");
+        write(&en.join("Renewal/SystemEN/LuaFiles514/itemInfo.lua"), "English items");
+        write(&en.join("Renewal/SystemEN/OngoingQuests.lub"), "English quests");
+        write(&cfg.root.join("config/Config.local.js"),
+            "window.ROConfigLocal = {\npacketver: 20221005,\nrenewal: true,\nlangtype: 0,\n};\n");
+        write(&cfg.root.join("config/index.html"), "game entry");
+        let args = vec![client.join("data.grf").to_str().unwrap().to_string()];
+        let served = || fs::read_to_string(cfg.state.join("assets/Config.local.js")).unwrap();
+
+        link(&cfg, &args).unwrap();
+        assert!(served().contains(&format!("packetver: {},", crate::packetver::default())));
+        let default_id = fs::read_to_string(cfg.state.join("assets/overlay.id")).unwrap();
+        if let Some(other) = crate::packetver::all().get(1) {
+            write(&cfg.state.join("settings.json"), &format!("{{\"packetver\":\"{other}\"}}"));
+            link(&cfg, &args).unwrap();
+            assert!(served().contains(&format!("packetver: {other},")), "{}", served());
+            // And the shell is told to drop the cached Config.local.js.
+            assert_ne!(fs::read_to_string(cfg.state.join("assets/overlay.id")).unwrap(), default_id);
+        }
+        write(&cfg.state.join("settings.json"), "{\"packetver\":\"20110101\"}");
+        assert!(link(&cfg, &args).unwrap_err().contains("20110101"));
+        fs::remove_dir_all(cfg.state.parent().unwrap()).unwrap();
+    }
+
     #[test]
     fn owned_copies_of_read_only_sources_remain_replaceable() {
         let cfg = fixture_config("readonly");
@@ -1246,7 +1311,7 @@ mod tests {
         write(&web.join("System/itemInfo.lua"), "base");
         fs::write(cfg.root.join("config/Config.local.js"), "window.ROConfigLocal = {\n\tskipIntro: true\n};\n").unwrap();
         let tables = vec!["itemInfo-a.lua".to_string(), "itemInfo-b.lua".to_string()];
-        write_client_config(&cfg, &web, &[], &tables, GameText::English).unwrap();
+        write_client_config(&cfg, &web, &[], &tables, GameText::English, crate::packetver::default()).unwrap();
         let body = fs::read_to_string(web.join("Config.local.js")).unwrap();
         assert!(
             body.contains("customItemInfo: ['System/itemInfo-b.lua', 'System/itemInfo-a.lua', 'System/itemInfo.lua', 'System/itemInfo_true.lub'],"),
@@ -1295,7 +1360,7 @@ mod tests {
             // shape the loader sees never depends on whether options exist.
             ("plain".to_string(), String::new()),
         ];
-        write_client_config(&cfg, &web, &plugins, &[], GameText::English).unwrap();
+        write_client_config(&cfg, &web, &plugins, &[], GameText::English, crate::packetver::default()).unwrap();
         let body = fs::read_to_string(web.join("Config.local.js")).unwrap();
         assert!(
             body.contains("'wasd-movement': { path: 'plugins/wasd-movement/index', pars: { \"show_controls_button\": false } }"),

@@ -1,0 +1,22 @@
+# The packet versions the rAthena image is built for, one per line. The first
+# is the default: it is the one a fresh install plays, and the one the image is
+# tagged with (ragnarokmac/rathena:<default>). Settings -> General -> Client
+# version offers every line.
+#
+# Packetver is compiled into rAthena (./configure --enable-packetver), so each
+# line here is another full build of the server in the image -- about 18 MB
+# of compressed image per line. images.yml compiles each line on its own
+# runner, so a line costs runner minutes rather than wall-clock time. The
+# supervisor starts the binaries for the chosen one and rewrites roBrowser's `packetver` to match; the
+# two cannot be chosen separately, because a client and server a packet version
+# apart disagree about the size of packets and drop the connection.
+#
+# Only "main" (Ragexe) dates belong here. rAthena reads 2015-11-05..2018-07-03
+# and 2020-09-02..2021-11-18 as RagexeRE (src/config/packets.hpp), and
+# roBrowser has no RE packet tables -- which rules out rAthena's own default,
+# 20211103. Anything at or before 2018-03-07 needs packet obfuscation keys and
+# shuffled packet ids that roBrowser does not send.
+#
+#   packetver  label
+20221005     default
+20250402     experimental

@@ -245,12 +245,14 @@ engine running (`nebula up`). Then save the images for packaging with
 **Linux, with Docker.** Build them the way `images.yml` does:
 
 ```sh
-PACKETVER=$(grep -m1 '^PACKETVER=' scripts/bootstrap.sh | cut -d= -f2)
+PACKETVER=$(scripts/packetvers.sh default)
+PACKETVERS=$(scripts/packetvers.sh all | paste -sd' ' -)
 docker build -t ragnarokmac/mariadb:11.4 containers/mariadb
 scripts/vendor-fetch.sh rathena vendor/rathena
 scripts/apply-server-mods.sh vendor/rathena
 cp containers/rathena/Dockerfile vendor/rathena/Dockerfile.ragnarokmac
-docker build -f vendor/rathena/Dockerfile.ragnarokmac --build-arg PACKETVER=$PACKETVER \
+docker build -f vendor/rathena/Dockerfile.ragnarokmac --build-arg DEFAULT_PACKETVER=$PACKETVER \
+  --build-arg "PACKETVERS=$PACKETVERS" \
   -t ragnarokmac/rathena:$PACKETVER vendor/rathena
 mkdir -p dist .ragnarokmac/sql
 docker save ragnarokmac/rathena:$PACKETVER ragnarokmac/mariadb:11.4 | gzip > dist/images.tar.gz
@@ -379,9 +381,11 @@ branch's individual commits do not need to be tidy.
   missing file.
 - **roBrowser caches downloaded files** in Chromium's `File System/` folder in
   the data folder, so a replaced file can appear unchanged after a rebuild.
-- **The packet version (20221005) is set in two places** — `scripts/bootstrap.sh`
-  for the server and `config/Config.local.js` for the client — and they must
-  match.
+- **The packet versions are listed in `config/PACKETVERS`**, default first. The
+  default also appears in `config/Config.local.js` (a test checks they agree);
+  the supervisor rewrites the client's number to whichever is chosen in
+  Settings. Every line is a full rAthena build in the image, so a local
+  `PACKETVERS=20221005 scripts/bootstrap.sh` builds only the default, for speed.
 - **Database edits under a running server are lost.** Use
   `ragnarok-stack sql --write`, which stops the game first;
   [docs/DATABASE.md](docs/DATABASE.md) explains.
