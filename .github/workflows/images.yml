@@ -34,10 +34,10 @@ on:
       - 'containers/**'
       - '.github/workflows/images.yml'
       - 'tests/integration/mariadb-secrets.py'
-      # The packetver lives here and is a build arg for the rAthena image, so a
-      # bump has to rebuild. It over-triggers on unrelated bootstrap edits;
-      # a stale image is the worse failure.
-      - 'scripts/bootstrap.sh'
+      # The packet versions are build args for the rAthena image, so a change
+      # to the list has to rebuild.
+      - 'config/PACKETVERS'
+      - 'scripts/packetvers.sh'
       # What goes *into* the server. The population engine's sources, patches
       # and spawn tables are compiled and copied into the image, and the script
       # that applies them decides how -- so a change to either changes the
@@ -81,16 +81,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # One source of truth for the packetver: the value bootstrap.sh builds
-      # with, which is also the image tag precache.sh looks for at runtime. A
+      # One source of truth for the packet versions: config/PACKETVERS, whose
+      # first line is also the image tag precache.sh looks for at runtime. A
       # second copy here would drift and the app would silently pull nothing.
-      - name: Read the packetver
+      - name: Read the packet versions
         run: |
           set -e
-          ver=$(grep -m1 '^PACKETVER=' scripts/bootstrap.sh | cut -d= -f2)
-          [ -n "$ver" ] || { echo "no PACKETVER in scripts/bootstrap.sh" >&2; exit 1; }
-          echo "PACKETVER=$ver" >> "$GITHUB_ENV"
-          echo "building for packetver $ver"
+          echo "PACKETVER=$(scripts/packetvers.sh default)" >> "$GITHUB_ENV"
+          echo "EXTRA_PACKETVERS=$(scripts/packetvers.sh extra)" >> "$GITHUB_ENV"
+          echo "building for packetver $(scripts/packetvers.sh default), and $(scripts/packetvers.sh extra)"
 
       - name: Build the database image
         run: docker build -t ragnarokmac/mariadb:11.4 containers/mariadb
@@ -108,18 +107,24 @@ jobs:
           cp containers/rathena/Dockerfile /tmp/rathena/Dockerfile.ragnarokmac
           docker build -f /tmp/rathena/Dockerfile.ragnarokmac \
             --build-arg "PACKETVER=$PACKETVER" \
+            --build-arg "EXTRA_PACKETVERS=$EXTRA_PACKETVERS" \
             -t "ragnarokmac/rathena:$PACKETVER" /tmp/rathena
 
       - name: Export matching native debug symbols
         run: |
           set -e
           docker build -f /tmp/rathena/Dockerfile.ragnarokmac \
-            --build-arg "PACKETVER=$PACKETVER" --target debug-symbols \
+            --build-arg "PACKETVER=$PACKETVER" \
+            --build-arg "EXTRA_PACKETVERS=$EXTRA_PACKETVERS" --target debug-symbols \
             -t ragnarokmac/debug-symbols /tmp/rathena
           cid=$(docker create ragnarokmac/debug-symbols true)
           mkdir -p native-symbols
           docker cp "$cid:/re" native-symbols/
           docker cp "$cid:/pre-re" native-symbols/
+          for ver in $EXTRA_PACKETVERS; do
+            docker cp "$cid:/re-$ver" native-symbols/
+            docker cp "$cid:/pre-re-$ver" native-symbols/
+          done
           docker cp "$cid:/trace-tests" native-symbols/
           docker rm "$cid" >/dev/null
           printf '%s\n' '${{ github.sha }}' > native-symbols/app-source.txt

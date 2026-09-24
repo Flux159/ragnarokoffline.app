@@ -181,6 +181,19 @@
        assets and restarts the server.</p>
   </div>
 
+  <h2>Client version</h2>
+  <div class="panel">
+    <label><span>Packet version</span><select id="packetver"></select></label>
+    <p class="note" id="packetver-status" hidden style="margin:8px 0 0; color: var(--text)"></p>
+    <p class="note">Which client the server talks to, named by the date of the client it
+       matches. The server and the game window always change together &mdash; a client and
+       server a version apart cannot talk at all. Your characters are kept.</p>
+    <p class="note">Leave this on the default unless something is wrong. A newer version
+       uses newer windows and needs client files at least that new; an older one suits an
+       older client download. <b>Experimental</b> means it builds and starts, but nobody
+       has played it through. Changing this rebuilds the assets and restarts the server.</p>
+  </div>
+
   <h2>Startup</h2>
   <div class="panel">
     <label>
@@ -844,6 +857,54 @@ $('game_text').onchange = async () => {
     log(String(e));
   } finally {
     $('game_text').disabled = false;
+    refresh();
+  }
+};
+
+// The packet version the server and client were last built for. null is the
+// app's default, which is saved as null rather than as its number: see
+// electron/packetvers.js. Same one-source-of-truth reasoning as gameText.
+let packetver = null;
+const packetverValue = v => v || '';
+
+async function loadPacketvers() {
+  const list = await invoke('packetvers').catch(() => []);
+  const dated = v => `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}`;
+  $('packetver').replaceChildren(...list.map(p => {
+    const option = document.createElement('option');
+    // The default is the empty value, not its own number, so choosing it
+    // stores null and follows the app's default from then on.
+    option.value = p.isDefault ? '' : p.version;
+    option.textContent = `${dated(p.version)} (${p.version})` + (p.tag ? ` \u2014 ${p.tag}` : '');
+    return option;
+  }));
+}
+
+$('packetver').onchange = async () => {
+  const chosen = $('packetver').value || null;
+  if (chosen === packetver) return;
+  const label = $('packetver').selectedOptions[0]?.textContent || chosen;
+  const status = $('packetver-status');
+  $('packetver').disabled = true;
+  status.hidden = false;
+  status.innerHTML = '<span class="spinner"></span>Switching the server and client\u2026';
+  try {
+    const s = await invoke('get_settings');
+    await invoke('save_settings', { settings: { ...s, packetver: chosen } });
+    packetver = chosen;
+    status.textContent = `Now on ${label}. Reload the game window and log in again.`;
+    log('packet version: ' + (chosen || 'default'));
+  } catch (e) {
+    // The setting may be saved even though the restart failed -- the
+    // supervisor refuses a version the image was not built with. Show what is
+    // saved rather than an invented rollback.
+    const saved = await invoke('get_settings').catch(() => ({ packetver }));
+    packetver = saved.packetver || null;
+    $('packetver').value = packetverValue(packetver);
+    status.textContent = `Could not switch: ${String(e)}`;
+    log(String(e));
+  } finally {
+    $('packetver').disabled = false;
     refresh();
   }
 };
@@ -1742,6 +1803,10 @@ invoke('get_settings').then(s => {
   setEra(!!s.prerenewal);
   gameText = s.game_text || 'english';
   $('game_text').value = gameText;
+  loadPacketvers().then(() => {
+    packetver = s.packetver ? String(s.packetver) : null;
+    $('packetver').value = packetverValue(packetver);
+  });
   $('zeny_from_mobs').checked = !!s.zeny_from_mobs;
   $('unlimited_arrows').checked = !!s.unlimited_arrows;
   $('open_settings_first').checked = !!s.open_settings_first;

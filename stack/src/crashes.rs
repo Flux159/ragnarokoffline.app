@@ -292,10 +292,12 @@ pub fn capture(cfg: &Config, dk: &Docker, name: &str) -> Result<Option<String>, 
             }
         }
     }
-    let packet = include_str!("../../scripts/bootstrap.sh")
-        .lines()
-        .find_map(|line| line.strip_prefix("PACKETVER="))
-        .filter(|value| value.bytes().all(|c| c.is_ascii_digit()))
+    // From the binary the container ran, not from settings.json: the image
+    // carries several builds (config/PACKETVERS), and capture happens on the
+    // next start -- after a switch has already changed the setting.
+    let packet = container
+        .str("Path")
+        .map(crate::packetver::of_binary)
         .unwrap_or("unknown");
     report.push_str(&format!("Compiled packet version: {packet}\n"));
     if let Ok(overlay) = fs::read_to_string(cfg.state.join("assets/overlay.id")) {

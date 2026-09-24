@@ -1335,6 +1335,7 @@ pub fn secure_services(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32
 pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<(), String> {
     // Validate before touching the engine or replacing any running service.
     let open_registration = crate::registration::enabled(&cfg.state)?;
+    let packetver = crate::packetver::chosen(cfg)?;
     // Era-aware: a scope saved against an era that was never prepared for
     // internet hosting starts Local rather than refusing to start at all.
     let (scope, hosting_notice) = crate::hosting::effective_for_start(cfg, lan)?;
@@ -1399,6 +1400,7 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
 
     ensure_images(cfg, dk)?;
     if credentials.is_some() { require_private_database_image(cfg, dk)?; }
+    crate::packetver::require_in_image(cfg, dk, packetver)?;
     dk.quiet(["network", "create", NET]);
 
     // The era decides which volume holds the characters, and a running database
@@ -1607,10 +1609,14 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     // A suffix, not a subdirectory: rAthena chdirs to the directory of argv[0]
     // and then reads conf/, db/ and npc/ relative to it, so both eras have to
     // live in /rathena itself.
+    //
+    // The packet version is a second suffix after the era's, and applies to
+    // all three: packets.hpp is compiled into login and char as well as map.
     let era = if is_prerenewal(cfg) { "-prere" } else { "" };
-    run_server(cfg, dk, "ragnarok-login", 6900, "/rathena/login-server", lan)?;
-    run_server(cfg, dk, "ragnarok-char", 6121, &format!("/rathena/char-server{era}"), lan)?;
-    run_server(cfg, dk, "ragnarok-map", 5121, &format!("/rathena/map-server{era}"), lan)?;
+    let ver = crate::packetver::suffix(packetver);
+    run_server(cfg, dk, "ragnarok-login", 6900, &format!("/rathena/login-server{ver}"), lan)?;
+    run_server(cfg, dk, "ragnarok-char", 6121, &format!("/rathena/char-server{era}{ver}"), lan)?;
+    run_server(cfg, dk, "ragnarok-map", 5121, &format!("/rathena/map-server{era}{ver}"), lan)?;
     phase(cfg, "Loading maps and NPCs…");
     wait_for_maps(dk)?;
     // After the map server has read its tables and before anyone is told the

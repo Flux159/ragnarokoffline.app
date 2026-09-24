@@ -18,6 +18,12 @@ function validate(settings) {
       !['english', 'client_western', 'client_korean', 'client_taiwan'].includes(settings.game_text)) {
     throw new Error('Cannot read the game text setting. Choose English, or your client\'s own text, in Settings.');
   }
+  // The format only: which versions exist is the supervisor's to say, from
+  // config/PACKETVERS, and it refuses an unlisted one by name.
+  if (Object.hasOwn(settings, 'packetver') && settings.packetver !== null &&
+      !/^\d{8}$/.test(typeof settings.packetver === 'number' ? String(settings.packetver) : settings.packetver)) {
+    throw new Error('Cannot read the client version setting. Choose one in Settings.');
+  }
   // Checked here as well as in the supervisor: the supervisor refuses to start
   // on a damaged value, and a refusal is a much worse way to learn about it
   // than a rejected Apply.
