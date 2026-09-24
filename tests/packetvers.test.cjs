@@ -55,7 +55,7 @@ test('settings.json accepts null or an 8-digit version, and nothing else', () =>
 // past the release that moves it.
 test('the default is stored as null, and the Settings window offers the list', () => {
 	const main = read('electron/main.js');
-	assert.match(main, /\n\tpacketver: null,\n/);
+	assert.match(main, /\r?\n\tpacketver: null,\r?\n/);
 	assert.match(main, /packetvers: \(\) => require\('\.\/packetvers'\)\.list\(projectRoot\(\)\)/);
 	const html = read('src/settings.html');
 	assert.match(html, /<select id="packetver">/);
