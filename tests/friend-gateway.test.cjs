@@ -5,7 +5,7 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const { once } = require('node:events');
 const { FriendGateway, Frames } = require('../electron/sharing/gateway');
-async function fixture(t) {
+async function fixture(t, options = {}) {
   const observed = [];
   const upstream = http.createServer((req, res) => { observed.push({ url: req.url, headers: req.headers }); res.setHeader('cache-control', 'public,max-age=99999'); res.end('asset'); });
   upstream.on('upgrade', (req, socket) => {
@@ -15,7 +15,7 @@ async function fixture(t) {
   });
   upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening');
   let registrations = 0;
-  const gateway = new FriendGateway({ origin: 'https://play.example.com', upstreamPort: upstream.address().port, register: async () => { registrations++; } });
+  const gateway = new FriendGateway({ origin: 'https://play.example.com', upstreamPort: upstream.address().port, register: async () => { registrations++; }, ...options });
   const port = await gateway.start(0);
   t.after(async () => { await gateway.stop(); upstream.closeAllConnections(); await new Promise(resolve => upstream.close(resolve)); });
   const request = (url, { method = 'GET', headers = {}, body } = {}) => new Promise((resolve, reject) => {
@@ -126,4 +126,45 @@ test('a stored invitation is reused so a shared link survives a restart', () => 
   restarted.revoke();
   assert.notEqual(restarted.invite, before);
   assert.match(restarted.invite, /^[A-Za-z0-9_-]{43}$/);
+});
+
+test('translation proxy reaches only the loopback AI, behind the same invitation, origin and method gates', async t => {
+  const seen = [];
+  const ai = http.createServer((req, res) => {
+    let text = ''; req.on('data', chunk => text += chunk);
+    req.on('end', () => { seen.push({ method: req.method, url: req.url, headers: req.headers, text }); res.setHeader('content-type', 'application/json'); res.setHeader('set-cookie', 'ai=secret'); res.end(req.url === '/health' ? '{"status":"ok"}' : '{"choices":[]}'); });
+  });
+  ai.listen(0, '127.0.0.1'); await once(ai, 'listening');
+  t.after(async () => { ai.closeAllConnections(); await new Promise(resolve => ai.close(resolve)); });
+  const f = await fixture(t, { aiPort: ai.address().port });
+  const json = { 'content-type': 'application/json' };
+  const completions = headers => f.request('/_friend/translate/v1/chat/completions', { method: 'POST', headers, body: '{"messages":[]}' });
+
+  assert.equal((await f.request('/_friend/translate/health')).status, 401);
+  assert.equal((await completions({ origin: f.gateway.origin, ...json })).status, 401);
+  assert.equal(seen.length, 0, 'nothing reaches the AI before an invitation is exchanged');
+
+  const cookie = await f.login();
+  const health = await f.request('/_friend/translate/health', { headers: { cookie } });
+  assert.equal(health.status, 200); assert.equal(health.text, '{"status":"ok"}'); assert.equal(health.headers['set-cookie'], undefined);
+  assert.equal((await f.request('/_friend/translate/health', { method: 'POST', headers: { cookie } })).status, 404);
+  assert.equal((await f.request('/_friend/translate/v1/chat/completions', { headers: { cookie } })).status, 404);
+  assert.equal((await completions({ cookie, origin: 'https://evil.example', ...json })).status, 403);
+  assert.equal((await completions({ cookie, origin: f.gateway.origin, 'content-type': 'text/plain' })).status, 403);
+  assert.equal(seen.length, 1, 'rejected requests never reach the AI');
+
+  const answer = await completions({ cookie, origin: f.gateway.origin, authorization: 'Bearer private-sentinel', ...json });
+  assert.equal(answer.status, 200); assert.equal(answer.text, '{"choices":[]}'); assert.equal(answer.headers['set-cookie'], undefined);
+  const forwarded = seen[1];
+  assert.equal(forwarded.method, 'POST'); assert.equal(forwarded.url, '/v1/chat/completions'); assert.equal(forwarded.text, '{"messages":[]}');
+  assert.equal(forwarded.headers.cookie, undefined); assert.equal(forwarded.headers.authorization, undefined); assert.equal(forwarded.headers.origin, undefined);
+  assert.equal(f.observed.length, 0, 'translation never touches the game asset upstream');
+});
+
+test('translation proxy reports an unreachable AI instead of hanging', async t => {
+  const probe = http.createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'listening');
+  const closedPort = probe.address().port; await new Promise(resolve => probe.close(resolve));
+  const f = await fixture(t, { aiPort: closedPort }), cookie = await f.login();
+  const health = await f.request('/_friend/translate/health', { headers: { cookie } });
+  assert.equal(health.status, 502); assert.match(health.text, /not reachable/);
 });
