@@ -135,6 +135,7 @@ export function componentStyle(name) {
 #WinStats :is(.requirements,.t_requirements) > *{grid-column:4;width:auto!important;color:#7a6a4d;font-size:13px;}
 #WinStats :is(.requirements,.t_requirements) > *::before{content:"cost\\00a0";}
 #WinStats :is(.up,.t_up) button{width:44px!important;height:40px!important;margin:0!important;background-image:none!important;background-color:#59472c!important;color:#fff;border:0!important;border-radius:6px;font:600 22px/40px system-ui;touch-action:manipulation;cursor:pointer;}
+#WinStats :is(.up,.t_up) button{justify-content:center!important;padding:0!important;}
 #WinStats :is(.up,.t_up) button::after{content:"+";}
 #WinStats :is(.up,.t_up) button:active{background-color:#8a6d3f!important;}
 #WinStats :is(.stats,.trait.stats) > :nth-child(n)::before{font-weight:400;color:#5b4f3a;}
@@ -163,7 +164,9 @@ export function componentStyle(name) {
 #WinStats .guildname:empty{display:none!important;}
 #WinStats .footer{position:static!important;width:auto!important;height:auto!important;margin-top:8px;}
 #WinStats .footer .left{float:none;margin:0;display:flex;align-items:center;gap:8px;min-height:44px;position:relative;}
-#WinStats .footer .view_traits{width:44px!important;height:44px!important;background-position:center;background-repeat:no-repeat;background-size:24px;}
+#WinStats .footer .view_traits{width:44px!important;height:44px!important;background-image:none!important;background-color:#efe4ca!important;border:1px solid #b4a27e!important;border-radius:6px;color:#312a1d;font:16px/42px system-ui;padding:0;}
+#WinStats .footer .view_traits::after{content:"\\25BC";}
+#WinStats .footer:has(~ .traits_component[style*="none"]) .view_traits::after{content:"\\25B6";}
 #WinStats .trait_text{position:static!important;font:15px system-ui;}
 #WinStats .traits_component{position:static!important;width:auto!important;margin-top:4px;}
 `;
