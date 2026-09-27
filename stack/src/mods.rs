@@ -1566,6 +1566,12 @@ pub fn save_settings(cfg: &Config, name: &str, body: &str) -> Result<(), String>
     }
     let mut all = read_settings(&cfg.state)?;
     all.insert(name.to_string(), chosen);
+    write_settings(&cfg.state, &all)
+}
+
+/// The whole of `mod-settings.json`, written to a scratch file and renamed
+/// over the old one, so a crash mid-write leaves the previous answers intact.
+fn write_settings(state: &Path, all: &BTreeMap<String, BTreeMap<String, String>>) -> Result<(), String> {
     let document = all
         .iter()
         .map(|(mod_name, values)| {
@@ -1578,7 +1584,7 @@ pub fn save_settings(cfg: &Config, name: &str, body: &str) -> Result<(), String>
         })
         .collect::<Vec<_>>()
         .join(",\n");
-    let path = settings_path(&cfg.state);
+    let path = settings_path(state);
     let temporary = path.with_extension("json.tmp");
     fs::write(&temporary, format!("{{\n{document}\n}}\n"))
         .map_err(|e| format!("writing mod settings: {e}"))?;
@@ -1955,6 +1961,30 @@ pub fn set_enabled(state: &Path, name: &str, on: bool) -> Result<(), String> {
         "# Mods listed here are installed but switched off.")?;
     write_list(state, "enabled.txt", name, on,
         "# Mods listed here are switched on, including any that ship switched off.")
+}
+
+/// Forget every choice the player made about a mod: its line in either list
+/// and its saved options.
+///
+/// Called after the mod's folder has been removed. Leaving the choices behind
+/// would hand them to whatever is installed under the same name next -- a
+/// fresh download of the mod would come back switched off, or with options
+/// the player set for an older version. Forgetting a mod nobody chose anything
+/// about is not an error.
+pub fn forget(state: &Path, name: &str) -> Result<(), String> {
+    for (file, header) in [
+        ("disabled.txt", "# Mods listed here are installed but switched off."),
+        ("enabled.txt", "# Mods listed here are switched on, including any that ship switched off."),
+    ] {
+        if read_list(state, file).iter().any(|n| n == name) {
+            write_list(state, file, name, false, header)?;
+        }
+    }
+    let mut all = read_settings(state)?;
+    if all.remove(name).is_some() {
+        write_settings(state, &all)?;
+    }
+    Ok(())
 }
 
 fn write_list(state: &Path, file: &str, name: &str, present: bool, header: &str) -> Result<(), String> {
@@ -2407,6 +2437,31 @@ mod tests {
         assert!(era_requirement_met("pre-renewal", true).is_ok());
         assert!(era_requirement_met("Pre_Renewal", true).is_ok());
         assert!(era_requirement_met("classic", true).is_err());
+    }
+
+    // Removing a mod must not leave its choices behind for the next mod
+    // installed under that name, and must not touch anybody else's.
+    #[test]
+    fn forgetting_a_mod_drops_its_list_lines_and_options_only() {
+        let state = tmp("mod-forget");
+        set_enabled(&state, "gone", false).unwrap();
+        set_enabled(&state, "kept", true).unwrap();
+        fs::write(
+            settings_path(&state),
+            "{\n  \"gone\": { \"a\": true },\n  \"kept\": { \"b\": 3 }\n}\n",
+        )
+        .unwrap();
+
+        forget(&state, "gone").unwrap();
+
+        assert!(!read_list(&state, "disabled.txt").contains(&"gone".to_string()));
+        assert_eq!(read_list(&state, "enabled.txt"), vec!["kept".to_string()]);
+        let saved = read_settings(&state).unwrap();
+        assert!(!saved.contains_key("gone"));
+        assert_eq!(saved["kept"]["b"], "3");
+
+        // Nothing recorded at all is not an error.
+        forget(&state, "never-installed").unwrap();
     }
 
     fn tmp(tag: &str) -> PathBuf {

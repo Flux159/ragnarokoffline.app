@@ -1784,6 +1784,50 @@ const handlers = {
 		const src = Array.isArray(picked) ? picked[0] : picked;
 		return installModFrom(src);
 	},
+	// Remove a mod the player installed.
+	//
+	// To the system trash rather than deleted, so a wrong click costs a trip
+	// to the trash and not a mod. The supervisor then forgets what was chosen
+	// about it -- switched off, options -- so a later install under the same
+	// name starts from its own defaults. A mod that ships with the app is not
+	// in state/mods and has no Remove button; this refuses it anyway, because
+	// the page is not the one who decides what may be deleted.
+	remove_mod: async ({ name }) => {
+		const { modFolder } = require('./mod-remove');
+		const rows = (await runStack(['mods'])).split('\n').filter(Boolean).map(l => l.split('\t'));
+		const row = rows.find(r => r[1] === name);
+		if (row && row[4] === 'bundled') throw new Error(`${name} comes with the app and cannot be removed. Switch it off instead.`);
+		const target = modFolder(path.join(stateDir(), 'mods'), name);
+		const parent = BrowserWindow.getFocusedWindow();
+		const question = {
+			type: 'warning',
+			buttons: ['Remove', 'Cancel'],
+			defaultId: 1,
+			cancelId: 1,
+			message: `Remove ${name}?`,
+			detail: 'Its folder goes to the trash, and its on/off choice and options are forgotten. Characters and items are not touched.',
+		};
+		const { response } = parent ? await dialog.showMessageBox(parent, question) : await dialog.showMessageBox(question);
+		if (response !== 0) return 'Cancelled.';
+		try {
+			await shell.trashItem(target);
+		} catch (e) {
+			throw new Error(`${name} could not be moved to the trash (${(e && e.message) || e}). Nothing was removed; you can delete the folder from Open mods folder.`);
+		}
+		appLog(`removed mod ${name} to the trash`);
+		// The folder is already gone, so a failure past this point is reported
+		// but does not undo anything.
+		try {
+			await runStack(['mod-forget', name]);
+		} catch (e) {
+			appLog(`mod-forget ${name} failed: ${(e && e.message) || e}`);
+		}
+		// Client-side files the mod shipped leave the game with the next
+		// overlay, the same way changed options reach it.
+		if (clientComplete(getClientPaths())) await linkClient(getClientPaths());
+		const wasOn = row && row[0] === 'on';
+		return `Removed ${name} (moved to the trash).${wasOn ? ' Apply to restart the server without it.' : ''}`;
+	},
 	open_mods_folder: () => {
 		const dir = path.join(stateDir(), 'mods');
 		fs.mkdirSync(dir, { recursive: true });
