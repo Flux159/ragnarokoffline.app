@@ -160,6 +160,26 @@ The fragment is added *after* the mod's own copy of the file and combined with
 it like any other copy, so it holds only what it adds. **Apply** restarts the
 server, so the change takes effect then.
 
+### Reading settings from an NPC script
+
+A switch that loads a folder or not is all a boolean needs, but a number or a
+string has to reach the script itself — a reward multiplier, a list of buffs.
+Every mod's settings are available to every NPC script through one function
+the app writes on each server start:
+
+```c
+.@set$ = callfunc("F_ModSetting", "standart-npc", "buffer_set", "blessing,agi");
+.@rate = callfunc("F_ModSetting", "standart-npc", "gramps_rate", 1);
+.@on   = callfunc("F_ModSetting", "standart-npc", "enable_buffer", 1);
+```
+
+The arguments are the mod's name, the setting's `key`, and what to use if the
+mod or setting is not there — always pass it, so a script keeps working when
+the mod is switched off or an older app is running it. A boolean arrives as
+`1` or `0`, a number as a whole number (rAthena scripts have no fractions),
+and a string as a string. These are the same checked values the client gets,
+and they change on **Apply**, like everything else about the server.
+
 Only `groups.yml`, `atcommands.yml` and files under `npc/` can be switched this
 way. Put conditional NPC scripts under `npc/when/<setting key>/`; ordinary
 files under `npc/` remain unconditional. A folder named for a setting the mod

@@ -1339,6 +1339,19 @@ pub fn assemble(cfg: &Config) -> Result<Assembled, String> {
     if !stock.is_empty() {
         println!("stock scripts: {}", stock.len());
     }
+    // Then F_ModSetting, so any mod's script can read its settings. Written
+    // only when some mod ships scripts, since nothing else could call it. A
+    // file directly in npc/, not a folder, so it cannot collide with a mod's.
+    if live.iter().any(|m| m.dir.join("npc").is_dir()) {
+        let values: Vec<(String, Vec<(String, ScriptValue)>)> = live
+            .iter()
+            .map(|m| (m.name.clone(), script_values(&m.manifest, &effective(&m.manifest, saved.get(&m.name)))))
+            .collect();
+        fs::create_dir_all(build.join("npc")).map_err(|e| format!("mods: npc build folder: {e}"))?;
+        fs::write(build.join("npc").join(SETTINGS_SCRIPT), settings_script(&values))
+            .map_err(|e| format!("mods: {SETTINGS_SCRIPT}: {e}"))?;
+        lines.push_str(&format!("npc: npc/mods/{SETTINGS_SCRIPT}\n"));
+    }
     for m in &live {
         let from = m.dir.join("npc");
         if !from.is_dir() {
@@ -1366,6 +1379,111 @@ pub fn assemble(cfg: &Config) -> Result<Assembled, String> {
         read_conf(&m.dir, &m.name, &settings, &mut out.conf);
     }
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Settings, for scripts
+// ---------------------------------------------------------------------------
+
+/// The generated script that lets an NPC read its mod's settings:
+///
+/// ```text
+/// .@set$  = callfunc("F_ModSetting", "standart-npc", "buffer_set", "");
+/// .@rate  = callfunc("F_ModSetting", "standart-npc", "gramps_rate", 1);
+/// ```
+///
+/// Booleans arrive as 1 or 0 and numbers as whole numbers, because rAthena
+/// scripts have no other kind; strings arrive as strings. A mod or key that is
+/// not there returns the optional fourth argument, so a script can say what
+/// it wants instead of guessing what "nothing" is for its type.
+pub const SETTINGS_SCRIPT: &str = "mod-settings.txt";
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScriptValue {
+    Int(i64),
+    Text(String),
+}
+
+/// The values `effective` settled on, in the types a script can hold.
+fn script_values(manifest: &Manifest, values: &[(String, String)]) -> Vec<(String, ScriptValue)> {
+    manifest
+        .settings
+        .iter()
+        .zip(values)
+        .map(|(setting, (key, raw))| {
+            let value = match &setting.value {
+                SettingValue::Bool(_) => ScriptValue::Int(i64::from(raw == "true")),
+                // Truncated toward zero and kept inside rAthena's 32-bit int,
+                // which is what older script engines still use.
+                SettingValue::Number(_) => {
+                    let n = raw.parse::<f64>().unwrap_or(0.0);
+                    let n = if n.is_finite() { n.trunc() } else { 0.0 };
+                    ScriptValue::Int(n.clamp(i32::MIN as f64, i32::MAX as f64) as i64)
+                }
+                SettingValue::Text(_) => ScriptValue::Text(match json::parse(raw) {
+                    Ok(json::Value::String(text)) => text,
+                    _ => String::new(),
+                }),
+            };
+            (key.clone(), value)
+        })
+        .collect()
+}
+
+/// A string as an rAthena script literal.
+///
+/// This is the one place a value somebody typed ends up *inside* a script, so
+/// it is the one place that must not be able to end the string early: a quote
+/// or backslash is escaped, and anything that is not printable -- newlines
+/// included, which would end the line the literal is on -- becomes a space.
+fn script_string(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if c.is_control() => out.push(' '),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn settings_script(mods: &[(String, Vec<(String, ScriptValue)>)]) -> String {
+    let mut out = String::from(
+        "//===== Ragnarok Offline ====================================\n\
+         //= Mod settings, for scripts. Written on every server start from\n\
+         //= the answers in Settings -> Mods; do not edit, it is replaced.\n\
+         //=\n\
+         //=   callfunc(\"F_ModSetting\", \"<mod>\", \"<key>\" {, <if missing>})\n\
+         //============================================================\n\
+         function\tscript\tF_ModSetting\t{\n\
+         \t.@mod$ = getarg(0);\n\
+         \t.@key$ = getarg(1);\n",
+    );
+    for (name, values) in mods {
+        if values.is_empty() {
+            continue;
+        }
+        out.push_str(&format!("\tif (.@mod$ == {}) {{\n", script_string(name)));
+        for (key, value) in values {
+            let literal = match value {
+                ScriptValue::Int(n) => n.to_string(),
+                ScriptValue::Text(t) => script_string(t),
+            };
+            out.push_str(&format!("\t\tif (.@key$ == {}) return {literal};\n", script_string(key)));
+        }
+        out.push_str("\t}\n");
+    }
+    out.push_str(
+        "\tif (getargcount() > 2) return getarg(2);\n\
+         \tdebugmes \"F_ModSetting: \" + .@mod$ + \" has no setting \" + .@key$ + \" (pass a fourth argument to say what to use instead)\";\n\
+         \treturn 0;\n\
+         }\n",
+    );
+    out
 }
 
 /// Write the cache and the index a custom map needs, into the `db/import`
@@ -2317,6 +2435,80 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
     use super::*;
+
+    // A setting's value is the only thing a player types that lands inside a
+    // script, so it must not be able to end its string and add code.
+    #[test]
+    fn a_script_string_cannot_be_broken_out_of() {
+        assert_eq!(script_string("plain"), "\"plain\"");
+        assert_eq!(script_string("say \"hi\""), "\"say \\\"hi\\\"\"");
+        assert_eq!(script_string("a\\b"), "\"a\\\\b\"");
+        assert_eq!(script_string("line\nnext\r\tend"), "\"line next  end\"");
+        let hostile = "\"; atcommand \"@item 501 100\"; //\n}";
+        let literal = script_string(hostile);
+        assert_eq!(literal, "\"\\\"; atcommand \\\"@item 501 100\\\"; // }\"");
+        // Every quote inside the literal is escaped, so the only ones that
+        // count are the two around it.
+        let unescaped = literal.char_indices().filter(|&(i, c)| c == '"' && (i == 0 || &literal[i - 1..i] != "\\")).count();
+        assert_eq!(unescaped, 2);
+        assert!(!literal.contains('\n'));
+    }
+
+    #[test]
+    fn settings_reach_scripts_in_the_types_scripts_have() {
+        let manifest = Manifest {
+            settings: vec![
+                setting("on", SettingValue::Bool(true), 0.0, 0.0),
+                setting("rate", SettingValue::Number(1.0), -1e12, 1e12),
+                setting("set", SettingValue::Text(String::new()), 0.0, 200.0),
+            ],
+            ..Manifest::default()
+        };
+        let raw = vec![
+            ("on".to_string(), "false".to_string()),
+            ("rate".to_string(), "2.7".to_string()),
+            ("set".to_string(), "\"blessing,agi \\\"x\\\"\"".to_string()),
+        ];
+        assert_eq!(
+            script_values(&manifest, &raw),
+            vec![
+                ("on".to_string(), ScriptValue::Int(0)),
+                ("rate".to_string(), ScriptValue::Int(2)),
+                ("set".to_string(), ScriptValue::Text("blessing,agi \"x\"".to_string())),
+            ]
+        );
+        let huge = vec![
+            ("on".to_string(), "true".to_string()),
+            ("rate".to_string(), "-900000000000".to_string()),
+            ("set".to_string(), "\"\"".to_string()),
+        ];
+        let values = script_values(&manifest, &huge);
+        assert_eq!(values[0].1, ScriptValue::Int(1));
+        assert_eq!(values[1].1, ScriptValue::Int(i32::MIN as i64));
+    }
+
+    #[test]
+    fn the_generated_function_answers_each_mod_and_falls_back() {
+        let script = settings_script(&[
+            (
+                "standart-npc".to_string(),
+                vec![
+                    ("buffer_set".to_string(), ScriptValue::Text("blessing,agi".to_string())),
+                    ("enable_gramps".to_string(), ScriptValue::Int(1)),
+                ],
+            ),
+            ("no-settings".to_string(), vec![]),
+        ]);
+        assert!(script.contains("function\tscript\tF_ModSetting\t{\n"));
+        assert!(script.contains("\tif (.@mod$ == \"standart-npc\") {\n"));
+        assert!(script.contains("\t\tif (.@key$ == \"buffer_set\") return \"blessing,agi\";\n"));
+        assert!(script.contains("\t\tif (.@key$ == \"enable_gramps\") return 1;\n"));
+        assert!(!script.contains("no-settings"));
+        assert!(script.contains("\tif (getargcount() > 2) return getarg(2);\n"));
+        assert!(script.trim_end().ends_with('}'));
+        // Braces balance, so rAthena reads it as one function.
+        assert_eq!(script.matches('{').count(), script.matches('}').count());
+    }
 
     fn setting(key: &str, value: SettingValue, min: f64, max: f64) -> Setting {
         Setting { key: key.into(), label: key.into(), description: String::new(), value, min, max }
