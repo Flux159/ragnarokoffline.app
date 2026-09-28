@@ -1165,7 +1165,23 @@ async function refreshMods() {
     // Options the mod declared for itself. Built with DOM calls and
     // textContent: a label and a description come out of somebody's mod.json,
     // and nothing about a mod folder is trusted markup.
-    if (!m.refused && Array.isArray(m.settings) && m.settings.length) {
+    //
+    // A mod with a settings page of its own lays its options out there, so
+    // they are not drawn here as well: two editors for the same values would
+    // disagree the moment either one saved.
+    if (m.settingsPage && !m.refused) {
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'ghost';
+      open.textContent = 'Settings…';
+      open.style.cssText = 'margin:2px 0 8px 28px; font-size:12px; padding:2px 10px; display:block';
+      open.onclick = async () => {
+        try { log(await invoke('open_mod_settings', { name: m.name })); }
+        catch (e) { log('error: ' + e); }
+      };
+      box.append(open);
+    }
+    if (!m.refused && !m.settingsPage && Array.isArray(m.settings) && m.settings.length) {
       const values = {};
       const options = document.createElement('div');
       options.style.cssText = 'margin:2px 0 8px 28px; display:flex; flex-direction:column; gap:6px';

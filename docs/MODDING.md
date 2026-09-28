@@ -167,6 +167,54 @@ does not declare, or for one that is not a boolean, is ignored and the log says
 so. See
 [`mods/player-commands`](../mods/player-commands).
 
+### settingsPage — a settings window of your own
+
+When a list of checkboxes is not enough — options in groups, one switch that
+sets several, a preview — a mod can ship its own settings page:
+
+```json
+{
+  "name": "settings-window",
+  "settingsPage": "settings/index.html",
+  "settings": [
+    { "key": "greeter_north", "type": "boolean", "default": true, "label": "North greeter" },
+    { "key": "greeter_south", "type": "boolean", "default": true, "label": "South greeter" }
+  ]
+}
+```
+
+The Mods tab then shows a **Settings…** button under the mod instead of drawing
+the options itself, and the page opens in a window the mod owns. The options
+are still declared in `settings` — that is what the app validates, stores and
+hands to `init(parameters, api)` and `npc/when/` — the page only decides how
+they are shown. It talks to the app through one object:
+
+```js
+const mod = await window.modSettings.get();
+// { name, version, enabled,
+//   settings: [{ key, type, value, label, description, min?, max?, maxLength? }],
+//   context: { era: "renewal" | "pre-renewal", appVersion, enabledMods: [...] } }
+
+await window.modSettings.set({ greeter_south: false }); // only keys you declared, of their declared type
+await window.modSettings.apply();                        // restart the server, like Apply in the Mods tab
+```
+
+`set` takes any subset of your settings and keeps the rest as they are; a key
+you did not declare, or a value of the wrong type, is refused with the reason.
+`apply` resolves once the server is back up.
+
+The window is deliberately small in what it can do. The page is served from
+the mod's own folder and nothing else: it cannot load anything from the
+internet or read files outside that folder, cannot open other windows or
+navigate away, and cannot touch another mod's settings or any other part of
+the app. Put scripts, styles, pictures and any data files in the mod folder
+and link or `fetch()` them relatively. `settingsPage` must name an `.html` file inside the mod folder, or
+the mod is refused with the reason.
+
+An app too old to know `settingsPage` ignores it and draws the declared
+options in the Mods tab as before. See
+[`examples/mods/settings-window`](../examples/mods/settings-window).
+
 ## Installing a mod
 
 **Settings → Mods → Install a mod…** takes a folder or a `.zip` and puts it in

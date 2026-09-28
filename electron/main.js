@@ -10,7 +10,10 @@
 // sprites render doubled on WebKit (roBrowserLegacy #1350). One engine
 // everywhere is worth ~60 MB of download.
 //
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell, clipboard, screen, session, safeStorage, powerMonitor } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, clipboard, screen, session, safeStorage, powerMonitor, protocol } = require('electron');
+// Mods' own settings pages are served from a private scheme, which Chromium
+// only accepts if it is declared before the app is ready.
+require('./mod-settings-window').registerScheme(protocol);
 // Quiet launches mute every window for this run, without persisting a setting.
 if (process.argv.includes('--quiet')) {
     app.on('web-contents-created', (_event, contents) => contents.setAudioMuted(true));
@@ -1728,7 +1731,7 @@ const handlers = {
 		// the app would not run it, and the difference is the whole point of
 		// having a reason to show.
 		return out.split('\n').filter(Boolean).map(l => {
-			const [state, name, description, reason, origin, version, author, grants, settings, problems] = l.split('\t');
+			const [state, name, description, reason, origin, version, author, grants, settings, problems, settingsPage, dir] = l.split('\t');
 			return {
 				name,
 				enabled: state === 'on',
@@ -1756,6 +1759,10 @@ const handlers = {
 				problems: (() => {
 					try { return JSON.parse(problems || '[]'); } catch { return []; }
 				})(),
+				// The mod's own settings page and its folder, when it has one.
+				// Empty from an older supervisor, which never writes them.
+				settingsPage: settingsPage || '',
+				dir: dir || '',
 			};
 		});
 	},
@@ -1770,6 +1777,9 @@ const handlers = {
 		if (clientComplete(getClientPaths())) await linkClient(getClientPaths());
 		return { applied: true };
 	},
+	// A mod's own settings page, in a window of its own. What that window can
+	// do is decided in mod-settings-window.js, not here.
+	open_mod_settings: ({ name }) => modSettingsWindows().open(String(name), windows.settings),
 	// Install a mod from a folder or a .zip the player chose.
 	//
 	// A mod is not data: it drops scripts and tables into the server's paths and
@@ -2527,6 +2537,34 @@ function queueServerOperation(operation) {
 	const pending = serverOperationQueue.then(operation);
 	serverOperationQueue = pending.catch(() => {});
 	return pending;
+}
+
+// Created on first use: the IPC channels a mod's settings page talks to exist
+// only once a player has opened one.
+let modSettingsController = null;
+function modSettingsWindows() {
+	if (!modSettingsController) {
+		modSettingsController = require('./mod-settings-window').create({
+			BrowserWindow,
+			session,
+			ipcMain,
+			preload: path.join(__dirname, 'mod-settings-preload.js'),
+			listMods: () => handlers.list_mods(),
+			saveSettings: (name, values) => handlers.set_mod_settings({ name, values }),
+			// The same restart as Apply in Settings, through the same queue, and
+			// sharing is offered back afterwards exactly as it is there.
+			apply: async () => {
+				await queueServerOperation(() => handlers.stack_up());
+				resumeSharing('after a mod settings window applied');
+			},
+			context: () => ({
+				era: getSettings().prerenewal ? 'pre-renewal' : 'renewal',
+				appVersion: app.getVersion(),
+			}),
+			log: appLog,
+		});
+	}
+	return modSettingsController;
 }
 
 // Only our exact bundled top-level pages own the host controls. A generic

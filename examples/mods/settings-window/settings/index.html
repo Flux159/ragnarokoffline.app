@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>settings-window</title>
+<style>
+  :root { color-scheme: light dark; --dim: #888; --accent: #4a8fe7; }
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 0; padding: 18px 20px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p.note { color: var(--dim); margin: 0 0 16px; }
+  details { border: 1px solid #8884; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; }
+  /* display:flex hides the browser's own fold triangle, so draw one: a
+     folded group with nothing to show that it opens looks empty. */
+  summary { cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; list-style: none; user-select: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "▶"; display: inline-block; width: 1em; font-size: 11px; color: var(--dim); }
+  details[open] > summary::before { content: "▼"; }
+  summary .count { margin-left: auto; font-weight: 400; color: var(--dim); font-size: 12px; }
+  label.row { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0 0 26px; }
+  label.row small { display: block; color: var(--dim); }
+  input[type=checkbox] { accent-color: var(--accent); }
+  input[type=text] { width: 100%; box-sizing: border-box; padding: 4px 6px; }
+  .actions { display: flex; gap: 8px; margin-top: 16px; }
+  button { padding: 6px 14px; }
+  #status { margin-top: 12px; color: var(--dim); min-height: 1.4em; }
+</style>
+</head>
+<body>
+<h1>Greeters</h1>
+<p class="note" id="about"></p>
+
+<details open>
+  <summary><input type="checkbox" id="all"> NPCs <span class="count" id="count"></span></summary>
+  <div id="npcs"></div>
+</details>
+
+<div class="actions">
+  <button id="save">Save</button>
+  <button id="apply">Save and restart server</button>
+</div>
+<div id="status"></div>
+
+<script>
+// Everything this page can do goes through window.modSettings:
+//   get()        -> { name, version, enabled, settings: [...], context: { era, appVersion, enabledMods } }
+//   set(values)  -> saves some or all of this mod's own settings
+//   apply()      -> restarts the server, like Apply in the Mods tab
+const $ = id => document.getElementById(id);
+const status = text => { $('status').textContent = text; };
+const inputs = {};
+
+// The group switch is not a setting of its own: it is ticked when every NPC
+// is on, clear when none is, and half-ticked in between. Ticking it sets them
+// all, which is the kind of logic a mod's own page is for.
+function syncGroup() {
+  const boxes = ['greeter_north', 'greeter_south'].map(k => inputs[k]);
+  const on = boxes.filter(b => b.checked).length;
+  $('all').checked = on === boxes.length;
+  $('all').indeterminate = on > 0 && on < boxes.length;
+  $('count').textContent = `${on} of ${boxes.length} on`;
+}
+
+function row(setting, parent) {
+  const label = document.createElement('label');
+  label.className = 'row';
+  const input = document.createElement('input');
+  const text = document.createElement('span');
+  text.textContent = setting.label || setting.key;
+  if (setting.description) {
+    const hint = document.createElement('small');
+    hint.textContent = setting.description;
+    text.append(hint);
+  }
+  if (setting.type === 'boolean') {
+    input.type = 'checkbox';
+    input.checked = setting.value === true;
+    input.onchange = syncGroup;
+    label.append(input, text);
+  } else {
+    input.type = 'text';
+    input.value = String(setting.value ?? '');
+    if (setting.maxLength) input.maxLength = setting.maxLength;
+    label.style.flexDirection = 'column';
+    label.append(text, input);
+  }
+  inputs[setting.key] = input;
+  parent.append(label);
+}
+
+function values() {
+  const out = {};
+  for (const [key, input] of Object.entries(inputs)) {
+    out[key] = input.type === 'checkbox' ? input.checked : input.value;
+  }
+  return out;
+}
+
+async function run(button, work, done) {
+  button.disabled = true;
+  try { await work(); status(done); }
+  catch (e) { status('Error: ' + (e && e.message || e)); }
+  button.disabled = false;
+}
+
+(async () => {
+  try {
+    const mod = await window.modSettings.get();
+    $('about').textContent = `${mod.name} ${mod.version} · ${mod.context.era} · app ${mod.context.appVersion}`
+      + (mod.enabled ? '' : ' · this mod is switched off in the Mods tab');
+    for (const setting of mod.settings) {
+      row(setting, $('npcs'));
+    }
+    syncGroup();
+  } catch (e) {
+    status('Could not read the settings: ' + (e && e.message || e));
+  }
+})();
+
+$('all').onchange = () => {
+  for (const key of ['greeter_north', 'greeter_south']) inputs[key].checked = $('all').checked;
+  syncGroup();
+};
+// Clicking the checkbox inside <summary> should not also fold the section.
+$('all').onclick = e => e.stopPropagation();
+
+$('save').onclick = () => run($('save'),
+  () => window.modSettings.set(values()),
+  'Saved. They take effect when the server restarts.');
+
+$('apply').onclick = () => run($('apply'), async () => {
+  await window.modSettings.set(values());
+  status('Restarting the server…');
+  await window.modSettings.apply();
+}, 'Saved and applied. The greeters are updated in game.');
+</script>
+</body>
+</html>

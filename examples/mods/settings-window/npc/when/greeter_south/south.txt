@@ -1,0 +1,5 @@
+prontera,155,150,0	script	South Greeter	4_F_KAFRA1,{
+	mes "[South Greeter]";
+	mes "I am here because greeter_south is on.";
+	close;
+}

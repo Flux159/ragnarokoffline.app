@@ -115,6 +115,14 @@ pub struct Manifest {
     /// is ignored. This is how a mod says "my copy of that table wins" without
     /// having to be named later in the alphabet than somebody else's folder.
     pub after: Vec<String>,
+    /// The mod's own settings page, as a path inside its folder
+    /// (`"settingsPage": "settings/index.html"`). Empty when it has none.
+    ///
+    /// The app opens it in a window of its own that can read and write this
+    /// mod's declared settings and nothing else; the settings above are still
+    /// what is validated and stored. Checked here for shape and existence so a
+    /// typo is a refusal with a reason rather than a button that does nothing.
+    pub settings_page: String,
 }
 
 /// One declared option. Deliberately three scalar types: anything richer is a
@@ -172,6 +180,7 @@ impl Default for Manifest {
             settings: Vec::new(),
             requires_mods: Vec::new(),
             after: Vec::new(),
+            settings_page: String::new(),
         }
     }
 }
@@ -408,7 +417,33 @@ fn read_manifest(dir: &Path) -> Result<Option<Manifest>, String> {
             }
         }
     }
+    if v.get("settingsPage").is_some() {
+        let Some(page) = v.str("settingsPage") else {
+            return Err("mod.json: \"settingsPage\" must be a path like \"settings/index.html\"".into());
+        };
+        m.settings_page = settings_page(dir, page)?;
+    }
     Ok(Some(m))
+}
+
+/// A settings page path, checked: relative, forward slashes, nothing that
+/// climbs out of the mod folder, an `.html` file that is actually there.
+fn settings_page(dir: &Path, page: &str) -> Result<String, String> {
+    let shaped = !page.is_empty()
+        && page.len() <= 200
+        && !page.starts_with('/')
+        && !page.contains(['\\', ':', '\0'])
+        && page.split('/').all(|part| !part.is_empty() && part != "." && part != "..")
+        && (page.ends_with(".html") || page.ends_with(".htm"));
+    if !shaped {
+        return Err(format!(
+            "mod.json: \"settingsPage\" must be an .html file inside the mod folder, like \"settings/index.html\" (got {page:?})"
+        ));
+    }
+    if !dir.join(page).is_file() {
+        return Err(format!("mod.json: the settings page {page:?} is not in the mod folder"));
+    }
+    Ok(page.to_string())
 }
 
 /// Compare a version rule against what this build is.
@@ -1901,7 +1936,7 @@ fn load_report(state: &Path) -> BTreeMap<String, Vec<String>> {
     out
 }
 
-pub fn list(cfg: &Config) -> Vec<[String; 10]> {
+pub fn list(cfg: &Config) -> Vec<[String; 12]> {
     let saved = read_settings(&cfg.state).unwrap_or_default();
     let reported = load_report(&cfg.state);
     scan(cfg)
@@ -1939,6 +1974,15 @@ pub fn list(cfg: &Config) -> Vec<[String; 10]> {
                             list.iter().map(|t| crate::json::quote(t)).collect();
                         format!("[{}]", items.join(","))
                     }
+                },
+                // The mod's own settings page, relative to its folder, and the
+                // folder itself -- the window that shows the page is confined
+                // to that folder. Both empty for a mod with no page.
+                one_line(&m.manifest.settings_page),
+                if m.manifest.settings_page.is_empty() {
+                    String::new()
+                } else {
+                    one_line(&m.dir.to_string_lossy())
                 },
             ]
         })
@@ -2414,6 +2458,35 @@ mod tests {
         let _ = fs::remove_dir_all(&p);
         fs::create_dir_all(&p).unwrap();
         p
+    }
+
+    // The settings page is part of the manifest's contract: a path that
+    // leaves the mod folder, or a file that is not there, refuses the mod
+    // with the reason rather than offering a button that opens nothing.
+    #[test]
+    fn a_settings_page_must_be_an_html_file_inside_the_mod() {
+        let dir = tmp("settings-page");
+        fs::create_dir_all(dir.join("settings")).unwrap();
+        fs::write(dir.join("settings/index.html"), "<p>hi</p>").unwrap();
+        let with = |page: &str| {
+            fs::write(dir.join("mod.json"), format!("{{\"settingsPage\": {}}}", crate::json::quote(page))).unwrap();
+            read_manifest(&dir)
+        };
+        assert_eq!(with("settings/index.html").unwrap().unwrap().settings_page, "settings/index.html");
+        for bad in ["", "../x.html", "settings/../../x.html", "/abs.html", "C:/x.html", "settings\\index.html", "settings/index.js", "./settings/index.html"] {
+            assert!(with(bad).is_err(), "{bad:?} should be refused");
+        }
+        assert!(with("settings/missing.html").unwrap_err().contains("not in the mod folder"));
+        fs::write(dir.join("mod.json"), "{\"settingsPage\": 3}").unwrap();
+        assert!(read_manifest(&dir).is_err());
+        fs::write(dir.join("mod.json"), "{}").unwrap();
+        assert_eq!(read_manifest(&dir).unwrap().unwrap().settings_page, "");
+
+        // The example the docs point at reads back as documented.
+        let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/mods/settings-window");
+        let manifest = read_manifest(&example).unwrap().unwrap();
+        assert_eq!(manifest.settings_page, "settings/index.html");
+        assert_eq!(manifest.settings.len(), 2);
     }
 
     #[test]
