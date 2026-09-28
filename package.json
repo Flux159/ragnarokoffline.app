@@ -30,7 +30,8 @@
       "src/**/*",
       "!**/node_modules/**",
       "!electron/vc_redist.x64.exe",
-      "!electron/installer.nsh"
+      "!electron/installer.nsh",
+      "!electron/sign-win.js"
     ],
     "extraResources": [
       {
@@ -97,7 +98,13 @@
         }
       ],
       "icon": "assets/icon.png",
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "signtoolOptions": {
+        "sign": "electron/sign-win.js",
+        "signingHashAlgorithms": [
+          "sha256"
+        ]
+      }
     },
     "nsis": {
       "oneClick": false,

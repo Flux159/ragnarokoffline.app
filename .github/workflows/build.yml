@@ -35,6 +35,15 @@ name: build
 #   APPLE_APP_SPECIFIC_PASSWORD   from appleid.apple.com
 #   APPLE_TEAM_ID         10-character team id
 #
+# Windows signing uses no secret at all. Azure Artifact Signing trusts this
+# repo's GitHub OIDC token, through a federated credential that names the
+# `release` environment -- so the values it needs are *variables* on that
+# environment, and are identifiers, not credentials:
+#   AZURE_TENANT_ID  AZURE_CLIENT_ID
+#   AZURE_SIGNING_ENDPOINT  AZURE_SIGNING_ACCOUNT  AZURE_SIGNING_PROFILE
+# The environment admits only main and v* tags, so a pull request or a branch
+# cannot get a signing token. electron/sign-win.js has the rest.
+#
 # The Apple secret names deliberately match nebula's, which already has them
 # set for the same Developer ID — same names, same semantics, so a value that
 # works there works here without being reshaped.
@@ -128,8 +137,8 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # One app per platform. Only macOS signs, because it is the only one with a
-  # certificate today — not because the others are less real.
+  # One app per platform. macOS and Windows sign; Linux has no equivalent that
+  # anything checks.
   # ---------------------------------------------------------------------------
   app:
     needs: client
@@ -156,6 +165,17 @@ jobs:
             triple: x64-pc-windows
             clis: windows-x86_64
     runs-on: ${{ matrix.os }}
+    # Only the Windows leg, and only from main or a tag, enters `release`: it
+    # is what Azure's federated credential names, so it is what can sign. An
+    # empty name means no environment, and the other legs and branch runs build
+    # exactly as before.
+    environment: ${{ matrix.platform == 'win' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'release' || '' }}
+    # id-token so sign-win.js can mint the OIDC token Azure trusts. Setting any
+    # permission here replaces the workflow's, so contents is restated; this
+    # job reads releases and never writes one.
+    permissions:
+      contents: read
+      id-token: write
     # The `secrets` context is not available in a step's `if:` — only in `env:`
     # and `with:`. So the presence of each credential is resolved once here, at
     # job level, where secrets *are* readable, and the steps below condition on
@@ -174,6 +194,8 @@ jobs:
       # has been notarising for months. An Apple ID with an app-specific
       # password needs nothing that is not already on the developer's Mac.
       HAS_NOTARY_APPLEID: ${{ secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
+      # Environment variables, so empty everywhere outside `release`.
+      HAS_AZURE: ${{ vars.AZURE_TENANT_ID != '' && vars.AZURE_CLIENT_ID != '' && vars.AZURE_SIGNING_ENDPOINT != '' && vars.AZURE_SIGNING_ACCOUNT != '' && vars.AZURE_SIGNING_PROFILE != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -294,6 +316,20 @@ jobs:
             echo "::warning::Skipping notarisation — set either APPLE_API_KEY_P8 + APPLE_API_KEY_ID + APPLE_API_ISSUER_ID, or APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID."
           fi
 
+      - name: Report the Windows signing configuration
+        if: matrix.platform == 'win'
+        run: |
+          echo "azure artifact signing: ${{ env.HAS_AZURE }}"
+          [ "${{ env.HAS_AZURE }}" = "true" ] || \
+            echo "::warning::Building an unsigned Windows installer — signing runs only in the release environment (main or a v* tag) with its AZURE_* variables set."
+        shell: bash
+
+      # The version the official action pins, so the two move together.
+      - name: Install the Artifact Signing module
+        if: matrix.platform == 'win' && env.HAS_AZURE == 'true'
+        run: Install-Module -Name ArtifactSigning -RequiredVersion 0.1.20 -Force -Repository PSGallery -Scope CurrentUser
+        shell: pwsh
+
       - name: Import signing certificate
         if: matrix.platform == 'mac' && env.HAS_CERT == 'true'
         env:
@@ -339,6 +375,13 @@ jobs:
           # build when there is none, so it follows the certificate rather than
           # the platform.
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.platform == 'mac' && env.HAS_CERT == 'true' }}
+          # Read by electron/sign-win.js; empty outside `release`, where it
+          # signs nothing.
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
         run: |
           npm install --no-audit --no-fund
           npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
@@ -404,6 +447,22 @@ jobs:
           # the app runs is the supervisor binary, verified above.
           codesign --verify --strict "$APP" || echo "unsigned (no certificate configured)"
         shell: bash
+
+      # The installer, and every .exe it installs. The hook already checks each
+      # file as it signs it; this is the check that none was skipped -- a
+      # binary electron-builder never handed to the hook is the failure that
+      # would otherwise ship, and SmartScreen judges each one separately.
+      - name: Verify the Windows signatures
+        if: matrix.platform == 'win' && env.HAS_AZURE == 'true'
+        run: |
+          $files = @(Get-ChildItem dist/electron/*.exe) + @(Get-ChildItem -Recurse dist/electron/win-unpacked -Filter *.exe)
+          $bad = $files | Where-Object {
+            $sig = Get-AuthenticodeSignature -LiteralPath $_.FullName
+            $sig.Status -ne 'Valid' -or -not $sig.TimeStamperCertificate
+          }
+          $files | ForEach-Object { "{0}  {1}" -f (Get-AuthenticodeSignature -LiteralPath $_.FullName).SignerCertificate.Subject, $_.Name }
+          if ($bad) { $bad | ForEach-Object { Write-Error "not signed and timestamped: $($_.FullName)" -ErrorAction Continue }; exit 1 }
+        shell: pwsh
 
       - uses: actions/upload-artifact@v4
         with:
