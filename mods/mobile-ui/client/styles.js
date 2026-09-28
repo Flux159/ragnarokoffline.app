@@ -121,6 +121,7 @@ export function componentStyle(name) {
 #WinStats .titlebar{width:100%!important;height:44px!important;display:flex;align-items:center;justify-content:space-between;background-image:none!important;background-color:#e9dec5!important;border-radius:8px 8px 0 0;position:sticky!important;top:0;z-index:30;padding:0 4px;box-sizing:border-box;}
 #WinStats .titlebar .text{font:600 16px system-ui!important;width:auto!important;height:auto!important;text-shadow:none;padding-left:6px;}
 #WinStats .titlebar .clear,#WinStats .titlebar .base:not(.close){display:none!important;}
+#WinStats .titlebar .close{width:auto!important;height:auto!important;flex:none;white-space:nowrap;padding:0 12px!important;}
 #WinStats .panel{height:auto!important;padding:8px;box-sizing:border-box;}
 #WinStats .status_panel_tooltip,#WinStats .column1_tooltip,#WinStats .column2_tooltip,
 #WinStats .trait_panel_tooltip,#WinStats .t_column1_tooltip,#WinStats .t_column2_tooltip{display:none!important;}
