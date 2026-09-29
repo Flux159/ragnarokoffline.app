@@ -36,7 +36,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process::exit;
 
-const USAGE: &str = "usage: ragnarok-stack host-check|capture-crashes|hosting-check [--lan]|secure-services [--lan] [--ram MiB]|mods|mod-enable NAME|mod-disable NAME|up [--lan] [--ram MiB]|down|repair [--lan] [--ram MiB]|status|logs [service] [tail]\n\
+const USAGE: &str = "usage: ragnarok-stack host-check|capture-crashes|hosting-check [--lan]|secure-services [--lan] [--ram MiB]|mods|mod-enable NAME|mod-disable NAME|mod-forget NAME|up [--lan] [--ram MiB]|down|repair [--lan] [--ram MiB]|status|logs [service] [tail]\n\
                      \x20      backup <file>|restore <file>\n\
                      \x20      sql [--write] [--file <path>] [<statement>]\n\
                      \x20      accounts (private JSON request on stdin)\n\
@@ -167,6 +167,13 @@ fn main() {
         },
         "mod-enable" | "mod-disable" => match args.get(1) {
             Some(n) => mods::set_enabled(&cfg.state, n, verb == "mod-enable"),
+            None => Err("mod name required".into()),
+        },
+        // The Settings window removes the folder itself (to the system
+        // trash, which only the app can reach); this drops what was recorded
+        // about the mod so a later install under the same name starts fresh.
+        "mod-forget" => match args.get(1) {
+            Some(n) => mods::forget(&cfg.state, n),
             None => Err("mod name required".into()),
         },
         "restore" => match args.get(1) {

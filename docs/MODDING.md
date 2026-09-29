@@ -160,12 +160,80 @@ The fragment is added *after* the mod's own copy of the file and combined with
 it like any other copy, so it holds only what it adds. **Apply** restarts the
 server, so the change takes effect then.
 
+### Reading settings from an NPC script
+
+A switch that loads a folder or not is all a boolean needs, but a number or a
+string has to reach the script itself — a reward multiplier, a list of buffs.
+Every mod's settings are available to every NPC script through one function
+the app writes on each server start:
+
+```c
+.@set$ = callfunc("F_ModSetting", "standart-npc", "buffer_set", "blessing,agi");
+.@rate = callfunc("F_ModSetting", "standart-npc", "gramps_rate", 1);
+.@on   = callfunc("F_ModSetting", "standart-npc", "enable_buffer", 1);
+```
+
+The arguments are the mod's name, the setting's `key`, and what to use if the
+mod or setting is not there — always pass it, so a script keeps working when
+the mod is switched off or an older app is running it. A boolean arrives as
+`1` or `0`, a number as a whole number (rAthena scripts have no fractions),
+and a string as a string. These are the same checked values the client gets,
+and they change on **Apply**, like everything else about the server.
+
 Only `groups.yml`, `atcommands.yml` and files under `npc/` can be switched this
 way. Put conditional NPC scripts under `npc/when/<setting key>/`; ordinary
 files under `npc/` remain unconditional. A folder named for a setting the mod
 does not declare, or for one that is not a boolean, is ignored and the log says
 so. See
 [`mods/player-commands`](../mods/player-commands).
+
+### settingsPage — a settings window of your own
+
+When a list of checkboxes is not enough — options in groups, one switch that
+sets several, a preview — a mod can ship its own settings page:
+
+```json
+{
+  "name": "settings-window",
+  "settingsPage": "settings/index.html",
+  "settings": [
+    { "key": "greeter_north", "type": "boolean", "default": true, "label": "North greeter" },
+    { "key": "greeter_south", "type": "boolean", "default": true, "label": "South greeter" }
+  ]
+}
+```
+
+The Mods tab then shows a **Settings…** button under the mod instead of drawing
+the options itself, and the page opens in a window the mod owns. The options
+are still declared in `settings` — that is what the app validates, stores and
+hands to `init(parameters, api)` and `npc/when/` — the page only decides how
+they are shown. It talks to the app through one object:
+
+```js
+const mod = await window.modSettings.get();
+// { name, version, enabled,
+//   settings: [{ key, type, value, label, description, min?, max?, maxLength? }],
+//   context: { era: "renewal" | "pre-renewal", appVersion, enabledMods: [...] } }
+
+await window.modSettings.set({ greeter_south: false }); // only keys you declared, of their declared type
+await window.modSettings.apply();                        // restart the server, like Apply in the Mods tab
+```
+
+`set` takes any subset of your settings and keeps the rest as they are; a key
+you did not declare, or a value of the wrong type, is refused with the reason.
+`apply` resolves once the server is back up.
+
+The window is deliberately small in what it can do. The page is served from
+the mod's own folder and nothing else: it cannot load anything from the
+internet or read files outside that folder, cannot open other windows or
+navigate away, and cannot touch another mod's settings or any other part of
+the app. Put scripts, styles, pictures and any data files in the mod folder
+and link or `fetch()` them relatively. `settingsPage` must name an `.html` file inside the mod folder, or
+the mod is refused with the reason.
+
+An app too old to know `settingsPage` ignores it and draws the declared
+options in the Mods tab as before. See
+[`examples/mods/settings-window`](../examples/mods/settings-window).
 
 ## Installing a mod
 

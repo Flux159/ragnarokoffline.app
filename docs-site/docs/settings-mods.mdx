@@ -27,6 +27,11 @@ Options are read when the client configuration is regenerated, so **Apply**
 first and the game picks them up on its next load. Changing one does not turn
 the mod off.
 
+Some mods have a **Settings…** button instead. Those mods ship a settings window
+of their own, which can arrange the options its own way and has its own button
+to apply them. That window can only change that mod's options and restart the
+server; it cannot reach the internet or anything else on your computer.
+
 ## Apply
 
 Applies every checkbox and every option at once, then restarts the server.
@@ -40,6 +45,17 @@ From a folder or a `.zip`.
 can ship JavaScript the game page executes. Installing one is running somebody
 else's code, so the app checks before it moves anything and unpacks defensively
 — but the judgement about whether to trust it is yours.
+
+## Remove a mod
+
+Mods you installed have a **Remove** button. It asks first, then moves the
+mod's folder to the system trash — so a wrong click can be undone from there —
+and forgets whether it was switched on and what its options were, so installing
+it again starts from its own defaults. Characters and items are not touched.
+
+A removed mod that was switched on stays in the running server until the next
+**Apply**. Mods marked **included** have no Remove button; switch them off
+instead.
 
 ## Open mods folder
 

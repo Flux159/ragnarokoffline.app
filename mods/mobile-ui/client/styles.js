@@ -110,6 +110,67 @@ export function componentStyle(name) {
 #EquipmentV4 .item span{height:auto!important;min-height:32px;white-space:normal;word-break:normal;font:13px/1.3 system-ui;}
 #EquipmentV4 .view_status{display:none!important;}
 `;
+  // The native window positions every column absolutely at 280px scale, with
+  // stat names drawn into the background bitmap. Rebuild it as one grid per
+  // panel (groups become display:contents) and write the names in with CSS.
+  if (/^WinStats/.test(name))
+    return `${safePanel}${buttonStyle}
+:host{width:min(400px,calc(var(--ro-view-width,100vw) - 16px))!important;height:auto!important;}
+.ui-component-root{height:auto!important;width:100%;}
+#WinStats{position:relative!important;width:100%!important;height:auto!important;background:#fff7e8;border:1px solid #b4a27e;border-radius:8px;box-sizing:border-box;font:15px/1.2 system-ui;color:#312a1d;}
+#WinStats .titlebar{width:100%!important;height:44px!important;display:flex;align-items:center;justify-content:space-between;background-image:none!important;background-color:#e9dec5!important;border-radius:8px 8px 0 0;position:sticky!important;top:0;z-index:30;padding:0 4px;box-sizing:border-box;}
+#WinStats .titlebar .text{font:600 16px system-ui!important;width:auto!important;height:auto!important;text-shadow:none;padding-left:6px;}
+#WinStats .titlebar .clear,#WinStats .titlebar .base:not(.close){display:none!important;}
+#WinStats .titlebar .close{width:auto!important;height:auto!important;flex:none;white-space:nowrap;padding:0 12px!important;}
+#WinStats .panel{height:auto!important;padding:8px;box-sizing:border-box;}
+#WinStats .status_panel_tooltip,#WinStats .column1_tooltip,#WinStats .column2_tooltip,
+#WinStats .trait_panel_tooltip,#WinStats .t_column1_tooltip,#WinStats .t_column2_tooltip{display:none!important;}
+#WinStats .common_stats,#WinStats .traits_panel{position:static!important;height:auto!important;width:auto!important;background-image:none!important;
+ display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 52px minmax(0,1fr);grid-auto-flow:row dense;column-gap:6px;row-gap:2px;align-items:center;}
+#WinStats .group,#WinStats .trait{display:contents!important;}
+#WinStats .group > *,#WinStats .trait > *{position:static!important;height:auto!important;min-height:28px;margin:0!important;display:flex!important;align-items:center;white-space:nowrap;}
+#WinStats :is(.stats,.bonus,.up,.requirements,.t_up,.t_requirements) > *{min-height:44px;}
+#WinStats .stats > *{grid-column:1;justify-content:space-between;font-weight:600;}
+#WinStats .bonus > *{grid-column:2;color:#2b6b2b;}
+#WinStats :is(.up,.t_up) > *{grid-column:3;justify-self:center;}
+#WinStats :is(.requirements,.t_requirements) > *{grid-column:4;width:auto!important;color:#7a6a4d;font-size:13px;}
+#WinStats :is(.requirements,.t_requirements) > *::before{content:"cost\\00a0";}
+#WinStats :is(.up,.t_up) button{width:44px!important;height:40px!important;margin:0!important;background-image:none!important;background-color:#59472c!important;color:#fff;border:0!important;border-radius:6px;font:600 22px/40px system-ui;touch-action:manipulation;cursor:pointer;}
+#WinStats :is(.up,.t_up) button{justify-content:center!important;padding:0!important;}
+#WinStats :is(.up,.t_up) button::after{content:"+";}
+#WinStats :is(.up,.t_up) button:active{background-color:#8a6d3f!important;}
+#WinStats :is(.stats,.trait.stats) > :nth-child(n)::before{font-weight:400;color:#5b4f3a;}
+#WinStats .group.stats .str::before{content:"Str";}#WinStats .group.stats .agi::before{content:"Agi";}
+#WinStats .group.stats .vit::before{content:"Vit";}#WinStats .group.stats .int::before{content:"Int";}
+#WinStats .group.stats .dex::before{content:"Dex";}#WinStats .group.stats .luk::before{content:"Luk";}
+#WinStats .trait.stats .pow::before{content:"Pow";}#WinStats .trait.stats .sta::before{content:"Sta";}
+#WinStats .trait.stats .wis::before{content:"Wis";}#WinStats .trait.stats .spl::before{content:"Spl";}
+#WinStats .trait.stats .con::before{content:"Con";}#WinStats .trait.stats .crt::before{content:"Crt";}
+#WinStats :is(.column1,.column2,.t_column1,.t_column2) > *{justify-content:flex-end;gap:4px;border-top:1px solid #e4d8bd;}
+#WinStats :is(.column1,.column2,.t_column1,.t_column2) > *::before{margin-right:auto;color:#5b4f3a;}
+#WinStats :is(.column1,.t_column1) > *{grid-column:1/3;}
+#WinStats :is(.column2,.t_column2) > *{grid-column:3/5;padding-left:10px;}
+#WinStats .column1 > :nth-child(1)::before{content:"Atk";}#WinStats .column1 > :nth-child(2)::before{content:"Matk";}
+#WinStats .column1 > :nth-child(3)::before{content:"Hit";}#WinStats .column1 > :nth-child(4)::before{content:"Critical";}
+#WinStats .column2 > :nth-child(1)::before{content:"Def";}#WinStats .column2 > :nth-child(2)::before{content:"Mdef";}
+#WinStats .column2 > :nth-child(3)::before{content:"Flee";}#WinStats .column2 > :nth-child(4)::before{content:"Aspd";}
+#WinStats .t_column1 .patk::before{content:"P.Atk";}#WinStats .t_column1 .smatk::before{content:"S.Matk";}
+#WinStats .t_column1 .hplus::before{content:"H.Plus";}#WinStats .t_column1 .crate::before{content:"C.Rate";}
+#WinStats .t_column2 .res::before{content:"Res";}#WinStats .t_column2 .mres::before{content:"Mres";}
+#WinStats :is(.statuspoint,.trait_point){grid-column:1/-1!important;grid-row:1;order:-1;justify-content:space-between!important;min-height:36px;background:#efe4ca;border:0!important;border-radius:6px;padding:0 10px;font-weight:600;}
+#WinStats .statuspoint::before{content:"Status points";margin-right:auto;}
+#WinStats .trait_point::before{content:"Trait points";margin-right:auto;}
+#WinStats .guildname{grid-column:1/-1!important;}
+#WinStats .guildname::before{content:"Guild";}
+#WinStats .guildname:empty{display:none!important;}
+#WinStats .footer{position:static!important;width:auto!important;height:auto!important;margin-top:8px;}
+#WinStats .footer .left{float:none;margin:0;display:flex;align-items:center;gap:8px;min-height:44px;position:relative;}
+#WinStats .footer .view_traits{width:44px!important;height:44px!important;background-image:none!important;background-color:#efe4ca!important;border:1px solid #b4a27e!important;border-radius:6px;color:#312a1d;font:16px/42px system-ui;padding:0;}
+#WinStats .footer .view_traits::after{content:"\\25BC";}
+#WinStats .footer:has(~ .traits_component[style*="none"]) .view_traits::after{content:"\\25B6";}
+#WinStats .trait_text{position:static!important;font:15px system-ui;}
+#WinStats .traits_component{position:static!important;width:auto!important;margin-top:4px;}
+`;
   if (/^SkillList/.test(name))
     return `${safePanel}${buttonStyle}
 :host{width:min(480px,calc(var(--ro-view-width,100vw) - 16px))!important;height:auto!important;}
@@ -268,7 +329,7 @@ export function componentStyle(name) {
 #InventoryV3 .content .item .icon{left:9px!important;top:9px!important;}
 `;
   if (
-    /^(Equipment|Storage|SkillList|Quest|NpcStore|VendingShop|InputBox|WinPrompt|WinMSG|WinError|WinPopup|ItemInfo|ItemSelection|WinStats|PartyFriends)/.test(
+    /^(Equipment|Storage|SkillList|Quest|NpcStore|VendingShop|InputBox|WinPrompt|WinMSG|WinError|WinPopup|ItemInfo|ItemSelection|PartyFriends)/.test(
       name,
     )
   )

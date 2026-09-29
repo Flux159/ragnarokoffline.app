@@ -632,6 +632,13 @@ export default function mobileUI(parameters, api) {
       cleanups.push(() => selected?.classList.remove("ro-mobile-selected"));
     }
     if (name === 'SkillDescription') label(ui.querySelector('.close'), 'Close');
+    // Trait stats open by default and double the window's height; collapse
+    // them through the native toggle so its expand icon stays in step.
+    if (/^WinStats/.test(name)) {
+      const traits = ui.querySelector(".traits_component");
+      if (traits && traits.style.display !== "none")
+        ui.querySelector(".view_traits")?.dispatchEvent(new MouseEvent("mousedown"));
+    }
     // Labels for native button controls do not change their visibility/state.
     for (const [selector, text] of [
       [".titlebar .close", "Close"],

@@ -1,0 +1,23 @@
+{
+  "name": "settings-window",
+  "version": "1.0.0",
+  "author": "MondoTruth",
+  "description": "A mod with a settings window of its own: two Prontera greeters under one group switch, saved and applied from the mod's page.",
+  "settingsPage": "settings/index.html",
+  "settings": [
+    {
+      "key": "greeter_north",
+      "type": "boolean",
+      "default": true,
+      "label": "North greeter",
+      "description": "Stands north of the fountain."
+    },
+    {
+      "key": "greeter_south",
+      "type": "boolean",
+      "default": true,
+      "label": "South greeter",
+      "description": "Stands south of the fountain."
+    }
+  ]
+}
