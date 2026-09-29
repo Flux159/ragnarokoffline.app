@@ -35,27 +35,35 @@ exports.default = async function afterPack(context) {
 		throw new Error(`afterPack: no payload/bin in ${appPath}`);
 	}
 	const identity = process.env.RAGNAROKMAC_IDENTITY || findIdentity();
-	if (!identity) {
-		console.log('  afterPack: no Developer ID found, leaving payload binaries unsigned');
-		return;
-	}
-
 	const vz = path.join(__dirname, '..', 'config', 'entitlements.plist');
 	const app = path.join(__dirname, 'entitlements.mac.plist');
 
-	// Everything in payload/bin, because electron-builder will sign none of it
-	// and notarisation rejects a bundle containing unsigned Mach-O.
-	for (const name of fs.readdirSync(bin)) {
-		const target = path.join(bin, name);
-		if (!fs.statSync(target).isFile()) continue;
-		if (name.endsWith('.sha256') || name.endsWith('.source-commit')) continue;
-		const needsVZ = name === 'nebula' || name === 'nebulad';
-		execFileSync('codesign', [
+	// No Developer ID -- a fork's CI, or a Mac without the certificate.
+	// electron-builder will then sign nothing, and an unsigned build is worse
+	// than it sounds: Electron's binary arrives linker-signed, packing changes
+	// the resources that signature seals, and Apple Silicon reports the result
+	// as "damaged" with no way past it. So seal it ad hoc instead. It is not
+	// notarisable and Gatekeeper still asks, but it opens, and nebulad keeps
+	// the entitlement it needs to start a VM.
+	//
+	// Inside out: --deep first for the frameworks and helpers, then the payload
+	// with its own entitlements (--deep gave it the app's), then the app once
+	// more so its seal covers the payload as it now is. No hardened runtime:
+	// with no team id, library validation would refuse Electron's frameworks.
+	if (!identity) {
+		console.log('  afterPack: no Developer ID found, signing ad hoc');
+		execFileSync('codesign', ['--force', '--deep', '--sign', '-', appPath], { stdio: 'inherit' });
+		signPayload(bin, target => ['--force', '--sign', '-', '--entitlements', entitlementsFor(target, vz, app), target]);
+		execFileSync('codesign', ['--force', '--sign', '-', '--entitlements', app, appPath], { stdio: 'inherit' });
+	} else {
+		// Everything in payload/bin, because electron-builder will sign none of
+		// it and notarisation rejects a bundle containing unsigned Mach-O.
+		signPayload(bin, target => [
 			'--force', '--sign', identity,
 			'--options', 'runtime', '--timestamp',
-			'--entitlements', needsVZ ? vz : app,
+			'--entitlements', entitlementsFor(target, vz, app),
 			target,
-		], { stdio: 'inherit' });
+		]);
 	}
 
 	// Assert the thing this file exists for, rather than trusting it: a
@@ -70,6 +78,20 @@ exports.default = async function afterPack(context) {
 	}
 	console.log('  afterPack: payload binaries signed, entitlements verified');
 };
+
+function signPayload(bin, args) {
+	for (const name of fs.readdirSync(bin)) {
+		const target = path.join(bin, name);
+		if (!fs.statSync(target).isFile()) continue;
+		if (name.endsWith('.sha256') || name.endsWith('.source-commit')) continue;
+		execFileSync('codesign', args(target), { stdio: 'inherit' });
+	}
+}
+
+function entitlementsFor(target, vz, app) {
+	const name = path.basename(target);
+	return name === 'nebula' || name === 'nebulad' ? vz : app;
+}
 
 function findIdentity() {
 	try {

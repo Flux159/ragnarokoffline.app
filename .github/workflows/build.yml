@@ -13,7 +13,7 @@ name: build
 #   payload/bin     ragnarok-stack (built here from stack/) and ro-randomizer
 #                   (from examples/mods/randomizer/), plus nebula,
 #                   nebulad, docker-slim, robrowser-remoteclient —
-#   payload/lib     private repos, built there and consumed here. Three
+#   payload/lib     other repos, built there and consumed here. Three
 #   payload/guest   separate release assets: the embed kit (nebula, nebulad,
 #                   guest images, and on Linux/Windows libkrun), the slim host
 #                   CLIs (docker-slim), and the asset server binary.
@@ -23,8 +23,13 @@ name: build
 # CI clone and build nebula and the asset server — makes every app build depend
 # on two other toolchains and turns a five-minute job into a forty-minute one.
 #
-# Required secrets:
-#   DEPS_TOKEN            PAT with read access to the private dependency repos
+# Every secret below is optional, so a fork builds with none of them: the
+# engine and asset server are public, and a build without the Apple
+# certificate is signed ad hoc (electron/afterPack.js) rather than failing.
+#
+# Secrets:
+#   DEPS_TOKEN            PAT for the dependency repos; github.token otherwise.
+#                         Only worth setting if one of them goes private again
 #   APPLE_CERT_P12_BASE64 Developer ID Application cert, base64 of a .p12
 #   APPLE_CERT_PASSWORD   .p12 export password
 #   APPLE_API_KEY_P8      App Store Connect key, raw .p8 contents (notarisation)
@@ -48,8 +53,9 @@ name: build
 # set for the same Developer ID — same names, same semantics, so a value that
 # works there works here without being reshaped.
 #
-# Notarisation is skipped when the Apple secrets are absent, so the workflow is
-# useful before they are set up.
+# Signing is skipped when the certificate is absent, and notarisation when its
+# secrets are, so a fork that wants a real Developer ID build sets these same
+# names on its own repo and nothing else changes.
 
 # Tags and manual runs only. A full build is three platforms, an npm client
 # build and a signed, notarised DMG — minutes of runner time and an Apple
@@ -220,19 +226,15 @@ jobs:
           name: client
           path: vendor
 
-      # The private half. These are built in their own repos and published as
+      # The other half. These are built in their own repos and published as
       # release assets; consuming them here keeps this workflow independent of
       # two Rust toolchains and a kernel build.
       - name: Fetch engine and asset server
         env:
-          GH_TOKEN: ${{ secrets.DEPS_TOKEN }}
+          # nebula is public, so the run's own token can read its releases.
+          GH_TOKEN: ${{ secrets.DEPS_TOKEN || github.token }}
         run: |
           set -e
-          if [ -z "$GH_TOKEN" ]; then
-            echo "DEPS_TOKEN is not set — cannot fetch the engine or asset server." >&2
-            echo "See the header of this file for what it needs access to." >&2
-            exit 1
-          fi
           mkdir -p /tmp/kit /tmp/clis
 
           # nebula publishes one embed kit per host triple. Its contents are not
@@ -307,7 +309,7 @@ jobs:
           echo "notarisation (api key): ${{ env.HAS_NOTARY_KEY }}"
           echo "notarisation (apple id): ${{ env.HAS_NOTARY_APPLEID }}"
           [ "${{ env.HAS_CERT }}" = "true" ] || \
-            echo "::warning::Building an unsigned macOS app — APPLE_CERT_P12_BASE64 and APPLE_CERT_PASSWORD must both be set to sign."
+            echo "::warning::No Developer ID — signing the macOS app ad hoc. Set APPLE_CERT_P12_BASE64 and APPLE_CERT_PASSWORD to sign it properly."
           if [ "${{ env.HAS_NOTARY_KEY }}" = "true" ]; then
             echo "notarising with an App Store Connect API key"
           elif [ "${{ env.HAS_NOTARY_APPLEID }}" = "true" ]; then
@@ -445,7 +447,9 @@ jobs:
           esac
           # No scripts/ check: the payload deliberately carries none. Everything
           # the app runs is the supervisor binary, verified above.
-          codesign --verify --strict "$APP" || echo "unsigned (no certificate configured)"
+          # Ad hoc when no certificate is configured, which still has to verify.
+          codesign --verify --strict "$APP"
+          codesign -dv "$APP" 2>&1 | grep -E '^(Authority|Signature)='
         shell: bash
 
       # The installer, and every .exe it installs. The hook already checks each
