@@ -449,7 +449,9 @@ jobs:
           # the app runs is the supervisor binary, verified above.
           # Ad hoc when no certificate is configured, which still has to verify.
           codesign --verify --strict "$APP"
-          codesign -dv "$APP" 2>&1 | grep -E '^(Authority|Signature)='
+          # Report only. -dvv, because a Developer ID signature lists its
+          # Authority lines only at that verbosity; ad hoc says Signature=adhoc.
+          codesign -dvv "$APP" 2>&1 | grep -E '^(Authority|Signature)=' || true
         shell: bash
 
       # The installer, and every .exe it installs. The hook already checks each
