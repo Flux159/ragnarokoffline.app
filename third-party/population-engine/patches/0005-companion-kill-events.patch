@@ -1,0 +1,32 @@
+diff --git a/src/map/mob.cpp b/src/map/mob.cpp
+index 7b4bde5..7165f44 100644
+--- a/src/map/mob.cpp
++++ b/src/map/mob.cpp
+@@ -3598,11 +3598,22 @@ int32 mob_dead(mob_data *md, block_list *src, int32 type)
+ 		}
+ 
+ 		if( md->npc_event[0] && !md->state.npc_killmonster ) {
+-			if( sd && battle_config.mob_npc_event_type ) {
+-				pc_setparam(sd, SP_KILLEDGID, md->id);
+-				pc_setparam(sd, SP_KILLEDRID, md->mob_id);
+-				pc_setparam(sd, SP_KILLERRID, sd->id);
+-				npc_event(sd,md->npc_event,0);
++			// npc.cpp drops script events for population shells, so a kill by a
++			// recruited companion would never run the monster's event label.
++			// Give the event to the companion's real owner instead, when the
++			// owner is on this map; otherwise keep the old behaviour.
++			map_session_data* event_sd = sd;
++			if (event_sd != nullptr && population_engine_is_recruited_companion(event_sd)) {
++				map_session_data* owner_sd = population_engine_companion_loot_owner(event_sd);
++				if (owner_sd != nullptr)
++					event_sd = owner_sd;
++			}
++
++			if( event_sd && battle_config.mob_npc_event_type ) {
++				pc_setparam(event_sd, SP_KILLEDGID, md->id);
++				pc_setparam(event_sd, SP_KILLEDRID, md->mob_id);
++				pc_setparam(event_sd, SP_KILLERRID, event_sd->id);
++				npc_event(event_sd,md->npc_event,0);
+ 			} else if( first_sd != nullptr ) {
+ 				pc_setparam(first_sd, SP_KILLEDGID, md->id);
+ 				pc_setparam(first_sd, SP_KILLEDRID, md->mob_id);
