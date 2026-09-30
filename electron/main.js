@@ -1504,6 +1504,9 @@ async function installModFrom(src) {
 		try {
 			const { execFileSync } = require('child_process');
 			if (process.platform === 'darwin') execFileSync('ditto', ['-x', '-k', src, tmp]);
+			// On Windows, by full path: Git's GNU tar is often first on PATH, and it
+			// reads `C:` as a remote host and cannot open a zip at all (#174).
+			else if (process.platform === 'win32') execFileSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', src, '-C', tmp]);
 			else execFileSync('tar', ['-xf', src, '-C', tmp]);
 
 			const walk = (dir, rel = '') => fs.readdirSync(dir, { withFileTypes: true })

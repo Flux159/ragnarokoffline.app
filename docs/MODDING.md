@@ -306,7 +306,7 @@ asked for.
 **A brand-new item needs a second file to be named in the client.** `db/` gives
 it stats, a script and a price; the client gets its name, icon and description
 from a separate table and will otherwise call it *Unknown Item*. That is
-[`System/`](#system--item-names-and-descriptions), ten lines, and it is
+[`System/`](#system--item-names-quest-text-and-descriptions), ten lines, and it is
 additive too.
 
 **`Drops:` does not behave like the other fields.** A drop entry without an
@@ -783,7 +783,7 @@ Its source is in [`examples/mods/randomizer`](../examples/mods/randomizer) and
 is worth reading whatever you are building: it is a worked account of the
 `db/import` traps above, found by hitting them.
 
-## System/ — item names and descriptions
+## System/ — item names, quest text and descriptions
 
 `System/` is merged over the client's tables *after* the English translation,
 so a mod wins. This is where `itemInfo.lua` goes if your mod adds items and
@@ -835,6 +835,32 @@ read by the client, and the log says so. Editing the copy under
 `state/assets/System/` does not last: that folder is rebuilt on every start.
 
 See [`examples/mods/custom-item`](../examples/mods/custom-item).
+
+**Quest tables are added too.** A `System/OngoingQuestInfoList.lub` holding
+only your quests gives them their titles, summaries and descriptions in the
+quest window, and every other quest keeps its own:
+
+```lua
+-- my-mod/System/OngoingQuestInfoList.lub
+QuestInfoList = {
+	[70001] = {
+		Title = "The Islander's Errand",
+		Summary = "Bring Hana 10 Jellopies.",
+		IconName = "ico_nq.bmp",
+		Description = { "Hana in Alberta needs ^0000FF10 Jellopies^000000." },
+		RewardEXP = "1000",
+		RewardJEXP = "500",
+		RewardItemList = { { ItemID = 501, ItemNum = 5 } },
+	},
+}
+```
+
+The quest id is the one your script gives `setquest`, and its hunting targets
+come from your mod's `db/quest_db.yml`, not from this file. Write the
+text in ASCII: the client reads quest tables in its own codepage, not as
+UTF-8. The app copies each table aside as `OngoingQuestInfoList-<mod>.lub` and
+lists them in the client's `customQuestInfo`, which loads **after** the base,
+in mod order, the last definition of a quest winning.
 
 Everything else in `System/` still replaces the client's copy, so start from the
 translation's version and add to it.

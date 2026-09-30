@@ -122,12 +122,18 @@ Build the pinned client and current supervisor/RemoteClient first:
 bash scripts/vendor-fetch.sh roBrowserLegacy vendor/roBrowserLegacy
 bash scripts/patch-client.sh
 npm ci --prefix vendor/roBrowserLegacy
-npm --prefix vendor/roBrowserLegacy run build -- --O --T --H
+npm --prefix vendor/roBrowserLegacy run build:all
+bash scripts/patch-bundle.sh vendor/roBrowserLegacy/dist/Web
 cargo build --manifest-path stack/Cargo.toml
 bash scripts/build-remoteclient.sh
 npm ci
 npx playwright install chromium
 ```
+
+`build:all`, not a partial build: the landing page opens `api.html`, which only
+the full build writes, and a world built without it serves "File not found".
+[AGENT_TESTING.md](AGENT_TESTING.md) drives the same kind of world one command
+at a time.
 
 Use a new directory for `RO_E2E_WORLD`. `RO_E2E_RUNTIME` must name an unpacked
 working app runtime with current `bin/nebula`, its signed helpers, guest images

@@ -82,6 +82,15 @@ env:
 permissions:
   contents: write
 
+# One run per tag. GitHub has delivered a single tag push twice (v1.3.7 got two
+# runs in the same second), and two runs would each build, sign and upload their
+# own installers to the one release. The newer run cancels the older, which at
+# that point has barely started. A queued second run would be worse than none:
+# it replaces the published installers with a second, differently signed set.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ---------------------------------------------------------------------------
   # The client is public and platform-independent, so it is built once and

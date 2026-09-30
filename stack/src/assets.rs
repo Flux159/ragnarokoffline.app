@@ -142,6 +142,28 @@ fn first_dir(cands: &[PathBuf]) -> Option<PathBuf> {
     cands.iter().find(|p| p.is_dir()).cloned()
 }
 
+/// config/TRANSLATION_EXTRAS: single files from ROenglishRE's Compatibility
+/// layers, as (source under Translation/, destination under the staged
+/// translation). That file says why these and not the whole stack.
+fn translation_extras(cfg: &Config) -> Vec<(PathBuf, PathBuf)> {
+    let list = fs::read_to_string(cfg.root.join("config/TRANSLATION_EXTRAS")).unwrap_or_default();
+    list.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .filter_map(|l| {
+            let mut cols = l.split('\t').map(str::trim).filter(|c| !c.is_empty());
+            Some((PathBuf::from(cols.next()?), PathBuf::from(cols.next()?)))
+        })
+        // Both sides stay inside their trees.
+        .filter(|(a, b)| {
+            [a, b].iter().all(|p| {
+                p.components()
+                    .all(|c| matches!(c, std::path::Component::Normal(_)))
+            })
+        })
+        .collect()
+}
+
 pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
     let data = readable_path(
         Path::new(args.first().ok_or("data.grf path required")?),
@@ -218,11 +240,20 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
                 copy_over(&translation.join("Pre-Renewal").join(sub), &en.join(sub))?;
             }
         }
+        for (src, dst) in translation_extras(cfg) {
+            // A pin without one of them is an older translation, not a fault.
+            if translation.join(&src).is_file() {
+                copy_file(&translation.join(&src), &en.join(&dst))?;
+            }
+        }
     }
     let merged = server_root.join("System");
     if text.translated() {
         copy_over(&en.join("SystemEN"), &merged)?;
     }
+    // ROenglishRE names the achievement table achievements.lub; the client
+    // asks for achievement_list.lub, and got the Korean one (#164).
+    let has_achievements = text.translated() && en.join("SystemEN/achievements.lub").is_file();
     if let Some(sys) = first_dir(&[client_dir.join("System"), client_dir.join("dll_exe/System")]) {
         for e in entries(&sys)? {
             let name = e.file_name();
@@ -231,7 +262,9 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
             // front; without them the client's own are the only copies there
             // are, and skipping them leaves the game with no item names.
             if text.translated()
-                && (n.starts_with("itemInfo") || n.starts_with("OngoingQuestInfoList"))
+                && (n.starts_with("itemInfo")
+                    || n.starts_with("OngoingQuestInfoList")
+                    || (n.starts_with("achievement_list") && has_achievements))
             {
                 continue;
             }
@@ -255,13 +288,19 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
             &en.join("SystemEN/OngoingQuests.lub"),
             &merged.join("OngoingQuestInfoList.lub"),
         )?;
+        if has_achievements {
+            copy_file(
+                &en.join("SystemEN/achievements.lub"),
+                &merged.join("achievement_list.lub"),
+            )?;
+        }
         copy_over(&en.join("SystemEN"), &server_root.join("SystemEN"))?;
     }
     copy_data_aliased(
         &cfg.root.join("client-assets/data"),
         &server_root.join("data"),
     )?;
-    let (plugins, item_tables) = overlay_mods(cfg, &server_root, &merged)?;
+    let (plugins, item_tables, quest_tables) = overlay_mods(cfg, &server_root, &merged)?;
     let mut fingerprint = 0xcbf2_9ce4_8422_2325;
     fnv(&mut fingerprint, b"owned-assets-v2");
     fnv(&mut fingerprint, text.as_str().as_bytes());
@@ -300,7 +339,7 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
         format!("{fingerprint:016x}"),
     )
     .map_err(|e| e.to_string())?;
-    write_client_config(cfg, &server_root, &plugins, &item_tables, text, packetver)?;
+    write_client_config(cfg, &server_root, &plugins, &item_tables, &quest_tables, text, packetver)?;
     copy_file(
         &cfg.root.join("config/index.html"),
         &server_root.join("index.html"),
@@ -326,9 +365,10 @@ fn overlay_mods(
     cfg: &Config,
     server_root: &Path,
     merged: &Path,
-) -> Result<(Vec<(String, String)>, Vec<String>), String> {
+) -> Result<(Vec<(String, String)>, Vec<String>, Vec<String>), String> {
     let mut plugins = Vec::new();
     let mut item_tables = Vec::new();
+    let mut quest_tables = Vec::new();
     // The player's answers to whatever each mod declared in its mod.json.
     let saved = crate::mods::read_settings(&cfg.state)?;
     for m in crate::mods::enabled(cfg) {
@@ -340,7 +380,9 @@ fn overlay_mods(
         copy_over(&m.dir.join("BGM"), &server_root.join("BGM"))?;
         // Client tables. itemInfo is merged rather than replaced; see
         // copy_system_layer.
-        item_tables.extend(copy_system_layer(&m.dir.join("System"), merged, &m.name)?);
+        let (items, quests) = copy_system_layer(&m.dir.join("System"), merged, &m.name)?;
+        item_tables.extend(items);
+        quest_tables.extend(quests);
         for misplaced in item_tables_under(&m.dir.join("data"), "data") {
             eprintln!(
                 "mods: {} has {misplaced}, but the client reads item tables only from System/ -- \
@@ -366,7 +408,7 @@ fn overlay_mods(
             plugins.push((m.name.clone(), pars));
         }
     }
-    Ok((plugins, item_tables))
+    Ok((plugins, item_tables, quest_tables))
 }
 
 /// FNV-1a, the same one `guest_fingerprint` uses, fed a piece at a time.
@@ -580,10 +622,20 @@ fn copy_data_aliased(src: &Path, dst: &Path) -> Result<(), String> {
 /// Nothing is lost by making this additive: a mod that really wants to replace
 /// the whole table can still ship a complete one, and defining every id is
 /// indistinguishable from replacing.
-fn copy_system_layer(src: &Path, merged: &Path, mod_name: &str) -> Result<Vec<String>, String> {
+///
+/// The quest table (`OngoingQuestInfoList`) is the same case (#163): replacing
+/// it to add one quest drops every other quest's title and description. Each
+/// is copied aside for `customQuestInfo`, which the client loads after the
+/// base, a quest at a time by id.
+fn copy_system_layer(
+    src: &Path,
+    merged: &Path,
+    mod_name: &str,
+) -> Result<(Vec<String>, Vec<String>), String> {
     let mut added = Vec::new();
+    let mut quests = Vec::new();
     if !src.exists() {
-        return Ok(added);
+        return Ok((added, quests));
     }
     // Named for the mod so two mods can each ship one, and so the file cannot
     // collide with the translation's own copy.
@@ -617,6 +669,13 @@ fn copy_system_layer(src: &Path, merged: &Path, mod_name: &str) -> Result<Vec<St
             };
             copy_file(&from, &merged.join(&dst_name))?;
             added.push(dst_name);
+        } else if from.is_file() && is_quest_table(&name) {
+            let dst_name = match quests.len() {
+                0 => format!("OngoingQuestInfoList-{safe}.lub"),
+                n => format!("OngoingQuestInfoList-{safe}.{}.lub", n + 1),
+            };
+            copy_file(&from, &merged.join(&dst_name))?;
+            quests.push(dst_name);
         } else if from.is_dir() {
             for nested in item_tables_under(&from, &format!("System/{name}")) {
                 eprintln!(
@@ -631,7 +690,14 @@ fn copy_system_layer(src: &Path, merged: &Path, mod_name: &str) -> Result<Vec<St
             copy_file(&from, &to)?;
         }
     }
-    Ok(added)
+    Ok((added, quests))
+}
+
+/// `OngoingQuestInfoList.lub`, `OngoingQuestInfoList_True.lub` -- the quest
+/// table under any name the client's own goes by.
+fn is_quest_table(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.starts_with("ongoingquestinfolist") && (lower.ends_with(".lua") || lower.ends_with(".lub"))
 }
 
 /// `itemInfo.lua`, `itemInfo_C.lua`, `iteminfo.lub` -- any name the client's
@@ -755,6 +821,7 @@ fn write_client_config(
     web: &Path,
     plugins: &[(String, String)],
     item_tables: &[String],
+    quest_tables: &[String],
     text: GameText,
     packetver: &str,
 ) -> Result<(), String> {
@@ -802,6 +869,18 @@ fn write_client_config(
             .collect::<Vec<_>>()
             .join(", ");
         insert_before_close(body, &format!("\tcustomItemInfo: [{list}],\n"))
+    };
+    // Quest tables load *after* the base and each other, and the last to
+    // define a quest wins -- so, unlike items, in mod order.
+    let body = if quest_tables.is_empty() {
+        body
+    } else {
+        let list = quest_tables
+            .iter()
+            .map(|n| format!("'System/{n}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        insert_before_close(body, &format!("\tcustomQuestInfo: [{list}],\n"))
     };
     let out = if plugins.is_empty() {
         body
@@ -945,6 +1024,53 @@ mod tests {
         missing[2] = client.join("unplugged.grf").to_str().unwrap().to_string();
         assert!(link(&cfg, &missing).unwrap_err().contains("unplugged.grf"));
         assert_eq!(fs::read(client.join("data.grf")).unwrap(), b"archive");
+        fs::remove_dir_all(cfg.state.parent().unwrap()).unwrap();
+    }
+
+    /// A kRO client's own Korean copies must not win over the English ones
+    /// the translation carries under other names or in its Compatibility
+    /// layers (#164), and the extras list cannot reach outside its trees.
+    #[test]
+    fn the_translation_covers_achievements_map_names_and_the_message_csv() {
+        let cfg = fixture_config("extras");
+        let client = cfg.state.parent().unwrap().join("client");
+        for (path, text) in [
+            ("data.grf", "archive"),
+            ("System/achievement_list.lub", "Korean achievements"),
+            ("System/mapInfo.lub", "Korean map names"),
+        ] {
+            write(&client.join(path), text);
+        }
+        let en = cfg.root.join("vendor/ROenglishRE/Translation");
+        write(&en.join("Renewal/data/table.txt"), "renewal table");
+        write(&en.join("Renewal/SystemEN/LuaFiles514/itemInfo.lua"), "English items");
+        write(&en.join("Renewal/SystemEN/OngoingQuests.lub"), "English quests");
+        write(&en.join("Renewal/SystemEN/achievements.lub"), "English achievements");
+        write(&en.join("Compatibility/2019-06-05/SystemEN/mapInfo.lub"), "English map names");
+        write(&en.join("Compatibility/2023-08-02/data/msgstringtable.csv"), "English messages");
+        write(&en.join("Compatibility/secret.txt"), "outside");
+        write(
+            &cfg.root.join("config/TRANSLATION_EXTRAS"),
+            "# comment\n\
+             Compatibility/2019-06-05/SystemEN/mapInfo.lub\tSystemEN/mapInfo.lub\n\
+             Compatibility/2023-08-02/data/msgstringtable.csv\tdata/msgstringtable.csv\n\
+             Compatibility/2099-01-01/data/absent.txt\tdata/absent.txt\n\
+             Compatibility/secret.txt\t../../escaped.txt\n",
+        );
+        write(
+            &cfg.root.join("config/Config.local.js"),
+            "window.ROConfigLocal = {\nrenewal: true,\n};\n",
+        );
+        write(&cfg.root.join("config/index.html"), "game entry");
+        let args = vec![client.join("data.grf").to_str().unwrap().to_string()];
+        link(&cfg, &args).unwrap();
+        let read = |p: &str| fs::read_to_string(cfg.state.join("assets").join(p)).unwrap();
+        assert_eq!(read("System/achievement_list.lub"), "English achievements");
+        assert_eq!(read("System/mapInfo.lub"), "English map names");
+        assert_eq!(read(".translation/data/msgstringtable.csv"), "English messages");
+        assert!(!cfg.state.join("assets/.translation/data/absent.txt").exists());
+        assert!(!cfg.state.join("escaped.txt").exists());
+        assert!(!cfg.state.join("assets/escaped.txt").exists());
         fs::remove_dir_all(cfg.state.parent().unwrap()).unwrap();
     }
 
@@ -1237,7 +1363,7 @@ mod tests {
         write(&src.join("itemInfo.lua"), "MOD ADDITIONS");
         write(&src.join("OngoingQuests.lub"), "other table");
 
-        let added = copy_system_layer(&src, &merged, "my-mod").unwrap();
+        let (added, _) = copy_system_layer(&src, &merged, "my-mod").unwrap();
 
         assert_eq!(added, vec!["itemInfo-my-mod.lua".to_string()]);
         // The base is untouched...
@@ -1258,6 +1384,29 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
+    /// A mod's quest table sits beside the base instead of replacing it, so
+    /// adding one quest keeps every other quest's title (#163).
+    #[test]
+    fn a_quest_table_is_kept_aside_rather_than_replacing_the_base() {
+        let tmp = std::env::temp_dir().join(format!("ro-sysq-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let (src, merged) = (tmp.join("mod/System"), tmp.join("merged"));
+        fs::create_dir_all(&merged).unwrap();
+        write(&merged.join("OngoingQuestInfoList.lub"), "BASE");
+        write(&src.join("OngoingQuestInfoList.lub"), "MOD QUESTS");
+        write(&src.join("OngoingQuestInfoList_True.lub"), "MORE QUESTS");
+        let (items, quests) = copy_system_layer(&src, &merged, "story").unwrap();
+        assert!(items.is_empty());
+        assert_eq!(
+            quests,
+            vec!["OngoingQuestInfoList-story.lub".to_string(), "OngoingQuestInfoList-story.2.lub".to_string()]
+        );
+        assert_eq!(fs::read_to_string(merged.join("OngoingQuestInfoList.lub")).unwrap(), "BASE");
+        assert_eq!(fs::read_to_string(merged.join("OngoingQuestInfoList-story.lub")).unwrap(), "MOD QUESTS");
+        assert_eq!(fs::read_to_string(merged.join("OngoingQuestInfoList-story.2.lub")).unwrap(), "MORE QUESTS");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
     /// A mod name that is not a safe filename must not become one.
     #[test]
     fn the_item_table_filename_is_sanitised() {
@@ -1267,7 +1416,7 @@ mod tests {
         fs::create_dir_all(&merged).unwrap();
         write(&src.join("itemInfo.lub"), "x");
         assert_eq!(
-            copy_system_layer(&src, &merged, "../evil name").unwrap(),
+            copy_system_layer(&src, &merged, "../evil name").unwrap().0,
             vec!["itemInfo----evil-name.lua".to_string()]
         );
         let _ = fs::remove_dir_all(&tmp);
@@ -1284,7 +1433,7 @@ mod tests {
         write(&src.join("itemInfo.lua"), "FIRST");
         write(&src.join("itemInfo_C.lua"), "SECOND");
         write(&src.join("LuaFiles514/itemInfo.lua"), "NESTED");
-        let added = copy_system_layer(&src, &merged, "m").unwrap();
+        let (added, _) = copy_system_layer(&src, &merged, "m").unwrap();
         assert_eq!(added, vec!["itemInfo-m.lua".to_string(), "itemInfo-m.2.lua".to_string()]);
         assert_eq!(fs::read_to_string(merged.join("itemInfo-m.lua")).unwrap(), "FIRST");
         assert_eq!(fs::read_to_string(merged.join("itemInfo-m.2.lua")).unwrap(), "SECOND");
@@ -1311,10 +1460,16 @@ mod tests {
         write(&web.join("System/itemInfo.lua"), "base");
         fs::write(cfg.root.join("config/Config.local.js"), "window.ROConfigLocal = {\n\tskipIntro: true\n};\n").unwrap();
         let tables = vec!["itemInfo-a.lua".to_string(), "itemInfo-b.lua".to_string()];
-        write_client_config(&cfg, &web, &[], &tables, GameText::English, crate::packetver::default()).unwrap();
+        let quests = vec!["OngoingQuestInfoList-a.lub".to_string(), "OngoingQuestInfoList-b.lub".to_string()];
+        write_client_config(&cfg, &web, &[], &tables, &quests, GameText::English, crate::packetver::default()).unwrap();
         let body = fs::read_to_string(web.join("Config.local.js")).unwrap();
         assert!(
             body.contains("customItemInfo: ['System/itemInfo-b.lua', 'System/itemInfo-a.lua', 'System/itemInfo.lua', 'System/itemInfo_true.lub'],"),
+            "{body}"
+        );
+        // Quests load after the base and the last definition wins: mod order.
+        assert!(
+            body.contains("customQuestInfo: ['System/OngoingQuestInfoList-a.lub', 'System/OngoingQuestInfoList-b.lub'],"),
             "{body}"
         );
         fs::remove_dir_all(cfg.state.parent().unwrap()).unwrap();
@@ -1360,7 +1515,7 @@ mod tests {
             // shape the loader sees never depends on whether options exist.
             ("plain".to_string(), String::new()),
         ];
-        write_client_config(&cfg, &web, &plugins, &[], GameText::English, crate::packetver::default()).unwrap();
+        write_client_config(&cfg, &web, &plugins, &[], &[], GameText::English, crate::packetver::default()).unwrap();
         let body = fs::read_to_string(web.join("Config.local.js")).unwrap();
         assert!(
             body.contains("'wasd-movement': { path: 'plugins/wasd-movement/index', pars: { \"show_controls_button\": false } }"),

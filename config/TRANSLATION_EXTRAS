@@ -1,0 +1,24 @@
+# Files from ROenglishRE's Translation/Compatibility layers that the English
+# translation carries on top of its base layer, one per line:
+#
+#   <path under Translation/>    <path under the staged translation>
+#
+# ROenglishRE's base layer (Translation/Renewal, Pre-Renewal) is written for a
+# 2015-10-29 client. Its ClientGenerator then stacks every Compatibility/<date>
+# layer up to the client's date. We cannot know that date -- the player points
+# us at a folder, not a version -- and a layer newer than the client replaces
+# the client's own files with a format it may not have. So this is not the
+# stack: it is only files roBrowser reads whose format does not depend on the
+# client's date.
+#
+# package.sh ships each source; link-assets copies each into place.
+
+# The map name banner. Loaded only when enableMapName is on; kRO's copy is
+# Korean and the base layer has none (#164).
+Compatibility/2019-06-05/SystemEN/mapInfo.lub	SystemEN/mapInfo.lub
+
+# Read after msgstringtable.txt and indexed the same way, so a client's Korean
+# .csv overwrote the English .txt entry by entry (#164). This one matches the
+# base layer's .txt line for line and runs past its end, so an older client,
+# which has no .csv of its own, loses nothing to it.
+Compatibility/2023-08-02/data/msgstringtable.csv	data/msgstringtable.csv

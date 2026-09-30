@@ -14,6 +14,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The Python below reads and writes UTF-8 sources. Without this, Windows opens
+# them in the system code page (cp1251, cp936...) and fails on the first
+# non-ASCII byte (#174).
+export PYTHONUTF8=1
 RB="${RAGNAROK_ROBROWSER_DIR:-$ROOT/vendor/roBrowserLegacy}"
 
 python3 - "$ROOT" "$RB" <<'PY'

@@ -173,6 +173,29 @@ is in the table and the char server neither reads nor writes it.
 - Killing things: `pgrep -x` and kill by PID. `pkill -f <pattern>` has matched
   the agent's own shell in this repo and killed the session.
 
+### Reproducing a bug in the running game
+
+`scripts/rotest` plays the game from the command line against a throwaway
+world, never the player's save: log in, `gm "@jobchange 4252"`, `walk`,
+`attack`, `skill`, `shot`, `state`, `server logs map`. Every command prints
+JSON and screenshots go to `artifacts/rotest/`. [docs/AGENT_TESTING.md](docs/AGENT_TESTING.md)
+has the set-up and the commands. Use it to reproduce a client or server bug
+before changing anything, and to show the fix works after. Things that will
+mislead you:
+
+- Log in as `tester` / `tester123` (the default; `world up` creates it). It
+  has GM commands but the client draws it as its real class. The built-in
+  `ragnarok` account is on the client's admin list and always shows the GM
+  sprite, so screenshots taken on it say nothing about outfits or effects.
+- For skill effects, `skill <id> --burst 8` takes frames from the moment of
+  the cast; one screenshot a second later misses most of them.
+- The client must be the `build:all` build; a partial build has no `api.html`
+  and the page says "File not found".
+- zsh does not split an unquoted `$var`, so `for c in "150 184"; do rotest
+  walk $c` passes one argument. Loop in `bash -c`.
+- `pickedByClient: false` from `attack` or `skill --target` means the client
+  itself would not select that entity under the cursor. That is a finding.
+
 Check the vendor checkouts are on their pins before you trust a local result:
 `scripts/vendor-fetch.sh <name> vendor/<name>` puts one back, and prints
 `already at <sha>` when it was fine. Nothing warns you otherwise, and a drifted

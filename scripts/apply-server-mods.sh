@@ -15,6 +15,10 @@ set -eu
 
 TARGET=${1:?path to a rAthena checkout required}
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+# The Python below reads and writes UTF-8 sources. Without this, Windows opens
+# them in the system code page (cp1251, cp936...) and fails on the first
+# non-ASCII byte (#174).
+export PYTHONUTF8=1
 MOD="$ROOT/third-party/population-engine"
 
 [ -f "$TARGET/src/map/map.cpp" ] || { echo "not a rAthena checkout: $TARGET" >&2; exit 1; }

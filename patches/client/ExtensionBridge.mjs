@@ -1,6 +1,7 @@
 // The only adapter between the versioned plugin API and roBrowser internals.
 // Imported by Online, never by GUIComponent or NetworkManager (avoids cycles).
 import Runtime from './ExtensionRuntime.mjs';
+import { install as installAgentHook } from './AgentHook.mjs';
 import Session from 'Engine/SessionStorage.js';
 import Camera from 'Renderer/Camera.js';
 import Renderer from 'Renderer/Renderer.js';
@@ -145,6 +146,8 @@ function action(name, value) {
 export function init() {
     if (installed) return;
     installed = true;
+    // Test harness only; inert unless scripts/rotest opted this page in.
+    installAgentHook();
     Runtime.configure({
         inputState,
         shortcutConflict(keyCode) { return inputState().battleMode && Boolean(BattleMode.match(keyCode)); },

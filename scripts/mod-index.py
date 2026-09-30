@@ -36,7 +36,7 @@ def build():
         manifest_path = directory / "mod.json"
         if not manifest_path.is_file():
             raise SystemExit(f"{directory.name}: every mod needs a mod.json")
-        manifest = json.loads(manifest_path.read_text())
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         files = []
         for path in sorted(p for p in directory.rglob("*") if p.is_file()):
             relative = path.relative_to(directory).as_posix()
@@ -92,12 +92,12 @@ def main(argv):
     index = json.dumps(build(), indent=2) + "\n"
     target = REGISTRY / "index.json"
     if "--check" in argv:
-        current = target.read_text() if target.exists() else ""
+        current = target.read_text(encoding="utf-8") if target.exists() else ""
         if current != index:
             raise SystemExit("registry/index.json is out of date; run python3 scripts/mod-index.py")
         print("registry/index.json matches the mod folders")
         return
-    target.write_text(index)
+    target.write_text(index, encoding="utf-8")
     print(f"wrote {target.relative_to(ROOT)} with {len(json.loads(index)['mods'])} mod(s)")
 
 
