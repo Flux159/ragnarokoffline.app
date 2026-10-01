@@ -196,7 +196,7 @@ export function createRuntime({ storage, report = (...args) => console.error(...
                             size: Number.isFinite(spec?.size) ? spec.size : undefined,
                             scale: Number.isFinite(spec?.scale) ? spec.scale : undefined,
                             colors: spec?.colors && typeof spec.colors === 'object'
-                                ? Object.fromEntries(Object.entries(spec.colors).filter(([, c]) => Array.isArray(c) && c.length >= 3 && c.every(Number.isFinite)).map(([k, c]) => [String(k), c.slice(0, 3)]))
+                                ? Object.fromEntries(Object.entries(spec.colors).filter(([, c]) => Array.isArray(c) && c.length >= 3 && c.every(Number.isFinite)).map(([k, c]) => [String(k), c.slice(0, 3).map(v => Math.min(Math.max(v, 0), 4))]))
                                 : undefined,
                         };
                     }

@@ -1473,6 +1473,18 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     phase(cfg, "Starting the database…");
     if let Some(credentials) = &credentials { migrate_service_credentials(dk, credentials)?; }
     wait_for_db(dk)?;
+    // The login server turns plain-text passwords into salted hashes the
+    // first time it starts on a world from before 1.4.0, and that can't be
+    // undone: an earlier release can no longer log those accounts in. Keep a
+    // copy of the database as it was, first. The game servers are not up yet.
+    if crate::accounts::passwords_unhashed(dk)? {
+        let backups = cfg.state.join("backups");
+        crate::private_fs::directory(&backups)?;
+        let copy = backups.join(format!("before-password-hashing-{}.sql", crate::private_fs::random_hex(8)?));
+        backup_snapshot(cfg, dk, &copy.to_string_lossy(), false)
+            .map_err(|e| format!("backing up the database before hashing passwords: {e}"))?;
+        phase(cfg, "Saved a backup of the accounts before securing their passwords…");
+    }
     crate::accounts::ensure_password_columns(dk)?;
 
     // Only sql/03-account.sql seeds the GM, during first database creation.

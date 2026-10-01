@@ -18,11 +18,13 @@ precision highp float;
 in vec3 aPosition;
 in vec3 aNormal;
 in vec2 aUv;
+in vec4 aColor;              // COLOR_0, white when the model has none
 in mat4 aInstance;          // the model's space to the world, fit included
 uniform mat4 uModelViewMat;
 uniform mat4 uProjectionMat;
 out vec3 vNormal;
 out vec2 vUv;
+out vec4 vColor;
 flat out float vMirrored;
 void main() {
 	vec4 world = aInstance * vec4(aPosition, 1.0);
@@ -34,18 +36,21 @@ void main() {
 	// which side of each triangle the GPU calls the front.
 	vMirrored = determinant(m) < 0.0 ? 1.0 : 0.0;
 	vUv = aUv;
+	vColor = aColor;
 }`;
 
 const FRAGMENT = `#version 300 es
 precision highp float;
 in vec3 vNormal;
 in vec2 vUv;
+in vec4 vColor;
 flat in float vMirrored;
 out vec4 fragColor;
 uniform vec4 uBaseColor;
 uniform bool uHasTexture;
 uniform sampler2D uTexture;
 uniform float uAlphaCutoff;   // < 0: no cutoff
+uniform bool uFoliage;        // leaves: lit as one soft, rounded canopy
 uniform vec3 uLightDirection;
 uniform vec3 uLightAmbient;
 uniform vec3 uLightDiffuse;
@@ -56,7 +61,7 @@ uniform float uFogNear;
 uniform float uFogFar;
 uniform vec3 uFogColor;
 void main() {
-	vec4 color = uBaseColor;
+	vec4 color = uBaseColor * vColor;
 	if (uHasTexture) color *= texture(uTexture, vUv);
 	if (uAlphaCutoff >= 0.0 && color.a < uAlphaCutoff) discard;
 	// Lit exactly as the map's own models are (Models.fs): the sun by the
@@ -64,8 +69,17 @@ void main() {
 	// times the map's light tint. Two-sided: a face seen from behind is lit
 	// from behind.
 	bool front = gl_FrontFacing != (vMirrored > 0.5);
-	vec3 n = normalize(front ? vNormal : -vNormal);
-	float sun = uLightMapUse ? max(dot(n, uLightDirection), 0.0) : 1.0;
+	float sun;
+	if (uFoliage) {
+		// The canopy as a whole (its normals point out from its middle),
+		// with the light wrapping round to the far side as it does through
+		// leaves: lit on the sun's side, never black on the other.
+		float wrap = dot(normalize(vNormal), uLightDirection) * 0.5 + 0.5;
+		sun = uLightMapUse ? mix(0.35, 1.0, wrap * wrap) : 1.0;
+	} else {
+		vec3 n = normalize(front ? vNormal : -vNormal);
+		sun = uLightMapUse ? max(dot(n, uLightDirection), 0.0) : 1.0;
+	}
 	color.rgb *= clamp(sun * uLightDiffuse + uLightAmbient, 0.0, 1.0);
 	color.rgb *= clamp(uLightEnv, 0.0, 1.0);
 	fragColor = color;
@@ -193,10 +207,11 @@ async function flatten(gltf) {
 				const pos = accessorData(gltf, primitive.attributes.POSITION).data;
 				const nor = primitive.attributes.NORMAL !== undefined ? accessorData(gltf, primitive.attributes.NORMAL).data : null;
 				const uv = primitive.attributes.TEXCOORD_0 !== undefined ? accessorData(gltf, primitive.attributes.TEXCOORD_0).data : null;
+				const col = primitive.attributes.COLOR_0 !== undefined ? accessorData(gltf, primitive.attributes.COLOR_0) : null;
 				const count = pos.length / 3;
 				const indices = primitive.indices !== undefined ? accessorData(gltf, primitive.indices).data : Uint32Array.from({ length: count }, (_, i) => i);
 				const key = primitive.material ?? -1;
-				if (!groups.has(key)) groups.set(key, { positions: [], normals: [], uvs: [], indices: [] });
+				if (!groups.has(key)) groups.set(key, { positions: [], normals: [], uvs: [], colors: [], indices: [] });
 				const group = groups.get(key);
 				const base = group.positions.length / 3;
 				for (let i = 0; i < count; i++) {
@@ -215,6 +230,13 @@ async function flatten(gltf) {
 						group.normals.push(n[0] / l, n[1] / l, n[2] / l);
 					}
 					group.uvs.push(uv ? uv[i * 2] : 0, uv ? uv[i * 2 + 1] : 0);
+					if (col) {
+						const c = col.data, k = col.components;
+						const scale = c instanceof Uint8Array ? 1 / 255 : c instanceof Uint16Array ? 1 / 65535 : 1;
+						group.colors.push(c[i * k] * scale, c[i * k + 1] * scale, c[i * k + 2] * scale, k === 4 ? c[i * k + 3] * scale : 1);
+					} else {
+						group.colors.push(1, 1, 1, 1);
+					}
 				}
 				for (const index of indices) group.indices.push(base + index);
 				if (!nor) group.flat = true;
@@ -242,6 +264,21 @@ async function flatten(gltf) {
 		}
 		const material = materialIndex >= 0 ? json.materials[materialIndex] : {};
 		const pbr = material.pbrMetallicRoughness || {};
+		// Leaves: cut-out cards (alpha mask) in a material named for them.
+		// Lit as one rounded canopy -- normals out from its middle -- not
+		// card by card, which leaves most of them facing away from the sun.
+		const foliage = material.alphaMode === 'MASK' && /leaf|leaves|foliage|needle|bush|canopy/i.test(material.name || '');
+		if (foliage) {
+			const n = group.positions.length / 3;
+			const mid = [0, 0, 0], lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+			for (let i = 0; i < n; i++) for (let j = 0; j < 3; j++) { const v = group.positions[i * 3 + j]; mid[j] += v / n; lo[j] = Math.min(lo[j], v); hi[j] = Math.max(hi[j], v); }
+			mid[1] = lo[1] + (hi[1] - lo[1]) * 0.35;   // a little low: the top is the bright side
+			for (let i = 0; i < n; i++) {
+				const d = [0, 1, 2].map(j => group.positions[i * 3 + j] - mid[j]);
+				const l = Math.hypot(...d) || 1;
+				for (let j = 0; j < 3; j++) group.normals[i * 3 + j] = d[j] / l;
+			}
+		}
 		const factor = pbr.baseColorFactor || [1, 1, 1, 1];
 		let image = null, sampler = null;
 		if (pbr.baseColorTexture) {
@@ -253,6 +290,8 @@ async function flatten(gltf) {
 			positions: new Float32Array(group.positions),
 			normals: new Float32Array(group.normals),
 			uvs: new Float32Array(group.uvs),
+			colors: new Float32Array(group.colors),
+			foliage,
 			indices: new Uint32Array(group.indices),
 			name: material.name || '',
 			color: [toSrgb(factor[0]), toSrgb(factor[1]), toSrgb(factor[2]), factor[3]],
@@ -295,11 +334,12 @@ function createHook(models, report) {
 	function upload(flat) {
 		return flat.groups.map(group => {
 			const buffer = gl.createBuffer();
-			const data = new Float32Array(group.positions.length / 3 * 8);
+			const data = new Float32Array(group.positions.length / 3 * 12);
 			for (let i = 0, n = group.positions.length / 3; i < n; i++) {
-				data.set(group.positions.subarray(i * 3, i * 3 + 3), i * 8);
-				data.set(group.normals.subarray(i * 3, i * 3 + 3), i * 8 + 3);
-				data.set(group.uvs.subarray(i * 2, i * 2 + 2), i * 8 + 6);
+				data.set(group.positions.subarray(i * 3, i * 3 + 3), i * 12);
+				data.set(group.normals.subarray(i * 3, i * 3 + 3), i * 12 + 3);
+				data.set(group.uvs.subarray(i * 2, i * 2 + 2), i * 12 + 6);
+				data.set(group.colors.subarray(i * 4, i * 4 + 4), i * 12 + 8);
 			}
 			gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
 			gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
@@ -319,7 +359,7 @@ function createHook(models, report) {
 				gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
 				gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 			}
-			return { buffer, index, count: group.indices.length, texture, color: group.color, alpha: group.alpha, cutoff: group.cutoff, name: group.name };
+			return { buffer, index, count: group.indices.length, texture, color: group.color, alpha: group.alpha, cutoff: group.cutoff, name: group.name, foliage: group.foliage };
 		});
 	}
 
@@ -335,17 +375,22 @@ function createHook(models, report) {
 	function drawGroup(group, entry, attribute, uniform) {
 		gl.bindBuffer(gl.ARRAY_BUFFER, group.buffer);
 		gl.enableVertexAttribArray(attribute.aPosition);
-		gl.vertexAttribPointer(attribute.aPosition, 3, gl.FLOAT, false, 32, 0);
+		gl.vertexAttribPointer(attribute.aPosition, 3, gl.FLOAT, false, 48, 0);
 		gl.vertexAttribDivisor(attribute.aPosition, 0);
 		if (attribute.aNormal >= 0) {
 			gl.enableVertexAttribArray(attribute.aNormal);
-			gl.vertexAttribPointer(attribute.aNormal, 3, gl.FLOAT, false, 32, 12);
+			gl.vertexAttribPointer(attribute.aNormal, 3, gl.FLOAT, false, 48, 12);
 			gl.vertexAttribDivisor(attribute.aNormal, 0);
 		}
 		if (attribute.aUv >= 0) {
 			gl.enableVertexAttribArray(attribute.aUv);
-			gl.vertexAttribPointer(attribute.aUv, 2, gl.FLOAT, false, 32, 24);
+			gl.vertexAttribPointer(attribute.aUv, 2, gl.FLOAT, false, 48, 24);
 			gl.vertexAttribDivisor(attribute.aUv, 0);
+		}
+		if (attribute.aColor >= 0) {
+			gl.enableVertexAttribArray(attribute.aColor);
+			gl.vertexAttribPointer(attribute.aColor, 4, gl.FLOAT, false, 48, 32);
+			gl.vertexAttribDivisor(attribute.aColor, 0);
 		}
 		gl.bindBuffer(gl.ARRAY_BUFFER, entry.instanceBuffer);
 		for (let c = 0; c < 4; c++) {
@@ -360,6 +405,7 @@ function createHook(models, report) {
 		gl.bindTexture(gl.TEXTURE_2D, group.texture);
 		gl.uniform1i(uniform.uTexture, 0);
 		gl.uniform1f(uniform.uAlphaCutoff, group.alpha === 'MASK' ? group.cutoff : -1);
+		gl.uniform1i(uniform.uFoliage, group.foliage ? 1 : 0);
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, group.index);
 		gl.drawElementsInstanced(gl.TRIANGLES, group.count, gl.UNSIGNED_INT, 0, entry.instances);
 		for (let c = 0; c < 4; c++) {
@@ -369,6 +415,7 @@ function createHook(models, report) {
 		gl.disableVertexAttribArray(attribute.aPosition);
 		if (attribute.aNormal >= 0) gl.disableVertexAttribArray(attribute.aNormal);
 		if (attribute.aUv >= 0) gl.disableVertexAttribArray(attribute.aUv);
+		if (attribute.aColor >= 0) gl.disableVertexAttribArray(attribute.aColor);
 	}
 
 	function draw(ctx, blended) {
@@ -450,7 +497,8 @@ function createHook(models, report) {
 
 /**
  * Replace map models with glTF ones: { 'folder/name.rsm': { url, size?, scale?, colors? } }.
- * colors: { materialName: [r, g, b] } in place of those materials' base colour.
+ * colors: { materialName: [r, g, b] } in place of those materials' base colour
+ * (a multiplier on their texture: above 1 brightens a dark one, up to 4).
  * size: a multiple of the original's height (default 1); scale: an exact
  * scale instead. Applies to maps loaded from now on. Returns a function that
  * undoes it.

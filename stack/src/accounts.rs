@@ -97,6 +97,16 @@ pub(crate) fn weak_password_sql() -> String {
 /// Room for a hash, and the flags column, on a database made before hashing.
 /// The login server makes the same change when it starts; doing it here as
 /// well means the checks above work before it ever has. Idempotent.
+/// Whether this database still has plain-text passwords: no `pass_flags`
+/// column yet, so the login server has never hashed them. The first start
+/// of a 1.4.0 on a world made by an earlier release.
+pub fn passwords_unhashed(dk: &Docker) -> Result<bool, String> {
+    let out = dk
+        .private_sql("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'login' AND COLUMN_NAME = 'pass_flags';")
+        .map_err(|e| format!("checking the accounts table: {e}"))?;
+    Ok(out.lines().filter_map(|line| line.trim().parse::<u32>().ok()).last() == Some(0))
+}
+
 pub fn ensure_password_columns(dk: &Docker) -> Result<(), String> {
     dk.private_sql("ALTER TABLE login MODIFY user_pass varchar(128) NOT NULL DEFAULT ''; ALTER TABLE login ADD COLUMN IF NOT EXISTS pass_flags tinyint(3) unsigned NOT NULL DEFAULT 0 AFTER user_pass;")
         .map(|_| ())
