@@ -1554,6 +1554,10 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
         phase(cfg, "Saved a backup of the accounts before securing their passwords…");
     }
     crate::accounts::ensure_password_columns(dk)?;
+    // Sign in with Google or Apple: the login server's one-time token table and
+    // our identity table. Before the game servers, so the login server never
+    // starts without the table it checks tokens against.
+    crate::sign_in::ensure_sign_in_tables(dk)?;
 
     // Only sql/03-account.sql seeds the GM, during first database creation.
     // An existing database may intentionally have renamed, disabled or deleted

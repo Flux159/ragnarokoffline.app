@@ -30,6 +30,7 @@ mod registration;
 mod hosting;
 mod private_fs;
 mod service_credentials;
+mod sign_in;
 mod operation_lock;
 mod packetver;
 mod ports;

@@ -16,6 +16,11 @@ function runAccounts(binary, options, request) {
       "birthdates",
       "agent",
       "agent-disable",
+      // Sign in with Google or Apple (stack/src/sign_in.rs), for the gateway.
+      "identity-find",
+      "identity-create",
+      "identity-link",
+      "login-token",
     ].includes(request.action) ||
     !["renewal", "prerenewal"].includes(request.era)
   ) {

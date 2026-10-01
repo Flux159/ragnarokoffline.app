@@ -5,6 +5,7 @@ import { install as installAgentHook } from './AgentHook.mjs';
 import * as Graphics from './GraphicsPasses.mjs';
 import * as Gltf from './GltfModels.mjs';
 import * as Windows from './PluginWindows.mjs';
+import { install as installSignIn } from './SignIn.mjs';
 import Session from 'Engine/SessionStorage.js';
 import Camera from 'Renderer/Camera.js';
 import Renderer from 'Renderer/Renderer.js';
@@ -251,6 +252,9 @@ export function init() {
     installed = true;
     // Test harness only; inert unless scripts/rotest opted this page in.
     installAgentHook();
+    // Google/Apple sign-in buttons on the login window; inert unless the
+    // friend gateway says the host has set it up.
+    installSignIn();
     // Any other set() is the client targeting for itself. Hand it back its own
     // callbacks first, or the pending plugin pick would swallow the click and
     // the skill would never be cast.

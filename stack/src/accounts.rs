@@ -25,7 +25,7 @@ use std::io::{self, Read};
 ///
 /// Typed into the game's delete prompt as `20000101`: the client sends the last
 /// six digits and the char server compares those.
-const DEFAULT_BIRTHDATE: &str = "2000-01-01";
+pub(crate) const DEFAULT_BIRTHDATE: &str = "2000-01-01";
 
 /// The accounts AI agents play on (#187), when the player turns that on.
 ///
@@ -113,13 +113,13 @@ pub fn ensure_password_columns(dk: &Docker) -> Result<(), String> {
         .map_err(|e| format!("preparing the accounts table for hashed passwords: {e}"))
 }
 
-fn field<'a>(request: &'a Value, key: &str) -> Result<&'a str, String> {
+pub(crate) fn field<'a>(request: &'a Value, key: &str) -> Result<&'a str, String> {
     request
         .str(key)
         .ok_or_else(|| format!("Missing account field: {key}"))
 }
 
-fn hex(value: &str) -> String {
+pub(crate) fn hex(value: &str) -> String {
     let mut out = String::from("0x");
     for byte in value.bytes() {
         out.push_str(&format!("{byte:02x}"));
@@ -127,7 +127,7 @@ fn hex(value: &str) -> String {
     out
 }
 
-fn unhex(value: &str) -> Result<String, String> {
+pub(crate) fn unhex(value: &str) -> Result<String, String> {
     let (pairs, remainder) = value.as_bytes().as_chunks::<2>();
     if !remainder.is_empty() {
         return Err("Invalid account response".into());
@@ -168,7 +168,7 @@ fn password(request: &Value) -> Result<&str, String> {
     Ok(value)
 }
 
-fn username(value: &str) -> Result<(), String> {
+pub(crate) fn username(value: &str) -> Result<(), String> {
     if !(4..=23).contains(&value.len())
         || !value
             .bytes()
@@ -467,6 +467,12 @@ pub fn run(cfg: &Config, dk: &Docker) -> Result<(), String> {
     dk.require_private_sql()?;
     if action == "list" {
         println!("{}", list(dk, era)?);
+        return Ok(());
+    }
+    // Sign in with Google or Apple: identities and one-time login tokens for
+    // the friend gateway (sign_in.rs). Never a stop/restart of the game.
+    if crate::sign_in::ACTIONS.contains(&action) {
+        println!("{}", crate::sign_in::run(cfg, dk, action, &request)?);
         return Ok(());
     }
     if action == "password" || action == "create" || action == "invite-create" || action == "agent" {

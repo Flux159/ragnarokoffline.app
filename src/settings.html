@@ -348,6 +348,28 @@
       <p id="sharing-configured" class="note" hidden></p>
       <label id="sharing-domain-choice" hidden><input id="sharing-use-domain" type="checkbox"> Use this fixed hostname</label>
       </details>
+      <details id="sign-in-options"><summary>Let friends sign in with Google or Apple</summary>
+        <p class="note">Optional. With your own OAuth client from Google or Apple, invited friends can sign in with that
+          account instead of a game password. Nothing changes until you add one, and password accounts keep working.
+          It needs the fixed hostname above: Google and Apple only send people back to an address registered in advance.
+          See <em>Sign in with Google or Apple</em> in the friends-sharing guide for how to make the keys.</p>
+        <p class="note" id="sign-in-redirect">Connect your own hostname above first.</p>
+        <h4>Google</h4>
+        <p class="note" id="sign-in-google-state"></p>
+        <label><span>Client ID</span><input id="sign-in-google-id" type="text" placeholder="…apps.googleusercontent.com" autocomplete="off" spellcheck="false" /></label>
+        <label><span>Client secret</span><input id="sign-in-google-secret" type="password" autocomplete="off" spellcheck="false" /></label>
+        <div class="actions"><button id="sign-in-google-save">Save Google sign-in</button><button id="sign-in-google-forget" class="ghost">Remove</button></div>
+        <h4>Apple</h4>
+        <p class="note" id="sign-in-apple-state"></p>
+        <label><span>Services ID</span><input id="sign-in-apple-services" type="text" placeholder="com.example.play" autocomplete="off" spellcheck="false" /></label>
+        <label><span>Team ID</span><input id="sign-in-apple-team" type="text" maxlength="10" autocomplete="off" spellcheck="false" /></label>
+        <label><span>Key ID</span><input id="sign-in-apple-key-id" type="text" maxlength="10" autocomplete="off" spellcheck="false" /></label>
+        <label><span>Private key (.p8)</span><textarea id="sign-in-apple-key" rows="4" autocomplete="off" spellcheck="false" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></label>
+        <div class="actions"><button id="sign-in-apple-save">Save Apple sign-in</button><button id="sign-in-apple-forget" class="ghost">Remove</button></div>
+        <p class="note">The client secret and the .p8 key are kept in your operating system’s secure password storage, like the
+          Cloudflare credential, and are never sent to a friend’s browser. Changes apply the next time you start sharing.</p>
+        <p id="sign-in-feedback" class="note" role="status" aria-live="polite"></p>
+      </details>
       <div class="actions">
         <button id="sharing-start" disabled>Share with friends</button>
         <button id="sharing-copy" class="ghost" disabled>Copy invitation link</button>
@@ -1766,6 +1788,34 @@ $('sharing-forget').onclick = () => sharingAction('sharing_forget');
 $('sharing-token-help').onclick = () => invoke('sharing_token_help');
 setInterval(refreshSharing, 3000);
 refreshSharing();
+
+// Sign in with Google or Apple. The page gets back only what identifies each
+// client; the secret and the key stay in the main process.
+async function refreshSignIn() {
+  try {
+    const state = await invoke('sign_in_status');
+    setNote('sign-in-redirect', state.configurationError || (state.redirectUri
+      ? `Redirect URI to register with Google and Apple: ${state.redirectUri} (Apple also asks for the domain: ${state.origin.replace('https://', '')}).`
+      : 'Connect your own hostname above first. The redirect URI is built from it.'), state.configurationError ? 'bad' : '');
+    setNote('sign-in-google-state', state.google ? `Saved: ${state.google.clientId}` : 'Not set up.');
+    setNote('sign-in-apple-state', state.apple ? `Saved: ${state.apple.servicesId} (team ${state.apple.teamId}, key ${state.apple.keyId})` : 'Not set up.');
+    $('sign-in-google-forget').disabled = !state.google;
+    $('sign-in-apple-forget').disabled = !state.apple;
+  } catch (error) { setNote('sign-in-redirect', error.message || String(error), 'bad'); }
+}
+async function signInAction(name, request) {
+  try { setNote('sign-in-feedback', await invoke(name, request)); }
+  catch (error) { setNote('sign-in-feedback', error.message || String(error), 'bad'); }
+  finally {
+    for (const id of ['sign-in-google-secret', 'sign-in-apple-key']) $(id).value = '';
+    await refreshSignIn();
+  }
+}
+$('sign-in-google-save').onclick = () => signInAction('sign_in_save', { provider: 'google', clientId: $('sign-in-google-id').value, clientSecret: $('sign-in-google-secret').value });
+$('sign-in-apple-save').onclick = () => signInAction('sign_in_save', { provider: 'apple', servicesId: $('sign-in-apple-services').value, teamId: $('sign-in-apple-team').value, keyId: $('sign-in-apple-key-id').value, privateKey: $('sign-in-apple-key').value });
+$('sign-in-google-forget').onclick = () => signInAction('sign_in_forget', { provider: 'google' });
+$('sign-in-apple-forget').onclick = () => signInAction('sign_in_forget', { provider: 'apple' });
+$('sign-in-options').addEventListener('toggle', () => { if ($('sign-in-options').open) refreshSignIn(); });
 
 $('secure-services').onclick = async () => {
   const button = $('secure-services');

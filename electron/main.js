@@ -96,7 +96,39 @@ function getSharing() {
             const era = getSettings().prerenewal ? 'prerenewal' : 'renewal';
             return require('./accounts').runAccounts(stackBin(), stackEnv(), { ...request, action: 'invite-create', era });
         }),
+        signIn: () => buildSignIn(),
     });
+}
+// Sign in with Google or Apple (sharing/oidc.js, docs/FRIENDS_SHARING.md):
+// null unless the host has saved their own client credentials, and read once
+// per sharing start. What the gateway may ask the supervisor for is these four
+// actions and nothing else; each goes through the same queue as an invited
+// account, so it never lands halfway through an era switch.
+function buildSignIn() {
+    let credentials;
+    try { credentials = getSharingSecrets().loadSignIn(); }
+    catch (error) { appLog(`sharing: sign-in credentials unavailable: ${error.message}`); return null; }
+    if (!credentials.google && !credentials.apple) return null;
+    const { SignInFlow } = require('./sharing/oidc');
+    const account = request => queueServerOperation(async () => {
+        if (!sharing?.gateway || !['sharing', 'connecting', 'reconnecting'].includes(sharing.state)) throw Error('Sharing stopped');
+        const era = getSettings().prerenewal ? 'prerenewal' : 'renewal';
+        return require('./accounts').runAccounts(stackBin(), stackEnv(), { ...request, era });
+    });
+    return {
+        flow: new SignInFlow({ credentials }),
+        accounts: {
+            find: async identity => {
+                const result = await account({ action: 'identity-find', ...identity });
+                return result.found ? { id: String(result.id), username: result.username } : null;
+            },
+            create: (identity, username) => account({ action: 'identity-create', ...identity, username }),
+            link: (identity, username) => account({ action: 'identity-link', ...identity, username }),
+            // Only the token's hash leaves this process.
+            token: (id, tokenHash) => account({ action: 'login-token', id: String(id), tokenHash }),
+        },
+        checkLogin: ({ username, password }) => require('./sharing/login-token').checkGameLogin({ username, password, port: gamePorts().login }),
+    };
 }
 
 
@@ -2414,6 +2446,33 @@ const handlers = {
     sharing_replace: () => {
         getSharing().replaceInvitation();
         return 'New link created. The previous link stopped working and friends using it were disconnected.';
+    },
+    // Google/Apple sign-in setup. Only what identifies the client comes back
+    // to the page; the client secret and the .p8 key never leave this process.
+    sign_in_status: () => {
+        let saved = {}, configurationError = '';
+        try { saved = getSharingSecrets().loadSignIn(); } catch (error) { configurationError = error.message; }
+        let hostname = '';
+        try { hostname = getSharingSecrets().load()?.hostname || ''; } catch { /* reported by sharing_status */ }
+        return {
+            configurationError,
+            redirectUri: hostname ? `https://${hostname}/_friend/sign-in/callback` : '',
+            origin: hostname ? `https://${hostname}` : '',
+            google: saved.google ? { clientId: saved.google.clientId } : null,
+            apple: saved.apple ? { servicesId: saved.apple.servicesId, teamId: saved.apple.teamId, keyId: saved.apple.keyId } : null,
+        };
+    },
+    sign_in_save: ({ provider, ...input } = {}) => {
+        const secrets = getSharingSecrets(); secrets.requireStorage();
+        const value = require('./sharing/oidc').validateCredentials(provider, input);
+        secrets.saveSignIn({ ...secrets.loadSignIn(), [provider]: value });
+        return `${provider === 'apple' ? 'Apple' : 'Google'} sign-in saved. It applies the next time you start sharing on your own hostname.`;
+    },
+    sign_in_forget: ({ provider } = {}) => {
+        if (!['google', 'apple'].includes(provider)) throw Error('Unknown sign-in provider');
+        const secrets = getSharingSecrets(), saved = secrets.loadSignIn();
+        delete saved[provider]; secrets.saveSignIn(saved);
+        return `${provider === 'apple' ? 'Apple' : 'Google'} sign-in removed. Accounts made with it keep their characters; it applies the next time you start sharing.`;
     },
     sharing_forget: async () => { sharingStoppedByHand = true; await getSharing().stop(); getSharingSecrets().forget(); return 'Saved credentials removed. The hostname and stopped tunnel remain in your Cloudflare account for you to remove there.'; },
 	hosting_check: async () => {

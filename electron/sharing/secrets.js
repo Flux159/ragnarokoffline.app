@@ -4,7 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 class SharingSecrets {
   constructor(directory, safeStorage) { this.directory = directory; this.safeStorage = safeStorage; this.file = path.join(directory, 'cloudflare.enc');
-    this.inviteFile = path.join(directory, 'invite.enc'); }
+    this.inviteFile = path.join(directory, 'invite.enc'); this.signInFile = path.join(directory, 'sign-in.enc'); }
   available() {
     return this.safeStorage.isEncryptionAvailable() && this.safeStorage.getSelectedStorageBackend?.() !== 'basic_text';
   }
@@ -39,5 +39,24 @@ class SharingSecrets {
     try { fs.renameSync(temporary, this.inviteFile); } finally { fs.rmSync(temporary, { force: true }); }
   }
   forgetInvite() { fs.rmSync(this.inviteFile, { force: true }); }
+  // Google/Apple sign-in client credentials (oidc.js): the Google client
+  // secret and the Apple .p8 key are secrets, so the whole set is kept like
+  // the Cloudflare credential -- encrypted by the operating system's password
+  // store, in the sharing directory, never in state/assets and never sent to
+  // a player's browser. { google: {clientId, clientSecret}, apple: {...} }.
+  loadSignIn() {
+    if (!fs.existsSync(this.signInFile)) return {};
+    this.requireStorage();
+    try { return JSON.parse(this.safeStorage.decryptString(fs.readFileSync(this.signInFile))) || {}; }
+    catch { throw Error('The saved sign-in credentials could not be unlocked. Restore access to your operating system’s password store.'); }
+  }
+  saveSignIn(value) {
+    this.requireStorage(); fs.mkdirSync(this.directory, { recursive: true, mode: 0o700 });
+    if (!Object.keys(value).length) return fs.rmSync(this.signInFile, { force: true });
+    const bytes = this.safeStorage.encryptString(JSON.stringify(value));
+    const temporary = this.signInFile + '.' + crypto.randomBytes(6).toString('hex') + '.new';
+    fs.writeFileSync(temporary, bytes, { mode: 0o600, flag: 'wx' });
+    try { fs.renameSync(temporary, this.signInFile); } finally { fs.rmSync(temporary, { force: true }); }
+  }
 }
 module.exports = { SharingSecrets };

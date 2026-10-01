@@ -72,8 +72,8 @@ function quickHostname(child) {
   });
 }
 class SharingController {
-  constructor({ directory, register, guard, onChange = () => {}, lifetime = () => 8 * 60 * 60 * 1000, invite = () => null, onInvite = () => {}, log = () => {}, ports = undefined }, { helper = ensureHelper, launch = spawn, health = publicHealth, websocket = publicSocket, Gateway = FriendGateway } = {}) {
-    Object.assign(this, { directory, register, guard, onChange, lifetime, invite, onInvite, log, helper, launch, health, websocket, Gateway, ports }); this.state = 'stopped'; this.generation = 0;
+  constructor({ directory, register, guard, onChange = () => {}, lifetime = () => 8 * 60 * 60 * 1000, invite = () => null, onInvite = () => {}, log = () => {}, signIn = () => null, ports = undefined }, { helper = ensureHelper, launch = spawn, health = publicHealth, websocket = publicSocket, Gateway = FriendGateway } = {}) {
+    Object.assign(this, { directory, register, guard, onChange, lifetime, invite, onInvite, log, signIn, helper, launch, health, websocket, Gateway, ports }); this.state = 'stopped'; this.generation = 0;
   }
   // `notice` is what the pre-flight checks could not confirm, on a start that
   // succeeded anyway. It is deliberately separate from `message`, which is the
@@ -101,7 +101,10 @@ class SharingController {
       let origin = saved ? 'https://' + saved.hostname : 'https://pending.invalid';
       // Read at each start, so changing it in Settings applies to the next
       // invitation without restarting the app.
-      const gateway = new this.Gateway({ origin, ports: this.ports, register: this.register, lifetime: this.lifetime(), invite: this.invite() });
+      // Google/Apple sign-in only on your own hostname: the providers send the
+      // browser back to a redirect URI registered in advance, and a temporary
+      // trycloudflare.com address is different every time.
+      const gateway = new this.Gateway({ origin, ports: this.ports, register: this.register, lifetime: this.lifetime(), invite: this.invite(), signIn: saved ? this.signIn() : null });
       // Record whatever it ended up using: a reused token, or a fresh one when
       // nothing was stored or the stored value was unusable.
       this.onInvite(gateway.invite);

@@ -8,10 +8,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Transform } = require('node:stream');
 const { LoginPackets, LoginLimits } = require('./login-limits');
+const { issueLoginToken } = require('./login-token');
 const token = () => crypto.randomBytes(32).toString('base64url');
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 const COOKIE = '__Host-ro-friend';
+// Ties a Google/Apple sign-in's return to the browser that started it. Not
+// SameSite=Strict like the session: Apple returns with a cross-site POST and
+// Google with a cross-site redirect, and neither would carry it.
+const BINDING = '__Host-ro-sign-in';
+const html = value => String(value).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+const cookieValue = (req, name) => {
+  const values = String(req.headers.cookie || '').split(';').map(s => s.trim()).filter(s => s.startsWith(name + '='));
+  return values.length === 1 ? values[0].slice(name.length + 1) : null;
+};
 const LIMIT = 64 * 1024;
 const safeHeaders = {
   'cache-control': 'private, no-store', 'cdn-cache-control': 'no-store',
@@ -89,12 +99,16 @@ class Frames extends Transform {
   }
 }
 class FriendGateway {
+  // `signIn`, when the host has set up Google or Apple sign-in, is
+  // { flow: SignInFlow (oidc.js), accounts: { find, create, link, token },
+  //   checkLogin } -- see main.js for what each does. Without it every
+  // /_friend/sign-in/ path is a 404 and nothing else changes.
   // `ports` is this copy's (electron/ports.js): the asset server it fronts and
   // the three game servers its WebSocket paths may name. Defaults otherwise.
-  constructor({ origin, ports = DEFAULT_PORTS, upstreamPort = ports.asset, register, now = Date.now, lifetime = 8 * 60 * 60 * 1000, maxSessions = 32, invite = null }) {
+  constructor({ origin, ports = DEFAULT_PORTS, upstreamPort = ports.asset, register, now = Date.now, lifetime = 8 * 60 * 60 * 1000, maxSessions = 32, invite = null, signIn = null }) {
     const url = new URL(origin);
     if (url.protocol !== 'https:' || url.origin !== origin || url.username || url.password) throw Error('An HTTPS game hostname is required');
-    Object.assign(this, { origin, upstreamPort, register, now, lifetime, maxSessions });
+    Object.assign(this, { origin, upstreamPort, register, now, lifetime, maxSessions, signIn });
     this.socketPaths = new Set(gameTargets(ports).map(target => '/ws/' + target));
     this.loginPath = '/ws/127.0.0.1:' + ports.login;
     this.host = url.host; this.sessions = new Map(); this.sockets = new Set(); this.requests = new Set();
@@ -113,14 +127,15 @@ class FriendGateway {
     return { cookie: COOKIE + '=' + value, close: () => { for (const socket of entry.sockets) socket.destroy(); this.sessions.delete(key); } };
   }
   link() { return this.origin + '/#invite=' + this.invite; }
-  session(req) {
-    const values = String(req.headers.cookie || '').split(';').map(s => s.trim()).filter(s => s.startsWith(COOKIE + '='));
-    if (values.length !== 1) return null;
-    const value = values[0].slice(COOKIE.length + 1);
-    if (!TOKEN.test(value)) return null;
-    const entry = this.sessions.get(digest(value));
+  sessionKey(req) {
+    const value = cookieValue(req, COOKIE);
+    return value && TOKEN.test(value) ? digest(value) : null;
+  }
+  live(key) {
+    const entry = key && this.sessions.get(key);
     return entry && entry.expires > this.now() && this.expires > this.now() ? entry : null;
   }
+  session(req) { return this.live(this.sessionKey(req)); }
   reply(res, status, data, type = 'application/json; charset=utf-8', extra = {}) {
     res.writeHead(status, { ...safeHeaders, 'content-type': type, ...extra });
     res.end(type.startsWith('application/json') ? JSON.stringify(data) : data);
@@ -132,6 +147,10 @@ class FriendGateway {
     if (req.method === 'GET' && req.url === '/_friend/health') return this.reply(res, 200, { service: 'ragnarok-friends', challenge: this.challenge });
     if (req.method === 'GET' && req.url === '/_friend/portal.js') return this.reply(res, 200,
       fs.readFileSync(path.join(__dirname, 'portal.js')), 'text/javascript; charset=utf-8');
+    // The provider's return carries no session cookie (it is SameSite=Strict
+    // and this is a cross-site navigation), so it is answered before the
+    // session check; the sign-in's own state and binding cookie name the session.
+    if (req.url.split('?')[0] === '/_friend/sign-in/callback' && ['GET', 'POST'].includes(req.method)) return this.signInCallback(req, res);
     const entry = this.session(req);
     if (req.method === 'POST' && req.url === '/_friend/exchange') {
       if (!this.sameOrigin(req) || req.headers['content-type'] !== 'application/json') return this.reply(res, 403, { error: 'Open the original invitation link' });
@@ -158,6 +177,7 @@ class FriendGateway {
     }
     if (!entry) return this.reply(res, 401, { error: 'A current invitation is required' });
     if (req.url === '/_friend/session' && req.method === 'GET') return this.reply(res, 200, { ok: true });
+    if (req.url.startsWith('/_friend/sign-in/')) return this.signInRequest(req, res, entry);
     if (req.url === '/_friend/register' && req.method === 'POST') {
       if (!this.sameOrigin(req) || req.headers['content-type'] !== 'application/json') return this.reply(res, 403, { error: 'Open the original invitation link' });
       if (this.pendingRegistrations >= 2) return this.reply(res, 429, { error: 'Another friend is creating an account. Try again shortly.' });
@@ -209,6 +229,116 @@ class FriendGateway {
     proxy.on('timeout', () => proxy.destroy());
     proxy.on('error', () => { if (!res.headersSent) this.reply(res, 502, { error: 'The game server is reconnecting. Try again shortly.' }); else res.destroy(); });
     res.on('close', () => proxy.destroy()); proxy.end(bytes);
+  }
+  // ---- Sign in with Google or Apple (oidc.js, docs/FRIENDS_SHARING.md) ----
+  signInPage(res, status, title, message, next, extra = {}) {
+    const refresh = next ? `<meta http-equiv="refresh" content="0;url=${html(next)}">` : '';
+    const link = next ? `<p><a href="${html(next)}">Continue</a></p>` : '<p><a href="/_friend/">Back to the invitation page</a></p>';
+    return this.reply(res, status, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${refresh}<title>${html(title)}</title><style>:root{color-scheme:dark;font:16px/1.5 system-ui;background:#10121c;color:#eee}main{max-width:480px;margin:15vh auto;padding:28px}a{color:#bac6ff}</style></head><body><main><h1>${html(title)}</h1><p>${html(message)}</p>${link}</main></body></html>`,
+      'text/html; charset=utf-8', { 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'", ...extra });
+  }
+  // The provider sends the browser back here. The binding cookie must match
+  // the one set when this browser started the sign-in; otherwise somebody
+  // else's sign-in could be finished in this session, or this one in theirs.
+  // Answered with a page that moves on by itself: that second, same-site
+  // navigation is what brings the Strict session cookie back.
+  async signInCallback(req, res) {
+    if (!this.signIn) return this.reply(res, 404, { error: 'Not found' });
+    const clear = { 'set-cookie': `${BINDING}=; Path=/; Secure; HttpOnly; SameSite=None; Max-Age=0` };
+    let params;
+    try {
+      if (req.method === 'POST') {
+        if (!String(req.headers['content-type'] || '').startsWith('application/x-www-form-urlencoded')) throw Error();
+        params = new URLSearchParams((await body(req, 16 * 1024)).toString('utf8'));
+      } else params = new URL(req.url, this.origin).searchParams;
+    } catch { return this.signInPage(res, 400, 'Sign-in failed', 'The provider’s answer could not be read. Try again.', null, clear); }
+    let result;
+    try {
+      result = await this.signIn.flow.finish({ state: params.get('state'), code: params.get('code'), error: params.get('error') }, cookieValue(req, BINDING));
+    } catch (error) { return this.signInPage(res, 403, 'Sign-in failed', error.message || 'Try again.', null, clear); }
+    const entry = this.live(result.session);
+    if (this.closed || !entry) return this.signInPage(res, 401, 'Sign-in failed', 'Your invitation session ended. Open the invitation link again.', null, clear);
+    let account;
+    try { account = await this.signIn.accounts.find(result.identity); }
+    catch { return this.signInPage(res, 503, 'Sign-in failed', 'The game server could not look up your account. Try again shortly.', null, clear); }
+    if (this.closed || this.live(result.session) !== entry) return this.signInPage(res, 401, 'Sign-in failed', 'Your invitation session ended. Open the invitation link again.', null, clear);
+    entry.identity = { ...result.identity, accountId: account?.id || null, username: account?.username || null };
+    return account
+      ? this.signInPage(res, 200, 'Signed in', `Signed in as ${entry.identity.email}. Opening the game…`, '/api.html?app=ONLINE', clear)
+      : this.signInPage(res, 200, 'Signed in', `Signed in as ${entry.identity.email}. Choose a game account next.`, '/_friend/', clear);
+  }
+  async signInRequest(req, res, entry) {
+    const [route, query] = req.url.slice('/_friend/sign-in/'.length).split('?');
+    if (route === 'status' && req.method === 'GET') {
+      if (!this.signIn) return this.reply(res, 200, { enabled: false });
+      const identity = entry.identity;
+      return this.reply(res, 200, { enabled: true, providers: this.signIn.flow.providers(), signedIn: !!identity,
+        email: identity?.email || '', username: identity?.username || '', needsAccount: !!identity && !identity.accountId });
+    }
+    if (!this.signIn) return this.reply(res, 404, { error: 'Not found' });
+    if (route === 'start' && req.method === 'GET') {
+      // A top-level navigation from this origin; the Strict session cookie
+      // only comes with one, so another site cannot start this for a friend.
+      try {
+        const provider = new URLSearchParams(query || '').get('provider');
+        const { url, binding } = this.signIn.flow.start(provider, { session: this.sessionKey(req), redirectUri: this.origin + '/_friend/sign-in/callback' });
+        res.writeHead(302, { ...safeHeaders, location: url, 'set-cookie': `${BINDING}=${binding}; Path=/; Secure; HttpOnly; SameSite=None; Max-Age=600` });
+        return res.end();
+      } catch (error) { return this.signInPage(res, 400, 'Sign-in unavailable', error.message, null); }
+    }
+    if (req.method !== 'POST') return this.reply(res, 404, { error: 'Not found' });
+    if (!this.sameOrigin(req) || req.headers['content-type'] !== 'application/json') return this.reply(res, 403, { error: 'Open the original invitation link' });
+    let input; try { input = JSON.parse(await body(req, 2048)); } catch { return this.reply(res, 400, { error: 'Invalid request' }); }
+    if (this.closed || this.session(req) !== entry) return this.reply(res, 401, { error: 'A current invitation is required' });
+    const identity = entry.identity;
+    if (route === 'out') { entry.identity = null; return this.reply(res, 200, { ok: true }); }
+    if (!identity) return this.reply(res, 401, { error: 'Sign in first.' });
+    // The one thing the game client needs: an account name and a one-time
+    // token to send as its password. Bounded, so a page left open cannot mint
+    // them in a loop. The token goes back in this response only.
+    if (route === 'token') {
+      if (!identity.accountId) return this.reply(res, 409, { error: 'Choose a game account first.' });
+      entry.tokens = (entry.tokens || []).filter(time => time > this.now() - 60000);
+      if (entry.tokens.length >= 10) return this.reply(res, 429, { error: 'Too many sign-ins. Try again in a minute.' });
+      entry.tokens.push(this.now());
+      const { token, hash } = issueLoginToken();
+      try { await this.signIn.accounts.token(identity.accountId, hash); }
+      catch { return this.reply(res, 503, { error: 'The game server could not sign you in. Try again shortly.' }); }
+      if (this.closed || this.session(req) !== entry || entry.identity !== identity) return this.reply(res, 401, { error: 'A current invitation is required' });
+      return this.reply(res, 200, { username: identity.username, token });
+    }
+    if (identity.accountId) return this.reply(res, 409, { error: 'You already have a game account.' });
+    const settle = async () => {
+      const account = await this.signIn.accounts.find(identity);
+      if (!account) throw Error('not linked');
+      if (entry.identity === identity) Object.assign(identity, { accountId: account.id, username: account.username });
+      return this.reply(res, 200, { ok: true, username: account.username });
+    };
+    // A new account: the same one-per-browser and in-flight limits as the
+    // password signup beside it, which it replaces for this friend.
+    if (route === 'create') {
+      if (this.pendingRegistrations >= 2) return this.reply(res, 429, { error: 'Another friend is creating an account. Try again shortly.' });
+      if (entry.registrations >= 1 || entry.registering || entry.attempts >= 5) return this.reply(res, 409, { error: 'Use your existing game account or ask the host for help.' });
+      entry.registering = true; entry.attempts++; this.pendingRegistrations++;
+      try { await this.signIn.accounts.create(identity, String(input.username || '')); entry.registrations++; return await settle(); }
+      catch { return this.reply(res, 400, { error: 'Could not create that account. Use 4–23 letters, numbers or underscores, or try another name.' }); }
+      finally { entry.registering = false; this.pendingRegistrations--; }
+    }
+    // An account the friend already has: proven by logging in with its
+    // password, once, at the login server. Counted against the same
+    // per-account and per-browser limits as a login from the game.
+    if (route === 'link') {
+      const username = String(input.username || ''), password = String(input.password || '');
+      if (!/^[\x20-\x7e]{1,23}$/.test(username) || !this.loginLimits.allow(entry, username.toLowerCase())) return this.reply(res, 429, { error: 'Too many attempts. Try again in a minute.' });
+      let ok = false;
+      try { ok = await this.signIn.checkLogin({ username, password }); }
+      catch { return this.reply(res, 503, { error: 'The game server is not reachable. Try again shortly.' }); }
+      if (!ok) return this.reply(res, 403, { error: 'That account name and password did not log in.' });
+      if (this.closed || this.session(req) !== entry || entry.identity !== identity) return this.reply(res, 401, { error: 'A current invitation is required' });
+      try { await this.signIn.accounts.link(identity, username); return await settle(); }
+      catch { return this.reply(res, 409, { error: 'That account could not be linked. It may already belong to another sign-in.' }); }
+    }
+    return this.reply(res, 404, { error: 'Not found' });
   }
   upgrade(req, socket, head) {
     const entry = this.session(req);

@@ -85,6 +85,106 @@ Forgetting a connection removes its saved local credential. The stopped tunnel
 and DNS record remain in Cloudflare for the account owner to remove there.
 Open public registration, SMTP/reset services and ngrok are not provided.
 
+## Sign in with Google or Apple
+
+Optional. If you bring your own OAuth client from Google, Apple or both,
+invited friends can sign in with that account instead of typing a game password.
+**Without one, nothing changes.** Password accounts keep working either way, and
+your own window on this computer always uses a password.
+
+It needs your own hostname (above). Google and Apple only send people back to a
+redirect URI registered in advance, and a temporary `trycloudflare.com` address
+changes every time you share. The redirect URI the app uses is:
+
+```
+https://<your hostname>/_friend/sign-in/callback
+```
+
+for example `https://play.example.com/_friend/sign-in/callback`. Settings shows
+it under **Multiplayer → Let friends sign in with Google or Apple**, once a
+hostname is connected.
+
+### Making a Google client
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a
+   project, or choose one.
+2. Go to **APIs & Services → OAuth consent screen**. Choose **External**, and
+   give it an app name and a support email. The app asks only for `openid` and
+   `email`, which Google treats as non-sensitive, so there is nothing to review.
+   While the screen is in *Testing*, only the test users you list can sign in.
+   **Publish** it to let anyone with the invitation in.
+3. Go to **APIs & Services → Credentials → Create credentials → OAuth client
+   ID**. Choose **Web application**. Under **Authorized redirect URIs**, add the
+   redirect URI above, exactly. No JavaScript origins are needed.
+4. Copy the **Client ID** (it ends in `.apps.googleusercontent.com`) and the
+   **Client secret** into Settings, then choose **Save Google sign-in**.
+
+### Making an Apple client
+
+Sign in with Apple on the web needs a paid Apple Developer Program membership.
+In [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources/):
+
+1. **Identifiers → App IDs**: have an App ID with the **Sign in with Apple**
+   capability turned on. Any of yours will do; it is the "primary App ID" the
+   next steps group under.
+2. **Identifiers → Services IDs**: register one, for example
+   `com.example.play`. Turn on **Sign in with Apple**, choose **Configure**,
+   pick the primary App ID, and enter your hostname under **Domains and
+   Subdomains** (`play.example.com`) and the redirect URI under **Return URLs**.
+3. **Keys**: create a key with **Sign in with Apple** turned on, configured
+   for the same primary App ID. Download the `.p8` file. Apple lets you
+   download it once. Note the **Key ID**.
+4. Your **Team ID** is in the top right of the developer site, and under
+   Membership details.
+5. In Settings, enter the Services ID, the Team ID and the Key ID, paste the
+   whole `.p8` file, including its `BEGIN` and `END` lines, and choose **Save
+   Apple sign-in**.
+
+Changes apply the next time you start sharing on your hostname.
+
+### What friends see
+
+The invitation page and the game's login window show **Sign in with Google**
+and **Sign in with Apple**. The first time, a friend chooses either a new game
+account name, with no password, or an account they already have here. Linking
+an existing account asks for its password once. The app checks it with the game
+server itself, and after that they sign in without it. From then on, the login
+window offers **Continue as you@example.com**, and that logs them straight in.
+
+Accounts are matched by the provider's own id for the person and by the email
+address the provider has **verified**. Someone who signs in with Google and
+later with Apple under the same address gets the same game account. Apple's
+*Hide My Email* addresses are different addresses, so they are a different
+account unless linked. The email a player can type into the game, `login.email`,
+is never used for matching, and an email is never linked automatically to a
+password account: only that account's password does that.
+
+### How it works, and what is kept where
+
+- The sign-in is the OpenID Connect authorization-code flow, run by the app's
+  friend gateway. It uses PKCE for Google; Apple returns with a form POST and
+  does not support PKCE, so its client secret is a short-lived ES256 token the
+  app signs with your `.p8` key. Each sign-in has its own `state`, tied to the
+  browser that started it by a ten-minute cookie, and a `nonce` the ID token
+  must carry back. The ID token is fetched from the provider directly, and the
+  app checks its signature against the provider's published keys, its issuer,
+  audience, expiry and issue time, and that the email is verified.
+- After a sign-in, the game client asks the gateway for a **one-time login
+  token**: `~` and 22 random characters, sent in place of a password. Only its
+  SHA-256 is stored, in `login_tokens`. The login server accepts it once, for
+  that account only, within 60 seconds, and compares hashes in constant time.
+  This is a change on our rAthena fork (`src/login/login_token.cpp`), which is
+  why the server must be a build that includes it.
+- New accounts get a random password nobody is shown, so they can only be
+  entered by signing in.
+- The Google client secret and the Apple `.p8` key are kept like the Cloudflare
+  credential: encrypted by your operating system's password store, in the app's
+  `sharing` folder. They are never written under `state/assets`, never sent to a
+  friend's browser, and never logged. Neither are tokens.
+- **Remove** in Settings forgets a provider. Accounts made with it keep their
+  characters. Without the sign-in they cannot be entered until you set a
+  password for them under Accounts.
+
 ## Access boundary
 
 The connector targets the app's loopback gateway on 3339. The Rust RemoteClient

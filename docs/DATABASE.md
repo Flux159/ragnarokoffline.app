@@ -178,7 +178,7 @@ deletes zero-valued variables when it next saves.
 
 ## What is in there
 
-rAthena's schema, unmodified, plus one table of ours. The full definitions are
+rAthena's schema, plus the tables noted as ours or our fork's below. The full definitions are
 in `vendor/rathena/sql-files/main.sql`; these are the ones worth knowing.
 
 | Table | Holds |
@@ -194,6 +194,8 @@ in `vendor/rathena/sql-files/main.sql`; these are the ones worth knowing.
 | `sc_data` | status changes saved across a logout |
 | `guild`, `party`, `mail`, `vendings` | the social side |
 | `cp_population_stats` | ours, not rAthena's: the population engine's live shell count |
+| `login_tokens` | one-time login tokens for [Google/Apple sign-in](FRIENDS_SHARING.md#sign-in-with-google-or-apple): the SHA-256 only, the account, an expiry 60 seconds out, and whether it was used. From our rAthena fork; rows expire and are deleted as new ones are issued |
+| `app_sign_in_identities` | ours: which game account a Google or Apple sign-in plays as, by the provider's id for the person and the email it verified |
 
 `char` is quoted in SQL — `` `char` `` — because it is also a type name.
 
