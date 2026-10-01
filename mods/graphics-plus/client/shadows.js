@@ -43,6 +43,7 @@ let _program = null;
 let _current = null;
 let _apply = null;
 let _occlusion = 0;
+let _drawn = null;   // the light view the shadow map holds
 let _radius = 4.0;
 let _quad = null;
 
@@ -189,7 +190,7 @@ void main() {
 		vec3 tangent = normalize(cross(helper, normal));
 		vec3 bitangent = cross(normal, tangent);
 		float occluded = 0.0;
-		const int N = 12;
+		const int N = 8;
 		for (int i = 0; i < N; i++) {
 			float k = (float(i) + 0.5) / float(N);
 			float a = float(i) * 2.39996 + spin;
@@ -214,12 +215,18 @@ void main() {
 
 function drawMap(ctx, strength) {
 	const { gl, light } = ctx;
-	_current = null;
-	if (!(strength > 0) || !light || !light.direction || !ctx.player) return;
-	if (!ensure(gl)) return;
+	if (!(strength > 0) || !light || !light.direction || !ctx.player) { _current = null; return false; }
+	if (!ensure(gl)) { _current = null; return false; }
 	if (!_program) _program = ctx.createProgram(VERTEX, FRAGMENT);
 	const p = ctx.player;
 	const matrix = lightMatrix(light.direction, [p[0] + 0.5, -p[2], p[1] + 0.5]);
+	// The map's models never move, and the view is snapped to the shadow
+	// map's texels: unless it has changed, last frame's map is this frame's.
+	if (_current && _drawn && matrix.every((v, i) => v === _drawn[i])) {
+		_current = { matrix, strength: Math.min(1, strength) };
+		return false;
+	}
+	_drawn = matrix;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, _fbo.framebuffer);
 	gl.viewport(0, 0, SIZE, SIZE);
 	gl.enable(gl.DEPTH_TEST);
@@ -231,13 +238,16 @@ function drawMap(ctx, strength) {
 	ctx.drawModelsDepth(_program);
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 	_current = { matrix, strength: Math.min(1, strength) };
+	return true;
 }
 
 function apply(ctx) {
 	if (!_current && !(_occlusion > 0)) return;
 	const { gl } = ctx;
-	const depth = SceneCopy.depth(gl);
+	const depth = SceneCopy.depth(gl, ctx.tick + ':models');
 	if (!depth) return;
+	// What the ground looks like already: no extra shadow where the map has
+	// baked one in.
 	const color = SceneCopy.color(gl);
 	if (!_apply) _apply = ctx.createProgram(APPLY_VERTEX, APPLY_FRAGMENT);
 	if (!_quad) {
@@ -297,8 +307,8 @@ export function shadowsHook(strength, occlusion = 0) {
 		name: 'Shadows',
 		render(stage, ctx) {
 			if (stage === 'begin') {
-				drawMap(ctx, strength);
-				if (_current) ctx.restoreTarget();
+				// Back to the scene's own target only if it was left for ours.
+				if (drawMap(ctx, strength)) ctx.restoreTarget();
 			} else if (stage === 'models') {
 				// After the models: they take shadows and contact shading too.
 				apply(ctx);
@@ -314,6 +324,7 @@ export function shadowsHook(strength, occlusion = 0) {
 			if (_quad) gl.deleteBuffer(_quad);
 			_program = _apply = _quad = null;
 			_current = null;
+			_drawn = null;
 			SceneCopy.free(gl);
 		},
 	};

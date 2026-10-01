@@ -209,6 +209,18 @@ export default function init(parameters, api) {
         // (Izlude), on others the waves are what makes the water (Alberta).
         detail: perMap(parameters?.water_detail_maps, percent('water_detail')),
     }));
+    // Painted trees: the fields' common trees as glTF models (Quaternius's
+    // Stylized Nature MegaKit, CC0, in trees/). Decided as a map loads, so
+    // Alt+G leaves them be; switch them in the settings.
+    if (parameters?.trees === true && api.models?.replace) {
+        const here = file => new URL(`./trees/${file}`, import.meta.url).href;
+        const colors = { Leaves_NormalTree: [1.6, 1.55, 1] };
+        api.models.replace({
+            '나무잡초꽃/나무01.rsm': { url: here('CommonTree_3.gltf'), colors },
+            '나무잡초꽃/나무02.rsm': { url: here('CommonTree_5.gltf'), colors },
+        });
+    }
+
     // Texture packs' larger ground textures, at their own resolution.
     if (parameters?.hd_ground !== false) add(groundHdHook());
     if (percent('grass') > 0) add(grassHook({

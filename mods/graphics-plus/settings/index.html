@@ -89,7 +89,7 @@ const $ = id => document.getElementById(id);
 
 // How the page groups them. A key not listed here still shows, under "More".
 const SECTIONS = [
-  { title: 'World', note: 'drawn into the map itself', keys: ['grass', 'hd_ground', 'shadows', 'occlusion'] },
+  { title: 'World', note: 'drawn into the map itself', keys: ['grass', 'trees', 'hd_ground', 'shadows', 'occlusion'] },
   { title: 'Water', note: 'mirrors what stands above it', keys: ['water', { key: 'water_detail', maps: 'water_detail_maps', valued: true }] },
   { title: 'Light and colour', note: 'the sun, and the grade over the frame', keys: [{ key: 'sunlight', maps: 'sunlight_maps', valued: true }, 'grade', 'tonemap', 'glow'] },
   { title: 'Camera', note: 'effects of the lens', keys: ['vignette', 'fog', 'tilt_shift', 'fringe', { key: 'drops', maps: 'drop_maps', valued: false }] },
@@ -97,10 +97,10 @@ const SECTIONS = [
 
 // Presets set every effect at once. Map lists are left as they are.
 const PRESETS = [
-  { name: 'Off', note: 'the stock look', values: { grass: 0, hd_ground: false, shadows: 0, occlusion: 0, water: 0, water_detail: 0, sunlight: 0, grade: 0, tonemap: 0, glow: 0, vignette: 0, fog: 0, tilt_shift: 0, fringe: 0, drops: 0 } },
+  { name: 'Off', note: 'the stock look', values: { grass: 0, trees: false, hd_ground: false, shadows: 0, occlusion: 0, water: 0, water_detail: 0, sunlight: 0, grade: 0, tonemap: 0, glow: 0, vignette: 0, fog: 0, tilt_shift: 0, fringe: 0, drops: 0 } },
   { name: 'Subtle', note: 'close to stock', values: { grass: 30, hd_ground: true, shadows: 30, occlusion: 40, water: 40, water_detail: 0, sunlight: 0, grade: 40, tonemap: 40, glow: 40, vignette: 20, fog: 0, tilt_shift: 0, fringe: 0, drops: 0 } },
   { name: 'Standard', note: 'the defaults', values: null },
-  { name: 'Cinematic', note: 'warm, deep, filmic', values: { grass: 70, hd_ground: true, shadows: 70, occlusion: 80, water: 80, water_detail: 0, sunlight: 70, grade: 100, tonemap: 90, glow: 80, vignette: 50, fog: 30, tilt_shift: 25, fringe: 20, drops: 60 } },
+  { name: 'Cinematic', note: 'warm, deep, filmic', values: { grass: 70, trees: true, hd_ground: true, shadows: 70, occlusion: 80, water: 80, water_detail: 0, sunlight: 70, grade: 100, tonemap: 90, glow: 80, vignette: 50, fog: 30, tilt_shift: 25, fringe: 20, drops: 60 } },
 ];
 
 let declared = {};      // key -> setting as the app describes it

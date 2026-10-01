@@ -185,6 +185,8 @@ let _reflection = null;   // this frame's reflection texture
 let _map = null;
 let _settings = { reflection: 0.6 };
 let _detail = 0;   // this map's surface detail
+let _lastView = null;
+let _frame = 0;
 
 function draw(ctx) {
 	const water = _map && _map.water();
@@ -212,7 +214,7 @@ function draw(ctx) {
 	gl.uniform1i(uniform.uDiffuse, 0);
 
 	const reflect = _reflection ? Math.min(1, _settings.reflection) : 0;
-	const sceneDepth = reflect > 0 ? SceneCopy.depth(gl) : null;
+	const sceneDepth = reflect > 0 ? SceneCopy.depth(gl, tick + ':water') : null;
 	gl.uniform1f(uniform.uReflect, reflect);
 	if (reflect > 0) {
 		const viewport = gl.getParameter(gl.VIEWPORT);
@@ -278,8 +280,13 @@ export function waterHook(settings) {
 		render(stage, ctx) {
 			if (stage === 'begin') {
 				const water = _map && _map.water();
-				_reflection = null;
-				if (!water || !(_settings.reflection > 0)) return;
+				if (!water || !(_settings.reflection > 0)) { _reflection = null; return; }
+				// The mirror is the whole scene drawn again: redo it when the
+				// camera has moved, otherwise every other frame (for the
+				// animated models in it).
+				const moved = !_lastView || ctx.modelView.some((v, i) => v !== _lastView[i]);
+				if (!moved && _reflection && (++_frame & 1)) return;
+				_lastView = Float32Array.from(ctx.modelView);
 				_reflection = Reflection.render(ctx.gl, ctx.modelView, ctx.projection, water.level, ctx.drawScene);
 				ctx.restoreTarget();
 			} else if (stage === 'water') {
@@ -291,6 +298,7 @@ export function waterHook(settings) {
 			if (_program) gl.deleteProgram(_program);
 			_program = null;
 			_reflection = null;
+			_lastView = null;
 			_map = null;
 			SceneCopy.free(gl);
 		},

@@ -55,13 +55,25 @@ function blit(gl, into, bits) {
  * The depth drawn so far, as a texture, or null. Only when drawing into a
  * framebuffer (the post-processing target): the screen's own cannot be read.
  */
-function depth(gl) {
+let _depthKey = null;
+let _depthTexture = null;
+
+/**
+ * `key` (the frame and stage): hooks asking at the same point of the same
+ * frame share one copy instead of each making their own.
+ */
+function depth(gl, key) {
 	if (!isWebGL2(gl) || !gl.getParameter(gl.FRAMEBUFFER_BINDING)) {
 		return null;
 	}
+	if (key !== undefined && key === _depthKey && _depthTexture) {
+		return _depthTexture;
+	}
 	const vp = gl.getParameter(gl.VIEWPORT);
 	_depth = target(gl, _depth, vp[2], vp[3], gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, gl.DEPTH_ATTACHMENT, gl.NEAREST);
-	return blit(gl, _depth, gl.DEPTH_BUFFER_BIT);
+	_depthTexture = blit(gl, _depth, gl.DEPTH_BUFFER_BIT);
+	_depthKey = key;
+	return _depthTexture;
 }
 
 /** The colour drawn so far, as a texture, or null. */
@@ -83,6 +95,7 @@ function free(gl) {
 		}
 	}
 	_depth = _color = null;
+	_depthKey = _depthTexture = null;
 }
 
 export default { depth, color, free };

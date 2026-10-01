@@ -32,11 +32,9 @@ uniform bool uHasDepth;
 uniform sampler2D uSceneDepth;
 uniform vec2 uScreen;
 uniform vec2 uProj;
-uniform sampler2D uSceneColor;
-// The light the ground was drawn with: its tint is taken back out before
-// asking whether the ground is green (a warm sun makes everything yellower).
-uniform vec3 uLightAmbient;
-uniform vec3 uLightDiffuse;
+// The ground's own texture: the clump reads the spot it grows from (aUv.xy),
+// fixed for the clump, so nothing about it changes as the camera moves.
+uniform sampler2D uAtlas;
 out vec3 vGround;
 out float vFern;
 out vec2 vTex;
@@ -68,25 +66,17 @@ void main() {
 	vRand = fract(r + card * 0.37);
 	vUv = aUv;
 	vFade = 1.0 - smoothstep(uFadeFar * 0.6, uFadeFar, -eye.z);
-	vGround = vec3(0.3, 0.45, 0.2);
+	// The colour of the ground it grows from (the green test was done once,
+	// when the clumps were placed).
+	vGround = textureLod(uAtlas, aUv.xy, 0.0).rgb;
+	// A clump whose root a model covers (a porch, a wall) is not drawn.
 	if (uHasDepth) {
 		vec4 rootEye = uModelViewMat * vec4(aInstance.xyz, 1.0);
 		vec4 root = uProjectionMat * rootEye;
 		vec2 at = root.xy / root.w * 0.5 + 0.5;
 		float zn = textureLod(uSceneDepth, at, 0.0).r * 2.0 - 1.0;
 		float covering = uProj.y / (zn + uProj.x);
-		if (covering < -rootEye.z - 0.08) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-		// Grass only grows where the ground under it is green: not on the
-		// dirt or the stone a grassy tile also shows.
-		vec3 lit = textureLod(uSceneColor, at, 0.0).rgb;
-		vec3 tint = max(uLightAmbient + uLightDiffuse, vec3(0.05));
-		vec3 c = lit / (tint / tint.g);
-		float greenness = smoothstep(0.95, 1.0, c.g / max(c.r, 0.01)) * step(1.45, c.g / max(c.b, 0.01));
-		if (greenness < 0.05) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-		else gl_Position = uProjectionMat * (rootEye0 + vec4(local * mix(0.5, 1.0, greenness), 0.0, 0.0));
-		vGround = lit;
-	} else {
-		vGround = vec3(0.3, 0.45, 0.2);
+		if (covering < -rootEye.z - 0.3) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
 	}
 }`;
 const FRAGMENT = `#version 300 es
@@ -114,8 +104,10 @@ float hash(float n) { return fract(sin(n) * 43758.5453); }
 void main() {
 	vec4 blade = texture(uBlades, vTex);
 	if (blade.a < 0.45) discard;
-	if (vY < 0.18 && vY / 0.18 < hash(gl_FragCoord.x * 1.7 + gl_FragCoord.y * 0.63 + vRand * 31.0)) discard;
-	if (vFade < hash(gl_FragCoord.x * 0.37 + gl_FragCoord.y * 1.31)) discard;
+	// Fades are dithered in the blade's own space: on screen pixels they
+	// would crawl as the camera moves.
+	if (vY < 0.18 && vY / 0.18 < hash(floor(vTex.x * 64.0) * 1.7 + floor(vTex.y * 64.0) * 0.63 + vRand * 31.0)) discard;
+	if (vFade < fract(vRand * 7.31)) discard;
 	// The colour of the ground it grows from, lit as the ground is, a
 	// little richer: the clump belongs to the painting under it.
 	vec3 rich = clamp(mix(vec3(dot(vGround, vec3(0.299, 0.587, 0.114))), vGround, 1.35), 0.0, 1.0);
@@ -275,28 +267,88 @@ function bladeTexture(gl) {
 /**
  * Where the clumps go, for these settings: grass tiles, on open ground.
  */
+/**
+ * Each grassy ground texture, small (64x64: the downsampling averages it),
+ * as pixels -- to ask, once per map, whether the ground under a clump is
+ * green. Null until they have loaded.
+ */
+let _swatches = null;
+let _swatchesFor = null;
+function loadSwatches(urls, grassy) {
+	_swatchesFor = urls;
+	_swatches = null;
+	const size = 64;
+	Promise.all(urls.map((url, index) => {
+		if (!grassy[index] || !url) return null;
+		return new Promise(resolve => {
+			const image = new Image();
+			image.onload = () => {
+				const canvas = document.createElement('canvas');
+				canvas.width = canvas.height = size;
+				const g = canvas.getContext('2d', { willReadFrequently: true });
+				g.drawImage(image, 0, 0, size, size);
+				resolve(g.getImageData(0, 0, size, size).data);
+			};
+			image.onerror = () => resolve(null);
+			image.src = url;
+		});
+	})).then(list => { if (_swatchesFor === urls) _swatches = list; });
+}
+
+/** 0..1: how green the ground texture is at its own (u, v). */
+function greenness(texture, u, v) {
+	const px = _swatches && _swatches[texture];
+	if (!px) return 1;
+	const x = Math.min(63, Math.max(0, Math.floor(u * 64))), y = Math.min(63, Math.max(0, Math.floor(v * 64)));
+	const o = (y * 64 + x) * 4;
+	const ratio = px[o + 1] / Math.max(px[o], 1);
+	return Math.min(Math.max((ratio - 0.9) / 0.07, 0), 1);
+}
+
+const CHUNK = 16;   // ground cells per side of a culling chunk
+let _chunks = [];   // { first, count, min: [x, y, z], max: [x, y, z] }
+
+/**
+ * Where the clumps go, for these settings: grass tiles, on open ground that
+ * is green, sorted into chunks so only the ones in view are drawn.
+ */
 function build(gl, settings) {
 	_count = 0;
+	_chunks = [];
 	if (!_data || !settings) return;
-	// The walk data comes with the map; until it has, try again next frame.
+	// The walk data comes with the map, the textures load after it: until
+	// both are here, try again next frame.
 	if (!_alt.width()) return;
-	_builtFor = settings;
 	const patterns = (Array.isArray(settings.textures) ? settings.textures : []).map((p) => String(p).toLowerCase()).filter(Boolean);
-	if (!patterns.length) return;
+	if (!patterns.length) { _builtFor = settings; return; }
 	const grassy = _data.textureNames.map((name) => {
 		const decoded = decodeName(name);
 		return patterns.some((pattern) => decoded.includes(pattern));
 	});
+	const urls = _data.textureUrls || [];
+	if (urls.length && _swatchesFor !== urls) loadSwatches(urls, grassy);
+	if (urls.length && !_swatches) return;
+	_builtFor = settings;
+
 	const density = settings.density ?? .5;
-	const perCell = Math.max(1, Math.round(density * 24));
-	const { width, height, cellTexture, cellHeights, cellUv } = _data;
-	const instances = [];
-	const uvs = [];
+	const perCell = Math.max(1, Math.round(density * 40));
+	const { width, height, cellTexture, cellHeights, cellUv, cellAtlas, cellLight } = _data;
+	// The atlas layout (Loaders/Ground.js): to turn atlas coordinates back
+	// into the texture's own.
+	const cols = Math.round(Math.sqrt(_data.textureNames.length));
+	const rows = Math.ceil(Math.sqrt(_data.textureNames.length));
+	const factorU = (cols * 258) / 2 ** Math.ceil(Math.log2(cols * 258));
+	const factorV = (rows * 258) / 2 ** Math.ceil(Math.log2(rows * 258));
+	const local = (a, n, factor) => { const t = (a * n) / factor; return ((t - Math.floor(t)) - 1 / 258) / (1 - 2 / 258); };
+	const lerp = (p, q, t) => p + (q - p) * t;
+
+	const chunks = new Map();   // chunk key -> { instances: [], uvs: [], min, max }
 	for (let y = 0; y < height; ++y) for (let x = 0; x < width; ++x) {
 		const i = x + y * width;
 		const texture = cellTexture[i];
 		if (texture < 0 || !grassy[texture]) continue;
 		const h = cellHeights.subarray(i * 4, i * 4 + 4);
+		const key = Math.floor(x / CHUNK) + ',' + Math.floor(y / CHUNK);
 		for (let k = 0; k < perCell; ++k) {
 			const fx = random(i, k * 2);
 			const fy = random(i, k * 2 + 1);
@@ -305,9 +357,34 @@ function build(gl, settings) {
 			if (!(type & _alt.TYPE.WALKABLE) || type & _alt.TYPE.WATER) continue;
 			const ground = h[0] * (1 - fx) * (1 - fy) + h[1] * fx * (1 - fy) + h[2] * (1 - fx) * fy + h[3] * fx * fy;
 			if (Math.abs(-_alt.cellHeight(gx - .5, gz - .5) - ground) > .6) continue;
-			instances.push(gx, ground, gz, random(i, k + 97));
-			uvs.push(cellUv[i * 4], cellUv[i * 4 + 1], cellUv[i * 4 + 2], cellUv[i * 4 + 3]);
+			let uv;
+			if (cellAtlas) {
+				// The exact spot in the ground's texture and lightmap, as the
+				// ground itself interpolates them: fixed for this clump.
+				const a = cellAtlas.subarray(i * 8, i * 8 + 8), l = cellLight.subarray(i * 4, i * 4 + 4);
+				uv = [lerp(lerp(a[0], a[2], fx), lerp(a[4], a[6], fx), fy), lerp(lerp(a[1], a[3], fx), lerp(a[5], a[7], fx), fy),
+					lerp(l[0], l[2], fx), lerp(l[1], l[3], fy)];
+				// Only where the ground is green: not on the dirt or stone a
+				// grassy tile also shows. Decided here, once.
+				if (greenness(texture, local(uv[0], cols, factorU), local(uv[1], rows, factorV)) < 0.5) continue;
+			} else {
+				uv = [cellUv[i * 4], cellUv[i * 4 + 1], cellUv[i * 4 + 2], cellUv[i * 4 + 3]];
+			}
+			let chunk = chunks.get(key);
+			if (!chunk) chunks.set(key, chunk = { instances: [], uvs: [], min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] });
+			chunk.instances.push(gx, ground, gz, random(i, k + 97));
+			chunk.uvs.push(...uv);
+			const p = [gx, ground, gz];
+			for (let a = 0; a < 3; a++) { chunk.min[a] = Math.min(chunk.min[a], p[a]); chunk.max[a] = Math.max(chunk.max[a], p[a]); }
 		}
+	}
+	const instances = [], uvs = [];
+	for (const chunk of chunks.values()) {
+		// Grass rises up to a few units (up is -y).
+		chunk.min[1] -= 4;
+		_chunks.push({ first: instances.length / 4, count: chunk.instances.length / 4, min: chunk.min, max: chunk.max });
+		for (const v of chunk.instances) instances.push(v);
+		for (const v of chunk.uvs) uvs.push(v);
 	}
 	_count = instances.length / 4;
 	if (!_count) return;
@@ -324,6 +401,33 @@ function build(gl, settings) {
 	_uvBuffer = _uvBuffer || gl.createBuffer();
 	gl.bindBuffer(gl.ARRAY_BUFFER, _uvBuffer);
 	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(uvs), gl.STATIC_DRAW);
+}
+
+/** Whether any of a box is inside the view (clip-space test of its corners). */
+function inView(m, min, max) {
+	let left = 0, right = 0, bottom = 0, top = 0, near = 0, far = 0;
+	for (let c = 0; c < 8; c++) {
+		const x = c & 1 ? max[0] : min[0], y = c & 2 ? max[1] : min[1], z = c & 4 ? max[2] : min[2];
+		const cx = m[0] * x + m[4] * y + m[8] * z + m[12];
+		const cy = m[1] * x + m[5] * y + m[9] * z + m[13];
+		const cz = m[2] * x + m[6] * y + m[10] * z + m[14];
+		const cw = m[3] * x + m[7] * y + m[11] * z + m[15];
+		if (cx < -cw) left++; if (cx > cw) right++;
+		if (cy < -cw) bottom++; if (cy > cw) top++;
+		if (cz < -cw) near++; if (cz > cw) far++;
+	}
+	return left < 8 && right < 8 && bottom < 8 && top < 8 && near < 8 && far < 8;
+}
+
+function multiply(a, b) {
+	const out = new Float32Array(16);
+	for (let col = 0; col < 4; col++)
+		for (let row = 0; row < 4; row++) {
+			let sum = 0;
+			for (let k = 0; k < 4; k++) sum += a[k * 4 + row] * b[col * 4 + k];
+			out[col * 4 + row] = sum;
+		}
+	return out;
 }
 function render(ctx) {
 	const { gl, modelView, projection, fog, light, tick } = ctx;
@@ -349,10 +453,10 @@ function render(ctx) {
 	gl.uniformMatrix4fv(uniform.uModelViewMat, false, modelView);
 	gl.uniformMatrix4fv(uniform.uProjectionMat, false, projection);
 	gl.uniform1f(uniform.uTime, tick / 1e3);
-	gl.uniform1f(uniform.uHeight, settings.height ?? 1.25);
-	gl.uniform1f(uniform.uWidth, settings.width ?? 1.6);
+	gl.uniform1f(uniform.uHeight, settings.height ?? 0.8);
+	gl.uniform1f(uniform.uWidth, settings.width ?? 1.05);
 	gl.uniform1f(uniform.uWind, settings.wind ?? .25);
-	gl.uniform1f(uniform.uFadeFar, settings.distance ?? 400);
+	gl.uniform1f(uniform.uFadeFar, settings.distance ?? 220);
 	const tint = Array.isArray(settings.tint) && settings.tint.length === 3 ? settings.tint : [1, 1, 1];
 	gl.uniform3fv(uniform.uTint, tint);
 	gl.uniform3fv(uniform.uLightAmbient, light.ambient);
@@ -372,11 +476,7 @@ function render(ctx) {
 	gl.bindTexture(gl.TEXTURE_2D, _bladeTexture);
 	gl.uniform1i(uniform.uBlades, 2);
 	const current = gl.getParameter(gl.FRAMEBUFFER_BINDING);
-	const saved = current ? SceneCopy.depth(gl) : null;
-	const color = current ? SceneCopy.color(gl) : null;
-	gl.activeTexture(gl.TEXTURE4);
-	gl.bindTexture(gl.TEXTURE_2D, color);
-	gl.uniform1i(uniform.uSceneColor, 4);
+	const saved = current ? SceneCopy.depth(gl, ctx.tick + ':models') : null;
 	gl.activeTexture(gl.TEXTURE3);
 	gl.bindTexture(gl.TEXTURE_2D, saved);
 	gl.uniform1i(uniform.uSceneDepth, 3);
@@ -389,13 +489,9 @@ function render(ctx) {
 	gl.enableVertexAttribArray(attribute.aBlade);
 	gl.vertexAttribPointer(attribute.aBlade, 3, gl.FLOAT, false, 0, 0);
 	gl.vertexAttribDivisor(attribute.aBlade, 0);
-	gl.bindBuffer(gl.ARRAY_BUFFER, _instanceBuffer);
 	gl.enableVertexAttribArray(attribute.aInstance);
-	gl.vertexAttribPointer(attribute.aInstance, 4, gl.FLOAT, false, 0, 0);
 	gl.vertexAttribDivisor(attribute.aInstance, 1);
-	gl.bindBuffer(gl.ARRAY_BUFFER, _uvBuffer);
 	gl.enableVertexAttribArray(attribute.aUv);
-	gl.vertexAttribPointer(attribute.aUv, 4, gl.FLOAT, false, 0, 0);
 	gl.vertexAttribDivisor(attribute.aUv, 1);
 	// Grass writes no depth. Sprites drawn after it are tested against the
 	// depth buffer, and a sprite "behind" a blade is drawn as a faded
@@ -405,7 +501,17 @@ function render(ctx) {
 	const cull = gl.isEnabled(gl.CULL_FACE);
 	gl.disable(gl.CULL_FACE);
 	gl.depthMask(false);
-	gl.drawArraysInstanced(gl.TRIANGLES, 0, 18, _count);
+	// Only the chunks in view. WebGL 2 has no base instance, so each chunk
+	// points the per-clump attributes at its own part of the buffers.
+	const viewProjection = multiply(projection, modelView);
+	for (const chunk of _chunks) {
+		if (!inView(viewProjection, chunk.min, chunk.max)) continue;
+		gl.bindBuffer(gl.ARRAY_BUFFER, _instanceBuffer);
+		gl.vertexAttribPointer(attribute.aInstance, 4, gl.FLOAT, false, 0, chunk.first * 16);
+		gl.bindBuffer(gl.ARRAY_BUFFER, _uvBuffer);
+		gl.vertexAttribPointer(attribute.aUv, 4, gl.FLOAT, false, 0, chunk.first * 16);
+		gl.drawArraysInstanced(gl.TRIANGLES, 0, 18, chunk.count);
+	}
 	gl.depthMask(true);
 	if (cull) {
 		gl.enable(gl.CULL_FACE);
@@ -424,6 +530,8 @@ function free(gl) {
 	if (_program) gl.deleteProgram(_program);
 	_instanceBuffer = _uvBuffer = _bladeBuffer = _bladeTexture = _program = null;
 	_data = _alt = null;
+	_swatches = _swatchesFor = null;
+	_chunks = [];
 	_builtFor = null;
 	_count = 0;
 	SceneCopy.free(gl);

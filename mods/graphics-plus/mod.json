@@ -74,7 +74,7 @@
       "type": "boolean",
       "default": true,
       "label": "High-resolution ground",
-      "description": "When a texture pack gives a map larger ground textures, keep their full detail (the client otherwise shrinks every ground texture to 256x256). Does nothing on maps without them."
+      "description": "Keeps the full detail of larger ground textures from a texture pack mod (the client otherwise shrinks every ground texture to 256x256). Needs such a pack installed -- without one there is nothing to sharpen."
     },
     {
       "key": "grass",
@@ -84,6 +84,13 @@
       "max": 100,
       "label": "Grass",
       "description": "Tufts of grass on grassy ground, coloured by the ground under them and swaying in the wind. Higher is denser. 0 is off."
+    },
+    {
+      "key": "trees",
+      "type": "boolean",
+      "default": false,
+      "label": "Painted trees",
+      "description": "The fields' common trees drawn from painted 3D models (Quaternius's Stylized Nature MegaKit, CC0) instead of the map's own. Takes effect on the next map you enter."
     },
     {
       "key": "shadows",
