@@ -1,3 +1,5 @@
+// windows-latest checks text files out with CRLF; normalise on read so assertions about file
+// content do not depend on the checkout's newline convention.
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -63,7 +65,7 @@ test('assembled assets serve from selected volumes, preserve sources and restore
         PORT: String(port), HOST: '127.0.0.1', NODE_ENV: 'production', SERVER_ROOT: path.join(state, 'assets'),
         CLIENT_PUBLIC_URL: `http://127.0.0.1:${port}`, CLIENT_RESPATH: 'resources/',
         CLIENT_DATAINI: path.join(state, 'asset-config/DATA.INI'), CLIENT_AUTOEXTRACT: 'false',
-        BGM_PATH: fs.readFileSync(path.join(state, 'asset-config/bgm.path'), 'utf8'),
+        BGM_PATH: fs.readFileSync(path.join(state, 'asset-config/bgm.path'), 'utf8').replace(/\r\n/g, '\n'),
         DATA_OVERRIDE_PATH: path.join(state, 'assets/.translation/data'),
         ROBROWSER_PATH: path.join(root, 'vendor/roBrowserLegacy/dist/Web'), ENABLE_STATIC_SERVE: 'true',
     } });
@@ -86,8 +88,8 @@ test('assembled assets serve from selected volumes, preserve sources and restore
     assert.equal(fs.existsSync(path.join(state, 'assets/BGM/theme.mp3')), false);
     assert.deepEqual(fs.readFileSync(data), original);
     for (const [file, bytes] of originals) assert.deepEqual(fs.readFileSync(file), bytes);
-    assert.equal(fs.readFileSync(music, 'utf8'), 'original music');
+    assert.equal(fs.readFileSync(music, 'utf8').replace(/\r\n/g, '\n'), 'original music');
     assert.equal(fs.existsSync(path.join(state, 'assets/resources/data.grf')), false);
     assert.deepEqual(fs.readdirSync(path.join(state, 'assets/resources')), []);
-    assert.equal(fs.readFileSync(path.join(root, 'vendor/roBrowserLegacy/dist/Web/Config.local.js'), 'utf8'), 'stale bundled config');
+    assert.equal(fs.readFileSync(path.join(root, 'vendor/roBrowserLegacy/dist/Web/Config.local.js'), 'utf8').replace(/\r\n/g, '\n'), 'stale bundled config');
 });

@@ -1,0 +1,424 @@
+/**
+ * UI/Components/CompanionPanel/CompanionPanel.css
+ *
+ * Companion window.
+ *
+ * Sizing: the window follows its content - width is max-content (clamped to a
+ * sensible range) rather than a fixed pixel width, which is what cropped the right
+ * side when the job list wrapped wider than the old 330px. The body itself is a
+ * flat white pane; the titlebar and tab bitmaps are the client's own, loaded here
+ * via ui-image and the data-* attributes in the HTML.
+ *
+ * All selectors are rooted at #CompanionPanel, the wrapper inside the shadow root.
+ * This component's CSS is injected into the shadow while the host carries the id,
+ * so a rule written against the host matches nothing at all.
+ */
+
+#CompanionPanel {
+	position: relative;
+	display: inline-block;
+	min-width: 300px;
+	max-width: 90vw;
+	user-select: none;
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 12px;
+	color: #333333;
+}
+
+/* ── titlebar ─────────────────────────────────────────────────────────── */
+
+#CompanionPanel .titlebar {
+	position: relative;
+	height: 17px;
+	/* the middle bitmap tiles; the corners sit on top of its ends */
+	background-repeat: repeat-x;
+	background-size: auto 100%;
+}
+
+#CompanionPanel .titlebar .corner { position: absolute; top: 0; }
+#CompanionPanel .titlebar .corner.left { left: 0; }
+#CompanionPanel .titlebar .corner.right { right: 0; }
+
+#CompanionPanel .titlebar .center {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 0;
+	height: 17px;
+	overflow: hidden;
+	text-align: center;
+}
+
+#CompanionPanel .titlebar .title {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 2px;
+	text-align: center;
+	font-size: 11px;
+	font-weight: bold;
+	color: #3a2f1c;
+	text-shadow: 0 1px 0 #ffffff99;
+	pointer-events: none;
+}
+
+#CompanionPanel .titlebar .close {
+	position: absolute;
+	right: 2px;
+	top: 1px;
+	width: 15px;
+	height: 15px;
+	border: 0;
+	padding: 0;
+	cursor: pointer;
+}
+
+/* ── body: sized by its content ───────────────────────────────────────── */
+
+#CompanionPanel .panel {
+	position: relative;
+	display: flex;
+	width: max-content;
+	min-width: 296px;
+	max-width: 90vw;
+	background: #ffffff;
+	border: 1px solid #9a8b6b;
+	border-top: 0;
+	box-sizing: border-box;
+}
+
+/* ── sidebar tabs ─────────────────────────────────────────────────────── */
+
+#CompanionPanel .sidebar {
+	width: 62px;
+	flex: none;
+	background: #f4efe1;
+	border-right: 1px solid #c9bc9e;
+	padding: 4px 0 0 3px;
+	box-sizing: border-box;
+}
+
+#CompanionPanel .sidebar .tab {
+	width: 58px;
+	height: 22px;
+	line-height: 22px;
+	text-align: center;
+	font-size: 11px;
+	color: #4a3f2c;
+	background-repeat: no-repeat;
+	background-size: 100% 100%;
+	cursor: pointer;
+	margin-bottom: 2px;
+}
+
+#CompanionPanel .sidebar .tab.on { font-weight: bold; color: #6b1f10; }
+
+/* ── panes ────────────────────────────────────────────────────────────── */
+
+#CompanionPanel .panes {
+	flex: 1 1 auto;
+	min-width: 230px;
+	padding: 6px 7px 10px;
+	overflow: hidden;
+	box-sizing: border-box;
+}
+
+#CompanionPanel .page {
+	max-height: 300px;
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+
+#CompanionPanel h4 {
+	margin: 5px 0 3px;
+	font-size: 11px;
+	font-weight: bold;
+	color: #5b4a2f;
+	border-bottom: 1px solid #ddd2b8;
+	padding-bottom: 1px;
+}
+
+#CompanionPanel h4:first-child { margin-top: 0; }
+
+/* ── rows ─────────────────────────────────────────────────────────────── */
+
+#CompanionPanel .row {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	padding: 2px 3px;
+	margin-bottom: 2px;
+	border-bottom: 1px dotted #ded4bd;
+}
+
+/* Two-line identity column: name over class + tier. min-width:0 is what lets the
+   column shrink below its content so the ellipsis actually engages instead of the
+   row overflowing. */
+#CompanionPanel .row .id {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+}
+
+#CompanionPanel .row .nm {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+#CompanionPanel .row .id .cls {
+	font-size: 10px;
+	line-height: 1.2;
+	color: #7a6d52;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+#CompanionPanel .row .lv { flex: none; color: #6b5d42; font-size: 11px; }
+
+#CompanionPanel .row .badge {
+	flex: none;
+	font-size: 10px;
+	padding: 0 3px;
+	border: 1px solid #b9ac8e;
+	background: #f3eddc;
+	color: #4a3f2c;
+}
+
+#CompanionPanel .row .badge.ok { background: #dff0d2; border-color: #8fb37a; }
+#CompanionPanel .row .badge.tank { background: #d7e6d9; border-color: #7fa287; }
+#CompanionPanel .row .badge.support { background: #d7e2ee; border-color: #7f95ad; }
+#CompanionPanel .row .badge.attacker { background: #eedcd7; border-color: #ad867f; }
+
+/* ── controls ─────────────────────────────────────────────────────────── */
+
+#CompanionPanel button {
+	flex: none;
+	padding: 2px 6px;
+	font-family: inherit;
+	font-size: 11px;
+	color: #2b2b2b;
+	background: #f0ead8;
+	border: 1px solid #9c8c68;
+	border-radius: 0;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+#CompanionPanel button:hover { background: #fbf6e8; }
+#CompanionPanel button.on { background: #dfe9cf; font-weight: bold; }
+#CompanionPanel button.wide { flex: 1 1 0; padding: 4px 0; }
+
+#CompanionPanel .grid {
+	display: flex;
+	gap: 3px;
+	flex-wrap: wrap;
+	margin-bottom: 4px;
+}
+
+#CompanionPanel .hint {
+	color: #6b5d42;
+	font-size: 11px;
+	margin: 0 0 4px;
+	line-height: 1.35;
+}
+
+#CompanionPanel .empty {
+	color: #8a7a58;
+	font-style: italic;
+	font-size: 11px;
+	padding: 5px 2px;
+}
+
+#CompanionPanel input.num {
+	width: 42px;
+	padding: 1px 3px;
+	font-family: inherit;
+	font-size: 11px;
+	background: #ffffff;
+	border: 1px solid #9c8c68;
+}
+
+#CompanionPanel .jobs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 3px;
+}
+
+#CompanionPanel .jobs button { padding: 2px 4px; font-size: 10px; }
+
+/* ── resize grip ──────────────────────────────────────────────────────── */
+
+#CompanionPanel .resize-grip {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	width: 14px;
+	height: 14px;
+	cursor: nwse-resize;
+	/* corner marks, drawn rather than loaded: no bitmap to get wrong */
+	background:
+		linear-gradient(135deg, transparent 0 55%, #8a7a58 55% 62%, transparent 62%),
+		linear-gradient(135deg, transparent 0 72%, #8a7a58 72% 79%, transparent 79%);
+}
+
+/* ── in-window confirmation ──────────────────────────────────────────────
+   Drawn inside the panel rather than via window.confirm(), which would block
+   the game loop and input while it is up. */
+
+#CompanionPanel .confirm-overlay {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 0;
+	bottom: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: #00000055;
+	z-index: 5;
+}
+
+#CompanionPanel .confirm-box {
+	width: 86%;
+	max-width: 260px;
+	background: #f6f1e3;
+	border: 1px solid #8a7a58;
+	padding: 9px 10px;
+	box-shadow: 2px 2px 0 #00000022;
+	text-align: center;
+}
+
+#CompanionPanel .confirm-question {
+	font-size: 12px;
+	font-weight: bold;
+	color: #4a3f2c;
+	margin-bottom: 4px;
+}
+
+#CompanionPanel .confirm-detail {
+	font-size: 11px;
+	color: #6b5d42;
+	line-height: 1.35;
+	margin-bottom: 8px;
+}
+
+#CompanionPanel .confirm-buttons {
+	display: flex;
+	gap: 5px;
+	justify-content: center;
+}
+
+#CompanionPanel .confirm-buttons button {
+	min-width: 66px;
+	padding: 3px 8px;
+}
+
+/* A permanent action gets a red cast so it does not read like the other buttons. */
+#CompanionPanel button.danger {
+	color: #7a1f10;
+	border-color: #a8604f;
+	background: #f3ded8;
+}
+
+#CompanionPanel button.danger:hover { background: #faeae5; }
+
+/* ── skill picker ───────────────────────────────────────────────────────────
+   A tick box per skill, drawn with plain inputs at RO's dense metrics (a
+   beige-on-white list, 1px borders, no rounded corners) rather than a styled
+   web checklist. Click isolation is inherited from the panel root, which
+   already stops propagation for mousedown/click. */
+
+#CompanionPanel .skill-overlay {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 0;
+	bottom: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: #00000055;
+	z-index: 6;
+}
+
+#CompanionPanel .skill-box {
+	display: flex;
+	flex-direction: column;
+	width: 96%;
+	max-width: 340px;
+	max-height: 86%;
+	background: #ffffff;
+	border: 1px solid #8a7a58;
+	box-shadow: 2px 2px 0 #00000022;
+}
+
+#CompanionPanel .skill-head {
+	background: #f4efe1;
+	border-bottom: 1px solid #c9bc9e;
+	padding: 3px 6px;
+}
+
+#CompanionPanel .skill-title {
+	font-size: 11px;
+	font-weight: bold;
+	color: #4a3f2c;
+}
+
+#CompanionPanel .skill-box .hint {
+	margin: 4px 6px 2px;
+}
+
+#CompanionPanel .skill-list {
+	flex: 1 1 auto;
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding: 0 6px 4px;
+	min-height: 90px;
+}
+
+#CompanionPanel .skill-row {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 1px 2px;
+	border-bottom: 1px dotted #ded4bd;
+	cursor: pointer;
+}
+
+#CompanionPanel .skill-row.on { background: #f7fbf0; }
+
+#CompanionPanel .skill-row input {
+	flex: none;
+	margin: 0;
+	width: 12px;
+	height: 12px;
+	accent-color: #6b8f4e;
+}
+
+#CompanionPanel .skill-name {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 11px;
+	color: #2b2b2b;
+}
+
+#CompanionPanel .skill-lv {
+	flex: none;
+	font-size: 10px;
+	color: #7a6d52;
+}
+
+#CompanionPanel .skill-actions {
+	display: flex;
+	gap: 3px;
+	border-top: 1px solid #c9bc9e;
+	background: #f4efe1;
+	padding: 4px 6px;
+}
+
+#CompanionPanel .skill-actions button { flex: 1 1 0; padding: 3px 0; }

@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000005
+Subject: [PATCH] TEMPORARY: @companion dump - dump live shell identity and state
+
+A diagnostic-only patch. Four attempts at "the companion ignores its skill selection"
+were built on INFERENCES read out of log lines; this prints the ground truth instead.
+
+Prints one @SHELL line per live population shell:
+
+  index | name | class | owner_account | override_active | attack_n | buff_n |
+  state.active | prev!=null | map_id2bl(id)==self | party_id | pop_is_companion
+
+That single output settles, in one read:
+  * whether the shell holding a companion index is really that companion (name match);
+  * whether it received skill_override_active, which is what the selector filters on;
+  * whether the engine can resolve it as a companion at all (pop_is_companion, which
+    keys on party_id and so is false whenever a party rebuild zeroed it);
+  * whether the shell is on the grid (prev / map_id2bl), which decides if it can cast.
+
+Usage: @companion dump   (in game; output is @SHELL|... lines, @SHELLEND|n sentinel)
+
+REMOVE THIS PATCH once the selector is confirmed working - it is not shipping code.
+--- a/src/custom/atcommand.inc
++++ b/src/custom/atcommand.inc
+@@ -604,6 +604,11 @@
+ 			clif_displaymessage(fd, reply);
+ 		return 0;
+ 	}
++	// RAGNAROKMAC (temporary): dump live shell state. Remove once the selector is confirmed.
++	if (strcmpi(cmd, "dump") == 0) {
++		population_engine_shell_dump(fd);
++		return 0;
++	}
+ 	if (strcmpi(cmd, "heal") == 0) {
+ 		int normal = 0, emergency = 0;
+ 		if (sscanf(param, "%d %d", &normal, &emergency) != 2 || normal < 1 || normal > 99 ||

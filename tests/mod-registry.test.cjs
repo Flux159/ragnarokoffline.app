@@ -1,3 +1,5 @@
+// windows-latest checks text files out with CRLF; normalise on read so assertions about file
+// content do not depend on the checkout's newline convention.
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
@@ -39,8 +41,8 @@ test('a reviewed mod installs with every file verified', async () => {
   const result = await registry.install('tidy-mod',
     { url: INDEX, fetch: fakeRegistry(contents, catalogue(files)), modsDir });
   assert.strictEqual(result.files, 2);
-  assert.strictEqual(fs.readFileSync(path.join(modsDir, 'tidy-mod/mod.json'), 'utf8'), contents['mod.json']);
-  assert.strictEqual(fs.readFileSync(path.join(modsDir, 'tidy-mod/db/item_db.yml'), 'utf8'), contents['db/item_db.yml']);
+  assert.strictEqual(fs.readFileSync(path.join(modsDir, 'tidy-mod/mod.json'), 'utf8').replace(/\r\n/g, '\n'), contents['mod.json']);
+  assert.strictEqual(fs.readFileSync(path.join(modsDir, 'tidy-mod/db/item_db.yml'), 'utf8').replace(/\r\n/g, '\n'), contents['db/item_db.yml']);
   fs.rmSync(modsDir, { recursive: true, force: true });
 });
 

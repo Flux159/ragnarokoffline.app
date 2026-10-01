@@ -44,3 +44,10 @@ Body:
       noks: true
       noask: true
       refresh: true
+      # Companion manager: @companion list/favorite/summon — the player's own
+      # saved (Goal 1/3) companions, nobody else's. Purely personal.
+      companion: true
+      # Re-reads db/population_*.yml in place (names, profiles, gear sets, spawn
+      # tables, skills) without despawning shells — the only way to iterate on
+      # companion tuning without a server restart. Drop it once the numbers settle.
+      reloadpopenginedb: true

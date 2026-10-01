@@ -1,0 +1,325 @@
+From 0000000000000000000000000000000000000003
+Subject: [PATCH] Goal 2 gear return: @companion gear <name> - unequip all worn gear from a summoned companion and hand it to the owner
+
+Adds population_engine_companion_return_gear(owner, shell) (pc_unequipitem flag 2 per equipped slot, then pc_additem to the owner; drops at feet when overweight) and a gear subcommand in the @companion atcommand so players can take equipment back without a trade window (deals cannot reference equipped slots).
+
+diff --git a/src/custom/atcommand.inc b/src/custom/atcommand.inc
+--- a/src/custom/atcommand.inc
++++ b/src/custom/atcommand.inc
+@@ -221,15 +221,73 @@
+ /* @companion — manage saved (Goal 1/3) companions: list / favorite / summon.
+  * Companions persist in cp_companion_persistence; expelled ones stay there
+  * inactive and can be re-summoned by name with their exact saved identity. */
++/// Resolve the companion named at the START of `text`, longest match first.
++///
++/// @param account_id  owner whose saved list to search
++/// @param text        the argument remainder (may be just a name, or a name plus
++///                    further arguments joined by spaces)
++/// @param out_name    receives the matched name
++/// @param out_name_len size of out_name
++/// @param out_tail    receives the remaining text after the name (may be empty)
++/// @param out_tail_len size of out_tail
++/// @return true when a saved companion matched.
++///
++/// Longest-prefix matching is what makes `@companion gear Talivis armor` work: the
++/// name is the longest leading run of words that exists in the player's list, and
++/// everything after it is the slot list. A single whitespace split cannot do this,
++/// which is why the old form only worked for one-word names with no extra arguments.
++static bool companion_resolve_name_and_tail(uint32_t account_id, const char *text,
++	char *out_name, size_t out_name_len, char *out_tail, size_t out_tail_len)
++{
++	if (text == nullptr || out_name == nullptr || out_tail == nullptr || out_name_len == 0 || out_tail_len == 0)
++		return false;
++	out_name[0] = '\0';
++	out_tail[0] = '\0';
++
++	const size_t len = strlen(text);
++	// Walk the break points between words, from the END backwards, so the first
++	// successful lookup is the longest candidate.
++	for (size_t cut = len; cut > 0; --cut) {
++		if (cut < len && text[cut] != ' ')
++			continue; // only consider cuts at a word boundary
++		size_t end = cut;
++		while (end > 0 && text[end - 1] == ' ')
++			--end; // trim trailing spaces from the candidate
++		if (end == 0)
++			continue;
++		char candidate[NAME_LENGTH];
++		const size_t n = end < (out_name_len - 1) ? end : (out_name_len - 1);
++		safestrncpy(candidate, text, n + 1);
++		uint32_t idx = 0; bool act = false;
++		if (!population_engine_companion_find(account_id, candidate, &idx, &act))
++			continue; // not a name: try a shorter prefix
++		safestrncpy(out_name, candidate, out_name_len);
++		// Everything after the name (skipping the separating spaces) is the tail.
++		size_t tail = cut;
++		while (tail < len && text[tail] == ' ')
++			++tail;
++		safestrncpy(out_tail, text + tail, out_tail_len);
++		return true;
++	}
++	return false;
++}
++
+ ACMD_FUNC(companion)
+ {
+ 	nullpo_retr(-1, sd);
+ 	char cmd[32], param[NAME_LENGTH];
+ 	if (!message || !*message || sscanf(message, "%31s %23[^\n]", cmd, param) < 1) {
+-		clif_displaymessage(fd, "Usage: @companion list | favorite <name> | unfavorite <name> | summon <name> | remove <name>");
++		clif_displaymessage(fd, "Usage: @companion list | favorite <name> | unfavorite <name> | summon <name> | remove <name> | gear <name> [slots]");
+ 		return -1;
+ 	}
+ 	if (strcmpi(cmd, "list") == 0) {
++		// RAGNAROKMAC (Phase 3): "list raw" emits the machine-readable form for
++		// the in-game panel (@CP|name|job|level|active|favorite|live). The plain
++		// form stays human-formatted.
++		if (strcmpi(param, "raw") == 0) {
++			population_engine_companion_list_raw(sd->status.account_id, fd);
++			return 0;
++		}
+ 		population_engine_companion_list(sd->status.account_id, fd);
+ 		return 0;
+ 	}
+@@ -264,19 +322,98 @@
+ 		}
+ 		if (!active)
+ 			population_engine_set_companion_active(sd->status.account_id, index_, true);
+-		// Rebind the row to this owner so a traded/gifted save still summons here,
+-		// then recall just this companion beside the player.
+-		const int n = population_engine_recall_companions(sd);
++		// Recall ONLY the named companion. The batch form re-places and re-broadcasts
++		// every companion, which visibly undid a bench the player had just made.
++		const int n = population_engine_recall_companions(sd, index_);
+ 		char msg[128];
+ 		snprintf(msg, sizeof(msg), "Summoned %d saved companion(s).", n);
+ 		clif_displaymessage(fd, msg);
+ 		return 0;
+ 	}
+-	if (strcmpi(cmd, "remove") == 0 || strcmpi(cmd, "delete") == 0) {
++	// RAGNAROKMAC (Goal 2): take all worn gear back from a summoned companion.
++	// Unequips every equipped slot on the shell and hands each piece to the
++	// caller's inventory (or drops at their feet when overweight).
++	if (strcmpi(cmd, "gear") == 0 || strcmpi(cmd, "unequip") == 0) {
+ 		if (!param[0]) {
++			clif_displaymessage(fd, "Usage: @companion gear <name> [weapon] [shield] [armor] [shoes] [garment] [acc] [head] [costume] [shadow] [ammo]");
++			return -1;
++		}
++		char gear_name[NAME_LENGTH] = {0}, gear_tail[128] = {0};
++		if (!companion_resolve_name_and_tail(sd->status.account_id, param, gear_name, sizeof(gear_name), gear_tail, sizeof(gear_tail))) {
++			char msg[NAME_LENGTH + 48];
++			snprintf(msg, sizeof(msg), "Companion '%s' not found in your saved list.", param);
++			clif_displaymessage(fd, msg);
++			return -1;
++		}
++		uint32_t index_ = 0; bool active = false;
++		if (!population_engine_companion_find(sd->status.account_id, gear_name, &index_, &active)) {
++			char msg[NAME_LENGTH + 48];
++			snprintf(msg, sizeof(msg), "Companion '%s' not found in your saved list.", gear_name);
++			clif_displaymessage(fd, msg);
++			return -1;
++		}
++		if (!active) {
++			clif_displaymessage(fd, "That companion is not summoned. Use @companion summon <name> first.");
++			return -1;
++		}
++		map_session_data *live = nullptr;
++		for (map_session_data *cand : g_population_engine_pcs) {
++			if (cand && cand->status.char_id == POPULATION_ENGINE_CHAR_ID_BASE + index_) { live = cand; break; }
++		}
++		if (live == nullptr) {
++			clif_displaymessage(fd, "That companion is not on the map right now.");
++			return -1;
++		}
++		// RAGNAROKMAC: selective return — "@companion gear <name> weapon shield" hands
++		// back only those slots. Slot names map to the equip_pos bitmask (mmo.hpp);
++		// with no slot args the mask stays 0 = strip everything (original behavior).
++		uint32_t mask = 0;
++		{
++			// Slots come from the resolved tail, so a multi-word name cannot shift them.
++			char slots[128] = {0};
++			safestrncpy(slots, gear_tail, sizeof(slots));
++			if (slots[0]) {
++				for (char *tok = strtok(slots, " \t"); tok; tok = strtok(nullptr, " \t")) {
++					if (!strcmpi(tok, "weapon"))  mask |= EQP_HAND_R;
++					else if (!strcmpi(tok, "shield"))   mask |= EQP_HAND_L;
++					else if (!strcmpi(tok, "armor"))    mask |= EQP_ARMOR;
++					else if (!strcmpi(tok, "shoes"))    mask |= EQP_SHOES;
++					else if (!strcmpi(tok, "garment"))  mask |= EQP_GARMENT;
++					else if (!strcmpi(tok, "acc"))      mask |= EQP_ACC_RL;
++					else if (!strcmpi(tok, "accl"))     mask |= EQP_ACC_L;
++					else if (!strcmpi(tok, "accr"))     mask |= EQP_ACC_R;
++					else if (!strcmpi(tok, "head"))     mask |= EQP_HELM;
++					else if (!strcmpi(tok, "headtop"))  mask |= EQP_HEAD_TOP;
++					else if (!strcmpi(tok, "headmid"))  mask |= EQP_HEAD_MID;
++					else if (!strcmpi(tok, "headlow"))  mask |= EQP_HEAD_LOW;
++					else if (!strcmpi(tok, "costume"))  mask |= EQP_COSTUME;
++					else if (!strcmpi(tok, "shadow"))   mask |= EQP_SHADOW_GEAR;
++					else if (!strcmpi(tok, "ammo"))     mask |= EQP_AMMO;
++					else {
++						char msg[128];
++						snprintf(msg, sizeof(msg), "Unknown slot '%s' — use: weapon shield armor shoes garment acc accl accr head headtop headmid headlow costume shadow ammo", tok);
++						clif_displaymessage(fd, msg);
++						return -1;
++					}
++				}
++			}
++		}
++		const int moved = population_engine_companion_return_gear(sd, live, mask);
++		char msg[96];
++		if (moved >= 0)
++			snprintf(msg, sizeof(msg), "Returned %d item(s) from %s.", moved, gear_name);
++		else
++			snprintf(msg, sizeof(msg), "Could not return gear from %s.", gear_name);
++		clif_displaymessage(fd, msg);
++		return 0;
++	}
++	if (strcmpi(cmd, "remove") == 0 || strcmpi(cmd, "delete") == 0) {
++		char del_name[NAME_LENGTH] = {0}, del_tail[8] = {0};
++		if (!param[0] || !companion_resolve_name_and_tail(sd->status.account_id, param, del_name, sizeof(del_name), del_tail, sizeof(del_tail))) {
+ 			clif_displaymessage(fd, "Usage: @companion remove <name>");
+ 			return -1;
+ 		}
++		safestrncpy(param, del_name, sizeof(param));
+ 		uint32_t index_ = 0; bool active = false;
+ 		if (!population_engine_companion_find(sd->status.account_id, param, &index_, &active)) {
+ 			char msg[NAME_LENGTH + 48];
+@@ -299,6 +436,8 @@
+ 			population_engine_shell_release(live);
+ 		}
+ 		if (population_engine_companion_delete(sd->status.account_id, param)) {
++			// The roster changed: let an open panel drop the row immediately.
++			population_engine_push_companion_list(sd);
+ 			char msg[NAME_LENGTH + 64];
+ 			snprintf(msg, sizeof(msg), "Companion '%s' deleted from your saved list (gone for good).", param);
+ 			clif_displaymessage(fd, msg);
+@@ -308,6 +447,128 @@
+ 		}
+ 		return 0;
+ 	}
+-	clif_displaymessage(fd, "Usage: @companion list | favorite <name> | unfavorite <name> | summon <name> | remove <name>");
++	// RAGNAROKMAC (Phase 3): create a companion of a chosen job on the spot.
++	// Usage: @companion draft <job name|id> [name]
++	// Unlike summon (which revives a previously recruited companion), this writes
++	// a new persistence row, so a player can build a party around roles instead
++	// of hunting the world for a matching ambient character.
++	if (strcmpi(cmd, "draft") == 0 || strcmpi(cmd, "create") == 0) {
++		if (!param[0]) {
++			clif_displaymessage(fd, "Usage: @companion draft <job name or id> [name]");
++			return -1;
++		}
++		char jobtok[32] = {0}, nametok[NAME_LENGTH] = {0};
++		const int parsed = sscanf(param, "%31s %23[^\n]", jobtok, nametok);
++		if (parsed < 1) {
++			clif_displaymessage(fd, "Usage: @companion draft <job name or id> [name]");
++			return -1;
++		}
++		uint16_t job_id = 0;
++		if (sscanf(jobtok, "%hu", &job_id) != 1 || job_id == 0) {
++			// Name form: resolve through the engine's own job-name table, so the
++			// accepted spellings are exactly the ones the YAML profiles use.
++			job_id = population_engine_job_id_from_name(jobtok);
++		}
++		if (job_id == 0) {
++			char msg[NAME_LENGTH + 64];
++			snprintf(msg, sizeof(msg), "Unknown job '%s'. Try @companion jobs for the list.", jobtok);
++			clif_displaymessage(fd, msg);
++			return -1;
++		}
++		if (!population_engine_can_recruit_companion(sd)) {
++			clif_displaymessage(fd, "Your party is at the companion limit.");
++			return -1;
++		}
++		// A duplicate name would collide with the saved list, so a drafted
++		// companion gets a generated name when none was given.
++		char chosen[NAME_LENGTH] = {0};
++		if (parsed >= 2 && nametok[0]) {
++			uint32_t dup_index = 0; bool dup_active = false;
++			if (population_engine_companion_find(sd->status.account_id, nametok, &dup_index, &dup_active)) {
++				clif_displaymessage(fd, "You already have a companion by that name.");
++				return -1;
++			}
++			safestrncpy(chosen, nametok, NAME_LENGTH);
++		}
++		const uint32_t made = population_engine_companion_draft(sd, job_id, 1, chosen[0] ? chosen : nullptr);
++		char msg[128];
++		if (made != 0)
++			snprintf(msg, sizeof(msg), "Drafted a %s companion. It is in your party now.",
++				job_name(job_id));
++		else
++			snprintf(msg, sizeof(msg), "Could not draft a %s companion (see map-server console).", job_name(job_id));
++		clif_displaymessage(fd, msg);
++		return made != 0 ? 0 : -1;
++	}
++	// RAGNAROKMAC (Phase 3): list the job names @companion draft accepts.
++	if (strcmpi(cmd, "jobs") == 0) {
++		clif_displaymessage(fd, "=== Draggable companion jobs ===");
++		clif_displaymessage(fd, "1st: Novice Swordsman Mage Archer Acolyte Merchant Thief");
++		clif_displaymessage(fd, "2nd: Knight Priest Wizard Blacksmith Hunter Assassin Crusader Monk Sage Rogue Alchemist Bard Dancer");
++		clif_displaymessage(fd, "Trans: LordKnight HighPriest HighWizard Whitesmith Sniper AssassinCross Paladin Champion Professor Stalker Creator Clown Gypsy");
++		clif_displaymessage(fd, "3rd: RuneKnight Warlock Ranger ArchBishop Mechanic GuillotineCross RoyalGuard Sorcerer Minstrel Wanderer Sura Genetic ShadowChaser");
++		clif_displaymessage(fd, "4th: DragonKnight Meister ShadowCross ArchMage Cardinal Windhawk ImperialGuard Biolo AbyssChaser ElementalMaster Inquisitor Troubadour Trouvere SkyEmperor SoulAscetic Shinkiro Shiranui NightWatch HyperNovice SpiritHandler");
++		clif_displaymessage(fd, "Extended: Taekwon StarGladiator SoulLinker Gunslinger Ninja");
++		return 0;
++	}
++	// RAGNAROKMAC (Phase 1/2): expel a summoned companion from the party but KEEP
++	// its persistence row, so it can be summoned again later (unlike `remove`,
++	// which deletes the snapshot for good).
++	if (strcmpi(cmd, "dismiss") == 0 || strcmpi(cmd, "bench") == 0) {
++		if (!param[0]) {
++			clif_displaymessage(fd, "Usage: @companion dismiss <name>");
++			return -1;
++		}
++		uint32_t index_ = 0; bool active = false;
++		if (!population_engine_companion_find(sd->status.account_id, param, &index_, &active)) {
++			char msg[NAME_LENGTH + 48];
++			snprintf(msg, sizeof(msg), "Companion '%s' not found in your saved list.", param);
++			clif_displaymessage(fd, msg);
++			return -1;
++		}
++		map_session_data *live = nullptr;
++		for (map_session_data *cand : g_population_engine_pcs) {
++			if (cand && cand->status.char_id == POPULATION_ENGINE_CHAR_ID_BASE + index_) {
++				live = cand;
++				break;
++			}
++		}
++		if (live == nullptr) {
++			clif_displaymessage(fd, "That companion is not summoned right now.");
++			return -1;
++		}
++		// Mark the row inactive BEFORE the release so the withdrawal path cannot
++		// race the goal-3 hook; the snapshot itself is retained.
++		population_engine_set_companion_active(sd->status.account_id, index_, false);
++		population_engine_shell_release(live);
++		{
++			char msg[NAME_LENGTH + 64];
++			snprintf(msg, sizeof(msg), "Companion '%s' dismissed. Summon it again any time.", param);
++			clif_displaymessage(fd, msg);
++		}
++		return 0;
++	}
++	// RAGNAROKMAC (Phase 2): support healer thresholds for the whole party
++	// ("@companion heal <normal%> <emergency%>"). Stored per companion row via the
++	// existing persistence path; the support presets gate on these.
++	if (strcmpi(cmd, "heal") == 0) {
++		int normal = 0, emergency = 0;
++		if (sscanf(param, "%d %d", &normal, &emergency) != 2 || normal < 1 || normal > 99 ||
++			emergency < 1 || emergency > 99) {
++			clif_displaymessage(fd, "Usage: @companion heal <heal below %%%d..99> <emergency %%%d..99>");
++			return -1;
++		}
++		const int applied = population_engine_companion_set_heal_thresholds(
++			sd->status.account_id, (int16_t)normal, (int16_t)emergency);
++		char msg[128];
++		if (applied > 0)
++			snprintf(msg, sizeof(msg), "Companions: heal below %d%%, emergency below %d%% (on %d companion(s)).",
++				normal, emergency, applied);
++		else
++			snprintf(msg, sizeof(msg), "Companions: thresholds saved; no companion is summoned right now.");
++		clif_displaymessage(fd, msg);
++		return 0;
++	}
++	clif_displaymessage(fd, "Usage: @companion list | summon <name> | draft <job> [name] | jobs | favorite <name> | remove <name> | dismiss <name> | gear <name> [slots] | heal <a%> <b%>");
+ 	return -1;
+ }

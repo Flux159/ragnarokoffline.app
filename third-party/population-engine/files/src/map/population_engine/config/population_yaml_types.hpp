@@ -116,6 +116,13 @@ struct PopulationEngine {
 	int16_t intl_min = -1, intl_max = -1; // YAML key "Int"
 	int16_t dex_min = -1, dex_max = -1;
 	int16_t luk_min = -1, luk_max = -1;
+	/// 4th-job trait stats (Renewal trait era); -1 = leave at engine default (0).
+	int16_t pow_min = -1, pow_max = -1;
+	int16_t sta_min = -1, sta_max = -1;
+	int16_t wis_min = -1, wis_max = -1;
+	int16_t spl_min = -1, spl_max = -1;
+	int16_t con_min = -1, con_max = -1;
+	int16_t crt_min = -1, crt_max = -1;
 	int16_t base_level_min = -1, base_level_max = -1;
 	int16_t job_level_min = -1, job_level_max = -1;
 	/// -1 = auto (job rule + random); 0 = female; 1 = male

@@ -180,6 +180,7 @@ PopulationEngineDatabase& population_engine_db_for(PopulationDbSource src);
 /// DB owned the entry via `out_src` so the caller can tag the spawned shell.
 class map_session_data;
 std::shared_ptr<PopulationEngine> population_engine_find_any(uint16_t job_id, PopulationDbSource* out_src = nullptr);
+uint16_t population_engine_job_id_from_name(const char *name);
 /// Resolve the DB that owns this shell (sd->pop.db_source). Returns the main
 /// DB for null/non-shell sd so existing call sites stay safe.
 PopulationEngineDatabase& population_engine_db_for_shell(const map_session_data* sd);

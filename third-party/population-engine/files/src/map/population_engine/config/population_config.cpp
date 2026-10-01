@@ -273,6 +273,20 @@ static const std::unordered_map<std::string, uint16_t> kJobNameMap = {
 	// Taekwon / SL / extended
 	{ "Taekwon",         4046 }, { "StarGladiator",   4047 }, { "StarGladiatorUnion", 4048 },
 	{ "SoulLinker",      4049 },
+	// 3rd jobs (4054-4072; _T variants omitted from spawn names - base only)
+	{ "RuneKnight",      4054 }, { "Warlock",         4055 }, { "Ranger",          4056 },
+	{ "ArchBishop",      4057 }, { "Mechanic",        4058 }, { "GuillotineCross", 4059 },
+	{ "RoyalGuard",      4066 }, { "Sorcerer",        4067 }, { "Minstrel",        4068 },
+	{ "Wanderer",        4069 }, { "Sura",            4070 }, { "Genetic",         4071 },
+	{ "ShadowChaser",    4072 },
+	// 4th jobs (4252-4264 main line, 4302-4308 extended)
+	{ "DragonKnight",    4252 }, { "Meister",         4253 }, { "ShadowCross",     4254 },
+	{ "ArchMage",        4255 }, { "Cardinal",        4256 }, { "Windhawk",        4257 },
+	{ "ImperialGuard",   4258 }, { "Biolo",           4259 }, { "AbyssChaser",     4260 },
+	{ "ElementalMaster", 4261 }, { "Inquisitor",      4262 }, { "Troubadour",      4263 },
+	{ "Trouvere",        4264 }, { "SkyEmperor",      4302 }, { "SoulAscetic",     4303 },
+	{ "Shinkiro",        4304 }, { "Shiranui",        4305 }, { "NightWatch",      4306 },
+	{ "HyperNovice",     4307 }, { "SpiritHandler",   4308 },
 };
 
 PopulationNamesDatabase g_population_names_db;
@@ -297,6 +311,38 @@ struct PopulationDbWiring {
 PopulationDbWiring g_population_db_wiring;
 
 } // namespace
+
+/// RAGNAROKMAC (Phase 3): resolve a job name (as written in the YAML profiles,
+/// spaces optional, case-insensitive) to its job id, or 0 when unknown. Shared by
+/// the profile loader and the @companion draft command, so the command accepts
+/// exactly the spellings the profiles do.
+///
+/// Defined here, after the anonymous namespace, on purpose: kJobNameMap itself is
+/// static inside that namespace (internal linkage). Defining this alongside it
+/// produced a symbol nothing else could link against - the command in
+/// atcommand.inc failed at link time with "undefined reference".
+uint16_t population_engine_job_id_from_name(const char *name)
+{
+	if (name == nullptr || name[0] == '\0')
+		return 0;
+	std::string key(name);
+	key.erase(std::remove(key.begin(), key.end(), ' '), key.end());
+	for (const auto &entry : kJobNameMap) {
+		if (entry.first.size() != key.size())
+			continue;
+		bool same = true;
+		for (size_t i = 0; i < key.size(); ++i) {
+			if (std::tolower(static_cast<unsigned char>(entry.first[i])) !=
+				std::tolower(static_cast<unsigned char>(key[i]))) {
+				same = false;
+				break;
+			}
+		}
+		if (same)
+			return entry.second;
+	}
+	return 0;
+}
 
 PopulationNamesDatabase& population_names_db()
 {
@@ -1143,6 +1189,12 @@ static void applyProfile(PopulationEngine* dst, const PopulationEngine& src)
 	dst->luk_min  = src.luk_min;  dst->luk_max  = src.luk_max;
 	dst->base_level_min = src.base_level_min; dst->base_level_max = src.base_level_max;
 	dst->job_level_min  = src.job_level_min;  dst->job_level_max  = src.job_level_max;
+	dst->pow_min  = src.pow_min;  dst->pow_max  = src.pow_max;
+	dst->sta_min  = src.sta_min;  dst->sta_max  = src.sta_max;
+	dst->wis_min  = src.wis_min;  dst->wis_max  = src.wis_max;
+	dst->spl_min  = src.spl_min;  dst->spl_max  = src.spl_max;
+	dst->con_min  = src.con_min;  dst->con_max  = src.con_max;
+	dst->crt_min  = src.crt_min;  dst->crt_max  = src.crt_max;
 	// Appearance
 	dst->sex_override    = src.sex_override;
 	dst->hair_min        = src.hair_min;        dst->hair_max        = src.hair_max;
@@ -1249,6 +1301,12 @@ uint64 PopulationEngineDatabase::parseBodyNode(const ryml::NodeRef& node)
 		this->parseOptionalIntRange(node, "Int",          prof->intl_min,       prof->intl_max,       0);
 		this->parseOptionalIntRange(node, "Dex",          prof->dex_min,        prof->dex_max,        0);
 		this->parseOptionalIntRange(node, "Luk",          prof->luk_min,        prof->luk_max,        0);
+		this->parseOptionalIntRange(node, "Pow",          prof->pow_min,        prof->pow_max,        0);
+		this->parseOptionalIntRange(node, "Sta",          prof->sta_min,        prof->sta_max,        0);
+		this->parseOptionalIntRange(node, "Wis",          prof->wis_min,        prof->wis_max,        0);
+		this->parseOptionalIntRange(node, "Spl",          prof->spl_min,        prof->spl_max,        0);
+		this->parseOptionalIntRange(node, "Con",          prof->con_min,        prof->con_max,        0);
+		this->parseOptionalIntRange(node, "Crt",          prof->crt_min,        prof->crt_max,        0);
 		this->parseOptionalIntRange(node, "BaseLevel",    prof->base_level_min, prof->base_level_max, 0);
 		this->parseOptionalIntRange(node, "JobLevel",     prof->job_level_min,  prof->job_level_max,  0);
 		this->parseOptionalIntRange(node, "Hair",         prof->hair_min,       prof->hair_max,       0);

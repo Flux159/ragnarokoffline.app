@@ -19,6 +19,7 @@ import Network from 'Network/NetworkManager.js';
 import PACKET from 'Network/PacketStructure.js';
 import PACKETVER from 'Network/PacketVerManager.js';
 import UIManager from 'UI/UIManager.js';
+import ChatBox from 'UI/Components/ChatBox/ChatBox.js';
 import SkillTargetSelection from 'UI/Components/SkillTargetSelection/SkillTargetSelection.js';
 import Entity from 'Renderer/Entity/Entity.js';
 
@@ -137,6 +138,19 @@ function action(name, value) {
             shortcuts.onChange(value.slot, true, skill.SKID, level);
             return true;
         }
+    }
+    // Deliver a chat line through the same path the chat input uses, so the
+    // server sees exactly what typing it would send. Only plain text is
+    // accepted: no client commands (leading '/') and no private recipient.
+    if (name === 'chat' && typeof value?.text === 'string') {
+        const text = value.text.replace(/[\u00A0\r\n]/g, ' ').trim();
+        if (!text || text.length > 200 || text[0] === '/') return false;
+        const channel = value.channel === 'party' ? ChatBox.TYPE.PARTY
+            : value.channel === 'guild' ? ChatBox.TYPE.GUILD : ChatBox.TYPE.PUBLIC;
+        if (!ChatBox.onRequestTalk) return false;
+        Runtime.movement.clear('chat');
+        ChatBox.onRequestTalk('', text, channel);
+        return true;
     }
     const buttons = { attack: '#attackButton', target: '#toggleAutoTargetButton', interact: '#talktonpcButton', pickup: '#pickupButton' };
     if (Object.hasOwn(buttons, name)) {

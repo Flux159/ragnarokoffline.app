@@ -1,3 +1,5 @@
+// windows-latest checks text files out with CRLF; normalise on read so assertions about file
+// content do not depend on the checkout's newline convention.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -28,7 +30,7 @@ test('malformed saved policy fails closed and is never overwritten with defaults
     fs.writeFileSync(file, body);
     assert.throws(() => store.read(file, defaults), /Cannot read account creation policy/);
     assert.throws(() => store.write(file, { prerenewal: true }, defaults), /Cannot read account creation policy/);
-    assert.equal(fs.readFileSync(file, 'utf8'), body);
+    assert.equal(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), body);
   }
 });
 
@@ -36,25 +38,25 @@ test('a damaged deletion setting is refused rather than read as no wait', t => {
   const file = fixture(t);
   store.write(file, { instant_character_deletion: true }, defaults);
   assert.equal(store.read(file, defaults).instant_character_deletion, true);
-  const previous = fs.readFileSync(file, 'utf8');
+  const previous = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
   for (const update of [{ instant_character_deletion: 'true' }, { instant_character_deletion: 1 }, { instant_character_deletion: null }]) {
     assert.throws(() => store.write(file, update, defaults), /character deletion setting/);
-    assert.equal(fs.readFileSync(file, 'utf8'), previous);
+    assert.equal(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), previous);
   }
   // An install that has never opened the setting keeps rAthena's wait, and
   // reading one must not rewrite the file to say so.
   fs.writeFileSync(file, '{"max_aspd":190}');
   assert.equal(store.read(file, defaults).instant_character_deletion, undefined);
-  assert.equal(fs.readFileSync(file, 'utf8'), '{"max_aspd":190}');
+  assert.equal(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), '{"max_aspd":190}');
 });
 
 test('invalid updates cannot erase or reopen owner policy', t => {
   const file = fixture(t);
   store.write(file, { open_registration: false }, defaults);
-  const previous = fs.readFileSync(file, 'utf8');
+  const previous = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
   for (const update of [null, [], { open_registration: undefined }, { open_registration: 'true' }, { open_registration: 1 }]) {
     assert.throws(() => store.write(file, update, defaults));
-    assert.equal(fs.readFileSync(file, 'utf8'), previous);
+    assert.equal(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), previous);
   }
 });
 
@@ -75,6 +77,6 @@ test('the real supervisor rejects corrupt policy before startup or Repair reache
     assert.match(result.stderr, /Cannot read account creation policy/);
     assert.equal(fs.existsSync(path.join(root, 'never-started')), false);
     assert.equal(fs.existsSync(path.join(root, 'phase')), false);
-    assert.equal(fs.readFileSync(file, 'utf8'), '{"open_registration":"false"}');
+    assert.equal(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), '{"open_registration":"false"}');
   }
 });

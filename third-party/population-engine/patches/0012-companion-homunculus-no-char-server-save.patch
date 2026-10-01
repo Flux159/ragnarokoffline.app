@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000012
+Subject: [PATCH] Companion homunculus: never send a shell's pet to the char server
+
+A companion's homunculus is built in the map server with hom_id 0 and the shell's
+synthetic account and char ids. hom_save() still runs for it -- from hom_vaporize (the
+"off" switch, and logout), from hom_call, and from unit_free when the shell leaves --
+and sends it to the char server, whose mapif_homunculus_save() reads hom_id 0 as a new
+homunculus and INSERTs a `homunculus` row, plus its `skill_homunculus` rows, every time.
+The map server never learns the new id, so the next save inserts again.
+
+Drop the request for population accounts, the way intif_saveregistry and chrif_save
+already do. The pet's level and exp live in cp_companion_persistence.
+
+--- a/src/map/intif.cpp
++++ b/src/map/intif.cpp
+@@ -1242,6 +1242,12 @@
+  */
+ int32 intif_homunculus_requestsave( uint32 account_id, const s_homunculus* sh )
+ {
++	// RAGNAROKMAC (homunculus): a population shell's pet has hom_id 0 and no `char` row behind
++	// it. The char server reads hom_id 0 as "new" and INSERTs a fresh `homunculus` row (plus
++	// its `skill_homunculus` rows) on every save, and hom_save runs on each vaporize, call and
++	// unit_free. The engine keeps this pet in cp_companion_persistence; nothing goes upstream.
++	if (IS_POPULATION_ENGINE_ACCOUNT_ID(account_id))
++		return 0;
+ 	if (CheckForCharServer())
+ 		return 0;
+ 	WFIFOHEAD(inter_fd, sizeof(struct s_homunculus)+8);

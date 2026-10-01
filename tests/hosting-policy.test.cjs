@@ -1,3 +1,5 @@
+// windows-latest checks text files out with CRLF; normalise on read so assertions about file
+// content do not depend on the checkout's newline convention.
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -32,10 +34,10 @@ test('scope is strict and survives unrelated account/era settings without silent
   store.write(file, { hosting_scope: 'friends', open_registration: true }, {});
   store.write(file, { prerenewal: true }, {});
   assert.deepEqual(store.read(file, {}), { hosting_scope: 'friends', open_registration: true, prerenewal: true });
-  const before = fs.readFileSync(file, 'utf8');
+  const before = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
   for (const hosting_scope of [null, '', 'Friends', false]) {
     assert.throws(() => store.write(file, { hosting_scope }, {}));
-    assert.equal(fs.readFileSync(file, 'utf8'), before);
+    assert.equal(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), before);
   }
 });
 
@@ -105,6 +107,6 @@ test('an internet scope with no credentials for this era starts Local rather tha
     assert.doesNotMatch(r.stderr, /managed service credentials/);
     // Narrowing only, and only for this start: the player's setting is still
     // theirs, so going back to the era they prepared goes back to hosting.
-    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).hosting_scope, hosting_scope);
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n')).hosting_scope, hosting_scope);
   }
 });

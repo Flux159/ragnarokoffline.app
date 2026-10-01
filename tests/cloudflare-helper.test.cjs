@@ -1,3 +1,5 @@
+// windows-latest checks text files out with CRLF; normalise on read so assertions about file
+// content do not depend on the checkout's newline convention.
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -39,13 +41,13 @@ test('helper records verified downloads and diagnostics stay read-only and exclu
   assert.equal(first.executableSha256, digest);
   assert.ok(first.downloadedAt && first.lastVerifiedAt);
   assert.equal(downloads, 1);
-  const metadata = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+  const metadata = JSON.parse(fs.readFileSync(manifest, 'utf8').replace(/\r\n/g, '\n'));
   metadata.secret = 'private-sentinel';
   metadata.source = 'private-sentinel';
   fs.writeFileSync(manifest, JSON.stringify(metadata));
-  const before = fs.readFileSync(manifest, 'utf8');
+  const before = fs.readFileSync(manifest, 'utf8').replace(/\r\n/g, '\n');
   assert.ok(!JSON.stringify(helperDiagnostics(directory)).includes('private-sentinel'));
-  assert.equal(fs.readFileSync(manifest, 'utf8'), before);
+  assert.equal(fs.readFileSync(manifest, 'utf8').replace(/\r\n/g, '\n'), before);
   assert.equal(await ensureHelper(directory), executable);
   assert.equal(downloads, 1);
   assert.equal(helperDiagnostics(directory).downloadedAt, first.downloadedAt);

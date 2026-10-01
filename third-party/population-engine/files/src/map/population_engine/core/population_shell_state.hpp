@@ -58,6 +58,24 @@ struct PopulationShellBuffSkill {
 /// real players leave this in its default-constructed state.
 struct s_population {
 	std::vector<PopulationShellCombatSkill> attack_skills; ///< Offensive skill rotation (not `ca.autocombatskills` / not autosupport).
+	/// RAGNAROKMAC: skill presets are seeded from the shell's CLASS, and the lists
+	/// above are only built while empty. A companion that advances job therefore
+	/// kept its old class's rotation forever (Acolyte -> Priest still cast Acolyte
+	/// skills). The job-change path sets this, and the seeders rebuild when they
+	/// see it, then clear it.
+	bool     skills_need_reseed = false;
+	/// RAGNAROKMAC (skill selector): the player's own skill selection.
+	///
+	/// `skill_override_active` distinguishes "the player never chose anything"
+	/// (fall back to the preset list for the class) from "the player chose
+	/// NOTHING on purpose" (auto-attack only). Testing the vector for emptiness
+	/// alone cannot tell those apart, and the seeders rebuild a list while it is
+	/// empty - so an empty choice would silently restore the full preset list.
+	/// An entry with no curated behaviour row in population_skill_db.yml is
+	/// dropped by the filter rather than cast blindly: those rows carry the
+	/// rate, condition and target a cast needs.
+	std::vector<uint16_t> skill_override;
+	bool     skill_override_active = false;
 	std::vector<PopulationShellBuffSkill>   buff_skills;   ///< Self-buff maintenance list (Target:1 from population_skill_db.yml).
 	t_tick   reactive_buff_cd    = 0;  ///< Independent buff cooldown — decoupled from ca.skill_cd so self-buffs and attacks can fire in the same tick.
 	t_tick   sticky_until        = 0;  ///< Tick at which the current sticky target commitment expires.
@@ -180,6 +198,20 @@ struct s_population {
 	t_tick party_request_until = 0; ///< Whisper permission expires after 60 seconds.
 	uint32_t companion_owner_account = 0; ///< Real player this shell follows after joining their party.
 	PopulationCompanionMode companion_mode = PopulationCompanionMode::Defensive; ///< Party-leader controlled engagement policy.
+	/// Support healer thresholds, persisted with the companion row (v6). The support
+	/// skill presets gate on ally_hp_below; these are the profile defaults they use.
+	int16_t  companion_heal_at      = 75; ///< heal allies below this HP%
+	/// Consecutive failed placement attempts near the owner; drives the backoff
+	/// that replaced a per-tick re-warp loop (a shell teleported every 400 ms
+	/// cannot walk, which reads as "the companion stands still").
+	uint16_t placement_fail_streak = 0;
+	/// RAGNAROKMAC (growth): last base level pushed to the party window. The stock
+	/// party_send_levelup() routes through intif_party_changemap() to the CHAR
+	/// server, which has no row for a shell and therefore discards it - so a
+	/// companion's level in the party window only ever updated on a map change.
+	/// The growth poll compares against this and re-broadcasts locally instead.
+	int16_t  last_party_level_broadcast = 0;
+	int16_t  companion_emergency_at = 35; ///< emergency/big-heal below this HP%
 	t_tick companion_follow_next = 0; ///< Rate limit for owner-follow movement decisions.
 	bool companion_formation_active = false; ///< True while walking to the shell's assigned idle formation cell.
 	int16_t companion_formation_x = 0; ///< Current formation walk destination.

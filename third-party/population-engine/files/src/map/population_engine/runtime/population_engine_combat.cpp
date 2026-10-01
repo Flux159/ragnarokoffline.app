@@ -31,6 +31,7 @@
 #include "../expanded_ai/expanded_condition.hpp"
 #include "../../battle.hpp"
 #include "../../clif.hpp"
+#include "../../homunculus.hpp"
 #include "../../script.hpp"
 #include "../../map.hpp"
 #include "../../mob.hpp"
@@ -41,6 +42,13 @@
 #include "../../unit.hpp"
 
 using namespace rathena;
+
+/// RAGNAROKMAC (skill selector): the sphere-chain machine and the seeders both need this,
+/// and the seeders' definition sits at file scope further down. Declared at FILE scope,
+/// BEFORE the anonymous namespace below opens - a declaration inside that namespace would
+/// name a different internal-linkage entity and every existing call site would fail to
+/// resolve (g++ reports it as "call of overloaded ... is ambiguous", not as a scope error).
+static bool population_shell_skill_selected(const map_session_data *sd, uint16_t skill_id);
 
 namespace {
 
@@ -186,7 +194,15 @@ static bool population_shell_pick_sphere_chain_skill(map_session_data *sd, uint1
 	const int  sphere_cap   = callspirits_lv ? static_cast<int>(callspirits_lv) : 5;
 	const int  spheres_needed = 5; // Both Fury and Asura consume 5 spheres
 
+	// RAGNAROKMAC (skill selector): the chain must respect the player's selection too.
+	// It picks from pc_checkskill() - what the CLASS knows - and spawn grants every Monk its
+	// whole tree, so without this gate the machine overrode the rotation no matter what the
+	// player unticked (a Monk set to "none" kept building spheres and firing Asura).
+	// population_shell_skill_selected() returns true when no selection is active, so an
+	// unconfigured companion behaves exactly as before.
 	auto pick = [&](uint16 id, uint16 lv) {
+		if (!population_shell_skill_selected(sd, id))
+			return false;
 		if (!skill_isNotOk(id, *sd) && sd->status.sp >= static_cast<uint32>(skill_get_sp(id, lv))) {
 			out_id = id; out_lv = lv; return true;
 		}
@@ -803,6 +819,10 @@ bool population_shell_skill_condition_ok(
 	}
 }
 
+/// Defined further down; the per-tick path needs it to honour a skill-selection change
+/// immediately rather than at the next session restart (see the call in the tick).
+static void population_shell_seed_attack_skills_if_empty(map_session_data *sd);
+
 namespace { // reopen anon namespace for the rest of the file
 
 /// Unified condition gate that picks between the flat-enum legacy path and the
@@ -1272,6 +1292,14 @@ static void population_shell_combat_process_tick(map_session_data *sd, t_tick cu
 
 	population_shell_cleanup_expired_buffs(sd, current_tick);
 
+	// A skill-selection change (and a job change) must take effect on the next tick.
+	// The seeders are the only place `skill_override` is applied, and they used to be
+	// reachable only from combat_start_session - so setting a companion to "none" left
+	// it casting the list it was seeded with until it was re-summoned. The seeder clears
+	// this flag itself, so the rebuild runs in exactly one tick per change.
+	if (sd->pop.skills_need_reseed)
+		population_shell_seed_attack_skills_if_empty(sd);
+
 	const bool flag_attack_only = (sd->pop.flags & PSF::AttackOnly) != 0
 		|| sd->sc.getSCE(SC_BERSERK) != nullptr; // Frenzy: auto-attack only, no skills
 	const bool flag_skill_only  = (sd->pop.flags & PSF::SkillOnly)  != 0;
@@ -1712,6 +1740,17 @@ void population_shell_resolve_placement(const map_session_data *sd,
 	// All attempts hit walls — keep original base position.
 }
 
+/// RAGNAROKMAC (skill selector): is this skill in the shell's own selection?
+/// Returns true when no selection is active, so an unconfigured companion keeps
+/// using the whole preset list.
+static bool population_shell_skill_selected(const map_session_data *sd, uint16_t skill_id)
+{
+	if (sd == nullptr || !sd->pop.skill_override_active)
+		return true;
+	return std::find(sd->pop.skill_override.begin(), sd->pop.skill_override.end(), skill_id)
+		!= sd->pop.skill_override.end();
+}
+
 static void population_shell_recalc_max_attack_skill_range(map_session_data *sd)
 {
 	if (!sd)
@@ -1782,7 +1821,27 @@ static void population_shell_seed_attack_skills_if_empty(map_session_data *sd)
 
 	const uint16_t base_job = population_engine_job_base_class(sd->status.class_);
 
-	if (sd->pop.attack_skills.empty()) {
+	// Rebuild when empty (first tick) OR when a job change asked for a reseed:
+	// the rotation is keyed on sd->status.class_, so a companion that advanced
+	// would otherwise keep the previous class's skills for the rest of its life.
+	// The flag is cleared in the buff section below, once BOTH lists are rebuilt.
+	const bool rebuild_skills = sd->pop.attack_skills.empty() || sd->pop.skills_need_reseed;
+
+	// RAGNAROKMAC: name the trigger whenever a rebuild fires. Runs only on an actual
+	// rebuild (idle cost zero) and distinguishes "the list was empty" from "a change asked
+	// for a reseed" - the probe for whether an active selection is being refilled.
+	if (rebuild_skills) {
+		ShowInfo("population_engine: skill rebuild [attack] companion=%s idx=%u trigger=%s "
+			"override=%d attack_n=%zu buff_n=%zu\n",
+			sd->status.name,
+			(unsigned)(sd->status.char_id >= POPULATION_ENGINE_CHAR_ID_BASE
+				? sd->status.char_id - POPULATION_ENGINE_CHAR_ID_BASE : 0),
+			sd->pop.skills_need_reseed ? "reseed-flag" : "attack-list-empty",
+			sd->pop.skill_override_active ? 1 : 0,
+			sd->pop.attack_skills.size(), sd->pop.buff_skills.size());
+	}
+
+	if (rebuild_skills) {
 		std::vector<PopulationShellCombatSkill> cand;
 		std::unordered_set<uint16_t> seen;
 		cand.reserve(24);
@@ -1798,6 +1857,10 @@ static void population_shell_seed_attack_skills_if_empty(map_session_data *sd)
 			if (db_skills && !db_skills->empty()) {
 				for (const s_pop_skill_entry &e : *db_skills) {
 					if (e.state == 2)
+						continue;
+					// RAGNAROKMAC (skill selector): a companion with its own selection
+					// uses only those skills.
+					if (!population_shell_skill_selected(sd, e.skill_id))
 						continue;
 				const size_t before = cand.size();
 					if (e.target == 1)
@@ -1841,12 +1904,38 @@ static void population_shell_seed_attack_skills_if_empty(map_session_data *sd)
 			sd->pop.attack_skills = std::move(cand);
 			sd->pop.attack_skill_cursor = 0;
 			population_shell_recalc_max_attack_skill_range(sd);
+		} else if (rebuild_skills) {
+			// The new class has no preset (or none loaded): drop the old class's
+			// rotation rather than keep casting it. The shell then auto-attacks,
+			// which is the documented behaviour for a job with no entries.
+			sd->pop.attack_skills.clear();
+			sd->pop.attack_skill_cursor = 0;
+			sd->pop.max_attack_skill_range = -1;
 		}
 	}
 
 	// Seed self-buff and ally-buff maintenance lists from population_skill_db.yml Target:1/2 entries.
 	// Run independently of attack skill seeding so clearing buff skills re-seeds on next tick.
-	if (sd->pop.buff_skills.empty()) {
+	// Same rebuild condition as the attack rotation: a buff list seeded for the old
+	// class (Acolyte's Heal/Inc-Agi) must not survive a job change.
+	//
+	// RAGNAROKMAC (skill selector): emptiness means "not yet seeded" ONLY while the player has
+	// made no choice. With an override active, an empty list is a legitimate end state - the
+	// player selected nothing - and treating it as "needs seeding" refills it from the curated
+	// rows, so a companion set to "none" regenerates its skills and keeps casting. The attack
+	// list already had this distinction via skill_override_active; this list did not, which is
+	// why the self-buffs (Ruwach, Status Recovery) survived a "none" selection.
+	const bool buffs_chosen_none = sd->pop.skill_override_active;
+	if ((!buffs_chosen_none && sd->pop.buff_skills.empty()) || sd->pop.skills_need_reseed) {
+		ShowInfo("population_engine: skill rebuild [buff] companion=%s trigger=%s override=%d "
+			"attack_n=%zu buff_n=%zu\n",
+			sd->status.name,
+			sd->pop.skills_need_reseed ? "reseed-flag"
+				: (buffs_chosen_none ? "SKIPPED-should-not-fire" : "buff-list-empty"),
+			sd->pop.skill_override_active ? 1 : 0,
+			sd->pop.attack_skills.size(), sd->pop.buff_skills.size());
+		if (sd->pop.skills_need_reseed)
+			sd->pop.buff_skills.clear();
 		const std::vector<s_pop_skill_entry> *db_skills = population_skill_db().find(sd->status.class_);
 		if (!db_skills || db_skills->empty())
 			db_skills = population_skill_db().find(base_job);
@@ -1858,6 +1947,10 @@ static void population_shell_seed_attack_skills_if_empty(map_session_data *sd)
 				if (e.target != 1)
 					continue;
 				if (e.skill_id == 0)
+					continue;
+				// RAGNAROKMAC (skill selector): same filter as the attack rotation, so
+				// a battle priest can drop the support buffs and vice versa.
+				if (!population_shell_skill_selected(sd, e.skill_id))
 					continue;
 				// YAML-authoritative: do NOT gate on pc_checkskill here.
 				// Cast-time logic (population_shell_cast_expired_self_buffs) falls back
@@ -1883,6 +1976,10 @@ static void population_shell_seed_attack_skills_if_empty(map_session_data *sd)
 			}
 		}
 	}
+
+	// Last of the two rebuilds, so both lists now reflect the current class: drop
+	// the request. Without this the seeders would rebuild on every tick forever.
+	sd->pop.skills_need_reseed = false;
 }
 
 const char *population_combat_reject_code_name(PopulationCombatRejectCode code)
@@ -2014,6 +2111,102 @@ void population_engine_shell_reactive_cast(map_session_data *sd)
 			sd->pop.last_cast_skill_id = skill_id;
 		}
 	}
+}
+
+/// RAGNAROKMAC (homunculus, phase 2): the companion's pet picks its own target.
+///
+/// The pet ranks by distance to ITSELF, not to the master - that is what "picks its own target"
+/// means, and it is why two companions standing side by side end up with two independently
+/// engaged pets instead of both hitting whatever the shell is hitting.
+///
+/// Two radii bound the choice: the pet's own detection range, and the master's command radius.
+/// The second is what stops a pet being led off across the map by a fleeing monster.
+static uint32 population_engine_homunculus_target(map_session_data *sd, homun_data *hd)
+{
+	if (sd == nullptr || hd == nullptr)
+		return 0;
+
+	const int pet_detect = 12;       ///< how far the pet itself looks
+	const int master_radius = 12;    ///< the shell AI's own independent-acquisition radius
+
+	uint32 best_id = 0;
+	int best_distance = pet_detect + 1;
+
+	for (const auto &entry : sd->pop.mob_tracker.tracked_mobs) {
+		const s_pe_tracked_mob &mob = entry.second;
+		block_list *mob_bl = map_id2bl(static_cast<int>(mob.mob_id));
+
+		if (mob_bl == nullptr || mob_bl->m != hd->m)
+			continue;
+
+		const int pet_distance = distance_bl(hd, mob_bl);
+
+		if (pet_distance > pet_detect || pet_distance >= best_distance)
+			continue;
+		if (!check_distance_bl(sd, mob_bl, master_radius))
+			continue; // the master could not see it: not this pet's fight
+		// The engine's own notion of a valid enemy, so the pet can never engage something the
+		// shell systems consider off limits.
+		if (!population_shell_check_target(sd, mob.mob_id) &&
+			!population_shell_check_target_for_movement(sd, mob.mob_id))
+			continue;
+
+		best_id = mob.mob_id;
+		best_distance = pet_distance;
+	}
+
+	return best_id;
+}
+
+/// RAGNAROKMAC (homunculus, phase 2): one tick of the companion's homunculus.
+///
+/// A homunculus has no AI in the map server at all - its brain is client-side Lua, which a
+/// population shell can never run, so every stock action arrives as a client packet. This is the
+/// server-side substitute, built from the calls rAthena's own homunculus AI script commands use
+/// (`setunitdata UHOM_TARGETID` -> `unit_attack(hd, id, 1)`, and `unit_stop_attack(hd)` for 0).
+///
+/// Chasing is deliberately NOT done here: `unit_attack` walks the unit into range itself, which
+/// is exactly how the mob AI behaves. Writing a second pathfinder would be a bug farm.
+///
+/// Called from the shell's combat tick, so it inherits the tick's lifecycle and cost profile.
+static void population_engine_homunculus_per_tick(map_session_data *sd)
+{
+	if (sd == nullptr)
+		return;
+	if (!population_engine_is_population_pc(sd->id))
+		return; // never drive a real player's pet
+
+	homun_data *hd = sd->hd;
+
+	if (hd == nullptr)
+		return;
+	if (hd->master != sd)
+		return; // not ours to command
+	if (!hom_is_active(hd))
+		return; // dead, resting or vaporized - revival/growth belongs to phase 3
+	if (pc_isdead(sd))
+		return; // master is down: hold position beside him
+
+	// Leash. The master moved on, so come home rather than fight on: unit_walktobl paths around
+	// obstacles and stops 2 cells short, which is also how an idle pet trails him.
+	if (distance_bl(sd, hd) > 12) {
+		unit_stop_attack(hd);
+		unit_walktobl(hd, sd, 2, 1);
+		return;
+	}
+
+	const uint32 target_id = population_engine_homunculus_target(sd, hd);
+
+	if (target_id == 0) {
+		// Nothing to fight: drop any chase (the target may have died or hidden) and drift back
+		// to the master if the last fight pulled the pet away.
+		unit_stop_attack(hd);
+		if (distance_bl(sd, hd) > 3)
+			unit_walktobl(hd, sd, 2, 1);
+		return;
+	}
+
+	unit_attack(hd, target_id, 1);
 }
 
 int population_engine_combat_per_tick(map_session_data *sd, bool do_skills)
@@ -2166,6 +2359,11 @@ int population_engine_combat_per_tick(map_session_data *sd, bool do_skills)
 	if (DIFF_TICK(gettick(), pe.last_move) > 3000) {
 		sd->ud.canmove_tick = gettick();
 	}
+
+	// RAGNAROKMAC (homunculus, phase 2): the companion's pet takes its turn in the same tick,
+	// after the shell has decided, so it acts on this tick's state. It sits after the early
+	// returns on purpose: a sitting, vending or dead companion leaves its pet standing too.
+	population_engine_homunculus_per_tick(sd);
 
 	population_shell_status_checkmapchange(sd);
 

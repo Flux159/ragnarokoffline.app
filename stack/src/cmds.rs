@@ -1090,6 +1090,71 @@ fn zero_numbers(line: &str) -> String {
     out
 }
 
+/// The population engine's companion table: `CREATE TABLE IF NOT EXISTS` from the one copy
+/// of the schema, then the columns that table gained while the feature was developed, for a
+/// database made before them -- `CREATE ... IF NOT EXISTS` leaves an existing table alone.
+/// One round trip, safe on a fresh database, an old one, and every start after.
+///
+/// Only new objects: nothing of rAthena's is altered and no existing row is rewritten, so
+/// there is nothing one-way here and no backup to take. An earlier release ignores the table.
+const COMPANION_SCHEMA: &str =
+    include_str!("../../third-party/population-engine/files/sql-files/population_engine/cp_companion_persistence.sql");
+
+const COMPANION_COLUMNS: &[(&str, &str)] = &[
+    ("garment_nameid", "INT UNSIGNED NOT NULL DEFAULT 0"),
+    ("option_", "INT UNSIGNED NOT NULL DEFAULT 0"),
+    ("name", "VARCHAR(24) NOT NULL DEFAULT ''"),
+    ("acc_l_nameid", "INT UNSIGNED NOT NULL DEFAULT 0"),
+    ("acc_r_nameid", "INT UNSIGNED NOT NULL DEFAULT 0"),
+    ("costume_top_nameid", "INT UNSIGNED NOT NULL DEFAULT 0"),
+    ("costume_mid_nameid", "INT UNSIGNED NOT NULL DEFAULT 0"),
+    ("costume_low_nameid", "INT UNSIGNED NOT NULL DEFAULT 0"),
+    ("costume_garment_nameid", "INT UNSIGNED NOT NULL DEFAULT 0"),
+    ("shadow_armor_nameid", "INT UNSIGNED NOT NULL DEFAULT 0"),
+    ("shadow_weapon_nameid", "INT UNSIGNED NOT NULL DEFAULT 0"),
+    ("shadow_shield_nameid", "INT UNSIGNED NOT NULL DEFAULT 0"),
+    ("shadow_shoes_nameid", "INT UNSIGNED NOT NULL DEFAULT 0"),
+    ("shadow_acc_l_nameid", "INT UNSIGNED NOT NULL DEFAULT 0"),
+    ("shadow_acc_r_nameid", "INT UNSIGNED NOT NULL DEFAULT 0"),
+    // v5: 4th-job trait stats, grown by the companion growth system.
+    ("pow_", "SMALLINT NOT NULL DEFAULT 0"),
+    ("sta_", "SMALLINT NOT NULL DEFAULT 0"),
+    ("wis_", "SMALLINT NOT NULL DEFAULT 0"),
+    ("spl_", "SMALLINT NOT NULL DEFAULT 0"),
+    ("con_", "SMALLINT NOT NULL DEFAULT 0"),
+    ("crt_", "SMALLINT NOT NULL DEFAULT 0"),
+    // v6: party orders -- stance, duty and the support healer thresholds.
+    ("mode", "TINYINT NOT NULL DEFAULT 1"),
+    ("duty", "TINYINT NOT NULL DEFAULT 0"),
+    ("heal_at", "TINYINT NOT NULL DEFAULT 75"),
+    ("emergency_at", "TINYINT NOT NULL DEFAULT 35"),
+    // v7: the player's own skill selection for this companion. NULL means
+    // "never chosen" so an upgrade keeps every existing companion on the
+    // class preset list, which is the behaviour it had before the selector.
+    ("skill_preset", "TEXT NULL DEFAULT NULL"),
+    // v8: the companion's homunculus. hom_enabled NULL means "never chosen", which
+    // is ON for the alchemist line because the pet is part of the class; 0 is an
+    // explicit no, so an upgrade cannot re-enable a pet a player switched off.
+    ("hom_enabled", "TINYINT NULL DEFAULT NULL"),
+    ("hom_class", "INT NOT NULL DEFAULT 0"),
+    ("hom_level", "SMALLINT NOT NULL DEFAULT 0"),
+    ("hom_exp", "BIGINT NOT NULL DEFAULT 0"),
+];
+
+fn companion_table_sql() -> String {
+    let added: Vec<String> = COMPANION_COLUMNS
+        .iter()
+        .map(|(column, definition)| format!("ADD COLUMN IF NOT EXISTS `{column}` {definition}"))
+        .collect();
+    format!("{COMPANION_SCHEMA}\nALTER TABLE `cp_companion_persistence` {};\n", added.join(", "))
+}
+
+fn ensure_companion_table(dk: &Docker) -> Result<(), String> {
+    dk.private_sql(&companion_table_sql())
+        .map(|_| ())
+        .map_err(|e| format!("preparing the companion table: {e}"))
+}
+
 /// Poll for the thing actually depended on — the database answering queries —
 /// rather than a container healthcheck.
 fn wait_for_db(dk: &Docker) -> Result<(), String> {
@@ -1504,6 +1569,11 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
            PRIMARY KEY (`id`)
          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
     );
+
+    // Companion persistence, after the database is up and before any game server
+    // can read it. An error stops the start: a map server without this table logs a
+    // failed query on every recall and snapshot, and nothing on screen says why.
+    ensure_companion_table(dk)?;
 
     // Every client arrives through the WebSocket proxy, so every connection has
     // the same source address; rAthena's per-IP flood protection trips on sight
@@ -2354,5 +2424,22 @@ mod tests {
     fn ignores_a_failure_that_names_no_holder() {
         assert!(port_holders("nebula up failed: the virtual machine did not come up").is_empty());
         assert!(port_holders("tcp 7462 is already in use by nebulad pid (NEBULA_HOME=/x)").is_empty());
+    }
+
+    #[test]
+    fn a_fresh_companion_table_and_an_upgraded_one_agree() {
+        // Every column the upgrade adds is declared by the CREATE, with the same definition,
+        // so a fresh install and an upgraded one end up with the same table.
+        let squash = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+        let schema = squash(COMPANION_SCHEMA);
+        for (column, definition) in COMPANION_COLUMNS {
+            let declared = format!("`{column}` {}", squash(definition));
+            assert!(schema.contains(&declared), "the CREATE must declare {declared}");
+        }
+        let sql = companion_table_sql();
+        assert!(sql.len() <= crate::docker::SQL_INPUT_LIMIT, "the migration must fit one call");
+        assert_eq!(sql.matches("ALTER TABLE").count(), 1, "one ALTER, not one call per column");
+        assert_eq!(sql.matches("ADD COLUMN IF NOT EXISTS").count(), COMPANION_COLUMNS.len());
+        assert!(!sql.contains("REPLACE") && !sql.contains("DROP"), "only new objects, nothing one-way");
     }
 }

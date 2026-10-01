@@ -18,6 +18,7 @@ struct PopulationEngine;
 const PopulationEngine *population_engine_resolve_equipment(uint16_t job_id);
 /// Swordman/Mage/… first class for `job_id` (same mapping as population spawn fallback).
 uint16_t population_engine_job_base_class(uint16_t job_id);
+uint16_t population_engine_job_id_from_name(const char *name);
 
 struct PopulationEngineConfig {
 	uint32_t num_units = 0;
@@ -51,6 +52,82 @@ void population_engine_stop();
 PopulationEngineStats population_engine_get_stats();
 bool population_engine_is_running();
 bool population_engine_is_population_pc(int32_t id);
+
+/// Goal 1: snapshot a recruited companion so it survives a server restart. Called from the party.cpp recruit success branch (after the shell's party_id is set). `peer` is the inviting/invited peer resolved before party_invite_account was cleared — normally the recruiting player.
+void population_engine_persist_recruited_companion(map_session_data *sd, map_session_data *peer = nullptr);
+/// Goal 1: re-spawn an owner's persisted companions after login restores membership. Returns count recalled.
+int population_engine_recall_companions(map_session_data *owner, uint32_t only_index = 0);
+void population_engine_reassert_companions(int32_t party_id);
+bool population_engine_persist_companion_row(map_session_data *sd, uint32_t owner_account);
+void population_engine_push_companion_list(map_session_data *owner);
+void population_engine_push_companion_list_for_shell(map_session_data *shell);
+/// Goal 3: flag a companion's persistence row active(1)/inactive(0).
+void population_engine_set_companion_active(uint32_t owner_account, uint32_t index_, bool active);
+/// Goal 3: mark a shell's persistence row inactive when it is EXPELLED from a party
+/// (called from the party_member_withdraw map-side handler).
+void population_engine_deactivate_expelled_companion(int32_t party_id, uint32_t account_id, uint32_t char_id);
+/// Goal 3 friend list: toggle the favorite flag on a saved companion by name.
+bool population_engine_companion_set_favorite(uint32_t owner_account, const char* name_, bool favorite);
+/// Goal 3 friend list: find a saved companion by name; reports its index and active flag.
+bool population_engine_companion_find(uint32_t owner_account, const char* name_,
+	uint32_t* out_index, bool* out_active);
+/// Phase 3c: can this JOB's granted skill tree give a companion the homunculus its class entitles
+/// it to? The attach gate asks the live shell (`pc_checkskill`); the panel must answer the same
+/// question for a BENCHED companion, so it asks the tree (`Inherit` is flattened at load).
+bool population_engine_class_can_have_homunculus(uint16_t class_);
+/// Phase 3c: the panel's per-companion pet switch. 1 = on, 0 = off, -1 = flip.
+/// @return 1 when the state changed, 0 when it already was so, -1 when rejected (message in out_msg).
+int population_engine_companion_set_homunculus(uint32_t owner_account, const char* name_, int want,
+	char* out_msg, size_t out_msg_len);
+/// Goal 2: re-snapshot a summoned companion's current equipment + stats into its
+/// persistence row (debounced by the caller). Called on shell equipment changes.
+void population_engine_persist_companion_gear(map_session_data *sd);
+/// Goal 2 trade: true when target is a summoned companion owned by player,
+/// same map, within trade distance — eligible for auto-accepted trade.
+bool population_engine_companion_can_trade_with(const map_session_data *player, const map_session_data *target);
+/// Goal 2 trade: after items land in the companion's inventory, equip equipment
+/// and return non-equipment items to the owner (companions are not mules).
+void population_engine_companion_equip_traded(map_session_data *owner, map_session_data *shell);
+/// Goal 2: unequip every worn item on the shell and hand each piece to the owner (or drop at feet when overweight). Returns count moved, -1 on bad args.
+int population_engine_companion_return_gear(map_session_data *owner, map_session_data *shell, uint32_t slot_mask = 0);
+int population_engine_companion_set_heal_thresholds(uint32_t owner_account, int16_t heal_at, int16_t emergency_at);
+/// Skill selector: replace one saved companion's skill choice.
+///
+/// @param owner_account  owner whose saved list to search
+/// @param name_          the companion's name
+/// @param spec           comma/space separated skill ids or names, or the
+///                       literal "auto" to go back to the class preset list
+/// @param out_msg        receives a human-readable result/why-not
+/// @param out_msg_len    size of out_msg
+/// @return number of skills selected, or -1 when the arguments were rejected.
+///         "auto" reports 0 with a message, not an error.
+int population_engine_companion_set_skill_override(uint32_t owner_account, const char* name_,
+	const char* spec, char* out_msg, size_t out_msg_len);
+/// Skill selector: list the skills this companion's CURRENT class may use, and
+/// which of them are currently selected. Answered through the chat channel as
+/// @CPSK|... lines so the panel never parses prose (see the @CP rule).
+void population_engine_companion_skill_list(uint32_t owner_account, const char* name_, int fd);
+/// Skill selector UI: flip one skill in a companion's selection.
+/// `verb` is "toggle" (flip), "only" (select just this) or "all" (select every
+/// legal skill); `skill_token` is an id or name, unused for "all".
+/// @return the selected count, or -1 when rejected (message in out_msg).
+int population_engine_companion_toggle_skill(uint32_t owner_account, const char* name_,
+	const char* verb, const char* skill_token, char* out_msg, size_t out_msg_len);
+/// Skill selector: split a stored/typed preset string into skill ids on `out`.
+/// Accepts numeric ids and server skill names, comma and/or space separated.
+/// Returns the number parsed (0 for an empty string). Whether that means "auto"
+/// is the CALLER's call and depends on the column being NULL, not on the count:
+/// NULL = never chosen (auto), empty string = a chosen empty selection.
+size_t population_engine_companion_parse_skill_override(const char* stored,
+	std::vector<uint16_t>& out);
+uint32_t population_engine_companion_draft(map_session_data *owner, uint16_t job_id, int quality, const char *name_hint);
+void population_engine_companion_list_raw(uint32_t owner_account, int fd);
+/// Temporary diagnostic: dump every live population shell's identity and state.
+void population_engine_shell_dump(int fd);
+/// Goal 3 friend list: print the owner's saved companions to their chat (fd = client fd).
+void population_engine_companion_list(uint32_t owner_account, int fd);
+/// Goal 3 friend list: permanently delete a saved companion's row by name (irreversible).
+bool population_engine_companion_delete(uint32_t owner_account, const char* name_);
 /// True while this real player's party has fewer than four recruited companions.
 bool population_engine_can_recruit_companion(const map_session_data *owner);
 /// Return the real player who should receive a recruited companion's loot.
@@ -122,3 +199,4 @@ int population_engine_arena_relation(const block_list *s_bl, const block_list *t
 bool population_engine_arena_is_ally(const map_session_data *a, const map_session_data *b);
 
 #endif // POPULATION_ENGINE_HPP
+// images rebuild trigger

@@ -1,6 +1,6 @@
 # AI companions
 
-Population Engine characters can join a real party as temporary AI companions.
+Population Engine characters can join a real party as AI companions.
 They follow their recruiter between maps, fight and support the party, and obey
 combat orders from the party leader. Four to eleven companions can be
 recruited into one party; **Settings → Population → Party invitations** in
@@ -26,8 +26,10 @@ they fall outside the visible area or when their owner changes maps. When the
 party stops, companions use separate formation cells around their owner rather
 than standing on top of one another.
 
-Removing a companion from the party releases it. Companions are temporary and
-are not restored after the local server or app is shut down.
+Removing a companion from the party releases it, but does not delete it: it goes back to your
+saved list. A companion's name, job, level, equipment, duty and skill selection are stored, so they
+survive a full server and app shutdown. Party membership does not survive - after a restart, open
+the companion window's **Party** tab and press **Summon** to bring it back out.
 
 ## Loot
 
@@ -104,14 +106,35 @@ than an offensive action.
 If the companion's owner leaves the map while the companion is dead, the corpse
 is released and removed from the party. It cannot be recovered afterwards.
 
+## The Companions window
+
+Everything above can be done without typing: a **Companions** button sits in the
+Basic Information window's shortcut strip, beside Attendance Check, and opens a
+window with four tabs.
+
+| Tab | What it does |
+| --- | --- |
+| Party | The saved companion list, with each one's job, level and state. Set duty, summon, bench, favorite, or refresh. |
+| Summon | Draft a brand-new companion of any job, grouped 1st / 2nd / Trans / 3rd / 4th. |
+| Battle | Stance (Free / Standard / Hold), Taunt and Recall, and the healer thresholds. |
+| Gear | Take equipment back, per slot (`weapon`, `shield`, `armor`, …) or all of it. |
+
+The window is a real client component, not an overlay: it is draggable, it
+remembers its position, and clicks aimed at it do not reach the game. Each
+control sends the same packet that typing the command sends, so the server
+cannot tell a button press from a keystroke — the buttons and the commands below
+are two ways to say the same thing.
+
 ## Current scope
 
-- Companions are recruited from the existing Population Engine population;
-  there is no guild board or character-creation menu yet.
+- Companions can be recruited from the existing Population Engine population, or
+  **drafted directly** (`@companion draft <job>`, or the Summon tab) without
+  hunting the world for a matching character.
 - Classes, equipment, skills, looks, names, and ambient chat come from the
   editable YAML files in `third-party/population-engine/files/db/`.
-- Role assignment and combat mode are runtime state and are not persisted
-  across a server restart.
+- Combat mode, duty and the healer thresholds are stored per companion and
+  restored on login; a companion's level, stats, job and equipment are saved as
+  they change, and advancing jobs happens on its own at the usual level gates.
 - Standard rAthena party rules still apply, including the overall party-member
   limit and EXP-sharing requirements.
 

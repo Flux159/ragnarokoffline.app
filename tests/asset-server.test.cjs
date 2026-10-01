@@ -1,3 +1,5 @@
+// windows-latest checks text files out with CRLF; normalise on read so assertions about file
+// content do not depend on the checkout's newline convention.
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -67,7 +69,7 @@ for (const label of ['HTTP 200', 'non-HTTP listener']) {
 		fs.writeFileSync(path.join(dir, 'assets.log'), 'previous evidence');
 		await assert.rejects(server.start(options), /does not own/);
 		assert.equal(foreign.listening, true);
-		assert.equal(fs.readFileSync(path.join(dir, 'assets.log'), 'utf8'), 'previous evidence');
+		assert.equal(fs.readFileSync(path.join(dir, 'assets.log'), 'utf8').replace(/\r\n/g, '\n'), 'previous evidence');
 		await server.stop();
 		assert.equal(foreign.listening, true);
 	});
@@ -119,7 +121,7 @@ test('configuration changes replace the process and rotate diagnostic logs', asy
 		assert.equal(await server.ready(), true);
 		previous = next;
 	}
-	assert.match(fs.readFileSync(path.join(dir, 'assets.log'), 'utf8'), /configuration=/);
+	assert.match(fs.readFileSync(path.join(dir, 'assets.log'), 'utf8').replace(/\r\n/g, '\n'), /configuration=/);
 	assert.equal(fs.existsSync(path.join(dir, 'assets.log.1')), true);
 });
 

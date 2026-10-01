@@ -1,0 +1,69 @@
+<!-- Companion window.
+     Chrome follows the Achievement window: the game's own titlebar bitmaps and
+     sidebar tab bitmaps, loaded from the GRF by the client.
+
+     The outer div carries id="CompanionPanel" because the component's CSS is
+     injected into this component's SHADOW ROOT while the id lives on the host
+     element, which the shadow cannot see. Every "#CompanionPanel ..." rule needs
+     this wrapper to match anything - without it the window renders unstyled, with
+     no width, which is what made it look cropped. CheckAttendance.html and
+     Bank.html wrap the same way.
+
+     Every bitmap path here was verified present in the player's client before use
+     (HTTP 200 from the running asset server). ui-button/ui-image with a missing
+     source renders nothing, so do not add a path without checking it the same way. -->
+<div id="CompanionPanel">
+	<div class="titlebar" data-draggable="true">
+		<div class="corner left">
+			<ui-image src="basic_interface/titlebar_left.bmp"></ui-image>
+		</div>
+		<div class="center">
+			<ui-image src="basic_interface/titlebar_mid.bmp"></ui-image>
+		</div>
+		<div class="corner right">
+			<ui-image src="basic_interface/titlebar_right.bmp"></ui-image>
+		</div>
+		<ui-text class="title">Companions</ui-text>
+		<ui-button
+			class="btn-right close"
+			bg="basic_interface/sys_close_off.bmp"
+			hover="basic_interface/sys_close_on.bmp"
+		></ui-button>
+	</div>
+
+	<div class="panel">
+		<div class="sidebar">
+			<div class="tab on" data-tab="party"
+				data-background="achievement_re/tab_out.bmp"
+				data-hover="achievement_re/tab_over.bmp"
+				data-active="achievement_re/tab_press.bmp">Party</div>
+			<div class="tab" data-tab="summon"
+				data-background="achievement_re/tab_out.bmp"
+				data-hover="achievement_re/tab_over.bmp"
+				data-active="achievement_re/tab_press.bmp">Summon</div>
+			<div class="tab" data-tab="battle"
+				data-background="achievement_re/tab_out.bmp"
+				data-hover="achievement_re/tab_over.bmp"
+				data-active="achievement_re/tab_press.bmp">Battle</div>
+			<div class="tab" data-tab="skills"
+				data-background="achievement_re/tab_out.bmp"
+				data-hover="achievement_re/tab_over.bmp"
+				data-active="achievement_re/tab_press.bmp">Skills</div>
+			<div class="tab" data-tab="gear"
+				data-background="achievement_re/tab_out.bmp"
+				data-hover="achievement_re/tab_over.bmp"
+				data-active="achievement_re/tab_press.bmp">Gear</div>
+		</div>
+
+		<div class="panes">
+			<div class="page" data-page="party"></div>
+			<div class="page" data-page="summon" style="display: none"></div>
+			<div class="page" data-page="battle" style="display: none"></div>
+			<div class="page" data-page="skills" style="display: none"></div>
+			<div class="page" data-page="gear" style="display: none"></div>
+		</div>
+
+		<!-- Grip for resizing. The pointer handling lives in CompanionPanel.js. -->
+		<div class="resize-grip" title="Drag to resize"></div>
+	</div>
+</div>

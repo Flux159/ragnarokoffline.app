@@ -1,3 +1,5 @@
+// windows-latest checks text files out with CRLF; normalise on read so assertions about file
+// content do not depend on the checkout's newline convention.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -40,11 +42,11 @@ test('an AppImage run writes a launcher entry pointing back at itself', t => {
   const result = installDesktopEntry({ env: s.env, home: s.home, platform: 'linux' });
   assert.equal(result.installed, true);
   assert.equal(result.updated, false);
-  assert.equal(fs.readFileSync(s.file, 'utf8'), entryText(s.appImage));
+  assert.equal(fs.readFileSync(s.file, 'utf8').replace(/\r\n/g, '\n'), entryText(s.appImage));
   // Both icon sizes, at the path a hicolor theme looks in.
   for (const size of ['512x512', '1024x1024']) {
     const icon = path.join(s.env.XDG_DATA_HOME, 'icons/hicolor', size, 'apps/ragnarokoffline.png');
-    assert.equal(fs.readFileSync(icon, 'utf8'), `icon ${size}`);
+    assert.equal(fs.readFileSync(icon, 'utf8').replace(/\r\n/g, '\n'), `icon ${size}`);
   }
 });
 
@@ -63,7 +65,7 @@ test('a second launch changes nothing, and a moved AppImage is followed', t => {
   const after = installDesktopEntry({ env: { ...s.env, APPIMAGE: moved }, home: s.home, platform: 'linux' });
   assert.equal(after.installed, true);
   assert.equal(after.updated, true);
-  assert.equal(fs.readFileSync(s.file, 'utf8'), entryText(moved));
+  assert.equal(fs.readFileSync(s.file, 'utf8').replace(/\r\n/g, '\n'), entryText(moved));
 });
 
 test('nothing is written when it is not our AppImage to write about', t => {
@@ -87,7 +89,7 @@ test("an entry this app did not write is left alone", t => {
   const result = installDesktopEntry({ env: s.env, home: s.home, platform: 'linux' });
   assert.equal(result.installed, false);
   assert.equal(result.reason, 'an entry already exists');
-  assert.match(fs.readFileSync(s.file, 'utf8'), /^Exec=\/opt\/ragnarok\/ragnarokoffline$/m);
+  assert.match(fs.readFileSync(s.file, 'utf8').replace(/\r\n/g, '\n'), /^Exec=\/opt\/ragnarok\/ragnarokoffline$/m);
 });
 
 test('an unwritable home is reported, not thrown', {

@@ -1,0 +1,178 @@
+From 0000000000000000000000000000000000000002
+Subject: [PATCH] Goal 1: permanent companions - persist on recruit + recall on login; Goal 3: expelled companions deactivated
+
+Wires population_engine_persist_recruited_companion() into the party_member_added success branch, AFTER sd->status.party_id is set and passing sd2 (the recruiter session captured from party_invite_account before it was cleared). The owner is resolved in-engine from that peer first, then via map_id2sd over real party members - never by scanning g_population_engine_pcs, which only ever holds shells. Also calls population_engine_recall_companions(sd) in pc_reg_received right after party membership is restored on login, re-spawning all persisted companions beside their owner. Goal 3: an EXPELLED population shell gets its persistence row marked inactive so it is not recalled on the next login. Goal 2: trade with your own summoned companion is auto-accepted (trade_traderequest), the shell auto-locks when the owner presses OK (trade_tradeok also sends the owner the partner-locked packet so the Trade button enables), the shell auto-finalizes when the owner commits (trade_tradecommit bumps deal_locked to 2), and traded equipment is equipped before the partner fields are cleared.
+
+diff --git a/src/map/party.cpp b/src/map/party.cpp
+--- a/src/map/party.cpp
++++ b/src/map/party.cpp
+@@ -377,6 +377,13 @@
+ 			sd->status.party_id = 0;// was not in the party
+ 	}
+ 
++	// RAGNAROKMAC (Goal 1): the rebuild above replaced party.member[] with the
++	// char server's copy and cleared every data[] pointer. The char server does
++	// not know about companions - a population shell has no row in the `char`
++	// table - so without this the companions vanish from the party window on
++	// every relogin or party refresh, and lose their live session pointer.
++	population_engine_reassert_companions(sp->party_id);
++
+ 	return 0;
+ }
+ 
+@@ -711,6 +718,9 @@
+ 
+ 	sd->status.party_id = party_id;
+ 
++	// RAGNAROKMAC (Goal 1): persist the freshly recruited companion shell. sd2 is the recruiter (captured from party_invite_account before it was cleared); runs after party_id is set so in-engine owner lookup also works.
++	if (population_engine_is_population_pc(sd->id))
++		population_engine_persist_recruited_companion(sd, sd2);
+ 	clif_party_member_info( *p, *sd );
+ 	clif_party_option(p,sd,0x100);
+ 	clif_party_info( *p, sd );
+@@ -842,6 +852,12 @@
+ 	map_session_data* sd = map_charid2sd(char_id);
+ 	struct party_data* p = party_search(party_id);
+ 
++	// RAGNAROKMAC (Goal 3): an EXPELLED population shell leaves for good — mark
++	// its persistence row inactive so it is not recalled on the next login. The
++	// snapshot is retained for re-invite via the companion friend list.
++	if (type == PARTY_MEMBER_WITHDRAW_EXPEL && IS_POPULATION_ENGINE_ACCOUNT_ID(account_id))
++		population_engine_deactivate_expelled_companion(party_id, account_id, char_id);
++
+ 	if( p ) {
+ 		map_session_data* party_sd = party_getavailablesd( p );
+ 
+@@ -909,6 +925,14 @@
+ 		}
+ 	}
+ 
++	// RAGNAROKMAC (Goal 3): a DISBANDED party releases its companions too — mark
++	// each population member's persistence row inactive so it is not recalled on
++	// the owner's next login. The snapshot is retained for re-invite.
++	for( i = 0; i < MAX_PARTY; i++ ) {
++		if( p->party.member[i].account_id != 0 && IS_POPULATION_ENGINE_ACCOUNT_ID(p->party.member[i].account_id) )
++			population_engine_deactivate_expelled_companion(party_id, p->party.member[i].account_id, p->party.member[i].char_id);
++	}
++
+ 	idb_remove(party_db,party_id);
+ 
+ 	return 1;
+@@ -1145,6 +1169,10 @@
+ 	intif_party_message(sd->status.party_id,sd->status.account_id,mes,len);
+ 	party_recv_message(sd->status.party_id,sd->status.account_id,mes,len);
+ 
++	// RAGNAROKMAC (companion orders): party chat is the command channel for AI
++	// companions ("attack", "defensive", "<name> tank", "taunt", "recall").
++	population_engine_on_party_chat(sd, mes);
++
+ 	// Chat logging type 'P' / Party Chat
+ 	log_chat(LOG_CHAT_PARTY, sd->status.party_id, sd->status.char_id, sd->status.account_id, mapindex_id2name(sd->mapindex), sd->x, sd->y, nullptr, mes);
+ 
+diff --git a/src/map/pc.cpp b/src/map/pc.cpp
+--- a/src/map/pc.cpp
++++ b/src/map/pc.cpp
+@@ -2470,6 +2470,9 @@
+ 
+ 	if (sd->status.party_id > 0)
+ 		party_member_joined( *sd );
++
++	// RAGNAROKMAC (Goal 1): re-spawn this owner's persisted companions now that login has restored the char.
++	population_engine_recall_companions(sd);
+ 	if (sd->status.guild_id > 0)
+ 		guild_member_joined(sd);
+ 	if (sd->status.clan_id > 0)
+diff --git a/src/map/trade.cpp b/src/map/trade.cpp
+diff --git a/trade.cpp.bak-pristine b/ro/rathena/src/map/trade.cpp
+index aa89731..acd8da8 100644
+--- a/src/map/trade.cpp
++++ b/src/map/trade.cpp
+@@ -19,6 +19,7 @@
+ #include "path.hpp"
+ #include "pc.hpp"
+ #include "pc_groups.hpp"
++#include "population_engine.hpp"
+ #include "storage.hpp"
+ 
+ #define TRADE_DISTANCE 2 ///Max distance from traders to enable a trade to take place.
+@@ -32,6 +33,25 @@ void trade_traderequest(map_session_data *sd, map_session_data *target_sd)
+ {
+ 	nullpo_retv(sd);
+ 
++	// RAGNAROKMAC (Goal 2): trading with your OWN summoned companion is
++	// auto-accepted server-side - shells have no client socket to receive the
++	// request popup. Set both trade_partner fields and both trading flags and
++	// clear both deal windows, exactly as trade_tradeack does on an accept, so
++	// the trade starts immediately. The requester still gets the normal accept
++	// packet so their client opens the trade window.
++	if (population_engine_companion_can_trade_with(sd, target_sd)) {
++		target_sd->trade_partner.id = sd->status.account_id;
++		target_sd->trade_partner.lv = sd->status.base_level;
++		sd->trade_partner.id = target_sd->status.account_id;
++		sd->trade_partner.lv = target_sd->status.base_level;
++		sd->state.trading = 1;
++		target_sd->state.trading = 1;
++		memset(&sd->deal, 0, sizeof(sd->deal));
++		memset(&target_sd->deal, 0, sizeof(target_sd->deal));
++		clif_traderesponse(*sd, TRADE_ACK_ACCEPT);
++		return;
++	}
++
+ 	if (map_getmapflag(sd->m, MF_NOTRADE)) {
+ 		clif_displaymessage (sd->fd, msg_txt(sd,272));
+ 		return; //Can't trade in notrade mapflag maps.
+@@ -511,6 +531,17 @@ void trade_tradeok(map_session_data *sd)
+ 	clif_tradeitemok(*sd, -2, EXITEM_ADD_SUCCEED); // We pass -2 which will becomes 0 in clif_tradeitemok (Official behavior)
+ 	clif_tradedeal_lock( *sd, false );
+ 	clif_tradedeal_lock( *target_sd, true );
++
++	// RAGNAROKMAC (Goal 2): a summoned companion cannot press OK - no client.
++	// When the owner locks, lock the companion's side as well, and send the
++	// OWNER the partner-locked packet (the one stock code sends only to the
++	// partner's client - which does not exist for a shell). Without it the
++	// owner's Trade button never enables and the trade sticks at lock 1.
++	if (population_engine_is_population_pc(target_sd->id) &&
++	    target_sd->pop.companion_owner_account == sd->status.account_id) {
++		target_sd->state.deal_locked = 1;
++		clif_tradedeal_lock( *sd, true );
++	}
+ }
+ 
+ /**
+@@ -600,6 +631,15 @@ void trade_tradecommit(map_session_data *sd)
+ 
+ 	sd->state.deal_locked = 2;
+ 
++	// RAGNAROKMAC (Goal 2): the companion cannot press Trade either - no client.
++	// When the owner commits, finalize the companion's side automatically so
++	// the exchange completes in this same call instead of waiting forever at
++	// deal_locked 1.
++	if (tsd->state.deal_locked == 1 && population_engine_is_population_pc(tsd->id) &&
++	    tsd->pop.companion_owner_account == sd->status.account_id) {
++		tsd->state.deal_locked = 2;
++	}
++
+ 	if (tsd->state.deal_locked < 2)
+ 		return; //Not yet time for trading.
+ 
+@@ -665,6 +705,20 @@ void trade_tradecommit(map_session_data *sd)
+ 		tsd->deal.zeny = 0;
+ 	}
+ 
++	// RAGNAROKMAC (Goal 2): if one side of this trade was a summoned
++	// companion, equip any traded equipment immediately and hand non-equipment
++	// back to the owner. Runs BEFORE the partner fields are cleared below so
++	// map_id2sd still resolves the shell. The gear-hash poll then persists the
++	// change to the DB.
++	{
++		map_session_data *shell = map_id2sd(sd->trade_partner.id);
++		if (shell && population_engine_is_population_pc(shell->id))
++			population_engine_companion_equip_traded(sd, shell);
++		shell = map_id2sd(tsd->trade_partner.id);
++		if (shell && population_engine_is_population_pc(shell->id))
++			population_engine_companion_equip_traded(tsd, shell);
++	}
++
+ 	sd->state.deal_locked = 0;
+ 	sd->trade_partner = {0,0};
+ 	sd->state.trading = 0;

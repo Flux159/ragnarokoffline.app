@@ -1,0 +1,69 @@
+From 0000000000000000000000000000000000000006
+Subject: [PATCH] Phase 3c: @companion homunculus <name> [on|off] - the per-companion pet switch
+
+The engine attaches an alchemist-line companion's homunculus by itself at spawn, so a player
+never summons it, which reads in game as "there is no way to get one". This adds the switch the
+companion row shows. It is a switch and not a summon, in both directions:
+
+  OFF  hom_vaporize(sd, HOM_ST_ACTIVE) is stock's own "put it away" (pc.cpp calls it on logout):
+       the pet stays attached but inactive, so the server-side driver stops and the client stops
+       drawing it.
+  ON   clears that flag in place. This is NOT hom_call(): its first line is
+       `if (!sd->status.hom_id) return hom_create_request(...)`, and a shell's hom_id is 0 by
+       design, so it would take the CHAR-SERVER path this whole feature exists to avoid.
+       With no pet at all (benched, or killed), the attach runs and restores class, level and exp
+       from cp_companion_persistence.
+
+The switch is per companion, so it also works for a BENCHED companion - the stored column is
+honoured when it is next summoned. `@companion pet` is an alias, the trailing on/off is optional
+(a bare name flips), and the state is the LAST token so a companion name may contain spaces.
+
+--- a/src/custom/atcommand.inc
++++ b/src/custom/atcommand.inc
+@@ -277,7 +277,7 @@
+ 	nullpo_retr(-1, sd);
+ 	char cmd[32], param[NAME_LENGTH];
+ 	if (!message || !*message || sscanf(message, "%31s %23[^\n]", cmd, param) < 1) {
+-		clif_displaymessage(fd, "Usage: @companion list | favorite <name> | unfavorite <name> | summon <name> | remove <name> | gear <name> [slots]");
++		clif_displaymessage(fd, "Usage: @companion list | favorite <name> | unfavorite <name> | summon <name> | remove <name> | gear <name> [slots] | homunculus <name> [on|off]");
+ 		return -1;
+ 	}
+ 	if (strcmpi(cmd, "list") == 0) {
+@@ -627,6 +627,36 @@
+ 		clif_displaymessage(fd, msg);
+ 		return 0;
+ 	}
+-	clif_displaymessage(fd, "Usage: @companion list | summon <name> | draft <job> [name] | jobs | skills <name> [list|none|auto] | favorite <name> | remove <name> | dismiss <name> | gear <name> [slots] | heal <a%> <b%>");
++	// RAGNAROKMAC (homunculus, phase 3c): the companion row's pet switch.
++	// The engine attaches this pet by itself at spawn, so this is not a summon - it is
++	// the switch the row shows. The state is the TRAILING token so a name may contain
++	// spaces, and a bare name flips: a player typing this should not have to guess.
++	if (strcmpi(cmd, "homunculus") == 0 || strcmpi(cmd, "pet") == 0) {
++		int want = -1;
++		{
++			char *last = strrchr(param, ' ');
++			if (last != nullptr && last[1] != '\0') {
++				const char *tok = last + 1;
++				if (strcmpi(tok, "on") == 0 || strcmpi(tok, "summon") == 0) {
++					want = 1;
++					*last = '\0';
++				} else if (strcmpi(tok, "off") == 0 || strcmpi(tok, "away") == 0) {
++					want = 0;
++					*last = '\0';
++				}
++			}
++		}
++		if (!param[0]) {
++			clif_displaymessage(fd, "Usage: @companion homunculus <name> [on|off]");
++			return -1;
++		}
++		char reply[160];
++		reply[0] = '\0';
++		const int changed = population_engine_companion_set_homunculus(
++			sd->status.account_id, param, want, reply, sizeof(reply));
++		clif_displaymessage(fd, reply[0] ? reply : "Could not set that companion's homunculus.");
++		return 0;
++	}
++	clif_displaymessage(fd, "Usage: @companion list | summon <name> | draft <job> [name] | jobs | skills <name> [list|none|auto] | favorite <name> | remove <name> | dismiss <name> | gear <name> [slots] | heal <a%> <b%> | homunculus <name> [on|off]");
+ 	return -1;
+ }

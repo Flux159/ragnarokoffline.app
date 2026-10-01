@@ -21,7 +21,7 @@ export PYTHONUTF8=1
 RB="${RAGNAROK_ROBROWSER_DIR:-$ROOT/vendor/roBrowserLegacy}"
 
 python3 - "$ROOT" "$RB" <<'PY'
-import shutil, sys
+import re, shutil, sys
 from pathlib import Path
 
 root, rb = Path(sys.argv[1]), Path(sys.argv[2])
@@ -72,6 +72,129 @@ comp.mkdir(parents=True, exist_ok=True)
 for name in ("Stylist.js", "Stylist.html", "Stylist.css"):
     shutil.copyfile(root / "patches" / name, comp / name)
 print("installed the Stylist component")
+print("installed the Stylist component")
+
+# 0006 - The companion window (CompanionPanel).
+#
+# Same shape as the Stylist above: a real GUIComponent, not a mod, because the
+# plugin API can style components but cannot register one. What makes this one
+# different is where it is opened from - a button in the Basic Information
+# window's shortcut strip, beside Attendance Check, so companion management is
+# a click instead of an @command.
+comp = rb / "src/UI/Components/CompanionPanel"
+comp.mkdir(parents=True, exist_ok=True)
+for name in ("CompanionPanel.js", "CompanionPanel.html", "CompanionPanel.css"):
+    shutil.copyfile(root / "patches" / name, comp / name)
+print("installed the CompanionPanel component")
+
+# A shortcut button in the Basic Information strip, beside Attendance Check.
+#
+# PACKETVER 20221005 selects BasicInfoV5 (MapEngine calls selectUIVersion, which
+# is date-based); V4 is patched too so the button is not silently missing if that
+# ever moves. The two versions disagree on markup (V4 uses <button>, V5 uses
+# <div>) and on indentation, so the element is inserted by finding the
+# attendance button and copying whatever tag and indent it used.
+def add_companion_button(path):
+    text = path.read_text()
+    if 'id="companion"' in text:
+        print(f"{path.name} already has the companion button")
+        return
+    m = re.search(r'([ \t]*)<(div|button)\b[^>]*?id="attendance"', text)
+    if not m:
+        sys.exit(f"{path}: no attendance button to sit beside")
+    indent, tag = m.group(1), m.group(2)
+    element = (
+        f'{indent}<{tag}\n'
+        f'{indent}\tid="companion"\n'
+        f'{indent}\tclass="event_add_cursor"\n'
+        f'{indent}\tdata-background="menu_icon/bt_party.bmp"\n'
+        f'{indent}\tdata-down="menu_icon/bt_party_press.bmp"\n'
+        f'{indent}>\n'
+        f'{indent}\t<span class="name">Companions</span>\n'
+        f'{indent}</{tag}>\n'
+    )
+    text = text[:m.start()] + element + text[m.start():]
+    path.write_text(text)
+    print(f"added the Companions button to {path.name}")
+
+for version in ("BasicInfoV4", "BasicInfoV5"):
+    candidate = rb / f"src/UI/Components/BasicInfo/{version}/{version}.html"
+    if candidate.exists():
+        add_companion_button(candidate)
+
+# The dispatcher: BasicInfoCommon's switch is what turns a button press into a
+# window, which is how the attendance button works too.
+p = rb / "src/UI/Components/BasicInfo/BasicInfoCommon.js"
+s = p.read_text()
+if "CompanionPanel" in s:
+    print("BasicInfoCommon.js already dispatches the companion button")
+else:
+    if "from 'UI/Components/CheckAttendance/CheckAttendance.js';" not in s:
+        sys.exit("BasicInfoCommon.js: no CheckAttendance import to anchor on")
+    s = s.replace(
+        "from 'UI/Components/CheckAttendance/CheckAttendance.js';",
+        "from 'UI/Components/CheckAttendance/CheckAttendance.js';\n"
+        "import CompanionPanel from 'UI/Components/CompanionPanel/CompanionPanel.js';",
+        1,
+    )
+    if "case 'attendance':" not in s:
+        sys.exit("BasicInfoCommon.js: no attendance case to anchor on")
+    s = s.replace(
+        "case 'attendance':",
+        "case 'companion':\n"
+        "\t\t\t\tCompanionPanel.toggle();\n"
+        "\t\t\t\tbreak;\n"
+        "\t\t\tcase 'attendance':",
+        1,
+    )
+    p.write_text(s)
+    print("wired the companion button into BasicInfoCommon.js")
+
+# The component must also be prepared at startup, or its _host is still null when
+# the first button press calls toggle() - and the failure surfaces as
+# "Cannot read properties of null (reading 'style')" inside GUIComponent.toggle,
+# which says nothing about the missing call. MapEngine has an explicit prepare()
+# list; ours goes beside CheckAttendance, the other button-strip window.
+p = rb / "src/Engine/MapEngine.js"
+s = p.read_text()
+
+# The import is not optional: a bundler does not resolve bare identifiers, so a
+# call to an unimported module compiles cleanly and throws at runtime - and since
+# it throws inside MapEngine.init, everything later in that function is skipped
+# (ChatBox.onRequestTalk is assigned further down, so commands stop working; the
+# UI engines below never initialise, so their packets crash on a null host).
+NEEDS_IMPORT = "import CompanionPanel from 'UI/Components/CompanionPanel/CompanionPanel.js';"
+if NEEDS_IMPORT in s:
+    print("MapEngine.js already imports CompanionPanel")
+else:
+    anchor_import = "import Achievement from 'UI/Components/Achievement/Achievement.js';"
+    if anchor_import not in s:
+        sys.exit("MapEngine.js: no Achievement import to anchor the CompanionPanel import on")
+    s = s.replace(anchor_import, anchor_import + "\n" + NEEDS_IMPORT, 1)
+    p.write_text(s)
+    print("imported CompanionPanel into MapEngine.js")
+
+if "CompanionPanel.prepare()" in s:
+    print("MapEngine.js already prepares CompanionPanel")
+else:
+    anchor_prepare = """\t\t\tif (Configs.get('enableCheckAttendance') && PACKETVER.value >= 20180307) {
+\t\t\t\tCheckAttendance.prepare();
+\t\t\t}"""
+    if anchor_prepare not in s:
+        sys.exit("MapEngine.js: no CheckAttendance prepare block to anchor on")
+    s = s.replace(
+        anchor_prepare,
+        anchor_prepare + "\n\n\t\t\t// The companion window opens from a button in the Basic Information strip.\n"
+        "\t\t\tCompanionPanel.prepare();",
+        1,
+    )
+    p.write_text(s)
+    print("wired CompanionPanel.prepare() into MapEngine.js")
+
+# Fail loudly if the two ever drift apart again: a prepare() call whose module
+# was never imported is a runtime crash that no build will report.
+if "CompanionPanel.prepare()" in s and NEEDS_IMPORT not in s:
+    sys.exit("MapEngine.js: CompanionPanel.prepare() is called but CompanionPanel is not imported")
 
 p = rb / "src/Network/PacketStructure.js"
 s = p.read_text()
