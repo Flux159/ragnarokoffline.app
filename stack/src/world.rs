@@ -354,7 +354,7 @@ fn manifest_json(cfg: &Config, items: &[Item], dumps: &[(&str, PathBuf)], create
     // Installed mods, with a hash over their files so a later reader can tell
     // whether a mod changed between two archives; bundled ones by name, since
     // the app carries them.
-    let listed: BTreeMap<String, [String; 12]> = crate::mods::list(cfg).into_iter().map(|r| (r[1].clone(), r)).collect();
+    let listed: BTreeMap<String, [String; 13]> = crate::mods::list(cfg).into_iter().map(|r| (r[1].clone(), r)).collect();
     let mut installed: BTreeMap<&str, (Sha256, u64, u64)> = BTreeMap::new();
     for item in items {
         let Some(rest) = item.name.strip_prefix("mods/") else { continue };
@@ -721,6 +721,7 @@ mod tests {
             image: String::new(),
             db_image: String::new(),
             app_version: Some("1.3.5".into()),
+            ports: crate::ports::Ports::DEFAULT,
         }
     }
 

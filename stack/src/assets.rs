@@ -1783,7 +1783,7 @@ mod tests {
         fs::write(cfg.root.join("config/Config.local.js"), &template).unwrap();
         let web = cfg.state.join("web");
         fs::create_dir_all(&web).unwrap();
-        write_client_config(&cfg, &web, &[], &[], &[], GameText::English, crate::packetver::default()).unwrap();
+        write_client_config(&cfg, &web, &[], &[], &[], &ViewTables::default(), GameText::English, crate::packetver::default()).unwrap();
         let moved = fs::read_to_string(web.join("Config.local.js")).unwrap();
         assert!(moved.contains("\t\t\tport: 16900,"), "{moved}");
         assert!(!moved.contains("port: 6900,"), "{moved}");
@@ -1792,7 +1792,7 @@ mod tests {
         assert!(moved.contains("location.host + '/ws/'"), "{moved}");
 
         cfg.ports = crate::ports::Ports::DEFAULT;
-        write_client_config(&cfg, &web, &[], &[], &[], GameText::English, crate::packetver::default()).unwrap();
+        write_client_config(&cfg, &web, &[], &[], &[], &ViewTables::default(), GameText::English, crate::packetver::default()).unwrap();
         let default = fs::read_to_string(web.join("Config.local.js")).unwrap();
         assert_eq!(default, set_packetver(&template, crate::packetver::default()));
         fs::remove_dir_all(cfg.state.parent().unwrap()).unwrap();

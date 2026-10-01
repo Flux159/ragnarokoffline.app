@@ -3359,6 +3359,7 @@ mod tests {
             image: String::new(),
             db_image: String::new(),
             app_version: None,
+            ports: crate::ports::Ports::DEFAULT,
         }
     }
 
