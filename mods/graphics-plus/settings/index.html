@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Graphics+</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f6f8; --card: #fff; --line: #0001; --text: #1d1d22; --dim: #77777f;
+    --accent: #4a8fe7; --accent-soft: #4a8fe71f; --warn: #b7791f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1b1c20; --card: #25262b; --line: #fff1; --text: #ececf0; --dim: #9a9aa3; --accent-soft: #4a8fe72e; }
+  }
+  * { box-sizing: border-box; }
+  body { font: 13px/1.45 system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+  header { padding: 18px 20px 6px; }
+  h1 { font-size: 19px; margin: 0; }
+  .about { color: var(--dim); margin: 2px 0 0; }
+  .hint { color: var(--dim); margin: 6px 0 0; }
+  kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
+  main { padding: 6px 20px 90px; }
+
+  .presets { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 4px; }
+  .presets button { flex: 1; min-width: 90px; padding: 8px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; text-align: left; }
+  .presets button strong { display: block; font-size: 13px; }
+  .presets button span { color: var(--dim); font-size: 11px; }
+  .presets button:hover { border-color: var(--accent); }
+  .presets button.on { border-color: var(--accent); background: var(--accent-soft); }
+
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; margin-top: 14px; overflow: hidden; }
+  section > h2 { font-size: 13px; margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: baseline; gap: 8px; }
+  section > h2 small { color: var(--dim); font-weight: 400; }
+  .row { display: grid; grid-template-columns: 1fr 190px 44px; gap: 10px; align-items: center; padding: 9px 14px; border-top: 1px solid var(--line); }
+  section > h2 + .row { border-top: 0; }
+  .row .text b { font-weight: 600; display: block; }
+  .row .text small { color: var(--dim); display: block; }
+  .row input[type=range] { width: 100%; accent-color: var(--accent); }
+  .row output { text-align: right; font-variant-numeric: tabular-nums; color: var(--dim); }
+  .row output.off { opacity: .6; }
+  .row.toggle { grid-template-columns: 1fr auto; }
+  .switch { position: relative; width: 36px; height: 20px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch span { position: absolute; inset: 0; border-radius: 20px; background: #8885; transition: .15s; cursor: pointer; }
+  .switch span::after { content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; border-radius: 50%; background: #fff; transition: .15s; }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::after { transform: translateX(16px); }
+
+  .maps { padding: 4px 14px 12px 14px; border-top: 1px dashed var(--line); }
+  .maps .title { color: var(--dim); margin: 6px 0 4px; display: flex; justify-content: space-between; }
+  .maps .entry { display: grid; grid-template-columns: 1fr 150px 40px 26px; gap: 8px; align-items: center; margin: 4px 0; }
+  .maps .entry.plain { grid-template-columns: 1fr 26px; }
+  .maps input[type=text] { width: 100%; padding: 4px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: 12px ui-monospace, monospace; }
+  .maps button.x { border: 0; background: none; color: var(--dim); cursor: pointer; font-size: 15px; }
+  .maps button.add { border: 1px dashed var(--line); background: none; color: var(--accent); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+  .maps .examples { color: var(--dim); font-size: 11px; margin-top: 4px; }
+
+  footer { position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 20px; background: var(--bg); border-top: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
+  footer #status { flex: 1; color: var(--dim); }
+  footer #status.dirty { color: var(--warn); }
+  footer button { padding: 7px 14px; border-radius: 7px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; }
+  footer button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  footer button:disabled { opacity: .5; cursor: default; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Graphics+</h1>
+  <p class="about" id="about"></p>
+  <p class="hint">In game, <kbd>Alt</kbd>+<kbd>G</kbd> turns all of this off and on again, to compare as you move.</p>
+</header>
+
+<main>
+  <div class="presets" id="presets"></div>
+  <div id="sections"></div>
+</main>
+
+<footer>
+  <div id="status"></div>
+  <button id="revert">Revert</button>
+  <button id="save">Save</button>
+  <button id="apply" class="primary">Save and apply</button>
+</footer>
+
+<script>
+// The page only arranges the settings declared in mod.json; the app validates
+// and stores them (window.modSettings: get, set, apply).
+const $ = id => document.getElementById(id);
+
+// How the page groups them. A key not listed here still shows, under "More".
+const SECTIONS = [
+  { title: 'World', note: 'drawn into the map itself', keys: ['grass', 'hd_ground', 'shadows', 'occlusion'] },
+  { title: 'Water', note: 'mirrors what stands above it', keys: ['water', { key: 'water_detail', maps: 'water_detail_maps', valued: true }] },
+  { title: 'Light and colour', note: 'the sun, and the grade over the frame', keys: [{ key: 'sunlight', maps: 'sunlight_maps', valued: true }, 'grade', 'tonemap', 'glow'] },
+  { title: 'Camera', note: 'effects of the lens', keys: ['vignette', 'fog', 'tilt_shift', 'fringe', { key: 'drops', maps: 'drop_maps', valued: false }] },
+];
+
+// Presets set every effect at once. Map lists are left as they are.
+const PRESETS = [
+  { name: 'Off', note: 'the stock look', values: { grass: 0, hd_ground: false, shadows: 0, occlusion: 0, water: 0, water_detail: 0, sunlight: 0, grade: 0, tonemap: 0, glow: 0, vignette: 0, fog: 0, tilt_shift: 0, fringe: 0, drops: 0 } },
+  { name: 'Subtle', note: 'close to stock', values: { grass: 30, hd_ground: true, shadows: 30, occlusion: 40, water: 40, water_detail: 0, sunlight: 0, grade: 40, tonemap: 40, glow: 40, vignette: 20, fog: 0, tilt_shift: 0, fringe: 0, drops: 0 } },
+  { name: 'Standard', note: 'the defaults', values: null },
+  { name: 'Cinematic', note: 'warm, deep, filmic', values: { grass: 70, hd_ground: true, shadows: 70, occlusion: 80, water: 80, water_detail: 0, sunlight: 70, grade: 100, tonemap: 90, glow: 80, vignette: 50, fog: 30, tilt_shift: 25, fringe: 20, drops: 60 } },
+];
+
+let declared = {};      // key -> setting as the app describes it
+let saved = {};         // key -> value as stored
+const controls = {};    // key -> { get(), set(v) }
+
+const percent = v => (v > 0 ? `${v}%` : 'Off');
+
+function slider(setting) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = '<div class="text"><b></b><small></small></div><input type="range"><output></output>';
+  row.querySelector('b').textContent = setting.label || setting.key;
+  row.querySelector('small').textContent = setting.description || '';
+  const input = row.querySelector('input'), out = row.querySelector('output');
+  input.min = setting.min ?? 0; input.max = setting.max ?? 100; input.step = 1;
+  const show = () => { out.textContent = percent(+input.value); out.classList.toggle('off', +input.value === 0); };
+  input.oninput = () => { show(); changed(); };
+  controls[setting.key] = { get: () => +input.value, set: v => { input.value = v; show(); } };
+  return row;
+}
+
+function toggle(setting) {
+  const row = document.createElement('div');
+  row.className = 'row toggle';
+  row.innerHTML = '<div class="text"><b></b><small></small></div><label class="switch"><input type="checkbox"><span></span></label>';
+  row.querySelector('b').textContent = setting.label || setting.key;
+  row.querySelector('small').textContent = setting.description || '';
+  const input = row.querySelector('input');
+  input.onchange = changed;
+  controls[setting.key] = { get: () => input.checked, set: v => { input.checked = v === true; } };
+  return row;
+}
+
+// A per-map list ("izlude:100 prt_fild*:80", or just names) as rows.
+function mapList(setting, valued) {
+  const box = document.createElement('div');
+  box.className = 'maps';
+  box.innerHTML = `<div class="title"><span></span></div><div class="list"></div><button class="add">+ Add a map</button><div class="examples"></div>`;
+  box.querySelector('.title span').textContent = setting.label || setting.key;
+  box.querySelector('.examples').textContent = valued
+    ? 'Map names, * matches anything: prt_fild* is every Prontera field, *_dun* every dungeon. The first match wins; 0 turns it off there.'
+    : 'Map names, * matches anything: um_fild* is every Umbala field.';
+  const list = box.querySelector('.list');
+  const add = (name = '', value = 100) => {
+    const entry = document.createElement('div');
+    entry.className = valued ? 'entry' : 'entry plain';
+    entry.innerHTML = valued
+      ? '<input type="text" placeholder="map name"><input type="range" min="0" max="100"><output></output><button class="x" title="Remove">×</button>'
+      : '<input type="text" placeholder="map name"><button class="x" title="Remove">×</button>';
+    const [text, range] = entry.querySelectorAll('input');
+    text.value = name;
+    text.oninput = changed;
+    if (valued) {
+      const out = entry.querySelector('output');
+      const show = () => { out.textContent = percent(+range.value); };
+      range.value = value; show();
+      range.oninput = () => { show(); changed(); };
+    }
+    entry.querySelector('.x').onclick = () => { entry.remove(); changed(); };
+    list.append(entry);
+    return text;
+  };
+  box.querySelector('.add').onclick = () => { add().focus(); changed(); };
+  const parse = value => String(value ?? '').split(/[\s,]+/).filter(Boolean).map(item => {
+    const [name, amount] = item.split(':');
+    return { name, value: Number.isFinite(+amount) && amount !== undefined ? +amount : 100 };
+  });
+  controls[setting.key] = {
+    get: () => [...list.children].map(entry => {
+      const [text, range] = entry.querySelectorAll('input');
+      const name = text.value.trim().replace(/[\s,:]+/g, '');
+      return name ? (valued ? `${name}:${range.value}` : name) : null;
+    }).filter(Boolean).join(' '),
+    set: value => { list.replaceChildren(); parse(value).forEach(item => add(item.name, item.value)); },
+  };
+  return box;
+}
+
+function control(spec) {
+  const key = typeof spec === 'string' ? spec : spec.key;
+  const setting = declared[key];
+  if (!setting) return [];
+  const out = [setting.type === 'boolean' ? toggle(setting) : setting.type === 'number' ? slider(setting) : mapList(setting, true)];
+  if (spec.maps && declared[spec.maps]) out.push(mapList(declared[spec.maps], spec.valued));
+  return out;
+}
+
+function build() {
+  const used = new Set();
+  const sections = SECTIONS.map(section => ({ ...section }));
+  for (const section of sections) {
+    for (const spec of section.keys) {
+      used.add(typeof spec === 'string' ? spec : spec.key);
+      if (spec.maps) used.add(spec.maps);
+    }
+  }
+  const rest = Object.keys(declared).filter(key => !used.has(key));
+  if (rest.length) sections.push({ title: 'More', note: '', keys: rest });
+  for (const section of sections) {
+    const el = document.createElement('section');
+    el.innerHTML = '<h2><span></span><small></small></h2>';
+    el.querySelector('span').textContent = section.title;
+    el.querySelector('small').textContent = section.note;
+    section.keys.forEach(spec => control(spec).forEach(node => el.append(node)));
+    $('sections').append(el);
+  }
+  for (const preset of PRESETS) {
+    const button = document.createElement('button');
+    button.innerHTML = '<strong></strong><span></span>';
+    button.querySelector('strong').textContent = preset.name;
+    button.querySelector('span').textContent = preset.note;
+    button.onclick = () => {
+      const values = preset.values || Object.fromEntries(Object.values(declared).map(s => [s.key, s.default]));
+      for (const [key, value] of Object.entries(values)) {
+        if (controls[key] && declared[key] && !/_maps$/.test(key)) controls[key].set(value);
+      }
+      changed();
+    };
+    preset.button = button;
+    $('presets').append(button);
+  }
+}
+
+function values() {
+  return Object.fromEntries(Object.entries(controls).map(([key, c]) => [key, c.get()]));
+}
+
+function changed() {
+  const now = values();
+  const dirty = Object.keys(now).some(key => String(now[key]) !== String(saved[key]));
+  $('status').textContent = dirty ? 'Unsaved changes' : '';
+  $('status').className = dirty ? 'dirty' : '';
+  for (const preset of PRESETS) {
+    const target = preset.values || Object.fromEntries(Object.values(declared).map(s => [s.key, s.default]));
+    const match = Object.entries(target).every(([key, value]) => !controls[key] || /_maps$/.test(key) || String(now[key]) === String(value));
+    preset.button.classList.toggle('on', match);
+  }
+}
+
+async function run(buttons, work, done) {
+  buttons.forEach(b => { b.disabled = true; });
+  try { await work(); $('status').textContent = done; $('status').className = ''; }
+  catch (e) { $('status').textContent = 'Error: ' + (e && e.message || e); }
+  buttons.forEach(b => { b.disabled = false; });
+}
+
+(async () => {
+  try {
+    const mod = await window.modSettings.get();
+    $('about').textContent = `${mod.version} · app ${mod.context.appVersion}`
+      + (mod.enabled ? '' : ' · switched off in the Mods tab: turn it on there for any of this to show');
+    for (const setting of mod.settings) {
+      declared[setting.key] = setting;
+      saved[setting.key] = setting.value;
+    }
+    build();
+    for (const [key, value] of Object.entries(saved)) controls[key]?.set(value);
+    changed();
+  } catch (e) {
+    $('status').textContent = 'Could not read the settings: ' + (e && e.message || e);
+  }
+})();
+
+const all = () => [$('save'), $('apply'), $('revert')];
+$('revert').onclick = () => { for (const [key, value] of Object.entries(saved)) controls[key]?.set(value); changed(); };
+$('save').onclick = () => run(all(), async () => {
+  const v = values();
+  await window.modSettings.set(v);
+  saved = v;
+  changed();
+}, 'Saved. They take effect when the game is next applied or restarted.');
+$('apply').onclick = () => run(all(), async () => {
+  const v = values();
+  await window.modSettings.set(v);
+  saved = v;
+  $('status').textContent = 'Applying…';
+  await window.modSettings.apply();
+}, 'Saved and applied.');
+</script>
+</body>
+</html>

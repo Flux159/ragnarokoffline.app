@@ -8,6 +8,7 @@
     "app": ">=1.4.0",
     "era": "any"
   },
+  "settingsPage": "settings/index.html",
   "settings": [
     {
       "key": "grade",
