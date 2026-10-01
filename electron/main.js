@@ -2481,6 +2481,38 @@ const handlers = {
 	},
 	db_backup: ({ path: p }) => runStack(['backup', p]),
 	db_restore: ({ path: p }) => runStack(['restore', p]),
+	// The whole world: every era's database, settings and installed mods, in
+	// one .tar.gz (stack/src/world.rs). Secrets are never in it.
+	db_backup_full: ({ path: p }) => runStack(['backup', '--full', p]),
+	// The supervisor validates the archive, saves everything as it is now,
+	// restores, and leaves the game stopped. Starting again is the same work
+	// as Apply: the restored settings.json implies battle_conf, the restored
+	// mods a new overlay, so the server is brought up and the client relinked.
+	db_restore_full: async ({ path: p }) => {
+		const client = getClientPaths();
+		if (client.mode === 'join') throw new Error('Restoring belongs to your own server. Switch to hosting your own server first.');
+		const cycleAssets = assetServer.running;
+		if (cycleAssets) await assetsStop();
+		let out;
+		try {
+			out = (await runStack(['restore', '--full', p])).trim();
+		} catch (error) {
+			if (cycleAssets) await assetsStart().catch(() => {});
+			throw error;
+		}
+		try {
+			writeSettingsFiles(getSettings());
+			await runStack(['up']);
+			if (clientComplete(client)) await linkClient(client);
+			if (cycleAssets) await assetsStart();
+		} catch (error) {
+			// The restore itself happened; say so, with the pre-restore path,
+			// rather than letting a start failure read as a failed restore.
+			throw new Error(`${out}\n\nThe server did not start again afterwards: ${error.message || error}`);
+		}
+		return out.replace(/game services are stopped\. Start the server to play the restored world -- the app rebuilds the client's assets as it starts\. /,
+			'the server has been restarted with it. ');
+	},
 
 	// Re-link the client every start: a freshly materialised runtime has no GRF
 	// generated assets or a private archive manifest yet, and only the setup window writes those.
@@ -2830,7 +2862,7 @@ const GAME_PAGE_HANDLERS = new Set([]);
 // Includes settings writes before their supervisor call: an era marker must
 // not change halfway through an account operation. Read-only status stays live.
 const SERVER_OPERATIONS = new Set(['sharing_connect', 'sharing_start', 'sharing_forget', 'accounts', 'hosting_check', 'save_settings', 'set_mode', 'set_client_paths', 'start_stack',
-	'stack_up', 'stack_down', 'stack_repair', 'secure_services', 'db_backup', 'db_restore']);
+	'stack_up', 'stack_down', 'stack_repair', 'secure_services', 'db_backup', 'db_restore', 'db_backup_full', 'db_restore_full']);
 // The operations that must never be followed by an automatic resume. Sharing's
 // own verbs answer for themselves, and `stack_down` is a server the player has
 // just taken offline on purpose. Everything else in the set above leaves a
@@ -2897,7 +2929,7 @@ ipcMain.handle('invoke', async (event, name, args) => {
 	try {
 		if (SERVER_OPERATIONS.has(name)) {
 			const result = await queueServerOperation(async () => {
-                if (sharing && ((name === 'accounts' && args?.action !== 'list') || ['set_mode', 'set_client_paths', 'save_settings', 'stack_repair', 'secure_services', 'db_restore'].includes(name))) await sharing.stop();
+                if (sharing && ((name === 'accounts' && args?.action !== 'list') || ['set_mode', 'set_client_paths', 'save_settings', 'stack_repair', 'secure_services', 'db_restore', 'db_restore_full'].includes(name))) await sharing.stop();
                 return fn(args || {});
             });
 			// Every operation above either stops sharing on the way in or

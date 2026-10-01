@@ -321,6 +321,104 @@ rostack restore ~/Desktop/ragnarok.sql
 first. Both stop the game; `backup` starts it again afterwards and `restore`
 leaves it stopped, so restart the server yourself once a restore is done.
 
+That `.sql` is the database of the era that is running, and nothing else. To
+keep or move a whole world, back up everything.
+
+### Backing up everything
+
+Settings → **Save Data** → **Back up everything…**, or:
+
+```sh
+rostack backup --full ~/Desktop/my-world.tar.gz
+rostack restore --full ~/Desktop/my-world.tar.gz
+```
+
+One `.tar.gz` holds the whole world. Any archiver opens it:
+
+| In the archive | What it is |
+|---|---|
+| `manifest.json` | always first; described below |
+| `database/renewal.sql`, `database/prerenewal.sql` | a dump of each era's database that exists. The era that is not running is reached by starting the database on its volume for the length of the dump, then switching back |
+| `settings/settings.json`, `settings/mod-settings.json` | everything Settings saves, and every mod's settings |
+| `settings/prerenewal`, `settings/free_kafra_warp` | the era and Kafra markers, when they are set |
+| `settings/conf/battle_conf.txt` | what `settings.json` means to the server, so a restore from the command line is consistent before the app rewrites it |
+| `mods/…` | `state/mods`, byte for byte: every installed mod, and `disabled.txt` / `enabled.txt`, which hold what is switched on and off |
+| `machine/client.json` | where this machine's GRFs and BGM are, its memory setting, host or join. Recorded so you can see what you had; a restore never applies it, because it describes a computer, not a world |
+
+Mods are copied as plain folders. The backup does not read or depend on
+`mod.json`, except to note each mod's version in the manifest.
+
+**What is left out**, and listed in every manifest under `excluded`:
+
+- Cloudflare sharing credentials, the friends invitation and the sharing
+  helpers (the app's `sharing` folder): secrets, and tied to this install.
+- The database's internal service passwords
+  (`state/private/service-credentials`): secrets. A restore keeps the
+  restoring install's own, and resets the restored server login to them.
+- The AI agent's access token (`state/agent`).
+- The address of a host you join, which can carry a friends invitation.
+- Your game client's GRFs: they are never copied.
+- Logs, crash reports, earlier backups, generated assets and the server's
+  generated configuration, which are rebuilt on every start.
+
+Only the paths in the table are ever read, so a secret added somewhere else in
+a later version is left out without anyone remembering to exclude it.
+
+**The archive is private.** The database dumps contain every account's
+password, exactly as the database holds them. Keep the file where you would
+keep the database itself.
+
+#### The manifest
+
+```json
+{
+  "format": "ragnarok-offline-archive",
+  "format_version": 1,
+  "kind": "backup",
+  "created": "2026-10-01T12:00:00Z",
+  "app_version": "1.3.5",
+  "rathena": "c3231aa87c39984c629ad093d7acb8465e80e926",
+  "era": "renewal",
+  "packetver": "20221005",
+  "databases": [{ "era": "renewal", "path": "database/renewal.sql" }],
+  "mods": [{ "name": "cursor", "source": "installed", "state": "on", "version": "1.0.0",
+             "sha256": "…", "files": 12, "bytes": 40960 }],
+  "excluded": ["…"],
+  "files": [{ "path": "database/renewal.sql", "size": 1048576, "sha256": "…" }]
+}
+```
+
+`rathena` is the server commit this app was built from (`config/VENDOR_PINS`),
+so a later version can tell which schema upgrades a dump needs. A mod's
+`sha256` is over its files' checksums and paths, so two archives show whether a
+mod changed between them. `kind` is `backup` here; the shareable, scrubbed world
+archive planned for hand-offs will use the same manifest as `world`.
+
+#### Restoring
+
+`restore --full` does these in order, and stops at the first that fails:
+
+1. **Checks the whole archive** before touching anything: that it is one of
+   ours, that it was not made by a newer app (it says which version to install
+   if it was), and every file against its checksum. A damaged download, an
+   edited file, or a file the manifest does not list is refused here.
+2. **Stops the game servers.** The server has to be running, as for any
+   backup: the database is only reachable then.
+3. **Saves everything as it is now**, in the same format, to
+   `state/world-backups/before-restore-everything-<date>.tar.gz`, and prints the
+   path. If that fails, nothing is restored. Restoring that file is the way
+   back.
+4. **Restores each era's database** into its own volume, including the era
+   that is not running, and resets the server login in each to this install's.
+   An era the archive does not have is left as it was, and the output says so.
+5. **Restores the settings and swaps in the mods folder** whole: mods
+   installed here but not in the backup are gone (they are in step 3's file).
+6. From the command line, the game is left stopped. From Settings, the app
+   then starts the server and rebuilds the client's assets with the restored
+   mods, as Apply does.
+
+GRF locations are not restored, so the restoring machine keeps its own client.
+
 ## For an agent working on someone's install
 
 Everything above, condensed:
@@ -336,3 +434,7 @@ Everything above, condensed:
   rule from a column name.
 - Take a copy of anything before changing it, and check the change survived a
   login before saying it worked.
+- `backup --full <file>` / `restore --full <file>` move a whole world: both
+  eras, settings, installed mods. Restore checks the archive first, saves the
+  current world to `state/world-backups/before-restore-everything-*.tar.gz`, and
+  prints that path. Tell the player where it is.

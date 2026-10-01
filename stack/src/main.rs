@@ -2,6 +2,7 @@
 //!
 //!   ragnarok-stack up|down|status|repair|logs [service] [tail]
 //!   ragnarok-stack backup <file> | restore <file>
+//!   ragnarok-stack backup --full <file> | restore --full <file>
 //!
 //! This replaces scripts/stack.sh. It is a binary rather than a script because
 //! the app ships to Windows, which has no POSIX shell — and a second,
@@ -9,10 +10,12 @@
 //! agree forever and eventually would not. The app and a terminal run the same
 //! code path, as they always have.
 
+mod archive;
 mod assets;
 mod accounts;
 mod agent;
 mod tools;
+mod world;
 mod asset_transaction;
 mod cmds;
 mod crashes;
@@ -43,7 +46,7 @@ use std::process::exit;
 
 const USAGE: &str = "usage: ragnarok-stack host-check|capture-crashes|hosting-check [--lan]|secure-services [--lan] [--ram MiB]|mods|mod-enable NAME|mod-disable NAME|mod-forget NAME|up [--lan] [--ram MiB]|down|repair [--lan] [--ram MiB]|status|logs [service] [tail]|logs --follow <map|char|login|db> [--tail N]|agent <command> [args]|export-table <name>|ports\n\
                      \x20      db tables|describe <table>|rows|apply (JSON on stdin for rows and apply)\n\
-                     \x20      backup <file>|restore <file>\n\
+                     \x20      backup [--full] <file>|restore [--full] <file>\n\
                      \x20      sql [--write] [--file <path>] [<statement>]\n\
                      \x20      accounts (private JSON request on stdin)\n\
                      \x20      link-assets <data.grf> [rdata.grf] [official_data.grf] [bgm-dir]";
@@ -187,6 +190,12 @@ fn main() {
         // Settings -> Tools -> Database (#200). Reads need no lock; `apply`
         // stops the game like `sql --write` and holds it (above).
         "db" => database::run(&cfg, &dk, &args[1..]),
+        // --full is the whole world (world.rs): every era's database, the
+        // settings and the installed mods, in one .tar.gz.
+        "backup" if args.get(1).map(String::as_str) == Some("--full") => match args.get(2) {
+            Some(p) => world::backup(&cfg, &dk, p),
+            None => Err("destination file required".into()),
+        },
         "backup" => match args.get(1) {
             Some(p) => cmds::backup(&cfg, &dk, p),
             None => Err("destination file required".into()),
@@ -227,6 +236,10 @@ fn main() {
         "mod-forget" => match args.get(1) {
             Some(n) => mods::forget(&cfg.state, n),
             None => Err("mod name required".into()),
+        },
+        "restore" if args.get(1).map(String::as_str) == Some("--full") => match args.get(2) {
+            Some(p) => world::restore(&cfg, &dk, p),
+            None => Err("source file required".into()),
         },
         "restore" => match args.get(1) {
             Some(p) => cmds::restore(&cfg, &dk, p),

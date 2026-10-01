@@ -488,6 +488,14 @@
     </div>
     <div class="note" id="db-note">Backups briefly disconnect players so their latest data can be saved consistently. Restore keeps the game stopped until you restart it and preserves a backup of the current database.</div>
   </div>
+  <div class="card">
+    <div class="row"><span class="name">Everything</span><span class="state">both eras' characters, settings and installed mods</span></div>
+    <div class="actions">
+      <button id="backup-full" class="ghost">Back up everything…</button>
+      <button id="restore-full" class="ghost">Restore everything…</button>
+    </div>
+    <div class="note" id="full-note">One file with every era's characters and accounts, your settings and your installed mods, to keep or to move to another computer. It never contains your sharing or Cloudflare credentials, and your game client's files are not copied. It does contain your accounts' passwords, so keep it private. Restoring saves everything as it is now first, and shows you where.</div>
+  </div>
   </div>
 
   <div class="tabpanel" id="panel-mods" role="tabpanel" aria-labelledby="tab-mods" hidden>
@@ -1078,6 +1086,37 @@ $('restore').onclick = async () => {
       + ' — restart the server for it to take effect.';
   } catch (e) {
     setNote('db-note', String(e && e.message || e), 'bad');
+  }
+};
+
+$('backup-full').onclick = async () => {
+  const stamp = new Date().toISOString().slice(0, 10);
+  const path = await saveDialog({ defaultPath: `ragnarokoffline-everything-${stamp}.tar.gz`,
+                                  filters: [{ name: 'Ragnarok Offline backup', extensions: ['gz'] }] });
+  if (typeof path !== 'string') return;
+  $('full-note').textContent = 'Backing up everything… players are disconnected for a moment.';
+  try {
+    $('full-note').textContent = (await invoke('db_backup_full', { path })).trim();
+  } catch (e) {
+    setNote('full-note', String(e && e.message || e), 'bad');
+  }
+};
+
+$('restore-full').onclick = async () => {
+  const path = await openDialog({ multiple: false, directory: false,
+                                  filters: [{ name: 'Ragnarok Offline backup', extensions: ['gz'] }] });
+  if (typeof path !== 'string') return;
+  if (!confirm('Restore everything from this backup?\n\nThe characters and accounts of both eras, your settings and your installed mods are replaced by the ones in the file. ' +
+               'Everything as it is now is saved first, and you will be shown where.\n\nThe server restarts and anyone playing is disconnected.')) return;
+  $('full-note').textContent = 'Restoring… this stops the server, and can take a few minutes.';
+  try {
+    const out = (await invoke('db_restore_full', { path })).trim();
+    // Every other panel shows settings read when the window opened, and
+    // those just changed underneath it.
+    alert(out);
+    location.reload();
+  } catch (e) {
+    setNote('full-note', String(e && e.message || e), 'bad');
   }
 };
 

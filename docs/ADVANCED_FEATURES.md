@@ -70,6 +70,13 @@ A few things worth knowing:
 
 Keep one before you experiment with rates or NPC scripts.
 
+**Settings → Save data → Back up everything…** goes further: one `.tar.gz`
+with the database of *both* eras, your settings and your installed mods, and
+**Restore everything…** puts all of it back — saving everything as it was
+first. Secrets such as your Cloudflare sharing credentials are never in it. It
+is the one to use to move a whole world to another computer;
+[docs/DATABASE.md](DATABASE.md#backing-up-everything) has what is in it.
+
 ---
 
 ## Where the app keeps its data

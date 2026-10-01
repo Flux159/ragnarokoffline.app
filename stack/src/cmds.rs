@@ -739,6 +739,41 @@ fn db_volume(cfg: &Config) -> String {
     if is_prerenewal(cfg) { "ragnarokmac-db-prere".into() } else { "ragnarokmac-db".into() }
 }
 
+/// Create and start the database container on one era's volume.
+///
+/// Split out of `up` so a whole-world backup or restore can reach the era
+/// that is not running (see `with_era_database`) through exactly the mounts,
+/// credentials and image a normal start uses.
+fn start_database(cfg: &Config, dk: &Docker, volume: &str, credentials: Option<&crate::service_credentials::Credentials>) -> Result<(), String> {
+    dk.remove_container(DB_CONTAINER);
+    let mut mounts = vec![
+        Mount::Bind {
+            host: cfg.state.join("sql"),
+            container: "/docker-entrypoint-initdb.d".into(),
+            ro: true,
+        },
+        // A named volume rather than a bind: backups have to survive on
+        // Windows too, where a host directory cannot be mounted, and the
+        // dump is fetched back out with `cp`.
+        if cfg!(windows) {
+            Mount::Volume { name: "ragnarokmac-backups".into(), container: "/backups".into() }
+        } else {
+            Mount::Bind { host: cfg.state.join("backups"), container: "/backups".into(), ro: false }
+        },
+        Mount::Volume { name: volume.to_string(), container: "/var/lib/mysql".into() },
+    ];
+    let mut opts: Vec<String> = ["--network", NET, "-e", "MARIADB_DATABASE=ragnarok", "-e", "MARIADB_USER=ragnarok"].iter().map(|s| s.to_string()).collect();
+    if let Some(credentials) = credentials {
+        mounts.push(Mount::Bind { host: credentials.directory.clone(), container: crate::service_credentials::CONTAINER_DIR.into(), ro: true });
+        opts.extend(["-e", "MARIADB_ROOT_PASSWORD_FILE=/run/ragnarok-private/root.secret", "-e", "MARIADB_PASSWORD_FILE=/run/ragnarok-private/database.secret"].iter().map(|s| s.to_string()));
+    } else {
+        opts.extend(["-e", "MARIADB_ROOT_PASSWORD=ragnarok", "-e", "MARIADB_PASSWORD=ragnarok"].iter().map(|s| s.to_string()));
+    }
+    dk.run_container(DB_CONTAINER, &cfg.db_image, &[], &mounts, &opts)
+        .map_err(|e| format!("starting the database: {e}"))?;
+    Ok(())
+}
+
 /// The uncompressed size a gzip file claims, from its ISIZE trailer.
 ///
 /// The last four bytes of a gzip stream are the uncompressed length. Reading
@@ -1508,32 +1543,7 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     }
 
     if !dk.is_running(DB_CONTAINER) {
-        dk.remove_container(DB_CONTAINER);
-        let mut mounts = vec![
-            Mount::Bind {
-                host: cfg.state.join("sql"),
-                container: "/docker-entrypoint-initdb.d".into(),
-                ro: true,
-            },
-            // A named volume rather than a bind: backups have to survive on
-            // Windows too, where a host directory cannot be mounted, and the
-            // dump is fetched back out with `cp`.
-            if cfg!(windows) {
-                Mount::Volume { name: "ragnarokmac-backups".into(), container: "/backups".into() }
-            } else {
-                Mount::Bind { host: cfg.state.join("backups"), container: "/backups".into(), ro: false }
-            },
-            Mount::Volume { name: want_volume.clone(), container: "/var/lib/mysql".into() },
-        ];
-        let mut opts: Vec<String> = ["--network", NET, "-e", "MARIADB_DATABASE=ragnarok", "-e", "MARIADB_USER=ragnarok"].iter().map(|s| s.to_string()).collect();
-        if let Some(credentials) = &credentials {
-            mounts.push(Mount::Bind { host: credentials.directory.clone(), container: crate::service_credentials::CONTAINER_DIR.into(), ro: true });
-            opts.extend(["-e", "MARIADB_ROOT_PASSWORD_FILE=/run/ragnarok-private/root.secret", "-e", "MARIADB_PASSWORD_FILE=/run/ragnarok-private/database.secret"].iter().map(|s| s.to_string()));
-        } else {
-            opts.extend(["-e", "MARIADB_ROOT_PASSWORD=ragnarok", "-e", "MARIADB_PASSWORD=ragnarok"].iter().map(|s| s.to_string()));
-        }
-        dk.run_container(DB_CONTAINER, &cfg.db_image, &[], &mounts, &opts)
-            .map_err(|e| format!("starting the database: {e}"))?;
+        start_database(cfg, dk, &want_volume, credentials.as_ref())?;
     }
     // After a successful start, so a failed one does not record a database
     // that is not running.
@@ -2187,6 +2197,100 @@ pub(crate) fn load_dump(cfg: &Config, dk: &Docker, src: &Path) -> Result<(), Str
     r.map(|_| ())
 }
 
+/// The volume an era's characters live in. See `db_volume`.
+pub(crate) fn era_volume(era: &str) -> &'static str {
+    if era == "prerenewal" { "ragnarokmac-db-prere" } else { "ragnarokmac-db" }
+}
+
+/// Whether an era has a database at all: one that was never started has no
+/// volume, and nothing to back up.
+pub(crate) fn era_volume_exists(dk: &Docker, era: &str) -> bool {
+    dk.quiet(["volume", "inspect", era_volume(era)])
+}
+
+fn stop_database(dk: &Docker) -> Result<(), String> {
+    if dk.is_running(DB_CONTAINER)
+        && (dk.output(["stop", "-t", "30", DB_CONTAINER]).is_err() || dk.is_running(DB_CONTAINER))
+    {
+        return Err("Could not stop the database cleanly".into());
+    }
+    dk.remove_container(DB_CONTAINER);
+    Ok(())
+}
+
+/// Bring `ragnarok-db` up on one era's volume, the way `up` does, and wait
+/// until it answers.
+fn open_era_database(cfg: &Config, dk: &Docker, era: &str) -> Result<(), String> {
+    let volume = era_volume(era);
+    // sql_auth reads the marker to choose the era's credentials, so it names
+    // what is about to run before anything connects.
+    fs::write(cfg.state.join(".db-volume"), volume).map_err(|e| format!("recording the database volume: {e}"))?;
+    let credentials = crate::service_credentials::load(&cfg.state, era)?;
+    if let Some(credentials) = &credentials {
+        credentials.write_files()?;
+    }
+    fs::create_dir_all(cfg.state.join("backups")).map_err(|e| e.to_string())?;
+    start_database(cfg, dk, volume, credentials.as_ref())?;
+    if let Some(credentials) = &credentials {
+        migrate_service_credentials(dk, credentials)?;
+    }
+    wait_for_db(dk)
+}
+
+/// Run `operation` against `era`'s database, whichever era is running.
+///
+/// Only one database container runs at a time, and every database call in
+/// this file talks to it by name. So reaching the other era means stopping
+/// the running database, starting the same container on the other volume,
+/// and afterwards putting the original back -- including when `operation`
+/// failed. Game services must already be stopped: they would otherwise be
+/// talking to the wrong era's characters in between.
+pub(crate) fn with_era_database<T>(
+    cfg: &Config,
+    dk: &Docker,
+    era: &str,
+    operation: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let marker = cfg.state.join(".db-volume");
+    let running = fs::read_to_string(&marker).map(|s| s.trim().to_string()).unwrap_or_default();
+    if running == era_volume(era) && dk.is_running(DB_CONTAINER) {
+        return operation();
+    }
+    let original = if running == era_volume("prerenewal") { "prerenewal" } else { "renewal" };
+    let result = stop_database(dk)
+        .and_then(|_| open_era_database(cfg, dk, era))
+        .and_then(|_| operation());
+    let back = stop_database(dk).and_then(|_| open_era_database(cfg, dk, original));
+    match (result, back) {
+        (result, Ok(())) => result,
+        (Ok(_), Err(error)) => Err(format!(
+            "The {era} database was handled, but the {original} database did not start again: {error}. Start the server to recover."
+        )),
+        (Err(first), Err(error)) => Err(format!(
+            "{first}. The {original} database also did not start again: {error}. Start the server to recover."
+        )),
+    }
+}
+
+/// After a dump has been loaded, make its interserver login the one this
+/// install's servers use. A dump carries the `s1` row of the install it came
+/// from, and that is somebody else's password.
+pub(crate) fn adopt_loaded_dump(cfg: &Config, dk: &Docker, era: &str) -> Result<(), String> {
+    match crate::service_credentials::load(&cfg.state, era)? {
+        Some(credentials) => migrate_service_credentials(dk, &credentials),
+        // An era without managed credentials runs rAthena's stock s1/p1.
+        None => dk
+            .root_sql("UPDATE login SET user_pass='p1' WHERE account_id=1 AND BINARY userid='s1' AND sex='S';", true)
+            .map(|_| ()),
+    }
+}
+
+/// Stop the game servers without restarting them: a restore leaves them
+/// stopped, for the shell (or the player) to start once everything is back.
+pub(crate) fn stop_game(cfg: &Config, dk: &Docker) -> Result<(), String> {
+    stop_game_services(cfg, dk).map_err(|_| "Could not stop the game servers cleanly; nothing was restored.".to_string())
+}
+
 /// The escape hatch for a shipped user with no terminal and no docker CLI.
 ///
 /// Everything here is also done by `up`. This exists for the case automation
@@ -2283,7 +2387,7 @@ pub fn logs_follow(dk: &Docker, args: &[String]) -> Result<i32, String> {
     })
 }
 
-fn human(bytes: u64) -> String {
+pub(crate) fn human(bytes: u64) -> String {
     const U: [&str; 4] = ["B", "KB", "MB", "GB"];
     let mut v = bytes as f64;
     let mut i = 0;
