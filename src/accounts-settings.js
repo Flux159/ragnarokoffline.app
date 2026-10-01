@@ -33,7 +33,9 @@
   function paint() {
     const account = selected();
     const missing = birthdayless();
-    element("account-birthdates").disabled = busy || !snapshot || !missing;
+    // Usable before the list has loaded: pressing it loads the accounts first
+    // (birthdates() below), so it never sits greyed out waiting for Refresh.
+    element("account-birthdates").disabled = busy || Boolean(snapshot && !missing);
     element("account-birthdate-detail").textContent = !snapshot
       ? "Character deletion needs a birthday on the account."
       : missing
@@ -157,5 +159,18 @@
   element("account-disable").onclick = () => change("disable");
   element("account-enable").onclick = () => change("enable");
   element("account-create").onclick = () => change("create");
-  element("account-birthdates").onclick = () => change("birthdates");
+  // One press: load the accounts if they aren't yet, then fill in whatever
+  // birthdays are missing. refresh() reports its own failure, and leaves
+  // `snapshot` null, in which case there is nothing to change.
+  async function birthdates() {
+    if (busy) return;
+    if (!snapshot) await refresh();
+    if (snapshot && !birthdayless()) {
+      report(replyTo("birthdates"), "Every account already has a birthday. Enter 20000101 when the game asks for it.", "good");
+      return;
+    }
+    if (snapshot) await change("birthdates");
+    else report(replyTo("birthdates"), element("accounts-status").textContent || "Could not load the accounts.", "bad");
+  }
+  element("account-birthdates").onclick = birthdates;
 })();
