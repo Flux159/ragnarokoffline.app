@@ -1242,7 +1242,9 @@ on with `api.graphics.configure`:
 |---|---|
 | `waterReflection: 0..1` | water mirrors the sky, ground and buildings above it. The map is drawn a second time at half resolution where there's water |
 | `shadows: 0..1` | buildings and trees cast shadows from the map's sun onto the ground, on top of the soft ones baked into the map |
-| `grass: { textures, density, height, width, wind, distance, tint }` | tufts of grass on every ground cell whose texture name contains one of `textures` (the client's are Korean: `'풀'` grass, `'잔디'` lawn), coloured by the ground under them. `density`, `wind` 0..1; `height`, `width`, `distance` in cells; `tint` `[r, g, b]` |
+| `grass: { textures, density, height, width, wind, distance, tint }` | painted grass and ferns on every ground cell whose texture name contains one of `textures` (the client's are Korean: `'풀'` grass, `'잔디'` lawn). Only on open ground that is green where it grows: not under buildings or models, not on the dirt or stone a grassy tile also shows. Coloured by the ground under it, and never covers a sprite. `density`, `wind` 0..1; `height`, `width`, `distance` in cells; `tint` `[r, g, b]` |
+| `rain: 0..1` | rain on the water: rings where drops land, and a duller surface. Rain in the air and drops on the lens are a pass's job; Graphics+ does both |
+| `light: { ambient, diffuse }` | the map's sun and sky replaced, each `[r, g, b]` in 0..1 (`diffuse` may go a little over): a warmer sun, a cooler sky. The direction and the map's baked lightmap stay the map's. `null` gives the map's own back |
 
 ```js
 api.graphics.configure({ waterReflection: 0.6 });

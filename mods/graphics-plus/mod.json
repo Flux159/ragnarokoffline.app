@@ -12,11 +12,20 @@
     {
       "key": "grade",
       "type": "number",
-      "default": 60,
+      "default": 80,
       "min": 0,
       "max": 100,
       "label": "Colour grading",
       "description": "Warm light and cool shadows, with a little more contrast. 0 is off."
+    },
+    {
+      "key": "sunlight",
+      "type": "number",
+      "default": 70,
+      "min": 0,
+      "max": 100,
+      "label": "Warm sunlight",
+      "description": "A golden sun and a cooler sky in place of the map's own light. 0 keeps the map's."
     },
     {
       "key": "glow",
@@ -57,7 +66,7 @@
     {
       "key": "fog",
       "type": "number",
-      "default": 40,
+      "default": 0,
       "min": 0,
       "max": 100,
       "label": "Distance haze",
@@ -106,7 +115,16 @@
       "min": 0,
       "max": 100,
       "label": "Rain",
-      "description": "Falling rain over everything, on every map. 0 is off."
+      "description": "Rain streaks in the air, rings where it lands on water, and a duller sky. 0 is off."
+    },
+    {
+      "key": "drops",
+      "type": "number",
+      "default": 0,
+      "min": 0,
+      "max": 100,
+      "label": "Drops on the lens",
+      "description": "Water drops on the camera, each a tiny lens. Goes well with rain. 0 is off."
     }
   ]
 }

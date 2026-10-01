@@ -7,7 +7,8 @@
 // already on screen) is described in docs/MODDING.md, "client/".
 
 const FRAGMENT = `
-uniform float uGrade, uGlow, uFog, uTonemap, uVignette, uTilt, uFringe, uRain;
+uniform float uGrade, uGlow, uFog, uTonemap, uVignette, uTilt, uFringe, uRain, uDrops;
+
 
 vec3 aces(vec3 x) {
 	return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
@@ -15,6 +16,32 @@ vec3 aces(vec3 x) {
 
 float hash(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+// Water drops on the lens: one possible drop per cell of a grid, a few sizes.
+// Returns xy the offset to sample the scene at (a drop is a small lens: it
+// shows what is around it, flipped), z how much drop there is here, w its
+// highlight.
+vec4 drop(vec2 uv, float cells, float seed) {
+	vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
+	vec2 p = uv * aspect * cells;
+	// Drops slide down now and then, each on its own clock.
+	vec2 cell = floor(p);
+	float r = hash(cell + seed);
+	float slide = floor(uTime * 0.15 + r * 7.0);
+	float alive = step(0.55, hash(cell + seed + slide * 1.7));
+	vec2 centre = cell + 0.5 + (vec2(hash(cell + seed + 3.1), hash(cell + seed + 5.7)) - 0.5) * 0.6;
+	centre.y -= fract(uTime * 0.15 + r * 7.0) * 0.25 * step(0.8, r);
+	float radius = mix(0.12, 0.32, hash(cell + seed + 9.3));
+	vec2 d = (p - centre) / radius;
+	float dist = length(d);
+	if (dist > 1.0 || alive < 0.5) return vec4(0.0);
+	float edge = smoothstep(1.0, 0.75, dist);
+	// Refraction: sample on the opposite side, magnified.
+	vec2 offset = -d * radius * 2.2 / (aspect * cells);
+	// A bright glint upper-left, a darker rim lower-right.
+	float glint = smoothstep(0.35, 0.0, length(d - vec2(-0.35, 0.4))) * 0.9;
+	float rim = smoothstep(0.55, 1.0, dist) * smoothstep(-0.2, 0.6, dot(normalize(d + 1e-4), vec2(0.6, -0.8)));
+	return vec4(offset, edge, glint - rim * 0.5);
 }
 
 vec3 frame(vec2 uv) {
@@ -26,6 +53,14 @@ vec3 frame(vec2 uv) {
 void main() {
 	vec2 uv = vUv;
 	vec3 color = frame(uv);
+	if (uDrops > 0.0) {
+		vec4 a = drop(uv, 9.0, 0.0), b = drop(uv, 17.0, 31.0);
+		vec4 d = a.z > 0.0 ? a : b;
+		if (d.z > 0.0) {
+			vec3 seen = frame(uv + d.xy) * 1.05;
+			color = mix(color, seen + d.w * 0.35, d.z * uDrops);
+		}
+	}
 
 	// Tilt-shift: blur grows away from a band across the middle.
 	if (uTilt > 0.0) {
@@ -67,13 +102,17 @@ void main() {
 		color += glow * uGlow * 0.55;
 	}
 
-	// Grading: warm light, cool shadows, a little contrast.
+	// Grading: golden light, teal-blue shadows, rich colour and contrast --
+	// a painted, late-afternoon look.
 	if (uGrade > 0.0) {
 		float luma = dot(color, vec3(0.299, 0.587, 0.114));
-		vec3 warm = color * vec3(1.08, 1.0, 0.86);
-		vec3 cool = color * vec3(0.9, 0.97, 1.1);
-		vec3 graded = mix(cool, warm, smoothstep(0.15, 0.85, luma));
-		graded = (graded - 0.5) * 1.08 + 0.5;
+		vec3 sat = mix(vec3(luma), color, 1.2);
+		vec3 warm = sat * vec3(1.08, 1.0, 0.84);
+		vec3 cool = sat * vec3(0.86, 0.96, 1.06);
+		vec3 graded = mix(cool, warm, smoothstep(0.1, 0.75, luma));
+		// A gentle S-curve: richer darks without crushing them.
+		graded = clamp(graded, 0.0, 1.0);
+		graded = mix(graded, graded * graded * (3.0 - 2.0 * graded), 0.35);
 		color = mix(color, graded, uGrade);
 	}
 
@@ -95,8 +134,8 @@ void main() {
 }
 `;
 
-const SETTINGS = ['grade', 'glow', 'fog', 'tonemap', 'vignette', 'tilt_shift', 'fringe', 'rain'];
-const UNIFORM = { grade: 'uGrade', glow: 'uGlow', fog: 'uFog', tonemap: 'uTonemap', vignette: 'uVignette', tilt_shift: 'uTilt', fringe: 'uFringe', rain: 'uRain' };
+const SETTINGS = ['grade', 'glow', 'fog', 'tonemap', 'vignette', 'tilt_shift', 'fringe', 'rain', 'drops'];
+const UNIFORM = { grade: 'uGrade', glow: 'uGlow', fog: 'uFog', tonemap: 'uTonemap', vignette: 'uVignette', tilt_shift: 'uTilt', fringe: 'uFringe', rain: 'uRain', drops: 'uDrops' };
 
 // A setting as 0..1. Read defensively: a missing or odd value is off.
 export function strengths(parameters = {}) {
@@ -122,6 +161,13 @@ export default function init(parameters, api) {
     const features = {};
     if (percent('water') > 0) features.waterReflection = percent('water');
     if (percent('shadows') > 0) features.shadows = percent('shadows');
+    if (percent('rain') > 0) features.rain = percent('rain');
+    // Warm sunlight: a golden sun and a cooler sky in place of the map's.
+    const sun = percent('sunlight');
+    if (sun > 0) {
+        const mix = (a, b) => a.map((v, i) => v + (b[i] - v) * sun);
+        features.light = { ambient: mix([0.3, 0.3, 0.3], [0.16, 0.2, 0.3]), diffuse: mix([1, 1, 1], [1.1, 0.92, 0.68]) };
+    }
     if (percent('grass') > 0) features.grass = {
         // Ground textures whose names say grass: the client's are Korean
         // (풀 grass, 잔디 lawn, 초원 meadow, 들판 field), a mod's often English.
