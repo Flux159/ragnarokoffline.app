@@ -1564,6 +1564,86 @@ function safeEntryName(name) {
 	return name;
 }
 
+// Unpack a .zip (or, for a skin or cursor pack, a .rar) into `tmp`, and
+// return what it held, checked. `ditto` on macOS, `tar` elsewhere: both ship
+// with the OS, and neither needs an archive library in the app. bsdtar --
+// macOS's tar and Windows' tar.exe -- also reads .rar, which is how most
+// cursor packs travel; GNU tar on Linux does not, and says so.
+function unpackArchive(src, tmp) {
+	const { execFileSync } = require('child_process');
+	const rar = /\.rar$/i.test(src);
+	if (process.platform === 'darwin') {
+		if (rar) execFileSync('/usr/bin/tar', ['-xf', src, '-C', tmp]);
+		else execFileSync('ditto', ['-x', '-k', src, tmp]);
+	}
+	// On Windows, by full path: Git's GNU tar is often first on PATH, and it
+	// reads `C:` as a remote host and cannot open a zip at all (#174).
+	else if (process.platform === 'win32') execFileSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', src, '-C', tmp]);
+	else {
+		try { execFileSync('tar', ['-xf', src, '-C', tmp]); }
+		catch (e) { throw new Error(rar ? 'This system\'s tar cannot open a .rar. Unpack it, then choose the folder.' : e.message); }
+	}
+
+	const walk = (dir, rel = '') => fs.readdirSync(dir, { withFileTypes: true })
+		.flatMap(e => e.isDirectory()
+			? walk(path.join(dir, e.name), rel ? `${rel}/${e.name}` : e.name)
+			: [rel ? `${rel}/${e.name}` : e.name]);
+	const entries = walk(tmp).filter(n => !n.split('/').some(p => p === '__MACOSX' || p.startsWith('._')));
+	if (!entries.length) throw new Error('That archive is empty.');
+	for (const e of entries) {
+		if (!safeEntryName(e)) throw new Error(`Refusing ${src}: it contains an unsafe path (${e}).`);
+	}
+	return entries;
+}
+
+// Build a mod from an official-format UI skin, or a cursor pack, and switch
+// it on in place of whichever one was on. See ui-skin.js for how each picture
+// is placed. Client-side only, so the asset overlay is rebuilt here and no
+// server restart is asked for: the new art is in front of the client on the
+// next launch, and the overlay fingerprint moving is what clears the files
+// the client cached from the old skin.
+async function installSkinFrom(src) {
+	const skin = require('./ui-skin');
+	const dest = path.join(stateDir(), 'mods');
+	fs.mkdirSync(dest, { recursive: true });
+	const client = getClientPaths();
+	const { index, problems } = skin.uiIndex([client.official_grf, client.rdata_grf, client.data_grf]);
+	for (const p of problems) appLog(`skin import: could not read ${p}`);
+
+	let result;
+	const display = path.basename(src).replace(/\.(zip|rar)$/i, '');
+	if (fs.statSync(src).isDirectory()) {
+		result = skin.buildSkinMod({ srcRoot: skin.skinRoot(src), modsDir: dest, display, index, appVersion: app.getVersion(), source: src });
+	} else {
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ro-skin-'));
+		try {
+			unpackArchive(src, tmp);
+			const root = skin.skinRoot(tmp);
+			// Named for the file the player chose, which is the name they know
+			// it by: the folder inside is as often `cursor7` as `Clear Blue`.
+			result = skin.buildSkinMod({ srcRoot: root, modsDir: dest, display, index, appVersion: app.getVersion(), source: src });
+		} finally {
+			fs.rmSync(tmp, { recursive: true, force: true });
+		}
+	}
+	appLog(`installed ${result.kind} ${result.name} from ${src}: ${result.placed.length} placed, ${result.unplaced.length} not placed`);
+
+	let switched = [];
+	try {
+		const out = await runStack(['mod-enable', result.name]);
+		switched = out.split('\n').map(l => /^switched off (.+)$/.exec(l.trim())).filter(Boolean).map(m => m[1]);
+	} catch (e) {
+		appLog(`mod-enable ${result.name} failed: ${(e && e.message) || e}`);
+	}
+	try {
+		if (clientComplete(client)) await linkClient(client);
+	} catch (e) {
+		appLog(`relinking after the skin import failed: ${(e && e.message) || e}`);
+	}
+	const off = switched.length ? ` Switched off ${switched.join(', ')}.` : '';
+	return `${skin.summary(result)}${off} Restart the app to see it.`;
+}
+
 async function installModFrom(src) {
 	const dest = path.join(stateDir(), 'mods');
 	fs.mkdirSync(dest, { recursive: true });
@@ -1580,22 +1660,7 @@ async function installModFrom(src) {
 		// so nothing lands in mods/ until it has been checked.
 		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ro-mod-'));
 		try {
-			const { execFileSync } = require('child_process');
-			if (process.platform === 'darwin') execFileSync('ditto', ['-x', '-k', src, tmp]);
-			// On Windows, by full path: Git's GNU tar is often first on PATH, and it
-			// reads `C:` as a remote host and cannot open a zip at all (#174).
-			else if (process.platform === 'win32') execFileSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', src, '-C', tmp]);
-			else execFileSync('tar', ['-xf', src, '-C', tmp]);
-
-			const walk = (dir, rel = '') => fs.readdirSync(dir, { withFileTypes: true })
-				.flatMap(e => e.isDirectory()
-					? walk(path.join(dir, e.name), rel ? `${rel}/${e.name}` : e.name)
-					: [rel ? `${rel}/${e.name}` : e.name]);
-			const entries = walk(tmp).filter(n => !n.split('/').some(p => p === '__MACOSX' || p.startsWith('._')));
-			if (!entries.length) throw new Error('That archive is empty.');
-			for (const e of entries) {
-				if (!safeEntryName(e)) throw new Error(`Refusing ${src}: it contains an unsafe path (${e}).`);
-			}
+			const entries = unpackArchive(src, tmp);
 			name = singleTopLevel(entries);
 			if (!name) throw new Error('A mod zip must contain exactly one folder, named for the mod.');
 			const target = path.join(dest, name);
@@ -1812,7 +1877,7 @@ const handlers = {
 		// the app would not run it, and the difference is the whole point of
 		// having a reason to show.
 		return out.split('\n').filter(Boolean).map(l => {
-			const [state, name, description, reason, origin, version, author, grants, settings, problems, settingsPage, dir] = l.split('\t');
+			const [state, name, description, reason, origin, version, author, grants, settings, problems, settingsPage, dir, kind] = l.split('\t');
 			return {
 				name,
 				enabled: state === 'on',
@@ -1844,6 +1909,9 @@ const handlers = {
 				// Empty from an older supervisor, which never writes them.
 				settingsPage: settingsPage || '',
 				dir: dir || '',
+				// `skin` or `cursor`: at most one of each is on, and Settings
+				// draws them as a choice rather than as independent switches.
+				kind: kind || '',
 			};
 		});
 	},
@@ -1874,6 +1942,34 @@ const handlers = {
 		if (!picked) return 'Cancelled.';
 		const src = Array.isArray(picked) ? picked[0] : picked;
 		return installModFrom(src);
+	},
+	// A UI skin (official client format: a folder of .bmp files, or a zip
+	// of one) or a cursor pack (cursors.spr + cursors.act), made into a mod.
+	// Pictures are data rather than code, but the archive is unpacked with
+	// the same checks as a mod's.
+	install_skin: async () => {
+		let props = ['openFile', 'openDirectory'];
+		// Only macOS offers files and folders in one dialog; elsewhere the
+		// dialog shows one or the other, so ask which.
+		if (process.platform !== 'darwin') {
+			const parent = BrowserWindow.getFocusedWindow();
+			const question = {
+				type: 'question',
+				buttons: ['A folder…', 'A .zip or .rar…', 'Cancel'],
+				defaultId: 0,
+				cancelId: 2,
+				message: 'Install a UI skin or cursor pack from…',
+			};
+			const { response } = parent ? await dialog.showMessageBox(parent, question) : await dialog.showMessageBox(question);
+			if (response === 2) return 'Cancelled.';
+			props = [response === 0 ? 'openDirectory' : 'openFile'];
+		}
+		const r = await dialog.showOpenDialog({
+			properties: props,
+			filters: [{ name: 'Skin folder, .zip or .rar', extensions: ['zip', 'rar'] }],
+		});
+		if (r.canceled || !r.filePaths.length) return 'Cancelled.';
+		return installSkinFrom(r.filePaths[0]);
 	},
 	// Remove a mod the player installed.
 	//

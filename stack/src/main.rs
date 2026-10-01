@@ -206,8 +206,18 @@ fn main() {
             (Some(name), Some(body)) => mods::save_settings(&cfg, name, body),
             _ => Err("mod name and a JSON object of settings required".into()),
         },
-        "mod-enable" | "mod-disable" => match args.get(1) {
-            Some(n) => mods::set_enabled(&cfg.state, n, verb == "mod-enable"),
+        // Switching a skin or cursor pack on switches the others of its kind
+        // off; each one is printed, so the shell can say which.
+        "mod-enable" => match args.get(1) {
+            Some(n) => mods::enable(&cfg, n).map(|off| {
+                for name in off {
+                    println!("switched off {name}");
+                }
+            }),
+            None => Err("mod name required".into()),
+        },
+        "mod-disable" => match args.get(1) {
+            Some(n) => mods::set_enabled(&cfg.state, n, false),
             None => Err("mod name required".into()),
         },
         // The Settings window removes the folder itself (to the system

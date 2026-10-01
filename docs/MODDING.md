@@ -81,6 +81,15 @@ mod safe to hand to a stranger:
 need: when both are on, this mod is applied later and wins where the two
 disagree. [Publishing](mods/publishing.md) covers both.
 
+`"kind": "skin"` or `"kind": "cursor"` marks a mod as one of a set of which
+only one is on at a time: switching it on switches every other mod of the same
+kind off. It is for mods that replace the same files as each other — every UI
+skin overlays the whole interface folder — where two at once would be a
+patchwork. Any other value is refused by name; leave it out for everything
+else. See [UI skins](#ui-skins). (An app from before
+this key ignores it, so a skin still loads there, just without the others
+being switched off.)
+
 A refused mod is **named in Settings, next to the ones that loaded, with the
 reason**:
 
@@ -244,6 +253,9 @@ anything with two top-level folders, or with a path that would escape the mods
 directory, is refused rather than unpacked.
 
 Or do it by hand: drop the folder in the mods directory yourself. Same result.
+
+A UI skin or a cursor pack in the official client's format is not a mod yet;
+**Install a UI skin…** makes it one. See [UI skins](#ui-skins).
 
 A mod adds scripts and tables to your server and can run JavaScript in the game
 window. Installing one is running somebody's code — install ones you trust.
@@ -1039,6 +1051,92 @@ for nothing.
 - **The extension does not have to match the format.** These are decoded by the
   browser, which sniffs content rather than trusting the name, so a JPEG saved
   as `.bmp` works and is roughly a tenth of the size.
+
+## UI skins
+
+A UI skin is a `data/` mod over the client's interface folder,
+`data/texture/유저인터페이스/` — written `data/texture/ui/`. roBrowser draws its
+windows' title bars, buttons, slots, tabs and scroll bars from the pictures
+there, the same names the official client uses, so the official client's skin
+format maps onto it almost one to one: a skin's root is that folder's root, and
+its `basic_interface/` is that folder's `basic_interface/`.
+
+**Settings → Mods → Install a UI skin…** does the conversion. Give it a skin
+folder — the one you would put in the official client's `skin/` directory — or
+a `.zip` of one, and it builds a mod named `skin-<name>`, switches it on, and
+switches whichever skin was on off. It is client-side only, so there is no
+server restart: restart the app to see it.
+
+Skins are often handed around flattened, or made for an older client than your
+GRF, so each picture is **placed against your GRF's own list of names**, read
+from the archive's file table:
+
+1. its own path, if the GRF has a file there (letter case does not matter);
+2. otherwise the root, if the GRF has that name at the root;
+3. otherwise `basic_interface/`, then `login_interface/`;
+4. otherwise the one other folder that has that name, if exactly one does.
+
+A picture that matches nothing is **left out and listed** — in the message
+Settings shows, and in full in `skin-import.txt` in the mod's folder. A file the
+client never asks for would sit in the overlay looking like part of the skin
+and do nothing. So is a second copy of a file already placed. Across 58
+community skins from 2016 this placed 98% of 15,068 pictures; what was left
+out is mostly buttons the client has since dropped or renamed
+(`btn_num*.bmp`, `btn_rec_*.bmp`, `btn_vip.bmp`) and files the skin's author
+had renamed by hand (`equipwin_bg3 (1).bmp`, `#shop.bmp`).
+
+Two things are left out on purpose:
+
+- **`option/`** holds the official client's per-skin choices — alternative
+  bars and buttons the player picks between in that client's own settings.
+  roBrowser has no such setting. To use one, copy its pictures over the mod's
+  own by hand.
+- Anything that is not a picture: read-me files, thumbnails.
+
+What a skin cannot change:
+
+- **Window bodies, fonts and text colours.** roBrowser draws those in CSS, not
+  from pictures. A skin mod can add a `client/index.js` that adopts a
+  stylesheet for them — see [client/](#client--restyling-the-client-itself).
+- **The login window, with most skins.** For the packet versions this app ships
+  the client draws a newer login window (`login_interface/bg_login.tga`,
+  `bt_start_*.bmp`) than any skin made before 2018 carries pictures for. The
+  game windows behind it are the ones a skin restyles.
+
+`"kind": "skin"` in `mod.json` is what makes a skin one of a set: see
+[mod.json](#modjson). A skin you lay out by hand works the same way;
+[`examples/mods/ui-skin`](../examples/mods/ui-skin) is three pictures.
+
+### Cursor packs
+
+The mouse pointer is a sprite, `data/sprite/cursors.spr` and `cursors.act`,
+and a mod that ships those two replaces it. Give **Install a UI skin…** a
+folder or archive holding them — most travel as a `.rar`, which macOS opens
+and Windows' built-in `tar` should; on Linux, or if it refuses, unpack it and
+choose the folder — and it builds a
+`cursor-<name>` mod of `"kind": "cursor"`: one cursor pack at a time, alongside
+any skin. A skin folder that carries the two files keeps them in the skin.
+
+**The pack is only drawn while the game's Graphics option "Show official
+cursor" is on.** Without it the client draws the system pointer and never asks
+for the sprite. It is on unless somebody switched it off, and the mod the
+importer builds switches it back on for you: if the saved option is off, it
+turns it on and reloads the game page once. Its setting, *Turn on "Show
+official cursor"*, lets a player who wants it off keep it off. The client draws
+its cursor from the game's render loop, so expect the system pointer on the
+login screen and the pack's once you are in a map. (Thanks to
+Clarois, whose custom-cursor mod worked out how that option draws the sprite.)
+
+### Switching skins and the client's cache
+
+The client keeps every interface picture it has downloaded, by filename, and
+every skin replaces the same filenames — so a switch would show the old skin's
+pictures from that cache. It does not, because each enabled mod's *name* is
+part of the [overlay fingerprint](#the-client-caches-hard): switching from one
+skin to another, or switching skins off, moves it, and the app clears the
+client's cache on the next launch. Switching back to a skin you had before
+moves it back, which is a second clear and a short re-download, not a stale
+screen.
 
 ## BGM/ — music
 

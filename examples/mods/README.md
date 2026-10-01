@@ -21,6 +21,7 @@ noticing: a `data/`-only mod has no empty `npc/` folder for symmetry.
 |---|---|---|
 | [login-screen](login-screen) | `data/` | Your own art on the login screen — which is twelve images, not one. |
 | [loading-screens](loading-screens) | `data/` | Ten loading screens, drawn at random. The rotation is already in the client. |
+| [ui-skin](ui-skin) | `data/` | A recoloured window title bar, and the `"kind": "skin"` that makes it one skin of a set. |
 | [tougher-monsters](tougher-monsters) | `db/` `npc/` | Both ways to change what you fight, and how `Drops:` differs from every other field. |
 | [quest-npc](quest-npc) | `npc/` | A menu, a branch, a character variable that survives a relog, and a reward. |
 | [custom-item](custom-item) | `db/` `System/` `npc/` | An item in no client: stats, a name, and an NPC who gives you one. Ten lines of `System/`, not five megabytes. |

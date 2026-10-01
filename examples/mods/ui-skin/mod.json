@@ -1,0 +1,8 @@
+{
+  "name": "ui-skin",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "A teal window title bar: the smallest UI skin there is, three generated pictures.",
+  "kind": "skin",
+  "requires": { "app": ">=1.0.6", "era": "any" }
+}

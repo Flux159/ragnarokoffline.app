@@ -475,6 +475,7 @@
     <div class="actions" style="margin-top:10px">
       <button id="mods-browse" class="ghost">Find mods…</button>
       <button id="mods-install" class="ghost">Install from a folder…</button>
+      <button id="mods-install-skin" class="ghost">Install a UI skin…</button>
       <button id="mods-folder" class="ghost">Open mods folder</button>
       <button id="mods-apply" class="ghost">Apply</button>
     </div>
@@ -492,6 +493,10 @@
     <p class="note">A mod is a folder. Drop one in and it appears here. Server
        changes need the server restarted, which Apply does; client changes —
        sprites, styling — need the app restarted.</p>
+    <p class="note">A UI skin is a folder of interface pictures in the official
+       client's skin format, or a zip of one; a cursor pack is a
+       <code>cursors.spr</code> and <code>cursors.act</code>. Each becomes a mod,
+       and only one skin and one cursor pack are on at a time.</p>
   </div>
   </div>
 
@@ -1181,6 +1186,9 @@ async function refreshMods() {
   modState = {};
   modSettings = {}; modSettingsBaseline = {};
   box.innerHTML = '';
+  // Skins and cursor packs are a choice of one: ticking one unticks the
+  // others of its kind, as the supervisor will when it is applied.
+  const kindBoxes = {};
   for (const m of mods) {
     // A refused mod is not a mod the player can turn on, so it does not get a
     // checkbox that lies about being able to. It stays in the list, next to
@@ -1191,12 +1199,21 @@ async function refreshMods() {
     const cb = document.createElement('input');
     cb.type = 'checkbox'; cb.checked = m.enabled; cb.disabled = m.refused;
     cb.style.cssText = 'accent-color: var(--accent); flex:none; margin-top:2px';
-    cb.onchange = () => { modState[m.name] = cb.checked; };
+    cb.onchange = () => {
+      modState[m.name] = cb.checked;
+      if (!cb.checked || !m.kind) return;
+      for (const [other, otherBox] of kindBoxes[m.kind] || []) {
+        if (other !== m.name && otherBox.checked) { otherBox.checked = false; modState[other] = false; }
+      }
+    };
+    if (m.kind && !m.refused) (kindBoxes[m.kind] = kindBoxes[m.kind] || []).push([m.name, cb]);
     const text = document.createElement('span');
+    const kindLabel = { skin: 'UI skin', cursor: 'cursor pack' }[m.kind];
     const by = [m.version && 'v' + m.version, m.author && 'by ' + m.author]
       .filter(Boolean).join(' ');
     text.innerHTML = `<b>${esc(m.name)}</b>`
       + (m.bundled ? ' <span style="color:var(--dim); font-size:11px">included</span>' : '')
+      + (kindLabel ? ` <span style="color:var(--dim); font-size:11px">${kindLabel} · one at a time</span>` : '')
       + (by ? ` <span style="color:var(--dim); font-size:11px">${esc(by)}</span>` : '')
       + (m.description ? `<br><span style="color:var(--dim)">${esc(m.description)}</span>` : '')
       // Not from the mod's own description: a mod that changes what commands
@@ -1624,6 +1641,12 @@ $('mods-browse').onclick = async () => {
 
 $('mods-install').onclick = () => withButton('mods-install', 'Installing…', 'Install from a folder…', async () => {
   const msg = await invoke('install_mod');
+  await refreshMods();
+  return msg;
+});
+
+$('mods-install-skin').onclick = () => withButton('mods-install-skin', 'Installing…', 'Install a UI skin…', async () => {
+  const msg = await invoke('install_skin');
   await refreshMods();
   return msg;
 });

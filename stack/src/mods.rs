@@ -123,7 +123,18 @@ pub struct Manifest {
     /// what is validated and stored. Checked here for shape and existence so a
     /// typo is a refusal with a reason rather than a button that does nothing.
     pub settings_page: String,
+    /// `"skin"` or `"cursor"`, or empty. Mods of one kind replace the same
+    /// files -- every UI skin overlays the whole interface folder, every
+    /// cursor pack the one cursor sprite -- so a second one switched on would
+    /// leave a patchwork of both. At most one of each kind is on at a time:
+    /// switching one on switches the others of its kind off.
+    pub kind: String,
 }
+
+/// The values `"kind"` may take. Anything else is refused by name, the way a
+/// typo in `requires` is: a skin that silently stops being exclusive is the
+/// kind of mistake that looks like it worked.
+pub const KINDS: &[&str] = &["skin", "cursor"];
 
 /// One declared option. Deliberately three scalar types: anything richer is a
 /// mod's own UI problem, and this has to render without the app knowing what
@@ -181,6 +192,7 @@ impl Default for Manifest {
             requires_mods: Vec::new(),
             after: Vec::new(),
             settings_page: String::new(),
+            kind: String::new(),
         }
     }
 }
@@ -415,6 +427,17 @@ fn read_manifest(dir: &Path) -> Result<Option<Manifest>, String> {
                     ));
                 }
             }
+        }
+    }
+    if let Some(kind) = v.get("kind") {
+        match v.str("kind") {
+            Some(k) if KINDS.contains(&k) => m.kind = k.to_string(),
+            Some(k) => {
+                return Err(format!(
+                    "mod.json: \"kind\" is {k:?}; this build understands \"skin\" and \"cursor\""
+                ))
+            }
+            None => return Err(format!("mod.json: \"kind\" must be \"skin\" or \"cursor\", not {kind}")),
         }
     }
     if v.get("settingsPage").is_some() {
@@ -1001,6 +1024,28 @@ pub fn scan(cfg: &Config) -> Vec<Installed> {
             );
         }
         out.push(Installed { name, dir, status, manifest, bundled });
+    }
+
+    // One skin, one cursor pack. `enable` keeps the lists that way, but a
+    // folder dropped in by hand is on by default, so two of a kind can still
+    // both be on here. The one the player chose wins -- named in enabled.txt
+    // -- and otherwise the last in name order, the one whose files would have
+    // won anyway. The others read as switched off, which is what they are.
+    for kind in KINDS {
+        let on: Vec<usize> = (0..out.len())
+            .filter(|&i| out[i].status == Status::On && out[i].manifest.kind == *kind)
+            .collect();
+        let keep = on
+            .iter()
+            .rev()
+            .find(|&&i| enabled.contains(&out[i].name))
+            .or(on.last())
+            .copied();
+        for i in on {
+            if Some(i) != keep {
+                out[i].status = Status::Off;
+            }
+        }
     }
 
     // A second pass, because a requirement can name a mod the first pass had
@@ -2246,7 +2291,7 @@ fn load_report(state: &Path) -> BTreeMap<String, Vec<String>> {
     out
 }
 
-pub fn list(cfg: &Config) -> Vec<[String; 12]> {
+pub fn list(cfg: &Config) -> Vec<[String; 13]> {
     let saved = read_settings(&cfg.state).unwrap_or_default();
     let reported = load_report(&cfg.state);
     scan(cfg)
@@ -2294,6 +2339,9 @@ pub fn list(cfg: &Config) -> Vec<[String; 12]> {
                 } else {
                     one_line(&m.dir.to_string_lossy())
                 },
+                // `skin`, `cursor` or empty. Last, like every addition, so an
+                // older shell reads the columns it knows.
+                m.manifest.kind.clone(),
             ]
         })
         .collect()
@@ -2309,6 +2357,36 @@ pub fn set_enabled(state: &Path, name: &str, on: bool) -> Result<(), String> {
         "# Mods listed here are installed but switched off.")?;
     write_list(state, "enabled.txt", name, on,
         "# Mods listed here are switched on, including any that ship switched off.")
+}
+
+/// Switch a mod on, and every other mod of its `kind` off.
+///
+/// Returns the names switched off, so whoever asked can say so. A mod with no
+/// kind, or one that is not installed, is simply switched on -- `set_enabled`
+/// never needed the folder to exist, and neither does this.
+pub fn enable(cfg: &Config, name: &str) -> Result<Vec<String>, String> {
+    let all = scan(cfg);
+    let kind = all
+        .iter()
+        .find(|m| m.name == name)
+        .map(|m| m.manifest.kind.clone())
+        .unwrap_or_default();
+    set_enabled(&cfg.state, name, true)?;
+    let mut off = Vec::new();
+    if kind.is_empty() {
+        return Ok(off);
+    }
+    let chosen = read_list(&cfg.state, "enabled.txt");
+    for m in all.iter().filter(|m| m.name != name && m.manifest.kind == kind) {
+        // Written for any that is on *or* recorded as chosen: a refused skin
+        // that was ticked would otherwise come back on beside this one the
+        // moment its problem went away.
+        if m.status == Status::On || chosen.contains(&m.name) {
+            set_enabled(&cfg.state, &m.name, false)?;
+            off.push(m.name.clone());
+        }
+    }
+    Ok(off)
 }
 
 /// Forget every choice the player made about a mod: its line in either list
@@ -3268,5 +3346,82 @@ mod tests {
         let (_, notes) = combine_whole_conf("groups.yml", &entries, &[]);
         assert_eq!(notes.len(), 1, "{notes:?}");
         assert!(notes[0].contains("@mapmove (as \"warp\")"), "{}", notes[0]);
+    }
+
+    fn kind_config(tag: &str) -> Config {
+        let root = tmp(tag);
+        Config {
+            root: root.join("app"),
+            state: root.join("state"),
+            nebula_home: root.join("nebula"),
+            nebula: root.join("unused"),
+            docker: root.join("unused"),
+            image: String::new(),
+            db_image: String::new(),
+            app_version: None,
+        }
+    }
+
+    fn install(cfg: &Config, name: &str, manifest: &str) {
+        let dir = cfg.state.join("mods").join(name);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("mod.json"), manifest).unwrap();
+    }
+
+    fn on(cfg: &Config) -> Vec<String> {
+        enabled(cfg).into_iter().map(|m| m.name).collect()
+    }
+
+    #[test]
+    fn kind_is_skin_or_cursor_and_anything_else_is_named() {
+        let d = tmp("kind");
+        for (body, want) in [
+            (r#"{"kind": "skin"}"#, Ok("skin")),
+            (r#"{"kind": "cursor"}"#, Ok("cursor")),
+            (r#"{}"#, Ok("")),
+            (r#"{"kind": "skn"}"#, Err("\"skn\"")),
+            (r#"{"kind": 3}"#, Err("a number")),
+        ] {
+            fs::write(d.join("mod.json"), body).unwrap();
+            match (read_manifest(&d), want) {
+                (Ok(Some(m)), Ok(kind)) => assert_eq!(m.kind, kind, "{body}"),
+                (Err(e), Err(said)) => assert!(e.contains(said), "{body}: {e}"),
+                (got, _) => panic!("{body}: {got:?}"),
+            }
+        }
+    }
+
+    // A skin overlays the whole interface folder, so two at once is a
+    // patchwork. Switching one on switches the other off; mods without a kind,
+    // and mods of the other kind, are left alone.
+    #[test]
+    fn switching_a_skin_on_switches_the_other_skin_off() {
+        let cfg = kind_config("skins");
+        install(&cfg, "skin-a", r#"{"kind": "skin"}"#);
+        install(&cfg, "skin-b", r#"{"kind": "skin"}"#);
+        install(&cfg, "cursor-red", r#"{"kind": "cursor"}"#);
+        install(&cfg, "plain", "{}");
+
+        // Dropped in by hand, nobody has chosen: the later name, whose files
+        // would have won anyway, is the one on.
+        assert_eq!(on(&cfg), ["cursor-red", "plain", "skin-b"]);
+
+        assert_eq!(enable(&cfg, "skin-a").unwrap(), ["skin-b"]);
+        assert_eq!(on(&cfg), ["cursor-red", "plain", "skin-a"]);
+
+        assert_eq!(enable(&cfg, "skin-b").unwrap(), ["skin-a"]);
+        assert_eq!(on(&cfg), ["cursor-red", "plain", "skin-b"]);
+
+        // Off is off: no skin at all is a choice too.
+        set_enabled(&cfg.state, "skin-b", false).unwrap();
+        assert_eq!(on(&cfg), ["cursor-red", "plain"]);
+
+        // A mod with no kind switches nothing else off.
+        assert!(enable(&cfg, "plain").unwrap().is_empty());
+        let rows = list(&cfg);
+        let kind = |name: &str| rows.iter().find(|r| r[1] == name).unwrap()[12].clone();
+        assert_eq!(kind("skin-a"), "skin");
+        assert_eq!(kind("cursor-red"), "cursor");
+        assert_eq!(kind("plain"), "");
     }
 }

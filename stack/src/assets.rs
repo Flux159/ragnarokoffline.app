@@ -1849,4 +1849,36 @@ mod tests {
 
         let _ = fs::remove_dir_all(&tmp);
     }
+
+    /// The client caches by filename, and every skin replaces the same
+    /// filenames -- so two skins with identically sized pictures, written in
+    /// the same second, must still read as different overlays, or switching
+    /// between them would show the old one from the cache. The mod's name is
+    /// in the fingerprint for exactly that.
+    #[test]
+    fn switching_skins_moves_the_overlay_fingerprint() {
+        let cfg = fixture_config("skin-switch");
+        let stamp = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+        for (name, colour) in [("skin-blue", "blue"), ("skin-pink", "pink")] {
+            let dir = cfg.state.join("mods").join(name);
+            write(&dir.join("mod.json"), r#"{"kind": "skin"}"#);
+            let art = dir.join("data/texture/ui/basic_interface/titlebar_mid.bmp");
+            write(&art, colour);
+            fs::File::options().write(true).open(&art).unwrap().set_modified(stamp).unwrap();
+        }
+
+        crate::mods::enable(&cfg, "skin-blue").unwrap();
+        let blue = overlay_fingerprint(&cfg);
+        crate::mods::enable(&cfg, "skin-pink").unwrap();
+        let pink = overlay_fingerprint(&cfg);
+        assert_ne!(blue, pink, "a skin switch would be served from the client's cache");
+
+        crate::mods::enable(&cfg, "skin-blue").unwrap();
+        assert_eq!(overlay_fingerprint(&cfg), blue, "switching back must not cost a second clear");
+
+        crate::mods::set_enabled(&cfg.state, "skin-blue", false).unwrap();
+        assert_ne!(overlay_fingerprint(&cfg), blue, "switching the skin off must clear it too");
+
+        let _ = fs::remove_dir_all(cfg.state.parent().unwrap());
+    }
 }
