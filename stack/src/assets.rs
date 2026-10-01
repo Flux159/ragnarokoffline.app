@@ -793,9 +793,15 @@ impl ViewFiles {
             let id = match id {
                 Some(id) => id,
                 None => {
-                    fs::write(merged.join(EMPTY_LUA), "-- An id table for a name table that needs none.\n")
-                        .map_err(|e| format!("writing {EMPTY_LUA}: {e}"))?;
-                    EMPTY_LUA.to_string()
+                    // One stand-in per mod and table, never shared: the client
+                    // mounts each id file under its own name while it loads, and
+                    // two loads of one name at once unmount it from under each
+                    // other, which leaves its Lua state unusable (every table
+                    // after that fails with "memory access out of bounds").
+                    let stub = format!("ids-none-{kind}-{}.lua", safe_name(mod_name));
+                    fs::write(merged.join(&stub), "-- An id table for a name table that needs none.\n")
+                        .map_err(|e| format!("writing {stub}: {e}"))?;
+                    stub
                 }
             };
             let entry = (id, name);
@@ -812,7 +818,13 @@ impl ViewFiles {
     }
 }
 
-const EMPTY_LUA: &str = "ids-none.lua";
+/// A mod name as part of a file name, as the item tables do it.
+fn safe_name(mod_name: &str) -> String {
+    mod_name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .collect()
+}
 
 /// Which view table a file in `System/` is, by the client's own file names:
 /// `accname.lub`, `jobname.lua`, `accessoryid_custom.lub`, ...
@@ -1555,6 +1567,25 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
+    /// Two pairs that need a stand-in id table each get their own: the client
+    /// mounts id files by name, and a shared one broke every table after it.
+    #[test]
+    fn stand_in_id_tables_are_never_shared() {
+        let tmp = std::env::temp_dir().join(format!("ro-sysvs-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let merged = tmp.join("merged");
+        fs::create_dir_all(&merged).unwrap();
+        let a = tmp.join("a/System");
+        write(&a.join("accname.lub"), "AccNameTable = { [5001] = \"_x\" }");
+        write(&a.join("jobname.lub"), "JobNameTable = { [25001] = \"PORING\" }");
+        let (_, _, views) = copy_system_layer(&a, &merged, "a").unwrap();
+        let mut stubs = vec![views.accessory[0].0.clone(), views.monster[0].0.clone()];
+        stubs.sort();
+        stubs.dedup();
+        assert_eq!(stubs.len(), 2, "{stubs:?}");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
     /// A new monster's sprite and a new headgear's look are rows added to the
     /// client's tables, not replacements of them: each file is kept aside under
     /// the mod's name and paired, and the base is untouched.
@@ -1580,8 +1611,8 @@ mod tests {
         let (_, _, second) = copy_system_layer(&b, &merged, "b").unwrap();
         assert_eq!(first.monster, vec![("npcidentity-a.lub".to_string(), "jobname-a.lub".to_string())]);
         // A name table keyed by plain numbers gets an empty id table to load.
-        assert_eq!(first.accessory, vec![(EMPTY_LUA.to_string(), "accname-a.lua".to_string())]);
-        assert!(merged.join(EMPTY_LUA).is_file());
+        assert_eq!(first.accessory, vec![("ids-none-accessory-a.lua".to_string(), "accname-a.lua".to_string())]);
+        assert!(merged.join("ids-none-accessory-a.lua").is_file());
         assert_eq!(first.weapon, vec!["weapontable-a.lub".to_string()]);
         // An id table with nothing to name is dropped, not half-loaded.
         assert!(first.robe.is_empty());
@@ -1592,7 +1623,7 @@ mod tests {
         all.extend(second);
         assert_eq!(
             all.config_entry(),
-            "\tcustomLuaTables: { accessory: [['System/ids-none.lua', 'System/accname-a.lua'], \
+            "\tcustomLuaTables: { accessory: [['System/ids-none-accessory-a.lua', 'System/accname-a.lua'], \
              ['System/accessoryid-b.lub', 'System/accname-b.lub']], \
              monster: [['System/npcidentity-a.lub', 'System/jobname-a.lub']], \
              weapon: ['System/weapontable-a.lub'] },\n"

@@ -55,10 +55,11 @@ test('with no mod item tables, the first base table the client would read', () =
 
 test("mods' monster sprites come from their npcidentity/jobname pairs, later mods winning", () => {
 	const web = world({
-		'Config.local.js': "\tcustomLuaTables: { accessory: [['System/ids-none.lua', 'System/accname-a.lua']], monster: [['System/npcidentity-a.lub', 'System/jobname-a.lub'], ['System/ids-none.lua', 'System/jobname-b.lua']] },\n",
+		'Config.local.js': "\tcustomLuaTables: { accessory: [['System/ids-none-accessory-a.lua', 'System/accname-a.lua']], monster: [['System/npcidentity-a.lub', 'System/jobname-a.lub'], ['System/ids-none-monster-b.lua', 'System/jobname-b.lua']] },\n",
 		'System/npcidentity-a.lub': 'jobtbl.JT_MY_MOB = 31001\njobtbl.JT_OTHER = 31002\n',
 		'System/jobname-a.lub': 'JobNameTable = {\n\t[jobtbl.JT_MY_MOB] = "MY_MOB",\n\t[jobtbl.JT_OTHER] = "OTHER",\n}\n',
-		'System/ids-none.lua': '',
+		'System/ids-none-accessory-a.lua': '',
+		'System/ids-none-monster-b.lua': '',
 		'System/jobname-b.lua': 'JobNameTable = { [31002] = "B_OTHER" }',
 	});
 	assert.deepEqual(clientMonsterSprites(web), { 31001: 'MY_MOB', 31002: 'B_OTHER' });
