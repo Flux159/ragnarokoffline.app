@@ -1,0 +1,73 @@
+//===== Ragnarok Offline mod: refine-matk ==========================
+//= Weapon refining grants MATK too, scaled per weapon tier.
+//= Each equipped weapon contributes independently, so dual-wielders
+//= (Ninja, Kagerou/Oboro, Assassin Cross with MATK daggers) get
+//= both hands. A two-handed weapon that occupies both slots is
+//= only counted once.
+//= The refresh loop keeps a short-lived bonus_script alive so
+//= the bonus tracks the currently equipped weapon(s).
+//==================================================================
+
+-	script	refine_matk_mgr	FAKE_NPC,{
+	end;
+
+OnPCLoginEvent:
+	// Restart the per-player loop cleanly on every login.
+	deltimer "refine_matk_mgr::OnRefresh";
+	addtimer 500, "refine_matk_mgr::OnRefresh";
+	end;
+
+OnRefresh:
+	.@bonus = 0;
+
+	// --- Right hand ------------------------------------------------
+	.@r_item = getequipid(EQI_HAND_R);
+	.@r_ref = getequiprefinerycnt(EQI_HAND_R);
+	.@r_wlvl = 0;
+	.@r_loc = 0;
+	if (.@r_item > 0) {
+		.@r_wlvl = getiteminfo(.@r_item, ITEMINFO_WEAPONLEVEL);
+		// getiteminfo type 5 = equip location bitmask (EQP_HAND_R=2,
+		// EQP_HAND_L=32); a two-hand weapon reports both bits set.
+		.@r_loc = getiteminfo(.@r_item, 5);
+	}
+	if (.@r_wlvl >= 1 && .@r_wlvl <= 4) {
+		.@per_r = callfunc("F_ModSetting", "refine-matk", "matk_lv" + .@r_wlvl, .@r_wlvl);
+		.@bonus += .@r_ref * .@per_r;
+	}
+
+	// --- Left hand -------------------------------------------------
+	// Skip when the right hand already holds a two-handed weapon,
+	// since it also fills the left slot and would double-count.
+	.@is_two_handed = ((.@r_loc & 2) != 0) && ((.@r_loc & 32) != 0);
+	if (!.@is_two_handed) {
+		.@l_item = getequipid(EQI_HAND_L);
+		.@l_ref = getequiprefinerycnt(EQI_HAND_L);
+		.@l_wlvl = 0;
+		if (.@l_item > 0)
+			.@l_wlvl = getiteminfo(.@l_item, ITEMINFO_WEAPONLEVEL);
+		// Shields have WeaponLevel 0, so this filter also excludes
+		// them without a separate item-type check. A dual-wielded
+		// off-hand weapon looks up its own tier's setting.
+		if (.@l_wlvl >= 1 && .@l_wlvl <= 4) {
+			.@per_l = callfunc("F_ModSetting", "refine-matk", "matk_lv" + .@l_wlvl, .@l_wlvl);
+			.@bonus += .@l_ref * .@per_l;
+		}
+	}
+
+	// Reapply on every tick. Flag 1024 (BSF_FORCE_REPLACE) makes an
+	// identical bonus_script push its expiry out instead of being
+	// ignored as a duplicate, so the bonus stays up for as long as the
+	// loop runs; without it the first one simply expires after its
+	// duration and an unchanged value is never applied again. Flag 8
+	// drops it on logout rather than saving it to the bonus_script
+	// table. No status icon argument: the default is none (EFST_BLANK),
+	// where 0 would be EFST_PROVOKE's.
+	if (.@bonus > 0)
+		bonus_script "bonus bMatk," + .@bonus + ";", 5, 1032;
+
+	// A 4s tick under the 5s duration. When the value changes the old
+	// string is a different bonus_script, which lapses within ~1s.
+	addtimer 4000, "refine_matk_mgr::OnRefresh";
+	end;
+}
