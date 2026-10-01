@@ -1,0 +1,7 @@
+{
+  "name": "vampiric-blade",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "A one-handed sword that drains life on every hit, heals extra on crit, and stuns anyone who crits you back. Demonstrates item() Lua hooks: on_attack and on_hit_taken on the same equipment.",
+  "requires": { "app": ">=1.4.0", "era": "any" }
+}

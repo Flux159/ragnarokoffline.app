@@ -1,0 +1,25 @@
+tbl = {
+	[30401] = {
+		unidentifiedDisplayName = "Amulet",
+		unidentifiedResourceName = "¹Ý Áö",
+		identifiedDisplayName = "Arcane Ward",
+		identifiedResourceName = "¹Ý Áö",
+		identifiedDescriptionName = {
+			"An amulet that drinks the spell that strikes it.",
+			"",
+			"^0000FFOn magical hit^000000: The caster is ^8000003 seconds^000000",
+			"of ^800080Silence^000000, and you absorb ^FF000025%%^000000 of the",
+			"damage back as SP.",
+			"",
+			"Physical and misc attacks pass through at full damage,",
+			"and no absorb fires.",
+			"",
+			"MDef +8, Int +2",
+			"Weight: 10",
+			"Required Level: 40",
+			"Jobs: All",
+		},
+		slotCount = 0,
+		ClassNum = 0,
+	},
+}

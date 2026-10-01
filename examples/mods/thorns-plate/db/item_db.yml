@@ -1,0 +1,23 @@
+Header:
+  Type: ITEM_DB
+  Version: 3
+
+Body:
+  - Id: 30301
+    AegisName: Thorns_Plate
+    Name: Thorns Plate
+    Type: Armor
+    Buy: 20000
+    Weight: 2800
+    Defense: 55
+    Jobs:
+      All: true
+    Classes:
+      All_Upper: true
+    Gender: Both
+    Locations:
+      Armor: true
+    EquipLevelMin: 40
+    Refineable: true
+    Script: |
+      bonus bVit,3;

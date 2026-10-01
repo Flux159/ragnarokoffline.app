@@ -1,0 +1,25 @@
+Header:
+  Type: ITEM_DB
+  Version: 3
+
+Body:
+  - Id: 30401
+    AegisName: Arcane_Ward
+    Name: Arcane Ward
+    Type: Armor
+    Buy: 20000
+    Weight: 100
+    Defense: 1
+    Jobs:
+      All: true
+    Classes:
+      All_Upper: true
+    Gender: Both
+    Locations:
+      Right_Accessory: true
+      Left_Accessory: true
+    EquipLevelMin: 40
+    Refineable: false
+    Script: |
+      bonus bMdef,8;
+      bonus bInt,2;

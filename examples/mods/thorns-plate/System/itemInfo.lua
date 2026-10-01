@@ -1,0 +1,25 @@
+tbl = {
+	[30301] = {
+		unidentifiedDisplayName = "Armor",
+		unidentifiedResourceName = "°©¿Ê",
+		identifiedDisplayName = "Thorns Plate",
+		identifiedResourceName = "°©¿Ê",
+		identifiedDescriptionName = {
+			"Spiked plate that bleeds any hand that strikes it.",
+			"",
+			"^0000FFOn physical hit^000000: The attacker suffers ^8000003 seconds^000000",
+			"of ^800080Bleeding^000000 (percent of their MaxHP, every tick).",
+			"",
+			"Magical and misc attacks pass through at full damage,",
+			"and no bleeding.",
+			"",
+			"Vit +3",
+			"Defense: 55",
+			"Weight: 280",
+			"Required Level: 40",
+			"Jobs: All",
+		},
+		slotCount = 0,
+		ClassNum = 0,
+	},
+}

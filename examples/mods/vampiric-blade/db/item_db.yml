@@ -1,0 +1,29 @@
+# A new one-handed sword. The item() Lua hook is what makes it special --
+# this entry just gives it stats and an id. rAthena's own items stop well
+# below 30000, so this range is free for mods.
+Header:
+  Type: ITEM_DB
+  Version: 3
+
+Body:
+  - Id: 30101
+    AegisName: Vampiric_Blade
+    Name: Vampiric Blade
+    Type: Weapon
+    SubType: 1Hsword
+    Buy: 20000
+    Weight: 1200
+    Attack: 110
+    Range: 1
+    Jobs:
+      All: true
+    Classes:
+      All_Upper: true
+    Gender: Both
+    Locations:
+      Right_Hand: true
+    WeaponLevel: 3
+    EquipLevelMin: 40
+    Refineable: true
+    Script: |
+      bonus bAtkEle,Ele_Dark;

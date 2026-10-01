@@ -580,13 +580,16 @@ rather than where it stands.
 
 See [`examples/mods/quest-npc`](../examples/mods/quest-npc).
 
-## lua/ — changing how a skill works
+## lua/ — changing how a skill or item works
 
-`db/` changes a skill's numbers: its cast time, cooldown, SP cost, element,
-hit count, how long its status lasts. What it cannot change is the **formula**
-— how much damage a skill does, from what — or what happens when it hits.
-Those are C++ in the server. A mod's `lua/` folder reaches them without a
-change to the server.
+`db/` changes a skill's or item's numbers: cast time, cooldown, SP cost,
+element, hit count, how long its status lasts. What it cannot change is the
+**formula** — how much damage a skill does, from what — or what happens
+when a hit lands or an attack is received. Those are C++ in the server. A
+mod's `lua/` folder reaches them without a change to the server, from two
+sides: `skill(...)` hooks the damage calculation and outcome of a specific
+skill, and `item(...)` hooks any attack by or against the wearer of a
+specific piece of equipment.
 
 ```lua
 -- my-mod/lua/firebolt.lua: Fire Bolt scales with INT as well as its level.
@@ -598,19 +601,42 @@ skill("MG_FIREBOLT", {
 ```
 
 Every `.lua` file in `lua/` (subfolders too) runs once when the server
-starts, in the same order mods are applied, so where two mods hook the same
-part of the same skill the later one wins — but only that part: one mod's
-`ratio` and another's `on_hit` on the same skill both apply. **Apply**
-restarts the server, so an edited file takes effect then.
+starts, in the same order mods are applied. **Apply** restarts the server,
+so an edited file takes effect then.
 
-### The hooks
+**Two mods can hook the same part of the same skill or item.** Both run,
+in ascending priority order — a mod sets `priority = N` (0..10, default 5)
+in the registration table to say where it goes in the chain; lower runs
+first, ties broken by mod load order (the alphabetical order of folder
+names). `ratio`, `hit` and `element` thread the value through: each hook
+sees the previous one's return as `stock`, so the chain composes. `on_hit`,
+`on_attack` and `on_hit_taken` run every hook; each may queue its own
+drain/heal/status/polymorph actions, which are applied together once the
+hit is dealt. A hook that fails is switched off and the rest of the chain
+carries on.
 
-`skill("<AegisName>", { ... })` takes any of four functions. The name is the
-one in `skill_db.yml` — `MG_FIREBOLT`, not "Fire Bolt".
+```lua
+-- my-mod/lua/firebolt.lua: run after mods using the default priority of 5.
+skill("MG_FIREBOLT", {
+  priority = 7,
+  ratio = function(c, stock) return stock + c.caster.int * 2 end,
+})
+```
+
+A mod that registers twice for the same (skill, hook) or (item, hook)
+replaces its own previous entry rather than stacking against itself. The
+`priority` key is optional: omit it and the default (5) is used. Priority
+is per call, applying to every hook declared in that call; a mod wanting
+different priorities for two hooks makes two calls.
+
+### `skill("<AegisName>", { ... })` — the four skill hooks
+
+Takes any of four functions, keyed by the name in `skill_db.yml` —
+`MG_FIREBOLT`, not "Fire Bolt".
 
 | Hook | Called | Return |
 |---|---|---|
-| `ratio(c, stock)` | when the skill's damage is calculated | the skill's damage percentage; `stock` is the server's own, so `stock * 2` doubles it |
+| `ratio(c, stock)` | when the skill's damage is calculated | the skill's damage percentage; `stock` is the running value — the server's own on the first hook in the chain, the previous hook's return thereafter |
 | `hit(c, stock)` | when a weapon skill's accuracy is calculated | the hit rate bonus |
 | `element(c, stock)` | when the attack's element is decided | an element, e.g. `const("ELE_FIRE")` |
 | `on_hit(c)` | on every hit, once its damage is known | nothing; call the actions below |
@@ -621,39 +647,134 @@ given their own C++ class, which includes every damaging player skill. For
 the rest, the server says so in the log when it starts, and `on_hit` still
 works.
 
-`c` describes the hit:
+### `item("<AegisName>", { ... })` — the two equipment hooks
 
-| | |
+Takes any of two functions, keyed by the item's AegisName in
+`item_db.yml` — `KNIFE`, `MOONLIGHT_DAGGER`, or a custom item a mod has
+added. The hook fires for every attack by or against a unit **wearing**
+that item; a mob or a player with the item in inventory but not equipped
+does not fire it.
+
+| Hook | Called | Return |
+|---|---|---|
+| `on_attack(c)` | when the wearer attacks (skill or normal, hit or miss), once damage is finalized | nothing; call the actions below |
+| `on_hit_taken(c)` | when an attack lands or misses against the wearer, once damage is finalized | nothing; call the actions below |
+
+Both fire for weapon attacks and skill attacks alike; `c.skill_id` is `0`
+for a normal attack and the skill's id otherwise. Both fire for misses and
+dodges too — gate on `c.connected` and `c.damage` if your hook only cares
+about damage that landed. An item equipped in several slots (an accessory
+in both rings) fires its hooks once per attack, not once per copy.
+
+### What `c` describes
+
+Common to every hook (skill *and* item):
+
+| Field | Means |
 |---|---|
-| `c.skill`, `c.skill_id`, `c.skill_lv` | the skill and the level used |
+| `c.skill` | the skill's AegisName, or `""` for a normal attack |
+| `c.skill_id`, `c.skill_lv` | the skill id and the level used; `0` for a normal attack |
 | `c.caster`, `c.target` | the two units (below) |
-| `c.damage` | `on_hit` only: the damage this hit deals |
 | `c:chance(n)` | true `n` times in 10000, from the server's own random numbers |
 
-and each unit has `id`, `kind` (`"pc"`, `"mob"`, `"homun"`, `"merc"`,
-`"elemental"`, `"pet"`, `"npc"`), `name`, `level`, `str` `agi` `vit` `int`
-`dex` `luk`, `hp` `maxhp` `sp` `maxsp`, `race`, `element`, `size`, `boss`,
-`dead`, and `has_status("SC_…")`. A player also has `job`, `job_level` and
-`classchange` (the Hylozoist Card bonus); a monster has `mob_id`. They are a
-copy: changing them changes nothing.
+Additional fields in a damage hook (`on_hit`, `on_attack`, `on_hit_taken`):
 
-In `on_hit`, `c` can also ask for something to happen. It happens once the hit
-has been dealt, and not at all if the unit has died by then:
-
-| Action | |
+| Field | Means |
 |---|---|
-| `c:drain()` | the caster's HP/SP drain bonuses, on this hit's damage — what weapon attacks already do |
-| `c:heal(hp, sp)` | restores the caster |
-| `c:status("SC_STUN", rate, ms, val1, who)` | a status on `"target"` (default) or `"caster"`; `rate` is out of 10000 |
-| `c:polymorph()` | Hylozoist Card's effect: the target becomes a random monster. Never a boss |
+| `c.damage` | the final damage this hit deals (0 if it did not connect) |
+| `c.connected` | `true` if damage was applied, `false` if dodged, missed or blocked to zero |
+| `c.critical` | `true` if the attack was a critical |
+| `c.element` | the attack's element (an `ELE_*` constant) |
+| `c.weapon_type` | `"weapon"`, `"magic"` or `"misc"` — the `BF_WEAPON`/`BF_MAGIC`/`BF_MISC` class |
+
+Each unit (`c.caster`, `c.target`) has:
+
+| Field | Means |
+|---|---|
+| `id`, `kind`, `name`, `level` | `kind` is `"pc"`, `"mob"`, `"homun"`, `"merc"`, `"elemental"`, `"pet"` or `"npc"` |
+| `str` `agi` `vit` `int` `dex` `luk` | base stats |
+| `hp` `maxhp` `sp` `maxsp` | current and maximum vitals |
+| `race`, `element`, `size`, `boss`, `dead` | the usual flags; `boss` is true for MVPs |
+| `has_status("SC_...")` | status probe, returns a boolean |
+
+A **player** unit also has:
+
+| Field | Means |
+|---|---|
+| `job`, `job_level` | job id and job level |
+| `classchange` | the Hylozoist Card bonus |
+| `weapon_id`, `shield_id`, `armor_id`, `shoes_id`, `robe_id` | equipped item ids; `0` when the slot is empty |
+| `helm_top_id`, `helm_mid_id`, `helm_bottom_id` | the three head slots |
+| `accessory_1_id`, `accessory_2_id` | the two accessory slots |
+
+A **monster** unit also has:
+
+| Field | Means |
+|---|---|
+| `mob_id` | the `mob_db.yml` id |
+
+Unit tables are a snapshot: changing them changes nothing on the server.
+
+### Actions you can request
+
+In any damage hook (`on_hit`, `on_attack`, `on_hit_taken`), `c` can ask for
+something to happen. It happens once the hit has been dealt, and not at all
+if the unit has died by then:
+
+| Action | What it does |
+|---|---|
+| `c:drain()` | apply the attacker's HP/SP drain item bonuses to this hit's damage — what a weapon attack already does. Direction is fixed (attacker drains defender) |
+| `c:heal(hp, sp, who)` | restore a unit; `sp` defaults to `0`; `who` is `"caster"` (default, the attacker) or `"target"` (the defender). An `on_hit_taken` hook that restores its wearer passes `"target"` |
+| `c:status("SC_STUN", rate, ms, val1, who)` | start a status; `who` is `"target"` (default) or `"caster"`; `rate` is out of 10000; `val1` defaults to `1` |
+| `c:cast("MG_FIREBOLT", level, who)` | cast a skill the way `bAutoSpell` does, at `"target"` (default) or `"caster"`. No Lua hook runs during that cast, so a hook that casts a bolt cannot set itself off again. A ground skill's later ticks (Storm Gust) do run hooks: an `on_attack` that casts one should check `c.skill_id` |
+| `c:polymorph()` | Hylozoist Card's effect: the target becomes a random monster. Bosses and status-immune monsters are left alone |
 
 Three functions work anywhere:
 
-| | |
+| Function | What it does |
 |---|---|
 | `const("SC_STUN")` | any constant a server script can use: `SC_*`, `ELE_*`, `RC_*`, `Job_*` |
 | `setting("<mod>", "<key>", default)` | a [setting](#settings--options-the-app-renders-for-you) from Settings → Mods. Booleans are `true`/`false` and numbers keep their fractions, unlike in an NPC script |
 | `log(...)` | a line in the map server's log, with your mod's name on it |
+
+### Example: a weapon that drains and strikes back
+
+```lua
+-- my-mod/lua/vampiric_blade.lua -- an item() hook combining both directions.
+item("VAMPIRIC_BLADE", {
+  priority = 5,
+
+  on_attack = function(c)
+    -- Honour the weapon's drain bonuses on every connecting hit, and
+    -- heal an extra 10% of the damage on a critical.
+    if not c.connected then return end
+    c:drain()
+    if c.critical then c:heal(c.damage // 10, 0) end
+  end,
+
+  on_hit_taken = function(c)
+    -- Someone critted me while I was holding this. Stun them.
+    if c.critical then
+      c:status("SC_STUN", 10000, 2000, 1, "caster")
+    end
+  end,
+})
+```
+
+Four complete worked examples, each showing a different gating pattern
+on `item()`:
+
+| Mod | Hooks | Fires on | Shows |
+|---|---|---|---|
+| [`vampiric-blade`](../examples/mods/vampiric-blade) | `on_attack` + `on_hit_taken` on a weapon | both directions | lifesteal, crit heal, retaliation stun on being critted |
+| [`thorns-plate`](../examples/mods/thorns-plate) | `on_hit_taken` on armor | **physical** hits only (`c.weapon_type == "weapon"`) | filtering by attack type, delivering percent damage via `SC_BLEEDING` |
+| [`arcane-ward`](../examples/mods/arcane-ward) | `on_hit_taken` on an accessory | **magical** hits only (`c.weapon_type == "magic"`) | the opposite filter, routing a `c:heal` to `"target"` so the wearer gains SP |
+| [`mirage-cloak`](../examples/mods/mirage-cloak) | `on_hit_taken` on a garment | hits that **missed** (`c.connected == false`) | reacting to dodges, picking a random status with `math.random`, routing it to `"caster"` |
+
+The four together cover the three questions an `on_hit_taken` hook
+usually wants to answer: *what kind of attack was it* (`c.weapon_type`),
+*did it land* (`c.connected`, `c.critical`), and *who did what to whom*
+(`c.caster`, `c.target`, with every equip slot's item id on both).
 
 ### What a script cannot do
 
@@ -685,8 +806,9 @@ needs anything more than a mod:
 |---|---|---|
 | A monster, item, drop, skill's cast time/cooldown/cost/duration | `db/` | Only the fields you name |
 | An NPC, a quest, a warp, a shop, what happens on an event | `npc/` | rAthena's script language |
-| A skill's damage formula, accuracy or element | `lua/` | `ratio`, `hit`, `element` |
-| What a skill does when it hits: drain, heal, a status, polymorph | `lua/` | `on_hit` |
+| A skill's damage formula, accuracy or element | `lua/` | `skill("...", { ratio, hit, element })` |
+| What a skill does when it hits: drain, heal, a status, polymorph | `lua/` | `skill("...", { on_hit })` |
+| What an equipped weapon or piece of armor does on an attack or an incoming hit | `lua/` | `item("...", { on_attack, on_hit_taken })` |
 | A server setting from the allowlist | `conf/` | |
 | Switch on one of the fork's server extensions, or set its values | `db/extension_db.yml` | `@extensions` in game lists them; `@extensioninfo <id>` shows what one does |
 | How the client looks or behaves | `data/`, `System/`, `client/` | |

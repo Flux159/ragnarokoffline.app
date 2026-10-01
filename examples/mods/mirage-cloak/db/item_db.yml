@@ -1,0 +1,27 @@
+# A garment with no stock bonuses -- all of its behavior is in the Lua
+# hook. The small flee boost is there to make the dodge-based effect
+# actually trigger often enough to notice.
+Header:
+  Type: ITEM_DB
+  Version: 3
+
+Body:
+  - Id: 30201
+    AegisName: Mirage_Cloak
+    Name: Mirage Cloak
+    Type: Armor
+    Buy: 20000
+    Weight: 500
+    Defense: 10
+    Jobs:
+      All: true
+    Classes:
+      All_Upper: true
+    Gender: Both
+    Locations:
+      Garment: true
+    EquipLevelMin: 40
+    Refineable: true
+    Script: |
+      bonus bFlee,15;
+      bonus bAgi,2;

@@ -1,0 +1,7 @@
+{
+  "name": "arcane-ward",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "An amulet that drains SP from any caster who hits the wearer with a spell. Weapon and misc attacks pass through untouched. Demonstrates filtering item() hooks to magical hits only, and reacting to connected (not evaded) damage.",
+  "requires": { "app": ">=1.4.0", "era": "any" }
+}

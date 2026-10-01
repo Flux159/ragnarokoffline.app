@@ -1,0 +1,7 @@
+{
+  "name": "mirage-cloak",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "A garment that curses attackers who miss. Every time an attack is dodged against the wearer, one of five random debuffs hits the attacker instead. Demonstrates item() on_hit_taken on a non-weapon slot, random selection in the sandbox, and the \"who\" argument on c:status.",
+  "requires": { "app": ">=1.4.0", "era": "any" }
+}

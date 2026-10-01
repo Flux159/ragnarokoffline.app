@@ -1,0 +1,25 @@
+// A test vendor beside the Blade Keeper (vampiric-blade) in Prontera.
+// Costs one Jellopy, same as that one. Delete this file if the mod
+// should not include a shortcut.
+
+prontera,153,180,4	script	Cloak Weaver#mirage	4_F_02,{
+	mes "[Cloak Weaver]";
+	mes "You can't be struck by what cannot see you.";
+	mes "A Jellopy, and the cloak is yours.";
+	next;
+	if (select("Trade one Jellopy for the cloak.:Not today.") == 2) {
+		mes "[Cloak Weaver]";
+		mes "The threads will keep.";
+		close;
+	}
+	if (countitem(909) < 1) {
+		mes "[Cloak Weaver]";
+		mes "Not even one Jellopy. Walk softly, come back.";
+		close;
+	}
+	delitem 909, 1;
+	getitem 30201, 1;
+	mes "[Cloak Weaver]";
+	mes "Dodge well. The curse rides on misses.";
+	close;
+}

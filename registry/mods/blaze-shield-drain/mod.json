@@ -1,0 +1,16 @@
+{
+  "name": "blaze-shield-drain",
+  "version": "2.0.0",
+  "author": "Ragnarok Offline",
+  "description": "Make HP/SP drain bonuses (Moonlight Dagger's bSPDrainValue and the rest) fire on every Blaze Shield (NJ_KAENSIN) pillar hit, not only on weapon attacks.",
+  "requires": {
+    "app": ">=1.4.0",
+    "era": "any"
+  },
+  "tags": [
+    "ninja",
+    "blaze-shield",
+    "lua"
+  ],
+  "homepage": "https://github.com/Flux159/ragnarokoffline.app/tree/main/registry/mods/blaze-shield-drain"
+}

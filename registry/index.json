@@ -2,6 +2,72 @@
   "version": 1,
   "mods": [
     {
+      "name": "blaze-shield-classchange",
+      "version": "2.0.0",
+      "author": "Ragnarok Offline",
+      "description": "Let Hylozoist Card (bClassChange) roll its 1% polymorph on every Blaze Shield pillar hit.",
+      "homepage": "https://github.com/Flux159/ragnarokoffline.app/tree/main/registry/mods/blaze-shield-classchange",
+      "tags": [
+        "blaze-shield",
+        "lua",
+        "ninja"
+      ],
+      "icon": "",
+      "screenshots": [],
+      "requires": {
+        "mods": [],
+        "era": "any",
+        "app": ">=1.4.0"
+      },
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "fa23c22ddc1882a959f17b63ea52dcf2bfe9148869d64620e125d6f0a7ee8204"
+        },
+        {
+          "path": "lua/blaze_shield.lua",
+          "sha256": "b12be7c719e3e300521bd61c0b0c5df9a67fa40219800dcbe5ae4ca259411790"
+        },
+        {
+          "path": "mod.json",
+          "sha256": "b53e801006ced74cc715ff3585292b4999f83f84e627d74be900d0a28685145a"
+        }
+      ]
+    },
+    {
+      "name": "blaze-shield-drain",
+      "version": "2.0.0",
+      "author": "Ragnarok Offline",
+      "description": "Make HP/SP drain bonuses (Moonlight Dagger's bSPDrainValue and the rest) fire on every Blaze Shield (NJ_KAENSIN) pillar hit, not only on weapon attacks.",
+      "homepage": "https://github.com/Flux159/ragnarokoffline.app/tree/main/registry/mods/blaze-shield-drain",
+      "tags": [
+        "blaze-shield",
+        "lua",
+        "ninja"
+      ],
+      "icon": "",
+      "screenshots": [],
+      "requires": {
+        "mods": [],
+        "era": "any",
+        "app": ">=1.4.0"
+      },
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "45c4e93a7df2ea2631f508564005bb1f16a68eb3640b22212b75059fa92eb2e7"
+        },
+        {
+          "path": "lua/blaze_shield.lua",
+          "sha256": "b6c5a745f61d7e497cbf03990a702b57c9b9b5c954b1910b684827d222193eeb"
+        },
+        {
+          "path": "mod.json",
+          "sha256": "c8d824aaec33f91273a854b0f9732ba3e50aefda74ec7dabf4459996deaf52c7"
+        }
+      ]
+    },
+    {
       "name": "no-seed-cost",
       "version": "1.0.1",
       "author": "Ragnarok Offline",

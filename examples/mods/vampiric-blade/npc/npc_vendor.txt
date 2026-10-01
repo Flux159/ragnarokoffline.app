@@ -1,0 +1,25 @@
+// A test vendor who hands out the Vampiric Blade in exchange for one
+// Jellopy -- enough to equip and try the sword, nothing like a real
+// quest. Delete this file if the mod should not ship a shortcut.
+
+prontera,155,180,4	script	Blade Keeper#vampiric	4_M_02,{
+	mes "[Blade Keeper]";
+	mes "I keep a sword that drinks what it strikes.";
+	mes "A single Jellopy, and it is yours.";
+	next;
+	if (select("Trade one Jellopy for the blade.:Not today.") == 2) {
+		mes "[Blade Keeper]";
+		mes "The sword waits.";
+		close;
+	}
+	if (countitem(909) < 1) {
+		mes "[Blade Keeper]";
+		mes "Not even one Jellopy. Come back then.";
+		close;
+	}
+	delitem 909, 1;
+	getitem 30101, 1;
+	mes "[Blade Keeper]";
+	mes "Hold it tight. It feeds on either side.";
+	close;
+}
