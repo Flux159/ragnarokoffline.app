@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000013
+Subject: [PATCH] @companion remove: delete the one companion named, and never with player gear on it
+
+The row was deleted by name, and names are not unique (only shell_index is), so removing
+one companion removed every one that shared its name. Delete by the shell_index the name
+was resolved to instead.
+
+Removing a companion also threw away any gear the player had given it. A summoned one now
+hands that gear back first; one that is not summoned holds it only as a record, so it has
+to be summoned and the gear taken back before it can be removed.
+
+--- a/src/custom/atcommand.inc
++++ b/src/custom/atcommand.inc
+@@ -430,12 +430,21 @@
+ 				break;
+ 			}
+ 		}
++		// Gear the player gave it is the player's: a summoned companion hands it back first, and
++		// one that is not summoned has it only as a record, so it has to be summoned for that.
++		if (live == nullptr && population_engine_companion_holds_given_gear(sd->status.account_id, index_)) {
++			char msg[NAME_LENGTH + 96];
++			snprintf(msg, sizeof(msg), "'%s' still has gear you gave it. Summon it and take it back with @companion gear first.", param);
++			clif_displaymessage(fd, msg);
++			return -1;
++		}
+ 		if (live != nullptr) {
++			population_engine_companion_return_gear(sd, live, 0);
+ 			if (live->status.party_id > 0 && live->status.party_id < 0x70000000)
+ 				population_engine_set_companion_active(sd->status.account_id, index_, false);
+ 			population_engine_shell_release(live);
+ 		}
+-		if (population_engine_companion_delete(sd->status.account_id, param)) {
++		if (population_engine_companion_delete(sd->status.account_id, index_)) {
+ 			// The roster changed: let an open panel drop the row immediately.
+ 			population_engine_push_companion_list(sd);
+ 			char msg[NAME_LENGTH + 64];

@@ -109,3 +109,20 @@ test('toggle() does not assume a prepared host', () => {
 		'toggle() must handle a null _host, since append() prepares on demand'
 	);
 });
+
+test('only the server\'s own @CP lines are roster data; anything a person says is not', () => {
+	// Server lines come from clif_displaymessage and reach ChatBox.addText bare; everything a
+	// person says carries a "Name : " prefix. Run the panel's own predicate on both.
+	const src = fs.readFileSync(COMPONENT, 'utf8').replace(/\r\n/g, '\n');
+	const start = src.indexOf('function rosterBody(text) {');
+	assert.ok(start >= 0, 'the panel must decide roster lines in one place');
+	const end = src.indexOf('\n}\n', start) + 2;
+	const rosterBody = new Function(`${src.slice(start, end)}; return rosterBody;`)();
+	assert.equal(rosterBody('@CP|Ayla|Priest|50|1|0|50|Priest|-1'), '@CP|Ayla|Priest|50|1|0|50|Priest|-1');
+	assert.equal(rosterBody('@CPEND|1'), '@CPEND|1');
+	assert.equal(rosterBody('@CPSK|28|Heal|1|10'), '@CPSK|28|Heal|1|10');
+	assert.equal(rosterBody('Mallory : @CP|Fake|Knight|99|1|1|99|Knight|-1'), null);
+	assert.equal(rosterBody('Me : hello @CPEND|0'), null);
+	assert.equal(rosterBody(undefined), null);
+	assert.ok(!/indexOf\('@CP/.test(src), 'no @CP match anywhere inside a line');
+});

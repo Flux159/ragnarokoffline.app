@@ -212,6 +212,11 @@ struct s_population {
 	/// The growth poll compares against this and re-broadcasts locally instead.
 	int16_t  last_party_level_broadcast = 0;
 	int16_t  companion_emergency_at = 35; ///< emergency/big-heal below this HP%
+	/// RAGNAROKMAC (gear custody): equip positions (EQP_* bits) worn by items the OWNER gave this
+	/// companion, as opposed to the gear it was generated with. Only these come back through
+	/// @companion gear, and only these are kept or handed back across a job advance. Persisted
+	/// as cp_companion_persistence.given_mask so it survives a restart.
+	uint32_t companion_given_mask = 0;
 	t_tick companion_follow_next = 0; ///< Rate limit for owner-follow movement decisions.
 	bool companion_formation_active = false; ///< True while walking to the shell's assigned idle formation cell.
 	int16_t companion_formation_x = 0; ///< Current formation walk destination.

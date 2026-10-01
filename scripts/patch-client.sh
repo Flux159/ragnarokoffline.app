@@ -72,7 +72,6 @@ comp.mkdir(parents=True, exist_ok=True)
 for name in ("Stylist.js", "Stylist.html", "Stylist.css"):
     shutil.copyfile(root / "patches" / name, comp / name)
 print("installed the Stylist component")
-print("installed the Stylist component")
 
 # 0006 - The companion window (CompanionPanel).
 #

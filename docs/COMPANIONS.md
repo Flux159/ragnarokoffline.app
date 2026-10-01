@@ -117,7 +117,7 @@ window with four tabs.
 | Party | The saved companion list, with each one's job, level and state. Set duty, summon, bench, favorite, or refresh. |
 | Summon | Draft a brand-new companion of any job, grouped 1st / 2nd / Trans / 3rd / 4th. |
 | Battle | Stance (Free / Standard / Hold), Taunt and Recall, and the healer thresholds. |
-| Gear | Take equipment back, per slot (`weapon`, `shield`, `armor`, …) or all of it. |
+| Gear | Take back equipment you gave the companion, per slot (`weapon`, `shield`, `armor`, …) or all of it. What it was generated or drafted with is its own and stays on it. Gear you gave that a new job cannot wear is handed back when it advances. |
 
 The window is a real client component, not an overlay: it is draggable, it
 remembers its position, and clicks aimed at it do not reach the game. Each

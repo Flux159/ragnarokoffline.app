@@ -45,19 +45,6 @@ function attachBody() {
 	return functionBody(engine, HELPER_SIG);
 }
 
-test('the dump carries the pet\'s own level and exp, so growth is readable', () => {
-	assert.match(engine, /@SHELLHOMAI\|%u\|%u\|%d\|%d\|%d\|%d\|%lld\|%lld\|%d/,
-		'the dump line must carry level, exp, exp_next and skill points');
-	assert.match(engine, /static_cast<long long>\(sd->hd->homunculus\.exp\)/,
-		'exp must be read from the pet\'s s_homunculus');
-	assert.match(engine, /static_cast<long long>\(sd->hd->exp_next\)/,
-		'exp_next is the threshold a level-up compares against - without it a stalled pet is undiagnosable');
-	assert.match(engine, /\(int\)sd->hd->homunculus\.skillpts/,
-		'a level grants a skill point every 3 levels, so it belongs in the same reading');
-	assert.match(engine, /\(int\)sd->hd->homunculus\.level/,
-		'the level must come from the pet');
-});
-
 test('the engine never awards homunculus exp itself', () => {
 	// mob.cpp already pays the pet; a second award here would double-pay silently.
 	assert.ok(!/hom_gainexp\s*\(/.test(codeOnly(engine)),

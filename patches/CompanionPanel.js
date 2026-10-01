@@ -152,6 +152,25 @@ function _renderStatus(text) {
 }
 
 /**
+ * The server's machine-readable line, or null when this is anything else.
+ *
+ * The server sends these with clif_displaymessage, which reaches ChatBox.addText as the bare
+ * text - no "Name : " prefix. Everything a person says arrives with one (public, party and
+ * guild chat, our own included), so a line counts only when it STARTS with @CP: someone
+ * typing "@CP|..." in chat can neither add rows to this window nor be hidden from the log.
+ *
+ * @param {string} text
+ * @return {string|null}
+ */
+function rosterBody(text) {
+	if (typeof text !== 'string') {
+		return null;
+	}
+	const body = text.replace(/^\s+/, '');
+	return body.startsWith('@CP') ? body : null;
+}
+
+/**
  * Parse one @CP line. Format (see population_engine_companion_list_raw):
  *   @CP|name|job|base_level|active|favorite|live_level|live_job
  *   @CPEND|count
@@ -168,11 +187,10 @@ function _renderStatus(text) {
  * @return {boolean} true when the line was ours
  */
 function parseSkillLine(text) {
-	const idx = text.indexOf('@CPSK');
-	if (idx < 0) {
+	const body = rosterBody(text);
+	if (body === null || !body.startsWith('@CPSK')) {
 		return false;
 	}
-	const body = text.slice(idx);
 	if (body.startsWith('@CPSKEND')) {
 		const p = body.split('|');
 		_skills = _skillPending.slice();
@@ -212,11 +230,10 @@ function parseSkillLine(text) {
 }
 
 function parseRosterLine(text) {
-	const idx = text.indexOf('@CP');
-	if (idx < 0) {
+	const body = rosterBody(text);
+	if (body === null) {
 		return false;
 	}
-	const body = text.slice(idx);
 	if (body.startsWith('@CPEND')) {
 		// The server sends these unsolicited when the roster changes, and in answer
 		// to our own request. Either way this batch is authoritative: replace what
@@ -842,10 +859,7 @@ function installChatHook() {
 	}
 	const original = ChatBox.addText;
 	ChatBox.addText = function addText(text, ...rest) {
-		if (typeof text === 'string' && text.indexOf('@CPSK') >= 0 && parseSkillLine(text)) {
-			return;
-		}
-		if (typeof text === 'string' && text.indexOf('@CP') >= 0 && parseRosterLine(text)) {
+		if (parseSkillLine(text) || parseRosterLine(text)) {
 			return;
 		}
 		return original.call(this, text, ...rest);

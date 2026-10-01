@@ -45,7 +45,7 @@ GATES (the run aborts rather than emitting something the server cannot use):
 Usage:
     python3 scripts/gen-population-skill-presets.py                  # dry run: print the plan
     python3 scripts/gen-population-skill-presets.py --write          # apply
-    python3 scripts/gen-population-skill-presets.py --rathena ~/ro/rathena
+    python3 scripts/gen-population-skill-presets.py --rathena ../rathena
 
 After writing, always run the project's own checker and the data guards:
     python3 third-party/population-engine/validate.py     # must print "population data OK"
@@ -61,8 +61,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 YAML_REL = "third-party/population-engine/files/db/population_skill_db.yml"
 
 _ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-_ap.add_argument("--rathena", default=os.environ.get("RATHENA_DIR", os.path.expanduser("~/ro/rathena")),
-                 help="pinned rAthena checkout holding db/re/*.yml (default: ~/ro/rathena)")
+_ap.add_argument("--rathena", default=os.environ.get("RATHENA_DIR", os.path.join(ROOT, "vendor", "rathena")),
+                 help="pinned rAthena checkout holding db/re/*.yml (default: vendor/rathena, which "
+                      "scripts/vendor-fetch.sh puts on the pin)")
 _ap.add_argument("--repo", default=ROOT, help="ragnarokoffline.app checkout (default: this script's repo)")
 _ap.add_argument("--write", action="store_true", help="apply the plan (default: dry run)")
 _ap.add_argument("--list-skipped", action="store_true",

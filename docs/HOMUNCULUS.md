@@ -93,8 +93,7 @@ summary with the homunculus field, or add a parallel `@CPHOM|...` line, and add 
 `population_engine_sync_shell_homunculus(sd)`, hooked at the same sites as the vehicle sync:
 after the skill-tree grant at spawn, after job change, and **after the recall placement last**.
 Bench/recall frees the block and re-attaches after placement.
-*Acceptance:* `@companion dump` shows the homunculus (class/level/HID/alive); it is present
-after bench → summon → resummon.
+*Acceptance:* the homunculus (class/level/alive) is present after bench → summon → resummon.
 
 **Phase 2 — it acts.**
 Per-tick driver mirroring the shell AI (`population_engine_combat.cpp` uses
@@ -111,8 +110,7 @@ use (`setunitdata UHOM_TARGETID` -> `unit_attack(hd, id, 1)`, `unit_stop_attack(
 chasing is left to `unit_attack`, which walks the unit into range itself - the same thing the mob
 AI relies on. Targets are ranked by distance to the pet (agreed scope 4) and must also sit inside
 the master's 12-cell command radius; past 12 cells from the master the pet leashes home with
-`unit_walktobl(hd, sd, 2, 1)`. `@companion dump` gained `@SHELLHOMAI` carrying the pet's target and
-attack state, so "is it fighting" is server state rather than a sprite to judge.
+`unit_walktobl(hd, sd, 2, 1)`.
 
 Not covered: the arena-observation branch of the tick returns before the hook, and a sitting or
 vending companion leaves its pet standing - both deliberate, since a companion that is not in a
@@ -163,8 +161,7 @@ shell's `fd == 0` makes them no-ops rather than writes into `session[0]`. `hom_a
 `hd->homunculusDB` and `hd->exp_next`, which is exactly what `hom_levelup` needs, and the class
 this feature picks (`HM_CLASS_BASE + index % 8`, i.e. 6001-6008) is precisely the block
 `hom_class2mapid` accepts. The engine therefore writes no exp of its own, by design — a second
-award path would double-pay. `@companion dump` carries level, exp, exp_next and skill points so
-growth is readable.
+award path would double-pay.
 
 ## Traps
 
@@ -182,9 +179,9 @@ growth is readable.
 
 - Calibrated tests (fail on the parent, pass after) asserting: the alchemist line reaches
   `hom_alloc`; `hom_id` is never set; no `intif_homunculus_*` call is reachable for a shell.
-- `@companion dump` carries homunculus state — reading state, not judging a sprite, is what
-  settled the vehicle question.
 - **Not verifiable by test:** whether it is drawn and moves. That is the client's word.
+- The `@companion dump` diagnostic (patch 0010, `@SHELL*` lines) used while developing this was
+  temporary and has been removed.
 
 ## To resolve at implementation time
 

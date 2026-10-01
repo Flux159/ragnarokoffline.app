@@ -81,13 +81,13 @@ test('the selection is threaded through ALL FOUR recall touchpoints', () => {
 	const e = read(ENGINE);
 
 	// 1. the SELECT column list
-	assert.match(e, /shadow_acc_r_nameid, skill_preset"/,
+	assert.match(e, /shadow_acc_r_nameid, skill_preset[,"]/,
 		'the recall SELECT must fetch skill_preset');
 
 	// 2. the row reader must tolerate NULL, which is the "auto" state
 	const reader = e.slice(e.indexOf('uint32_t sh_acc_r = atoi(data);'));
 	assert.match(reader.slice(0, 900),
-		/Sql_GetData\(mmysql_handle, col\+\+, &data, nullptr\);\s*\n\s*if \(data != nullptr\)/,
+		/data = next\(\);\s*\n\s*if \(data != nullptr\)/,
 		'the reader must test the column for NULL rather than copying it blindly');
 
 	// 3. the call site passes it
@@ -170,4 +170,15 @@ test('the SQL statement buffers have room for the grown statements', () => {
 	// 60 skills at 5 chars ("12345,") is 300 bytes; 512 is the documented floor.
 	assert.ok(Number(lastQ[1]) >= 512,
 		`the selection UPDATE buffer must hold a long skill list (found ${lastQ && lastQ[1]})`);
+});
+
+test('a selection too long to store is refused, never stored cut short', () => {
+	const e = read(ENGINE);
+	const i = e.indexOf('static bool pop_companion_format_skill_preset(');
+	assert.ok(i > 0, 'one formatter for the stored list');
+	const body = e.slice(i, e.indexOf('\n}\n', i));
+	assert.match(body, /return false;/, 'overflow must be reported to the caller');
+	assert.ok(!/\bbreak;/.test(body), 'and not end the list early');
+	assert.equal((e.match(/if \(!(?:want_auto && !)?pop_companion_format_skill_preset\(picked, preset, sizeof\(preset\)\)\) \{/g) || []).length, 2,
+		'both the set and the toggle paths must refuse when it does not fit');
 });

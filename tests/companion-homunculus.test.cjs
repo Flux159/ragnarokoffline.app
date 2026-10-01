@@ -15,7 +15,7 @@
 // relationships that make the behaviour correct.
 //
 // Every assertion here fails against the commit before the homunculus landed (the helper, the
-// gate, the dump line and the hooks do not exist there).
+// gate and the hooks do not exist there).
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -139,17 +139,6 @@ test('it is applied at spawn, after a job change, and after the final placement'
 	assert.ok(lastBroadcast > 0, 'the recall placement broadcast must exist');
 	assert.ok(idx.some((i) => i > lastBroadcast),
 		'one hook must come after the recall placement, so the pet survives bench+resummon');
-});
-
-test('@companion dump reports the pet, so it is read rather than judged', () => {
-	// The vehicle lesson: a sprite is a visual claim, and the fact behind it is server state.
-	assert.match(src, /@SHELLHOM\|%u\|1\|%d\|%d\|%d\|%d\|%d\|%d/,
-		'the dump must emit the homunculus class, level, hp, max hp, hom_id and vaporize');
-	assert.match(src, /@SHELLHOM\|%u\|0\|0\|0\|0\|0\|0/, 
-		'and a absent-pet line, so "no pet" is also a readable fact');
-	const dl = src.indexOf('population_engine_shell_dump');
-	assert.ok(dl > 0, 'the dump function must exist');
-	assert.ok(src.indexOf('@SHELLHOM') > dl, 'the pet line must live inside the dump function');
 });
 
 test('a shell\'s pet is never saved through the char server', () => {

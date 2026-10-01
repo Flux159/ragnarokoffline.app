@@ -1,0 +1,40 @@
+From 0000000000000000000000000000000000000014
+Subject: [PATCH] @companion: room for a name and the word after it
+
+The whole argument was read into a NAME_LENGTH buffer (%23[^\n]), so with a long name the
+trailing word never arrived: "@companion homunculus <23-character name> off" lost "off" and
+flipped the switch instead, and "skills <name> toggle <id>" lost the id. Read up to 127
+characters; the engine bounds names to NAME_LENGTH where it looks them up.
+
+The longest-prefix name matcher also cut a candidate longer than a name down to 23
+characters, which could match a different companion whose name is that prefix. It now skips
+candidates longer than a name.
+
+--- a/src/custom/atcommand.inc
++++ b/src/custom/atcommand.inc
+@@ -253,8 +253,8 @@
+ 		size_t end = cut;
+ 		while (end > 0 && text[end - 1] == ' ')
+ 			--end; // trim trailing spaces from the candidate
+-		if (end == 0)
+-			continue;
++		if (end == 0 || end >= out_name_len)
++			continue; // longer than any name: cutting it down could match a different, shorter one
+ 		char candidate[NAME_LENGTH];
+ 		const size_t n = end < (out_name_len - 1) ? end : (out_name_len - 1);
+ 		safestrncpy(candidate, text, n + 1);
+@@ -275,8 +275,12 @@
+ ACMD_FUNC(companion)
+ {
+ 	nullpo_retr(-1, sd);
+-	char cmd[32], param[NAME_LENGTH];
+-	if (!message || !*message || sscanf(message, "%31s %23[^\n]", cmd, param) < 1) {
++	// RAGNAROKMAC: room for a full 23-character name AND what follows it ("homunculus <name> off",
++	// "skills <name> toggle <id>", "gear <name> weapon shield"). A NAME_LENGTH buffer cut those
++	// off after the name, so the trailing word was silently dropped. Names are still bounded to
++	// NAME_LENGTH where they are looked up.
++	char cmd[32], param[128];
++	if (!message || !*message || sscanf(message, "%31s %127[^\n]", cmd, param) < 1) {
+ 		clif_displaymessage(fd, "Usage: @companion list | favorite <name> | unfavorite <name> | summon <name> | remove <name> | gear <name> [slots] | homunculus <name> [on|off]");
+ 		return -1;
+ 	}

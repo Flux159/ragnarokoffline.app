@@ -1139,6 +1139,9 @@ const COMPANION_COLUMNS: &[(&str, &str)] = &[
     ("hom_class", "INT NOT NULL DEFAULT 0"),
     ("hom_level", "SMALLINT NOT NULL DEFAULT 0"),
     ("hom_exp", "BIGINT NOT NULL DEFAULT 0"),
+    // v9: which worn positions hold gear the owner gave. Only those come back through
+    // @companion gear; 0 for an existing row, so its generated gear stays its own.
+    ("given_mask", "INT UNSIGNED NOT NULL DEFAULT 0"),
 ];
 
 fn companion_table_sql() -> String {

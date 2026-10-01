@@ -137,16 +137,3 @@ test('the driver cannot reach the char server, and stays deterministic', () => {
 	assert.ok(!/rnd_value|rnd\(\)/.test(body),
 		'the pet must behave the same way each tick for the same state');
 });
-
-test('@companion dump reports what the driver decided', () => {
-	// The vehicle lesson: a sprite is a visual claim. Target and attack state are the fact.
-	assert.match(engine, /@SHELLHOMAI\|%u\|%u\|%d\|%d\|%d/,
-		'the dump must carry the pet target and whether it is attacking');
-	assert.match(engine, /static_cast<uint32>\(sd->hd->ud\.target\)/,
-		'the target must be the pet\'s own unit target');
-	assert.match(engine, /sd->hd->ud\.attacktimer != INVALID_TIMER/,
-		'attack state must come from the unit data the driver actually drives');
-	// phase 1's line must survive untouched: a changed format would break the panel parse
-	assert.match(engine, /@SHELLHOM\|%u\|1\|%d\|%d\|%d\|%d\|%d\|%d/,
-		'the phase 1 @SHELLHOM line must keep its shape');
-});

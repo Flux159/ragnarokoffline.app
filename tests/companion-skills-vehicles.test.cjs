@@ -118,20 +118,6 @@ test('the helper is declared before its first use', () => {
 	}
 });
 
-test('the dump exposes the vehicle bits so the fix is verifiable by reading', () => {
-	// The whole reason @companion dump exists: a vehicle is a visual claim, and the fact behind
-	// it is sd->sc.option. Print the decoded bits instead of asking a human to judge a sprite.
-	const i = src.indexOf('population_engine_shell_dump');
-	assert.ok(i > 0, 'the dump function must exist');
-	const body = src.slice(i, i + 4000);
-	assert.match(body, /OPTION_RIDING/, 'the dump must decode OPTION_RIDING');
-	assert.match(body, /OPTION_FALCON/, 'the dump must decode OPTION_FALCON');
-	assert.match(body, /OPTION_WUG/, 'the dump must decode OPTION_WUG');
-	assert.match(body, /OPTION_MADOGEAR/, 'the dump must decode OPTION_MADOGEAR');
-	assert.match(body, /"@SHELL\|\%u\|%s\|%u\|%u\|%d\|%zu\|%zu\|%d\|%d\|%d\|%d\|%d\|0x%08x\|%s"/,
-		'the wire line must carry the raw option value and the decoded tag');
-});
-
 test('the vehicle is RE-ANNOUNCED after the final placement, not only at spawn', () => {
 	// Verified live: sc.option kept its bits across bench+summon (0x00100010 WUG|FALCON) while
 	// the sprite came back bare, so the state was never lost - the client was never told. The
