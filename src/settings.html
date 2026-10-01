@@ -132,6 +132,28 @@
   .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* The first heading in a panel would otherwise sit oddly far from the tabs. */
   .tabpanel > h2:first-child { margin-top: 10px; }
+  /* Mods' own header: its two halves on the left, the list-wide buttons on
+     the right, pinned just under the section tabs. --tabs-h is the section
+     bar's measured height, which grows when that bar wraps. The buttons are a
+     size down from the page's so the whole line fits at the default 700px. */
+  .subbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 6px 12px; position: sticky; top: var(--tabs-h, 50px); z-index: 4;
+    background: var(--bg, #0d0f15); padding: 8px 0; margin: 0 0 12px;
+    border-bottom: 1px solid var(--line); }
+  .subtabs { display: flex; gap: 4px; }
+  .subtabs .tab { padding: 5px 10px; }
+  .subactions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
+  .subactions button { flex: 0 0 auto; white-space: nowrap; padding: 5px 10px; font-size: 12px; }
+  .subactions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .substatus { flex: 1 0 100%; display: flex; align-items: center; gap: 10px;
+    color: var(--dim); font-size: 12px; }
+  .substatus.warn { color: var(--warn, #d9a066); font-weight: 600; }
+  .substatus button { padding: 3px 10px; font-size: 12px; flex: none; white-space: nowrap; }
+  .findbar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .findbar label { flex: 1 1 auto; min-width: 0; padding: 0; }
+  .findbar label > span:first-child { width: auto; }
+  .findbar input { flex: 1 1 auto; min-width: 0; }
+  .findbar button { flex: none; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -499,27 +521,32 @@
   </div>
 
   <div class="tabpanel" id="panel-mods" role="tabpanel" aria-labelledby="tab-mods" hidden>
-  <h2>Mods</h2>
-  <div class="panel">
-    <div id="mods-list" class="note">Looking…</div>
-    <div class="actions" style="margin-top:10px">
-      <button id="mods-browse" class="ghost">Find mods…</button>
+  <!-- Pinned under the section tabs while the mod list scrolls: which half of
+       Mods you are in on the left, the things you do to the whole list on the
+       right. Check for updates is not here -- it lives with Find Mods, next to
+       the list it is about, and the line has to fit at the window's default
+       width. -->
+  <div class="subbar">
+    <div class="subtabs" role="tablist" aria-label="Mods">
+      <button role="tab" class="tab" id="modstab-installed" aria-controls="mods-installed" aria-selected="true" tabindex="0">Mods</button>
+      <button role="tab" class="tab" id="modstab-find" aria-controls="mods-registry" aria-selected="false" tabindex="-1">Find Mods</button>
+    </div>
+    <div class="subactions">
       <button id="mods-install" class="ghost">Install from a folder…</button>
       <button id="mods-install-skin" class="ghost">Install a UI skin…</button>
       <button id="mods-folder" class="ghost">Open mods folder</button>
       <button id="mods-apply" class="ghost">Apply</button>
     </div>
-    <div id="mods-registry" hidden style="margin-top:12px; border-top:1px solid var(--line, #333); padding-top:12px">
-      <label style="margin-bottom:8px"><span>Search</span>
-        <input type="text" id="mods-search" placeholder="name, author or what it does" /></label>
-      <div id="mods-catalogue" class="note">Looking…</div>
-      <div id="mods-detail" hidden></div>
-      <p class="note" style="margin-top:8px">These are mods people have published to the
-         app's mod list. Each one is a folder in a public repository and gets there by pull
-         request, so somebody has read it before it appears here &mdash; but a mod can change
-         the rules of your server and run code in your game window, so install ones you
-         want, not ones you are merely curious about.</p>
+    <!-- What Apply is waiting for, or what it left to do. In the pinned
+         header so it is in view from anywhere in either list. -->
+    <div class="substatus" id="mods-status" role="status" aria-live="polite" hidden>
+      <span id="mods-status-text"></span>
+      <button id="mods-reopen" class="ghost" hidden>Reopen game</button>
     </div>
+  </div>
+  <div id="mods-installed" role="tabpanel" aria-labelledby="modstab-installed">
+  <div class="panel">
+    <div id="mods-list" class="note">Looking…</div>
     <p class="note">A mod is a folder. Drop one in and it appears here. Server
        changes need the server restarted, which Apply does; client changes —
        sprites, styling — need the app restarted.</p>
@@ -527,6 +554,25 @@
        client's skin format, or a zip of one; a cursor pack is a
        <code>cursors.spr</code> and <code>cursors.act</code>. Each becomes a mod,
        and only one skin and one cursor pack are on at a time.</p>
+  </div>
+  </div>
+  <div id="mods-registry" role="tabpanel" aria-labelledby="modstab-find" hidden>
+  <div class="panel">
+    <div class="findbar">
+      <label><span>Search</span>
+        <input type="text" id="mods-search" placeholder="name, author or what it does" /></label>
+      <button id="mods-updates" class="ghost">Check for updates</button>
+    </div>
+    <div id="mods-catalogue" class="note">Looking…</div>
+    <div id="mods-detail" hidden></div>
+    <p class="note" style="margin-top:8px">These are mods people have published to the
+       app's mod list. Each one gets there by pull request, so somebody has read it before
+       it appears here. Most are a folder in the app's own repository; the ones marked
+       <em>from GitHub</em> live in their author's repository instead, and the list vouches
+       for that repository rather than for each release, which its author can change without
+       review. A mod can change the rules of your server and run code in your game window,
+       so install ones you want, not ones you are merely curious about.</p>
+  </div>
   </div>
   </div>
 
@@ -697,6 +743,7 @@
        permanent box reading "idle" is a box that says nothing. -->
   <div class="panel" id="log-panel" hidden><pre id="log"></pre></div>
 
+<script src="mods-state.js"></script>
 <script>
 const { invoke } = window.__ELECTRON__.core;
 const $ = id => document.getElementById(id);
@@ -1235,17 +1282,80 @@ let modState = {};
 // Per-mod option values, and what they were when the list was drawn, so Apply
 // only rebuilds the asset overlay for mods whose options actually moved.
 let modSettings = {}, modSettingsBaseline = {};
+// What the server last started with ({ name: enabled }), the list as last
+// drawn, and the game's launch count when Apply last finished (null when
+// there is no "reopen the game" to say). See mods-state.js for the rules.
+let modsBaseline = null, modsListed = [], modsAppliedAt = null, gameNow = null;
+
+function modsPending() {
+  return ModsState.pending({
+    baseline: modsBaseline, checked: modState, present: modsListed.map(m => m.name),
+    settings: modSettings, settingsBaseline: modSettingsBaseline,
+  });
+}
+
+// The header's status line and Apply's emphasis, both from modsPending().
+let reopening = false;
+function paintModsStatus() {
+  const changes = modsPending();
+  const notice = ModsState.appliedNotice(modsAppliedAt, gameNow);
+  if (!notice) { modsAppliedAt = null; reopening = false; }
+  $('mods-apply').classList.toggle('ghost', !changes.length);
+  const status = $('mods-status');
+  const text = changes.length ? ModsState.pendingText(changes) : notice ? notice.text : '';
+  status.hidden = !text;
+  status.classList.toggle('warn', !!changes.length);
+  $('mods-status-text').textContent = text;
+  const reopen = $('mods-reopen');
+  reopen.hidden = !!changes.length || !notice;
+  if (notice && !reopening) { reopen.textContent = notice.button; reopen.disabled = false; }
+  watchGame(!!notice);
+}
+
+// While there is a "reopen the game" line, ask now and then whether the game
+// has loaded since: it may be reopened from here, from General's Open game,
+// or by closing and reopening the window -- any of them clears the line.
+let gameWatch = null;
+async function pollGame() {
+  try { gameNow = await invoke('game_status'); } catch { return; }
+  paintModsStatus();
+}
+function watchGame(on) {
+  if (on && !gameWatch) gameWatch = setInterval(pollGame, 2000);
+  if (!on && gameWatch) { clearInterval(gameWatch); gameWatch = null; }
+}
+window.addEventListener('focus', () => { if (modsAppliedAt !== null) pollGame(); });
+
+$('mods-reopen').onclick = async () => {
+  reopening = true;
+  const button = $('mods-reopen');
+  button.disabled = true; button.textContent = 'Opening…';
+  try { await invoke('open_game'); }
+  catch (e) { log('error: ' + e); reopening = false; }
+  // The line clears when the game reports it has loaded; give the button
+  // back if that takes long enough to look stuck.
+  setTimeout(() => { reopening = false; paintModsStatus(); }, 15000);
+};
 
 async function refreshMods() {
   let mods = [];
-  try { mods = await invoke('list_mods'); } catch (e) { /* stack may be down */ }
+  let answered = false;
+  try { mods = await invoke('list_mods'); answered = true; } catch (e) { /* stack may be down */ }
+  // Only a real answer moves what Apply is compared against: an empty list
+  // from a supervisor that did not answer is not every mod being removed.
+  if (answered) {
+    modsListed = mods;
+    modsBaseline = ModsState.adopt(modsBaseline, mods);
+  }
   const box = $('mods-list');
   if (!mods.length) {
     box.textContent = 'No mods installed. Open the mods folder to add one.';
+    paintModsStatus();
     return;
   }
   modState = {};
   modSettings = {}; modSettingsBaseline = {};
+  updateSlots = {};
   box.innerHTML = '';
   // Skins and cursor packs are a choice of one: ticking one unticks the
   // others of its kind, as the supervisor will when it is applied.
@@ -1262,10 +1372,12 @@ async function refreshMods() {
     cb.style.cssText = 'accent-color: var(--accent); flex:none; margin-top:2px';
     cb.onchange = () => {
       modState[m.name] = cb.checked;
-      if (!cb.checked || !m.kind) return;
-      for (const [other, otherBox] of kindBoxes[m.kind] || []) {
-        if (other !== m.name && otherBox.checked) { otherBox.checked = false; modState[other] = false; }
+      if (cb.checked && m.kind) {
+        for (const [other, otherBox] of kindBoxes[m.kind] || []) {
+          if (other !== m.name && otherBox.checked) { otherBox.checked = false; modState[other] = false; }
+        }
       }
+      paintModsStatus();
     };
     if (m.kind && !m.refused) (kindBoxes[m.kind] = kindBoxes[m.kind] || []).push([m.name, cb]);
     const text = document.createElement('span');
@@ -1282,6 +1394,11 @@ async function refreshMods() {
       + (m.grantsCommands
         ? '<br><span style="color:var(--dim)">Changes which commands players can use.</span>'
         : '')
+      // Where a mod installed from its author's own repository came from.
+      // Its updates are published there, not reviewed here, so say whose.
+      + (m.source
+        ? `<br><span style="color:var(--dim); font-size:11px">From github.com/${esc(m.source.repo)}, release ${esc(m.source.tag)}</span>`
+        : '')
       + (m.refused
         ? `<br><span style="color:var(--bad, #e5534b)">Not loaded — ${esc(m.reason)}</span>`
         : '')
@@ -1292,6 +1409,13 @@ async function refreshMods() {
         .map(p => `<br><span style="color:var(--warn, #d98)">Server could not read part of this mod — ${esc(p)}</span>`)
         .join(''));
     row.append(cb, text);
+    if (m.source) {
+      // Filled in by paintUpdates once a release lookup has answered.
+      const slot = document.createElement('span');
+      slot.style.cssText = 'display:block';
+      text.append(slot);
+      updateSlots[m.name] = slot;
+    }
     // Only what the player installed: a mod that ships with the app lives in
     // the app itself and can only be switched off.
     if (!m.bundled) {
@@ -1344,20 +1468,20 @@ async function refreshMods() {
           input.type = 'checkbox';
           input.checked = setting.value === true;
           input.style.cssText = 'accent-color: var(--accent); flex:none';
-          input.onchange = () => { values[setting.key] = input.checked; };
+          input.onchange = () => { values[setting.key] = input.checked; paintModsStatus(); };
         } else if (setting.type === 'number') {
           input.type = 'number';
           input.value = String(setting.value ?? 0);
           if (setting.min !== undefined) input.min = String(setting.min);
           if (setting.max !== undefined) input.max = String(setting.max);
           input.style.cssText = 'width:96px; flex:none';
-          input.onchange = () => { values[setting.key] = Number(input.value); };
+          input.onchange = () => { values[setting.key] = Number(input.value); paintModsStatus(); };
         } else {
           input.type = 'text';
           input.value = String(setting.value ?? '');
           if (setting.maxLength) input.maxLength = setting.maxLength;
           input.style.cssText = 'flex:1 1 auto; min-width:0';
-          input.onchange = () => { values[setting.key] = input.value; };
+          input.onchange = () => { values[setting.key] = input.value; paintModsStatus(); };
         }
         const caption = document.createElement('span');
         caption.textContent = setting.label || setting.key;
@@ -1375,7 +1499,85 @@ async function refreshMods() {
       box.append(options);
     }
   }
+  paintUpdates();
+  paintModsStatus();
 }
+
+// Updates for mods installed from their author's own repository. Looked up
+// when the Mods tab opens and when asked, never in the background, and only
+// ever offered: the player clicks Update, sees the release, and confirms.
+let updateSlots = {};
+let modUpdates = {};
+let checkingUpdates = null;
+
+function paintUpdates() {
+  for (const [name, slot] of Object.entries(updateSlots)) {
+    slot.innerHTML = '';
+    const u = modUpdates[name];
+    if (!u) continue;
+    const line = document.createElement('span');
+    line.style.cssText = 'font-size:11px';
+    if (u.error) {
+      line.style.color = 'var(--dim)';
+      line.textContent = 'Could not check for updates: ' + u.error;
+    } else if (u.listed === false) {
+      line.style.color = 'var(--dim)';
+      line.textContent = 'No longer in the mod list, so updates are not offered.';
+    } else if (u.update) {
+      line.style.color = 'var(--warn, #d98)';
+      line.textContent = `Update available (${u.installed} → ${u.latest}) `;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'ghost';
+      button.textContent = 'Update…';
+      button.style.cssText = 'font-size:11px; padding:1px 8px; margin-left:4px';
+      button.onclick = async event => {
+        // Inside the row's <label>, like Remove.
+        event.preventDefault();
+        await installMod({ name }, button);
+      };
+      line.append(button);
+    } else {
+      line.style.color = 'var(--dim)';
+      line.textContent = 'Up to date. ';
+    }
+    if (u.url) {
+      const notes = document.createElement('a');
+      notes.href = '#';
+      notes.textContent = 'Release notes';
+      notes.style.cssText = 'margin-left:6px; color:inherit';
+      notes.onclick = event => {
+        event.preventDefault();
+        invoke('open_release_notes', { url: u.url }).catch(e => log('error: ' + e));
+      };
+      line.append(notes);
+    }
+    slot.append(line);
+  }
+}
+
+async function checkModUpdates(fresh = false) {
+  if (checkingUpdates) return checkingUpdates;
+  checkingUpdates = (async () => {
+    try {
+      const results = await invoke('check_mod_updates', { fresh });
+      modUpdates = {};
+      for (const u of results) modUpdates[u.name] = u;
+      paintUpdates();
+      // Find Mods labels a mod with an update waiting "Update…".
+      if (catalogue) paintCatalogue();
+      const waiting = results.filter(u => u.update).length;
+      return results.length
+        ? (waiting ? `${waiting} mod update${waiting === 1 ? '' : 's'} available.` : 'Mods from GitHub are up to date.')
+        : 'No mods installed from GitHub.';
+    } finally {
+      checkingUpdates = null;
+    }
+  })();
+  return checkingUpdates;
+}
+
+$('mods-updates').onclick = () => withButton('mods-updates', 'Checking…', 'Check for updates', () => checkModUpdates(true));
 
 // Tabs. Every panel stays in the DOM and is only hidden, so nothing here has
 // to care which section an element lives in -- the rest of this file still
@@ -1392,6 +1594,11 @@ function showTab(key, focus = false) {
     panel.hidden = !on;
   }
   if (focus) $('tab-' + key).focus();
+  if (key === 'mods') checkModUpdates().catch(e => log('error: ' + e));
+  // Read off the DOM rather than modsSub: this first runs before the Find
+  // Mods code further down has declared anything, and its sub-tab starts
+  // unselected in the markup, so the first opening is left to that code.
+  if (key === 'mods' && $('modstab-find').getAttribute('aria-selected') === 'true') loadCatalogue();
   // Coming back to a section should not also restore someone else's scroll.
   window.scrollTo(0, 0);
   try { localStorage.setItem('settings-tab', key); } catch { /* private window */ }
@@ -1482,7 +1689,7 @@ function matchScore(mod, terms) {
   if (!terms.length) return 1;
   const name = mod.name.toLowerCase();
   const tags = mod.tags.join(' ');
-  const haystack = `${name} ${mod.author} ${mod.description} ${tags}`.toLowerCase();
+  const haystack = `${name} ${mod.author} ${mod.description} ${tags} ${mod.source ? mod.source.github : ''}`.toLowerCase();
   let score = 0;
   for (const term of terms) {
     // Every term has to appear somewhere, so two words narrow rather than widen.
@@ -1543,11 +1750,39 @@ function detailFor(mod) {
   const install = document.createElement('button');
   install.className = 'ghost';
   install.style.marginTop = '6px';
-  install.textContent = Object.hasOwn(modState, mod.name) ? 'Reinstall' : 'Install';
+  install.textContent = installLabel(mod);
   install.onclick = () => installMod(mod, install);
   title.append(install);
   head.append(title);
   box.append(head);
+
+  // A mod published from its author's own repository: say whose, and which
+  // release an install would get -- one lookup, made because the player
+  // opened this page.
+  if (mod.source) {
+    const from = document.createElement('p');
+    from.className = 'note';
+    from.textContent = `From github.com/${mod.source.github}. The mod list vouches for this repository, `
+      + 'not for each release: its author can publish a new version without review. '
+      + 'Installing shows you the release first.';
+    const latest = document.createElement('span');
+    latest.textContent = ' Looking up the latest release…';
+    from.append(latest);
+    box.append(from);
+    invoke('registry_release', { name: mod.name }).then(release => {
+      const date = release.publishedAt ? ` (${release.publishedAt.slice(0, 10)})` : '';
+      latest.textContent = ` Latest release: ${release.tag}${date}. `;
+      const notes = document.createElement('a');
+      notes.href = '#';
+      notes.textContent = 'Release notes';
+      notes.style.color = 'inherit';
+      notes.onclick = event => {
+        event.preventDefault();
+        invoke('open_release_notes', { url: release.url }).catch(e => log('error: ' + e));
+      };
+      latest.append(notes);
+    }).catch(e => { latest.textContent = ' ' + String(e); });
+  }
 
   if (mod.description) {
     const description = document.createElement('p');
@@ -1599,13 +1834,30 @@ function detailFor(mod) {
   }
 }
 
+function installLabel(mod) {
+  const installed = Object.hasOwn(modState, mod.name) || Object.hasOwn(updateSlots, mod.name);
+  if (mod.source) {
+    const u = modUpdates[mod.name];
+    return u && u.update ? 'Update…' : installed ? 'Reinstall…' : 'Install…';
+  }
+  return installed ? 'Reinstall' : 'Install';
+}
+
 async function installMod(mod, button) {
   const was = button.textContent;
   button.disabled = true; button.textContent = 'Installing…';
   try {
     const result = await invoke('install_registry_mod', { name: mod.name });
-    log(`installed ${result.name} ${result.version}`);
+    // A mod from GitHub asks first, in a dialog of the app's own; saying no
+    // there is not an error.
+    if (result && result.cancelled) {
+      log(result.message || 'Cancelled.');
+      button.textContent = was; button.disabled = false;
+      return;
+    }
+    log(result.message || `installed ${result.name} ${result.version}`);
     button.textContent = 'Installed';
+    if (modUpdates[result.name]) modUpdates[result.name] = { ...modUpdates[result.name], update: false, installed: result.tag || modUpdates[result.name].installed };
     await refreshMods();
   } catch (e) {
     log('error: ' + e);
@@ -1636,7 +1888,7 @@ function paintCatalogue() {
     const button = document.createElement('button');
     button.className = 'ghost';
     button.style.cssText = 'flex:none';
-    button.textContent = Object.hasOwn(modState, mod.name) ? 'Reinstall' : 'Install';
+    button.textContent = installLabel(mod);
     button.onclick = () => installMod(mod, button);
     if (mod.icon) {
       const icon = document.createElement('img');
@@ -1663,6 +1915,12 @@ function paintCatalogue() {
       meta.textContent = ' ' + by;
       text.append(meta);
     }
+    if (mod.source) {
+      const from = document.createElement('span');
+      from.style.cssText = 'color:var(--dim); font-size:11px';
+      from.textContent = ` from GitHub (${mod.source.github})`;
+      text.append(from);
+    }
     if (mod.tags.length) {
       const tags = document.createElement('span');
       tags.style.cssText = 'color:var(--dim); font-size:11px';
@@ -1682,14 +1940,15 @@ function paintCatalogue() {
 
 $('mods-search').addEventListener('input', paintCatalogue);
 
-$('mods-browse').onclick = async () => {
-  const panel = $('mods-registry');
-  if (!panel.hidden) { panel.hidden = true; $('mods-browse').textContent = 'Find mods…'; return; }
-  panel.hidden = false;
+// The registry, fetched the first time Find Mods is actually in view -- not
+// at page load, when the window may have opened on another section -- and
+// then kept for as long as this window is open.
+let loadingCatalogue = false;
+async function loadCatalogue() {
+  if (catalogue || loadingCatalogue) return;
+  loadingCatalogue = true;
   $('mods-detail').hidden = true;
   $('mods-catalogue').hidden = false;
-  $('mods-browse').textContent = 'Hide the mod list';
-  catalogue = null;
   paintCatalogue();
   try {
     catalogue = await invoke('list_registry_mods');
@@ -1697,8 +1956,56 @@ $('mods-browse').onclick = async () => {
   } catch (e) {
     catalogue = [];
     $('mods-catalogue').textContent = 'Could not read the mod list: ' + String(e);
+  } finally {
+    loadingCatalogue = false;
   }
-};
+}
+
+// Mods' two halves, as tabs of their own, remembered the way the section is.
+const MODS_SUBS = { installed: 'mods-installed', find: 'mods-registry' };
+const MODS_SUB_KEYS = Object.keys(MODS_SUBS);
+let modsSub = 'installed';
+function showModsSub(key, focus = false) {
+  if (!MODS_SUB_KEYS.includes(key)) key = MODS_SUB_KEYS[0];
+  const changed = key !== modsSub;
+  modsSub = key;
+  for (const other of MODS_SUB_KEYS) {
+    const on = other === key;
+    const tab = $('modstab-' + other);
+    tab.setAttribute('aria-selected', String(on));
+    tab.tabIndex = on ? 0 : -1;
+    $(MODS_SUBS[other]).hidden = !on;
+  }
+  if (focus) $('modstab-' + key).focus();
+  if (key === 'find' && !$('panel-mods').hidden) loadCatalogue();
+  // As with the section tabs: the other list's scroll is not this one's.
+  if (changed) window.scrollTo(0, 0);
+  try { localStorage.setItem('settings-mods-tab', key); } catch { /* private window */ }
+}
+for (const [index, key] of MODS_SUB_KEYS.entries()) {
+  $('modstab-' + key).onclick = () => showModsSub(key);
+  $('modstab-' + key).onkeydown = event => {
+    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (step) {
+      event.preventDefault();
+      showModsSub(MODS_SUB_KEYS[(index + step + MODS_SUB_KEYS.length) % MODS_SUB_KEYS.length], true);
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      showModsSub(event.key === 'Home' ? MODS_SUB_KEYS[0] : MODS_SUB_KEYS[MODS_SUB_KEYS.length - 1], true);
+    }
+  };
+}
+try { showModsSub(localStorage.getItem('settings-mods-tab') || 'installed'); } catch { showModsSub('installed'); }
+if (!$('panel-mods').hidden && modsSub === 'find') loadCatalogue();
+
+// Mods' header pins itself just under the section tabs, whose height changes
+// when they wrap in a narrow window.
+{
+  const bar = document.querySelector('.tabs');
+  const measure = () => document.documentElement.style.setProperty('--tabs-h', bar.offsetHeight + 'px');
+  measure();
+  if (window.ResizeObserver) new ResizeObserver(measure).observe(bar);
+}
 
 $('mods-install').onclick = () => withButton('mods-install', 'Installing…', 'Install from a folder…', async () => {
   const msg = await invoke('install_mod');
@@ -1709,6 +2016,10 @@ $('mods-install').onclick = () => withButton('mods-install', 'Installing…', 'I
 $('mods-install-skin').onclick = () => withButton('mods-install-skin', 'Installing…', 'Install a UI skin…', async () => {
   const msg = await invoke('install_skin');
   await refreshMods();
+  // The skin installer switches its mod on, and any other of its kind off,
+  // and rebuilds the client files itself -- nothing there waits for Apply.
+  for (const m of modsListed) if (m.kind && !m.refused) modsBaseline[m.name] = m.enabled;
+  paintModsStatus();
   return msg;
 });
 
@@ -1729,7 +2040,10 @@ $('mods-apply').onclick = () => withButton('mods-apply', 'Applying…', 'Apply',
   }
   await invoke('stack_up');
   await refreshMods();
-  return 'Mods applied. Restart the app for client-side changes.';
+  modsBaseline = ModsState.applied(modsListed, modState);
+  try { gameNow = await invoke('game_status'); modsAppliedAt = gameNow.launches; } catch { /* older shell */ }
+  paintModsStatus();
+  return 'Mods applied. Reopen the game for client-side changes.';
 });
 
 // The second half of "Your link": the internet one, beside the LAN one, so

@@ -1,17 +1,55 @@
 # Getting your mod into the app
 
-Settings → Mods has a **Browse** list. Every mod in it is a folder in this
-repository, and getting one in is a pull request.
+Settings → Mods has a **Find Mods** tab. Every mod in it has a folder in the
+app's repository under `registry/`, and getting one in is a pull request.
 
 That review is the whole security model. A mod is not data: it can ship NPC
 scripts the server executes, a `conf/groups.yml` deciding which commands
 players get, and a `client/index.js` that runs inside the game page. Nothing in
 the app tries to make an unreviewed mod safe to install, because nothing could.
-What the app guarantees is narrower and worth having: the bytes that arrive are
-the bytes that were reviewed.
+
+There are two kinds of entry:
+
+- **Files in the app's repository** — the folder *is* the mod, every version is
+  a pull request, and the app checks every file it downloads against the
+  reviewed copy. Most of this page is about this kind.
+- **Your own repository, with releases** — the folder holds only a `mod.json`
+  pointing at your GitHub repository. The app installs your latest release and
+  offers each newer one to players as an update, with no pull request here.
+  See [From your own repository](#from-your-own-repository) below.
+
+The complete reference, including cutting releases the app picks up, is
+[Adding a mod to the registry](https://github.com/Flux159/ragnarokoffline.app/blob/main/docs/MOD_REGISTRY.md).
 
 Writing the mod itself is [Making mods](/docs/modding). This page is only about
 publishing one.
+
+## From your own repository
+
+For a mod released often enough that a pull request per version would hold it
+back. Add `registry/mods/<your-mod>/mod.json`:
+
+```json
+{
+  "name": "standart-npc",
+  "description": "Warper, Buffer, Job Master and more in one mod.",
+  "tags": ["npc", "quality-of-life"],
+  "source": { "github": "MondoTruth/standart-npc", "asset": "standart-npc-*.zip" }
+}
+```
+
+Then, for every version: raise `version` in your mod's own `mod.json`, tag it,
+and publish a GitHub Release (not a draft, not a pre-release) with the mod
+attached as a zip matching `asset` — `mod.json` at the top of the zip, or inside
+its one folder. Without a matching asset the app uses the release's source-code
+zip. Set `requires.app` in that `mod.json` and players on older builds are told
+which version they need instead of being updated.
+
+Players see **Update available (v4.7.1 → v4.8.0)** in Settings → Mods and
+choose when to update; their options for the mod are kept. **The registry
+vouches for your repository, not for each release**, and the install dialog
+tells players so — expect a reviewer to read your current release, and to ask
+for a public repository and a licence.
 
 ## What you add
 

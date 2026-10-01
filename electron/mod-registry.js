@@ -11,10 +11,15 @@
 // What this side owns is narrower and still worth doing properly: the bytes
 // that arrive are the bytes that were reviewed, they land where they are meant
 // to, and a half-finished download is never left looking like a mod.
+//
+// An entry with a `source` is the other kind: a reviewed pointer to the
+// author's own GitHub repository, installed from its latest release. That is
+// mod-source.js; this file only reads such entries into the listing.
 const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { readSource } = require('./mod-source');
 
 // The app's own repository, so a mod submission is a pull request against the
 // thing that installs it and the review that gates one is the review this
@@ -108,16 +113,24 @@ function readIndex(body) {
   for (const entry of value.mods) {
     if (!entry || typeof entry !== 'object') continue;
     if (!NAME.test(entry.name || '')) continue;
-    if (!Array.isArray(entry.files) || !entry.files.length || entry.files.length > MAX_FILES) continue;
+    // A source entry points at the author's own repository instead of
+    // carrying the mod (mod-source.js). Its `files` are only its pictures, and
+    // it deliberately has no mod.json among them: an older app, which knows
+    // nothing of `source`, then drops the entry instead of installing a
+    // folder with nothing in it.
+    const source = entry.source === undefined ? null : readSource(entry.source);
+    if (entry.source !== undefined && !source) continue;
+    const listed = Array.isArray(entry.files) ? entry.files : source ? [] : null;
+    if (!listed || (!source && !listed.length) || listed.length > MAX_FILES) continue;
     const files = [];
     let ok = true;
-    for (const file of entry.files) {
+    for (const file of listed) {
       const relative = safeRelative(file && file.path);
       if (!relative || !SHA256.test((file && file.sha256) || '')) { ok = false; break; }
       files.push({ path: relative, sha256: file.sha256.toLowerCase() });
     }
     // A mod whose own manifest is missing would install as an unnamed folder.
-    if (!ok || !files.some(file => file.path === 'mod.json')) continue;
+    if (!ok || (!source && !files.some(file => file.path === 'mod.json'))) continue;
     const text = (field, limit) => typeof entry[field] === 'string' ? entry[field].slice(0, limit) : '';
     // A picture has to be one of the files the entry already vouches for, or
     // it is a URL nobody reviewed wearing a reviewed mod's name.
@@ -142,6 +155,7 @@ function readIndex(body) {
         era: typeof requires.era === 'string' ? requires.era.slice(0, 20) : '',
         app: typeof requires.app === 'string' ? requires.app.slice(0, 20) : '',
       },
+      source,
       files });
   }
   return mods;
@@ -163,6 +177,7 @@ async function install(name, { url = DEFAULT_INDEX, fetch = download, modsDir, m
   const listing = mods || await list({ url, fetch });
   const entry = listing.find(mod => mod.name === name);
   if (!entry) throw new Error(`${name} is not in the mod list`);
+  if (entry.source) throw new Error(`${name} is published from ${entry.source.github}; install it from its releases`);
 
   const staged = [];
   let total = 0;

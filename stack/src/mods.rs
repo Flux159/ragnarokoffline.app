@@ -1077,6 +1077,18 @@ pub fn scan(cfg: &Config) -> Vec<Installed> {
     out
 }
 
+/// Whether a folder's `mod.json` is one this build would read, and its
+/// version. A folder with no manifest is refused here even though `scan`
+/// accepts one: this is asked about a release that was published *as* a mod,
+/// and one that lost its manifest is a broken release rather than a bare
+/// folder somebody dropped in.
+pub fn check_dir(dir: &Path) -> Result<String, String> {
+    match read_manifest(dir)? {
+        Some(m) => Ok(m.version),
+        None => Err("it has no mod.json".into()),
+    }
+}
+
 /// The mods that are actually being applied, in merge order.
 pub fn enabled(cfg: &Config) -> Vec<Installed> {
     scan(cfg).into_iter().filter(|m| m.status == Status::On).collect()
@@ -3063,6 +3075,19 @@ mod tests {
 
         // Nothing recorded at all is not an error.
         forget(&state, "never-installed").unwrap();
+    }
+
+    // What the app asks before an update replaces a working copy.
+    #[test]
+    fn a_staged_folder_is_checked_by_the_same_manifest_reader() {
+        let dir = tmp("mod-check");
+        assert_eq!(check_dir(&dir).unwrap_err(), "it has no mod.json");
+        fs::write(dir.join("mod.json"), "{\"version\": \"4.8.0\"}").unwrap();
+        assert_eq!(check_dir(&dir).unwrap(), "4.8.0");
+        fs::write(dir.join("mod.json"), "{\"requires\": {\"appp\": \">=1.0\"}}").unwrap();
+        assert!(check_dir(&dir).unwrap_err().contains("\"appp\""));
+        fs::write(dir.join("mod.json"), "not json").unwrap();
+        assert!(check_dir(&dir).unwrap_err().contains("not valid JSON"));
     }
 
     fn tmp(tag: &str) -> PathBuf {

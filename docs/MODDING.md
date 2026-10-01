@@ -79,7 +79,7 @@ mod safe to hand to a stranger:
 
 `"after": ["other-mod"]`, beside `requires`, is about precedence rather than
 need: when both are on, this mod is applied later and wins where the two
-disagree. [Publishing](mods/publishing.md) covers both.
+disagree. [Adding a mod to the registry](MOD_REGISTRY.md) covers both.
 
 `"kind": "skin"` or `"kind": "cursor"` marks a mod as one of a set of which
 only one is on at a time: switching it on switches every other mod of the same
@@ -1798,7 +1798,10 @@ server that runs and is quietly wrong. Which is the whole point of filling in
 `requires`.
 
 **To have it listed in the app instead**, so anyone can find and install it
-from Settings → Mods, it goes in this repository and the pull request is the
-review: **[docs/mods/publishing.md](mods/publishing.md)**. No zip is involved
-there — the app downloads the reviewed folder file by file and checks every one
-against its digest.
+from Settings → Mods, it goes in the registry, and the pull request is the
+review: **[Adding a mod to the registry](MOD_REGISTRY.md)**. There are two ways
+in. The mod's folder can live in this repository, and the app downloads it file
+by file and checks every one against its digest. Or the entry can point at your
+own GitHub repository, and the app installs your latest release — the same zip
+you would hand a friend — and offers each newer release to players as an
+update, without another pull request here.

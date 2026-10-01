@@ -398,6 +398,12 @@ lists what is installed, with a checkbox each.
 that has actually been run, with a README saying what it demonstrates. Copy the
 folder closest to what you want.
 
+Settings → Mods → **Find Mods** browses the mod registry: mods reviewed into
+[`registry/`](registry), either as files in this repository or as a pointer to
+the author's own GitHub repository, whose releases the app installs and offers
+as updates. **[docs/MOD_REGISTRY.md](docs/MOD_REGISTRY.md)** is how to get one
+listed.
+
 <img src="docs/assets/modlogin.jpg" alt="A custom login screen from the login-screen example mod" width="640">
 
 ## Documentation

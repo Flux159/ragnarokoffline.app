@@ -9,9 +9,14 @@ nobody can tell whether the mod or the index is wrong.
 
 `--check` rebuilds into memory and fails if the committed index differs, which
 is what CI runs so a mod cannot be merged without its digests.
+
+A folder whose mod.json has a `source` is an entry for a mod that lives in its
+author's GitHub repository; it carries only that mod.json and pictures, and is
+checked for shape without contacting GitHub. docs/MOD_REGISTRY.md has both.
 """
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -27,7 +32,32 @@ ALLOWED = {".json", ".yml", ".yaml", ".txt", ".lua", ".lub", ".js", ".mjs",
 # list is what it can render rather than what a browser might guess at.
 PICTURES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 MAX_SCREENSHOTS = 4
-TAG = __import__("re").compile(r"^[a-z0-9][a-z0-9-]{0,23}$")
+TAG = re.compile(r"^[a-z0-9][a-z0-9-]{0,23}$")
+# A source entry: the mod lives in its author's GitHub repository and the app
+# installs its latest release (docs/MOD_REGISTRY.md). The same shapes the app
+# accepts in electron/mod-source.js; nothing here talks to GitHub, so this
+# check runs offline and CI never depends on somebody else's repository.
+REPO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}/(?!\.\.?$)[A-Za-z0-9._-]{1,100}$")
+ASSET = re.compile(r"^[A-Za-z0-9._*?-]{1,100}\.zip$", re.IGNORECASE)
+
+
+def read_source(name, source):
+    """The `source` object of a registry mod.json, checked."""
+    if not isinstance(source, dict):
+        raise SystemExit(f"{name}: \"source\" must be an object like {{\"github\": \"owner/repo\"}}")
+    unknown = set(source) - {"github", "asset"}
+    if unknown:
+        raise SystemExit(f"{name}: \"source\" has no field called {sorted(unknown)[0]!r} (this index understands \"github\" and \"asset\")")
+    github = source.get("github")
+    if not isinstance(github, str) or not REPO.match(github):
+        raise SystemExit(f"{name}: source.github must be \"owner/repo\", the GitHub repository the releases come from")
+    out = {"github": github}
+    if "asset" in source:
+        asset = source["asset"]
+        if not isinstance(asset, str) or not ASSET.match(asset):
+            raise SystemExit(f"{name}: source.asset must be a .zip file name, with * or ? for the parts that change, e.g. \"my-mod-*.zip\"")
+        out["asset"] = asset
+    return out
 
 
 def build():
@@ -37,15 +67,26 @@ def build():
         if not manifest_path.is_file():
             raise SystemExit(f"{directory.name}: every mod needs a mod.json")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        source = read_source(directory.name, manifest["source"]) if "source" in manifest else None
         files = []
         for path in sorted(p for p in directory.rglob("*") if p.is_file()):
             relative = path.relative_to(directory).as_posix()
             if path.suffix.lower() not in ALLOWED:
                 raise SystemExit(f"{directory.name}: {relative} has an extension the index does not carry")
+            if source and relative != "mod.json" and path.suffix.lower() not in PICTURES:
+                raise SystemExit(f"{directory.name}: a source entry carries only its mod.json and pictures; "
+                                 f"{relative} belongs in {source['github']}")
             files.append({"path": relative,
                           "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
         if not files:
             raise SystemExit(f"{directory.name}: no files")
+        if source:
+            # The registry's own mod.json is not the mod's, and must not look
+            # like one: an app that predates source entries drops an entry
+            # with no mod.json in its files rather than installing this one.
+            files = [f for f in files if f["path"] != "mod.json"]
+            if "version" in manifest:
+                raise SystemExit(f"{directory.name}: a source entry has no \"version\"; it comes from each release's own mod.json")
         carried = {relative["path"] for relative in files}
 
         def picture(value, field):
@@ -73,18 +114,21 @@ def build():
         requires = requires if isinstance(requires, dict) else {}
         needs = [name for name in requires.get("mods", []) if isinstance(name, str)]
 
-        mods.append({
+        entry = {
             "name": directory.name,
             "version": manifest.get("version", ""),
             "author": manifest.get("author", ""),
             "description": manifest.get("description", ""),
-            "homepage": manifest.get("homepage", ""),
+            "homepage": manifest.get("homepage", "") or (f"https://github.com/{source['github']}" if source else ""),
             "tags": sorted(dict.fromkeys(tags)),
             "icon": picture(manifest["icon"], "icon") if manifest.get("icon") else "",
             "screenshots": [picture(shot, "screenshots") for shot in screenshots],
             "requires": {"mods": needs, "era": requires.get("era", ""), "app": requires.get("app", "")},
-            "files": files,
-        })
+        }
+        if source:
+            entry["source"] = source
+        entry["files"] = files
+        mods.append(entry)
     return {"version": 1, "mods": mods}
 
 

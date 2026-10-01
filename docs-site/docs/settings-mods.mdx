@@ -1,6 +1,9 @@
 # Settings: Mods
 
-What is installed, with a checkbox each.
+Two tabs, **Mods** (what is installed, with a checkbox each) and **Find Mods**
+(the mod list), under a header that stays at the top while you scroll. The
+header also holds **Install from a folder…**, **Install a UI skin…**, **Open
+mods folder** and **Apply**, and says when something is waiting for Apply.
 
 ## The list
 
@@ -35,7 +38,36 @@ server; it cannot reach the internet or anything else on your computer.
 ## Apply
 
 Applies every checkbox and every option at once, then restarts the server.
-Client-side changes need the game reloaded.
+Until you do, the header reads **You have changes to mods that aren't applied
+yet — press Apply**, and Apply is highlighted: a mod switched on or off, an
+option changed, an installed mod that is on, or a removed mod that was on.
+
+Client-side changes need the game reloaded. After Apply the header says so,
+with a **Reopen game** button when the game window is open (or **Open game**
+when it is not); the line goes away once the game has loaded again, however
+you reopened it.
+
+## Find mods
+
+The **Find Mods** tab browses the mod list: mods reviewed into the app's repository by
+pull request. Most are a folder there. The ones marked **from GitHub** live in
+their author's own repository instead, and installing one installs that
+repository's latest release. The app shows you the repository, the release and
+what kind of code it carries before anything is installed.
+
+## Updates
+
+For a mod installed **from GitHub**, opening this tab or pressing **Check for
+updates** (on the Find Mods tab, beside the search box) asks GitHub whether there is a newer release. If there is, the mod
+shows **Update available (v4.7.1 → v4.8.0)**, with the release notes a click
+away. Nothing updates by itself: **Update…** shows the new release first, and
+only replaces the installed copy if you say yes. Your options for the mod, and
+whether it is switched on, are kept. If the new release needs a newer app, the
+update is refused and the version you have stays.
+
+The list vouches for the mod's repository, not for each release, so its author
+can publish a new version without review. That is what the dialog says, and
+why updating is your click and not the app's.
 
 ## Install a mod
 

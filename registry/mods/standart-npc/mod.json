@@ -1,0 +1,11 @@
+{
+  "name": "standart-npc",
+  "author": "MondoTruth and the Ragnarok Offline community",
+  "description": "Warper, Buffer, Job Master, Kafra, Refiner, Bounty Hunter and a town's worth of other custom NPCs in one mod. Every NPC can be switched off on its own from the mod's Settings… window. Some NPCs need the Cash Shop for full functionality.",
+  "tags": ["npc", "warper", "buffer", "quality-of-life"],
+  "homepage": "https://github.com/MondoTruth/standart-npc",
+  "source": {
+    "github": "MondoTruth/standart-npc",
+    "asset": "standart-npc-*.zip"
+  }
+}
