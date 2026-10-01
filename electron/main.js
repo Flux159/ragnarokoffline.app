@@ -41,6 +41,7 @@ function getSharingSecrets() {
 function getSharing() {
     return sharing ||= new (require('./sharing/controller').SharingController)({
         directory: path.join(dataRoot(), 'sharing'),
+        ports: gamePorts(),
         // 0 means "until you stop sharing": the gateway treats an infinite
         // lifetime as never expiring, and stopping or replacing still revokes.
         // Reuse the stored invitation so a link already sent to friends keeps
@@ -80,7 +81,7 @@ function getSharing() {
             // that drops the probe is the ordinary case on Windows and used to
             // fail here with a sentence naming neither an address nor a port.
             const probe = require('./listener-probe');
-            lastListenerReport = await probe.probeListeners();
+            lastListenerReport = await probe.probeListeners({ ports: probe.gamePorts(gamePorts()) });
             appLog(`sharing: listener check\n${probe.describe(lastListenerReport)}`);
             const decided = probe.verdict(lastListenerReport);
             if (!decided.shareable) throw Error(decided.message);
@@ -143,6 +144,18 @@ function dataRoot() {
 function stackBin() {
 	return path.join(projectRoot(), 'bin', process.platform === 'win32'
 		? 'ragnarok-stack.exe' : 'ragnarok-stack');
+}
+
+// The host ports this copy listens on: 3338/6900/6121/5121/7490 unless the
+// RAGNAROK_OFFLINE_*_PORT variables move them, which is how a test world runs
+// beside the player's app. The supervisor is the one parser (electron/ports.js
+// explains); read once, at startup, so every caller sees the same answer.
+let gamePortsCache = null;
+function gamePorts() {
+	return gamePortsCache ||= require('./ports').readPorts(stackBin(), stackEnv().env);
+}
+function localGameBase() {
+	return `http://127.0.0.1:${gamePorts().asset}`;
 }
 
 function stateDir() {
@@ -633,9 +646,9 @@ async function assetsStart() {
 	return assetServer.start({
 		executable: server, cwd: root, stateRoot: stateDir(),
 		environment: {
-			PATH: toolPath(), PORT: '3338',
+			PATH: toolPath(), PORT: String(gamePorts().asset),
 			HOST: client.lan ? '0.0.0.0' : '127.0.0.1',
-			CLIENT_PUBLIC_URL: `http://${advertiseHost()}:3338`,
+			CLIENT_PUBLIC_URL: `http://${advertiseHost()}:${gamePorts().asset}`,
 			NODE_ENV: 'production',
 			SERVER_ROOT: path.resolve(stateDir(), 'assets'),
 			CLIENT_RESPATH: 'resources/', CLIENT_DATAINI: path.resolve(stateDir(), 'asset-config/DATA.INI'),
@@ -754,13 +767,13 @@ function advertiseHost() {
 // configured character/map address; keep precisely those three destinations.
 function proxyTargets(client) {
 	const backend = client.lan ? advertiseHost() : '127.0.0.1';
-	return ['127.0.0.1:6900', `${backend}:6121`, `${backend}:5121`];
+	return require('./ports').gameTargets(gamePorts(), backend);
 }
 
 // One public web origin; legacy LAN addresses are normalized by join-address.
 function serveUrl(host) {
 	const authority = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
-	return `http://${authority}:3338/`;
+	return `http://${authority}:${gamePorts().asset}/`;
 }
 function joinUrl(hostSpec) { return parseJoinAddress(hostSpec).origin; }
 
@@ -801,7 +814,7 @@ function linkClient(paths) {
 }
 
 async function linkClientOwned(paths) {
-	await assetServer.prepare(stateDir());
+	await assetServer.prepare(stateDir(), gamePorts().asset);
 	const root = projectRoot();
 	// Read each path from *this* process before handing them to bash.
 	//
@@ -991,6 +1004,7 @@ function toolsInstance() {
 	if (!toolsSingleton) {
 		toolsSingleton = require('./tools').createTools({
 			BrowserWindow, session, net, shell, stackBin, stackEnv, stateDir, runtimeDir: projectRoot, log: appLog,
+			assetPort: () => gamePorts().asset,
 			// The log viewer (#202) shows what Copy diagnostics would, redacted
 			// the same way, and the agent's token besides.
 			nebulaLogsDir: () => path.join(dataRoot(), 'nebula', 'logs'),
@@ -1013,7 +1027,8 @@ function agentPlay() {
 			BrowserWindow,
 			stateDir,
 			stackBin,
-			gameBase: () => 'http://127.0.0.1:3338',
+			gameBase: localGameBase,
+			port: () => gamePorts().agent,
 			gamePath: GAME_PATH,
 			runAccount: request => require('./accounts').runAccounts(stackBin(), stackEnv(), request),
 			era: () => (getSettings().prerenewal ? 'prerenewal' : 'renewal'),
@@ -1363,7 +1378,7 @@ function makeWindow(id, file, opts) {
 		const guard = (event, legacyUrl) => {
 			const current = getClientPaths();
 			const allowed = current.mode === 'join' && current.join_host
-				? joinUrl(current.join_host) : 'http://127.0.0.1:3338';
+				? joinUrl(current.join_host) : localGameBase();
 			let target;
 			try { target = new URL(event.url || legacyUrl); } catch { event.preventDefault(); return; }
 			if (target.origin !== allowed || target.username || target.password) {
@@ -1475,7 +1490,7 @@ async function nudgeLocalNetworkPermission() {
 	try {
 		// Any attempt to reach a local address is enough; whether it connects
 		// is irrelevant, so this is deliberately short and its result ignored.
-		const sock = require('net').connect({ host: ip, port: 3338 });
+		const sock = require('net').connect({ host: ip, port: gamePorts().asset });
 		sock.setTimeout(1500);
 		const done = () => sock.destroy();
 		sock.on('connect', done);
@@ -2017,7 +2032,7 @@ const handlers = {
 			const probe = require('./listener-probe');
 			add('network', [
 				`interfaces  ${probe.localAddresses().join(', ') || 'none (loopback only)'}`,
-				`ports       ${probe.GAME_PORTS.join(', ')}`,
+				`ports       ${probe.gamePorts(gamePorts()).join(', ')}`,
 				'',
 				lastListenerReport
 					? probe.describe(lastListenerReport)
@@ -2551,7 +2566,7 @@ const handlers = {
 		// The host's asset server when joining, our own when hosting. Hardcoding
 		// loopback here sent a joining player to a server that does not exist on
 		// their machine.
-		const base = c.mode === 'join' ? joinUrl(c.join_host) : 'http://127.0.0.1:3338';
+		const base = c.mode === 'join' ? joinUrl(c.join_host) : localGameBase();
 		// Before the page loads, not after: the client reads its cache as it
 		// boots, and clearing it out from under a running client would be a
 		// race for no gain.
@@ -2920,6 +2935,17 @@ app.whenReady().then(() => {
 	// Before anything reads a path: an existing install still has its data
 	// under the old folder name.
 	migrateDataRoot();
+	// A port override the supervisor refuses stops the launch here, rather
+	// than letting this copy fall back onto the ports of the app it was moved
+	// away from. Without an override this reads nothing and cannot fail.
+	try {
+		const ports = gamePorts();
+		if (require('./ports').overridden()) appLog(`ports overridden: ${JSON.stringify(ports)}`);
+	} catch (e) {
+		dialog.showErrorBox('Ragnarok Offline', e.message);
+		app.exit(1);
+		return;
+	}
 	// An AppImage installs nothing, so without this there is no icon to click
 	// the second time -- see linux-desktop-entry.js. Idempotent, and it reports
 	// rather than throws, because a launcher entry must never stop a launch.

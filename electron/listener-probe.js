@@ -5,6 +5,8 @@ const os = require('node:os');
 // Ports the app publishes: the asset server, then rAthena's login, char and
 // map. All four are bound to 127.0.0.1 when hosting is anything but `lan`.
 const GAME_PORTS = [3338, 6900, 6121, 5121];
+// The same four for a copy whose ports were moved (electron/ports.js).
+const gamePorts = ports => [ports.asset, ports.login, ports.char, ports.map];
 
 // What a single connection attempt proved, worst first. `open` is the only
 // outcome that says a port is exposed; every other one says it is not, and
@@ -127,4 +129,4 @@ function verdict(report) {
   return { shareable: true, message: '' };
 }
 
-module.exports = { probeListeners, describe, verdict, localAddresses, GAME_PORTS };
+module.exports = { probeListeners, describe, verdict, localAddresses, GAME_PORTS, gamePorts };

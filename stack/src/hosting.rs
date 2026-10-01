@@ -284,7 +284,8 @@ pub fn sharing_check(cfg: &Config, dk: &Docker) -> Result<String, String> {
     if flag(&running_login, "ipban_dynamic_pass_failure_ban")? != "no" {
         return Err("Restart in friends mode to apply browser login attempt protection".into());
     }
-    for (name, port) in [("ragnarok-db", None), ("ragnarok-login", Some("6900")), ("ragnarok-char", Some("6121")), ("ragnarok-map", Some("5121"))] {
+    let (login, char, map) = (cfg.ports.login.to_string(), cfg.ports.char.to_string(), cfg.ports.map.to_string());
+    for (name, port) in [("ragnarok-db", None), ("ragnarok-login", Some(login.as_str())), ("ragnarok-char", Some(char.as_str())), ("ragnarok-map", Some(map.as_str()))] {
         let inspected = dk.output(["inspect", name])?;
         let Value::Array(values) = json::parse(&inspected).map_err(|_| "Cannot verify game listeners")? else { return Err("Cannot verify game listeners".into()); };
         if values.len() != 1 || !bindings_safe(&values[0], port) { return Err("Game listeners are not private. Restart in friends mode before sharing.".into()); }
@@ -344,6 +345,7 @@ mod tests {
             image: String::new(),
             db_image: String::new(),
             app_version: None,
+            ports: crate::ports::Ports::DEFAULT,
         }
     }
 

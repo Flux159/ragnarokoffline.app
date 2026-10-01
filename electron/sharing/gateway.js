@@ -1,6 +1,7 @@
 'use strict';
 // The only tunnel origin. The Rust RemoteClient and all RO TCP listeners stay
 // loopback-only. No request is privileged because its peer is loopback.
+const { DEFAULTS: DEFAULT_PORTS, gameTargets } = require('../ports');
 const http = require('node:http');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -88,10 +89,14 @@ class Frames extends Transform {
   }
 }
 class FriendGateway {
-  constructor({ origin, upstreamPort = 3338, register, now = Date.now, lifetime = 8 * 60 * 60 * 1000, maxSessions = 32, invite = null }) {
+  // `ports` is this copy's (electron/ports.js): the asset server it fronts and
+  // the three game servers its WebSocket paths may name. Defaults otherwise.
+  constructor({ origin, ports = DEFAULT_PORTS, upstreamPort = ports.asset, register, now = Date.now, lifetime = 8 * 60 * 60 * 1000, maxSessions = 32, invite = null }) {
     const url = new URL(origin);
     if (url.protocol !== 'https:' || url.origin !== origin || url.username || url.password) throw Error('An HTTPS game hostname is required');
     Object.assign(this, { origin, upstreamPort, register, now, lifetime, maxSessions });
+    this.socketPaths = new Set(gameTargets(ports).map(target => '/ws/' + target));
+    this.loginPath = '/ws/127.0.0.1:' + ports.login;
     this.host = url.host; this.sessions = new Map(); this.sockets = new Set(); this.requests = new Set();
     // A supplied invitation survives restarts, so a link already sent to
     // friends keeps working after a crash or a repair. Only a token of the
@@ -208,7 +213,7 @@ class FriendGateway {
   upgrade(req, socket, head) {
     const entry = this.session(req);
     const reject = () => { socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); };
-    if (this.closed || req.headers.host !== this.host || !entry || !this.sameOrigin(req) || !/^\/ws\/127\.0\.0\.1:(6900|6121|5121)$/.test(req.url) || entry.sockets.size >= 4 || req.headers['sec-websocket-version'] !== '13') return reject();
+    if (this.closed || req.headers.host !== this.host || !entry || !this.sameOrigin(req) || !this.socketPaths.has(req.url) || entry.sockets.size >= 4 || req.headers['sec-websocket-version'] !== '13') return reject();
     const key = req.headers['sec-websocket-key'];
     if (typeof key !== 'string' || !/^[A-Za-z0-9+/]{22}==$/.test(key)) return reject();
     const proxy = http.request({ host: '127.0.0.1', port: this.upstreamPort, path: req.url, agent: false, timeout: 10000,
@@ -221,7 +226,7 @@ class FriendGateway {
       const accept = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
       if (response.statusCode !== 101 || response.headers['sec-websocket-accept'] !== accept) { upstream.destroy(); return close(); }
       socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
-      const login = req.url.endsWith(':6900') ? new LoginPackets(name => this.loginLimits.allow(entry, name)) : null;
+      const login = req.url === this.loginPath ? new LoginPackets(name => this.loginLimits.allow(entry, name)) : null;
       const incoming = new Frames(true, login ? bytes => login.consume(bytes) : undefined), outgoing = new Frames(false);
       incoming.on('error', close); outgoing.on('error', close); upstream.on('error', close);
       upstream.on('close', close); socket.once('close', () => upstream.destroy());

@@ -5,6 +5,7 @@ const path = require('node:path');
 const net = require('node:net');
 const { spawnSync } = require('node:child_process');
 const { AssetServer } = require('../../electron/asset-server');
+const portsModule = require('../../electron/ports');
 const repo = path.resolve(__dirname, '../..');
 const suffix = process.platform === 'win32' ? '.exe' : '';
 const command = process.argv[2];
@@ -23,8 +24,19 @@ function run(args) {
     if (result.error) throw result.error;
     if (result.status !== 0) throw new Error(`Test supervisor failed: ${args[0]} (exit ${result.status})`);
 }
+// This world's ports: the defaults, or RAGNAROK_OFFLINE_*_PORT as the world's
+// own supervisor reads them (electron/ports.js). Moved, they let the world run
+// beside the player's app; docs/AGENT_TESTING.md.
+let worldPorts = null;
+// Before `prepare` has copied the world's supervisor in, the one it will copy.
+const ports = () => worldPorts ||= portsModule.readPorts(fs.existsSync(stack) ? stack : path.join(repo, 'stack/target/debug/ragnarok-stack' + suffix), environment);
 async function freePorts() {
-    for (const port of [3338, 6900, 6121, 5121, 7462]) {
+    const p = ports();
+    // 7462 is the engine's API port. Only checked when nothing is moved: a
+    // world beside the app shares the machine with that app's engine, and
+    // nebula's port_conflict = "auto" (config/nebula.toml) moves this one.
+    const engine = portsModule.overridden(environment) ? [] : [7462];
+    for (const port of [p.asset, p.login, p.char, p.map, ...engine]) {
         const busy = await new Promise(resolve => {
             const socket = net.connect({ host: '127.0.0.1', port });
             const done = value => { socket.destroy(); resolve(value); };
@@ -33,6 +45,21 @@ async function freePorts() {
         });
         if (busy) throw new Error(`Port ${port} is occupied. Finish quitting the other host before starting this test world.`);
     }
+}
+// The client config names the login port, and it is written by link-assets,
+// so a world prepared on other ports has to be relinked before it can log in.
+// Done here rather than left as a step to remember: the symptom of skipping it
+// is a login that dials the *other* app's server.
+function relinkForPorts() {
+    const served = path.join(state, 'assets', 'Config.local.js');
+    let body = '';
+    try { body = fs.readFileSync(served, 'utf8'); } catch { /* not linked yet */ }
+    if (new RegExp(`\\tport: ${ports().login},`).test(body)) return;
+    const selection = process.env.RO_E2E_CLIENT_JSON;
+    if (!selection) throw new Error(`${served} does not name login port ${ports().login}; set RO_E2E_CLIENT_JSON so it can be relinked`);
+    const client = JSON.parse(fs.readFileSync(selection, 'utf8'));
+    console.log(`Relinking the client for login port ${ports().login}`);
+    run(['link-assets', ...['data_grf', 'rdata_grf', 'official_grf', 'bgm_dir'].map(key => client[key] || '')]);
 }
 function validate() {
     if (JSON.parse(fs.readFileSync(marker, 'utf8')).disposable !== true) throw new Error('Not a disposable test world');
@@ -72,18 +99,18 @@ async function main() {
         return;
     }
     validate();
-    if (command === 'up') { await freePorts(); run(['up', '--ram', '4096']); return; }
+    if (command === 'up') { await freePorts(); relinkForPorts(); run(['up', '--ram', '4096']); return; }
     if (command === 'backup') { run(['backup', path.join(world, `before-controls-${Date.now()}.sql`)]); return; }
     if (command === 'down') { run(['down']); return; }
     const server = new AssetServer({ log: text => console.log(text), identify: pid => require('../../electron/asset-server').processIdentity(pid, stack) });
     const fallback = name => { try { return fs.readFileSync(path.join(state, 'asset-config', name + '.path'), 'utf8').trim(); } catch { return ''; } };
     await server.start({ executable: path.join(root, 'bin/robrowser-remoteclient' + suffix), cwd: state, stateRoot: state,
-        environment: { PORT: '3338', HOST: '127.0.0.1', NODE_ENV: 'production', SERVER_ROOT: path.join(state, 'assets'),
-            CLIENT_PUBLIC_URL: 'http://127.0.0.1:3338', CLIENT_RESPATH: 'resources/', CLIENT_DATAINI: path.join(state, 'asset-config/DATA.INI'),
+        environment: { PORT: String(ports().asset), HOST: '127.0.0.1', NODE_ENV: 'production', SERVER_ROOT: path.join(state, 'assets'),
+            CLIENT_PUBLIC_URL: `http://127.0.0.1:${ports().asset}`, CLIENT_RESPATH: 'resources/', CLIENT_DATAINI: path.join(state, 'asset-config/DATA.INI'),
             CLIENT_AUTOEXTRACT: 'false', BGM_PATH: fallback('bgm'), AI_PATH: fallback('ai'), DATA_OVERRIDE_PATH: path.join(state, 'assets/.translation/data'),
             ROBROWSER_PATH: path.join(root, 'vendor/roBrowserLegacy/dist/Web'), ENABLE_STATIC_SERVE: 'true', ENABLE_WSPROXY: 'true',
-            WS_ALLOWED_TARGETS: '127.0.0.1:6900,127.0.0.1:6121,127.0.0.1:5121' } });
-    console.log('Owned test game ready at http://127.0.0.1:3338/; Ctrl-C stops assets, then run world.cjs down.');
+            WS_ALLOWED_TARGETS: portsModule.gameTargets(ports()).join(',') } });
+    console.log(`Owned test game ready at http://127.0.0.1:${ports().asset}/; Ctrl-C stops assets, then run world.cjs down.`);
     const stop = async () => { await server.stop(); process.exit(0); };
     process.once('SIGINT', stop); process.once('SIGTERM', stop);
 }

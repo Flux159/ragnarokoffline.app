@@ -24,7 +24,6 @@ const appData = process.platform === 'darwin' ? path.join(home, 'Library/Applica
 const WORLD = path.resolve(process.env.RO_E2E_WORLD || path.join(repo, 'artifacts/agent-world'));
 const PORT = Number(process.env.ROTEST_PORT || 7480);
 const OUT = path.resolve(process.env.ROTEST_OUT || path.join(repo, 'artifacts/rotest'));
-const GAME = 'http://127.0.0.1:3338/';
 const env = { ...process.env, RO_E2E_WORLD: WORLD,
     RO_E2E_RUNTIME: process.env.RO_E2E_RUNTIME || path.join(appData, 'runtime'),
     RO_E2E_CLIENT_JSON: process.env.RO_E2E_CLIENT_JSON || path.join(appData, 'client.json') };
@@ -61,13 +60,25 @@ RO_E2E_CLIENT_JSON, ROTEST_PORT (7480), ROTEST_OUT (artifacts/rotest).`;
 // ---------------------------------------------------------------- client side
 
 // The world's own ragnarok-stack, with the environment world.cjs gives it.
-function stack(args, stdio = 'pipe', input) {
-    const suffix = process.platform === 'win32' ? '.exe' : '';
+const SUFFIX = process.platform === 'win32' ? '.exe' : '';
+const STACK = path.join(WORLD, 'runtime', 'bin', 'ragnarok-stack' + SUFFIX);
+function stackEnv() {
     const root = path.join(WORLD, 'runtime');
-    return spawnSync(path.join(root, 'bin', 'ragnarok-stack' + suffix), args, { stdio, input, encoding: 'utf8', env: { ...env,
+    return { ...env,
         RAGNAROK_OFFLINE_ROOT: root, RAGNAROK_OFFLINE_HOME: WORLD, RAGNAROKMAC_STATE: path.join(WORLD, 'state'),
-        NEBULA_HOME: path.join(WORLD, 'nebula'), NEBULA_BIN: path.join(root, 'bin', 'nebula' + suffix),
-        RAGNAROKMAC_DOCKER: path.join(root, 'bin', 'docker-slim' + suffix) } });
+        NEBULA_HOME: path.join(WORLD, 'nebula'), NEBULA_BIN: path.join(root, 'bin', 'nebula' + SUFFIX),
+        RAGNAROKMAC_DOCKER: path.join(root, 'bin', 'docker-slim' + SUFFIX) };
+}
+function stack(args, stdio = 'pipe', input) {
+    return spawnSync(STACK, args, { stdio, input, encoding: 'utf8', env: stackEnv() });
+}
+
+// The world's game page: on 3338, or wherever RAGNAROK_OFFLINE_ASSET_PORT
+// moved it so the world can run beside the player's app. The world's own
+// supervisor decides (electron/ports.js), as it does for world.cjs.
+let gameUrl = null;
+function game() {
+    return gameUrl ||= `http://127.0.0.1:${require('../electron/ports').readPorts(STACK, stackEnv()).asset}/`;
 }
 
 // The play-testing account every world should have: `tester` / `tester123`,
@@ -168,7 +179,7 @@ async function daemon(flags) {
     serve.stdout.on('data', d => log('[serve]', String(d).trim()));
     serve.stderr.on('data', d => log('[serve!]', String(d).trim()));
     for (let i = 0; ; i++) {
-        try { await fetch(GAME); break; } catch {
+        try { await fetch(game()); break; } catch {
             if (i > 60 || serve.exitCode !== null) throw new Error('asset server did not start (is `rotest world up` done?)');
             await new Promise(r => setTimeout(r, 1000));
         }
@@ -188,7 +199,7 @@ async function daemon(flags) {
         if (kind) errors.push({ at: Date.now(), kind, text: m.text().slice(0, 2000) });
     });
     page.on('response', r => { if (r.status() >= 400) errors.push({ at: Date.now(), kind: 'http', text: `${r.status()} ${new URL(r.url()).pathname}` }); });
-    await page.goto(GAME, { waitUntil: 'domcontentloaded' });
+    await page.goto(game(), { waitUntil: 'domcontentloaded' });
     log('browser ready', headed ? '(headed)' : '(headless)');
 
     const agent = (fn, arg) => page.evaluate(([f, a]) => {
@@ -266,7 +277,7 @@ async function daemon(flags) {
         ping: async () => ({ ok: true }),
         status: async () => ({ ok: true, running: true, url: page.url(), inGame: await inGame(), errors: errors.length }),
         login: async ([user = TESTER.user, pass = TESTER.pass]) => {
-            if (!page.url().startsWith(GAME)) await page.goto(GAME);
+            if (!page.url().startsWith(game())) await page.goto(game());
             await page.locator('#user').waitFor({ timeout: 60000 });
             await page.locator('#user').fill(user);
             await page.locator('#pass').fill(pass);

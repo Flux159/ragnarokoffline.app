@@ -40,11 +40,11 @@ function publicHealth(origin) {
     }); request.on('timeout', () => request.destroy()); request.on('error', reject);
   });
 }
-function publicSocket(origin, cookie) {
+function publicSocket(origin, cookie, loginPort = 6900) {
   return new Promise((resolve, reject) => {
     const key = crypto.randomBytes(16).toString('base64');
     const accept = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
-    const request = https.request(origin + '/ws/127.0.0.1:6900', { timeout: 10000, agent: false, lookup: publicLookup,
+    const request = https.request(origin + '/ws/127.0.0.1:' + loginPort, { timeout: 10000, agent: false, lookup: publicLookup,
       headers: { origin, cookie, connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-key': key, 'sec-websocket-version': '13' } });
     const failure = () => reject(Error('The public page connected, but game connections did not. Check Cloudflare’s WebSocket setting and try again.'));
     request.on('upgrade', (response, socket) => { socket.destroy(); response.headers['sec-websocket-accept'] === accept ? resolve() : failure(); });
@@ -72,8 +72,8 @@ function quickHostname(child) {
   });
 }
 class SharingController {
-  constructor({ directory, register, guard, onChange = () => {}, lifetime = () => 8 * 60 * 60 * 1000, invite = () => null, onInvite = () => {}, log = () => {} }, { helper = ensureHelper, launch = spawn, health = publicHealth, websocket = publicSocket, Gateway = FriendGateway } = {}) {
-    Object.assign(this, { directory, register, guard, onChange, lifetime, invite, onInvite, log, helper, launch, health, websocket, Gateway }); this.state = 'stopped'; this.generation = 0;
+  constructor({ directory, register, guard, onChange = () => {}, lifetime = () => 8 * 60 * 60 * 1000, invite = () => null, onInvite = () => {}, log = () => {}, ports = undefined }, { helper = ensureHelper, launch = spawn, health = publicHealth, websocket = publicSocket, Gateway = FriendGateway } = {}) {
+    Object.assign(this, { directory, register, guard, onChange, lifetime, invite, onInvite, log, helper, launch, health, websocket, Gateway, ports }); this.state = 'stopped'; this.generation = 0;
   }
   // `notice` is what the pre-flight checks could not confirm, on a start that
   // succeeded anyway. It is deliberately separate from `message`, which is the
@@ -101,7 +101,7 @@ class SharingController {
       let origin = saved ? 'https://' + saved.hostname : 'https://pending.invalid';
       // Read at each start, so changing it in Settings applies to the next
       // invitation without restarting the app.
-      const gateway = new this.Gateway({ origin, register: this.register, lifetime: this.lifetime(), invite: this.invite() });
+      const gateway = new this.Gateway({ origin, ports: this.ports, register: this.register, lifetime: this.lifetime(), invite: this.invite() });
       // Record whatever it ended up using: a reused token, or a fresh one when
       // nothing was stored or the stored value was unusable.
       this.onInvite(gateway.invite);
@@ -149,7 +149,7 @@ class SharingController {
       }
       if (generation !== this.generation) return;
       const probe = this.gateway.probeSession();
-      try { await this.websocket(origin, probe.cookie); } finally { probe.close(); }
+      try { await this.websocket(origin, probe.cookie, this.ports?.login); } finally { probe.close(); }
       if (generation !== this.generation) return;
       this.update('sharing', 'Sharing is on. Send an invitation link to your friends.');
       let misses = 0;

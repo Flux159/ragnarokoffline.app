@@ -164,12 +164,20 @@ is in the table and the char server neither reads nor writes it.
     of `stack down`, and a launch arriving during it is read as "bring the app
     back" — it queues a relaunch, so the **packaged** build reappears and your
     dev run is gone. Wait for it to leave the Dock.
-- One copy at a time, and not only because of the lock: the ports are fixed
-  (3338 for assets, 6900/6121/5121 for rAthena), so giving a second copy its
-  own state with `RAGNAROK_OFFLINE_HOME` still collides — and two supervisors
-  over one data disk is how the MariaDB volume loses its redo log.
-  `--user-data-dir` gets past the lock but not the ports, so it is only worth
-  anything for shell work that never presses play.
+- One copy per set of ports and per data disk. The ports default to 3338
+  (assets), 6900/6121/5121 (rAthena) and 7490 (agent API), so a second copy
+  given only its own state with `RAGNAROK_OFFLINE_HOME` still collides. To run
+  one beside the app (the agent test world is the usual case), also give it
+  its own `NEBULA_HOME` and move **every** port with
+  `RAGNAROK_OFFLINE_{ASSET,LOGIN,CHAR,MAP,AGENT}_PORT`. Moving only some of
+  them is worse than moving none: nebula forwards a published port that is
+  already taken to the engine that took it first, and reports no error.
+  [docs/AGENT_TESTING.md](docs/AGENT_TESTING.md#running-beside-the-app) has
+  the recipe. `stack/src/ports.rs` is the only parser (`ragnarok-stack ports`
+  prints its answer), and the shell and test scripts ask it. Never point two
+  supervisors at one data disk: that is how the MariaDB volume loses its redo
+  log. `--user-data-dir` gets past the single-instance lock, and with moved
+  ports and its own state the second copy can press play too.
 - Killing things: `pgrep -x` and kill by PID. `pkill -f <pattern>` has matched
   the agent's own shell in this repo and killed the session.
 

@@ -32,6 +32,7 @@ mod private_fs;
 mod service_credentials;
 mod operation_lock;
 mod packetver;
+mod ports;
 
 use config::Config;
 use docker::Docker;
@@ -39,7 +40,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process::exit;
 
-const USAGE: &str = "usage: ragnarok-stack host-check|capture-crashes|hosting-check [--lan]|secure-services [--lan] [--ram MiB]|mods|mod-enable NAME|mod-disable NAME|mod-forget NAME|up [--lan] [--ram MiB]|down|repair [--lan] [--ram MiB]|status|logs [service] [tail]|logs --follow <map|char|login|db> [--tail N]|agent <command> [args]|export-table <name>\n\
+const USAGE: &str = "usage: ragnarok-stack host-check|capture-crashes|hosting-check [--lan]|secure-services [--lan] [--ram MiB]|mods|mod-enable NAME|mod-disable NAME|mod-forget NAME|up [--lan] [--ram MiB]|down|repair [--lan] [--ram MiB]|status|logs [service] [tail]|logs --follow <map|char|login|db> [--tail N]|agent <command> [args]|export-table <name>|ports\n\
                      \x20      db tables|describe <table>|rows|apply (JSON on stdin for rows and apply)\n\
                      \x20      backup <file>|restore <file>\n\
                      \x20      sql [--write] [--file <path>] [<statement>]\n\
@@ -79,6 +80,18 @@ fn main() {
         if let Err(error) = agent::run(&config::state_dir(&root), &args[1..]) {
             eprintln!("{error}");
             exit(1);
+        }
+        return;
+    }
+
+    // The ports this world listens on, as JSON, for the shell and the test
+    // scripts: they ask rather than parse the variables themselves, so there
+    // is one set of rules (ports.rs). No config and no lock -- like `agent`,
+    // it must answer before anything else is set up.
+    if verb == "ports" {
+        match ports::Ports::from_env() {
+            Ok(p) => println!("{}", p.to_json()),
+            Err(error) => { eprintln!("{error}"); exit(1); }
         }
         return;
     }

@@ -128,7 +128,15 @@ const schemePrivileges = { scheme: SCHEME, privileges: { standard: true, secure:
  *   BrowserWindow, session, net, shell, stackBin(), stackEnv(), stateDir(), runtimeDir(), log(text), icon
  *   and, for the log viewer: nebulaLogsDir(), redact(text), openGameDevTools()
  */
+// The asset origin the tool pages name (ASSET_ORIGIN in tools/*/*.html). A
+// copy whose asset server was moved (electron/ports.js) answers somewhere
+// else, so requests to this one are sent on to wherever that is.
+const PAGE_ASSET_HOST = '127.0.0.1:3338';
+
 function createTools(deps) {
+	const assetHost = () => `127.0.0.1:${deps.assetPort ? deps.assetPort() : 3338}`;
+	const isAsset = url => url.host === PAGE_ASSET_HOST || url.host === assetHost();
+	const toAsset = href => { const url = new URL(href); url.host = assetHost(); return url.toString(); };
 	const windows = new Map();
 	// Converted icons, by path: the item list asks for hundreds at a time.
 	const pngCache = new Map();
@@ -250,7 +258,7 @@ function createTools(deps) {
 				if (sprite) {
 					// data/sprite/몬스터/ ("monster"): the asset server resolves the
 					// Korean folder and the GRFs' lowercase names.
-					const url = `http://127.0.0.1:3338/data/sprite/${encodeURIComponent('몬스터')}/${encodeURIComponent(sprite[1].toLowerCase())}.${sprite[2]}`;
+					const url = `http://${assetHost()}/data/sprite/${encodeURIComponent('몬스터')}/${encodeURIComponent(sprite[1].toLowerCase())}.${sprite[2]}`;
 					const res = await deps.net.fetch(url, { bypassCustomProtocolHandlers: true });
 					if (!res.ok) return respond(`no sprite ${sprite[1]}`, 'text/plain', 404);
 					return respond(Buffer.from(await res.arrayBuffer()), 'application/octet-stream');
@@ -270,17 +278,17 @@ function createTools(deps) {
 		// and let everything else through.
 		ses.protocol.handle('http', async request => {
 			const url = new URL(request.url);
-			if (url.host === '127.0.0.1:3338' && url.pathname === '/item-icons.js') {
+			if (isAsset(url) && url.pathname === '/item-icons.js') {
 				try { return respond(await itemIcons(), TYPES['.js']); } catch (e) {
 					deps.log(`tools: item icons: ${e.message}`);
 					return respond('/* ' + e.message.replace(/\*\//g, '') + ' */', TYPES['.js'], 503);
 				}
 			}
 			// The game's .bmp pictures, with their magenta turned transparent.
-			if (url.host === '127.0.0.1:3338' && /\.bmp$/i.test(url.pathname)) {
+			if (isAsset(url) && /\.bmp$/i.test(url.pathname)) {
 				const key = url.pathname;
 				if (!pngCache.has(key)) {
-					const res = await deps.net.fetch(request.url, { bypassCustomProtocolHandlers: true });
+					const res = await deps.net.fetch(toAsset(request.url), { bypassCustomProtocolHandlers: true });
 					if (!res.ok) return res;
 					const original = Buffer.from(await res.arrayBuffer());
 					const png = require('./bmp').bmpToPng(original);
@@ -290,6 +298,8 @@ function createTools(deps) {
 				const hit = pngCache.get(key);
 				return new Response(hit.body, { headers: { 'content-type': hit.type, 'cache-control': 'max-age=3600' } });
 			}
+			// The pages only read from the asset server, so a moved one is a GET.
+			if (isAsset(url) && url.host !== assetHost()) return deps.net.fetch(toAsset(request.url), { bypassCustomProtocolHandlers: true });
 			return deps.net.fetch(request, { bypassCustomProtocolHandlers: true });
 		});
 		handlersReady = true;

@@ -962,6 +962,18 @@ fn insert_before_close(body: String, block: &str) -> String {
     format!("{head}{sep}\n{block}{}", &body[i + 1..])
 }
 
+/// Replace the number in the template's server entry, `port: <digits>,`.
+/// Anchored on the tab-indented line start so it cannot match a key that
+/// merely ends in "port" -- `socketProxy` and the like.
+fn set_login_port(body: &str, port: u16) -> String {
+    const KEY: &str = "\tport: ";
+    let Some(start) = body.find(KEY).map(|i| i + KEY.len()) else {
+        return body.to_string();
+    };
+    let end = start + body[start..].bytes().take_while(u8::is_ascii_digit).count();
+    format!("{}{port}{}", &body[..start], &body[end..])
+}
+
 /// Replace the number in the template's `packetver: <digits>,` line.
 fn set_packetver(body: &str, packetver: &str) -> String {
     const KEY: &str = "packetver: ";
@@ -997,6 +1009,11 @@ fn write_client_config(
     // Replaced by pattern rather than by the template's literal, so the
     // template's own number can move without this following it.
     let body = set_packetver(&body, packetver);
+    // The login server's port: the one TCP destination the client dials by
+    // number. Char and map it is told by the servers themselves, and the asset
+    // server it reaches through `location.host`, so this is the only port the
+    // client config carries (ports.rs).
+    let body = set_login_port(&body, cfg.ports.login);
     // The codepage every client table is read with. The template is Korean,
     // which is right whenever the English overlay is in front of it; see
     // GameText for why the two cannot be chosen separately.
@@ -1078,6 +1095,7 @@ mod tests {
             image: String::new(),
             db_image: String::new(),
             app_version: None,
+            ports: crate::ports::Ports::DEFAULT,
         }
     }
 
@@ -1748,6 +1766,35 @@ mod tests {
         );
         assert!(body.contains("'plain': { path: 'plugins/plain/index', pars: {  } }"), "{body}");
         assert!(body.trim_end().ends_with("};"), "{body}");
+        fs::remove_dir_all(cfg.state.parent().unwrap()).unwrap();
+    }
+
+    /// The shipped template, with a test world's ports: the client dials the
+    /// moved login server, and nothing else in the file changes. With no
+    /// override, the file is exactly what it always was.
+    #[test]
+    fn the_client_dials_the_configured_login_port() {
+        let template = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../config/Config.local.js")).unwrap();
+        assert!(template.contains("\t\t\tport: 6900,"), "the template moved its port line");
+
+        let mut cfg = fixture_config("login-port");
+        cfg.ports = crate::ports::Ports { asset: 13338, login: 16900, char: 16121, map: 15121, agent: 17490 };
+        fs::create_dir_all(cfg.root.join("config")).unwrap();
+        fs::write(cfg.root.join("config/Config.local.js"), &template).unwrap();
+        let web = cfg.state.join("web");
+        fs::create_dir_all(&web).unwrap();
+        write_client_config(&cfg, &web, &[], &[], &[], GameText::English, crate::packetver::default()).unwrap();
+        let moved = fs::read_to_string(web.join("Config.local.js")).unwrap();
+        assert!(moved.contains("\t\t\tport: 16900,"), "{moved}");
+        assert!(!moved.contains("port: 6900,"), "{moved}");
+        // The socket proxy still follows the page's own origin, which is how
+        // the moved asset port reaches the client.
+        assert!(moved.contains("location.host + '/ws/'"), "{moved}");
+
+        cfg.ports = crate::ports::Ports::DEFAULT;
+        write_client_config(&cfg, &web, &[], &[], &[], GameText::English, crate::packetver::default()).unwrap();
+        let default = fs::read_to_string(web.join("Config.local.js")).unwrap();
+        assert_eq!(default, set_packetver(&template, crate::packetver::default()));
         fs::remove_dir_all(cfg.state.parent().unwrap()).unwrap();
     }
 

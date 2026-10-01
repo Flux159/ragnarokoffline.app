@@ -43,6 +43,7 @@ function writePrivate(file, text) {
 /**
  * @param {object} deps
  *   BrowserWindow, stateDir(), stackBin(), gameBase() -> 'http://127.0.0.1:3338',
+ *   port() -> the agent API's preferred port (7490 unless overridden),
  *   gamePath, runAccount(request) -> Promise, era() -> 'renewal'|'prerenewal',
  *   hosting() -> bool (false when this app joins someone else's server),
  *   icon, log(text)
@@ -100,7 +101,11 @@ function createAgentPlay(deps) {
 		const make = () => createAgentApi({ run, token, agents: () => count, log: deps.log });
 		api = make();
 		port = null;
-		for (const candidate of [previous?.port, DEFAULT_PORT, 0].filter(p => p !== undefined && p !== null)) {
+		// A port set for this copy (RAGNAROK_OFFLINE_AGENT_PORT) comes first;
+		// otherwise last time's, then the usual one, then any free one.
+		const configured = deps.port ? deps.port() : DEFAULT_PORT;
+		const candidates = configured !== DEFAULT_PORT ? [configured, previous?.port, 0] : [previous?.port, DEFAULT_PORT, 0];
+		for (const candidate of candidates.filter(p => p !== undefined && p !== null)) {
 			try { port = await api.listen(candidate); break; } catch { api.server.close(); api = make(); }
 		}
 		if (!port) { api = null; throw new Error('Could not open a local port for the agent.'); }

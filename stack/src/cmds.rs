@@ -1174,7 +1174,7 @@ fn wait_for_db(dk: &Docker) -> Result<(), String> {
     Err("timed out waiting for the database schema".into())
 }
 
-/// The map-server listens on 5121 long before it is usable: it then reads its
+/// The map-server listens on its port long before it is usable: it then reads its
 /// maps and the whole npc tree, and only afterwards registers those maps with
 /// the char-server. A character logging in during that window is told "Map is
 /// not available" and bounced. The container being Up is not readiness; the
@@ -1661,6 +1661,11 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     if scope == crate::hosting::Scope::Friends {
         login_config.push_str("ipban_dynamic_pass_failure_ban: no\n");
     }
+    // The listen ports go last in each file: rAthena keeps the last assignment,
+    // so nothing earlier -- a mod's allowlisted settings included -- can move
+    // a server off the port the client will be sent to (ports.rs).
+    let ports = cfg.ports;
+    login_config.push_str(&ports.login_conf());
     write_conf(&conf, "login_conf.txt", &login_config)?;
     if scope.internet() { crate::hosting::require_game_policy(cfg, dk)?; }
 
@@ -1671,9 +1676,10 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     let instant_deletion = crate::registration::instant_character_deletion(&cfg.state)?;
     write_conf(&conf, "char_conf.txt",
         &format!("login_ip: ragnarok-login\nchar_ip: {advertise}\npincode_enabled: no\n{}\
-                  {start_point}\n{}{}", crate::registration::character_config(instant_deletion),
+                  {start_point}\n{}{}{}", crate::registration::character_config(instant_deletion),
                   conf_lines(&mods, "char_conf.txt"),
-                  credentials.as_ref().map(|c| format!("userid: s1\npasswd: {}\n", c.interserver)).unwrap_or_default()))?;
+                  credentials.as_ref().map(|c| format!("userid: s1\npasswd: {}\n", c.interserver)).unwrap_or_default(),
+                  ports.char_conf()))?;
 
     let product = if cfg!(target_os = "macos") { "RagnarokMac" }
         else if cfg!(windows) { "RagnarokWindows" }
@@ -1682,12 +1688,12 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     write_conf(&conf, "motd.txt",
         &format!("Welcome to {product} Offline! Please report any bugs on Github\n"))?;
     write_conf(&conf, "map_conf.txt",
-        &format!("char_ip: ragnarok-char\nmap_ip: {advertise}\nmotd_txt: conf/import/motd.txt\n{}{}{}{}",
+        &format!("char_ip: ragnarok-char\nmap_ip: {advertise}\nmotd_txt: conf/import/motd.txt\n{}{}{}{}{}",
                  conf_lines(&mods, "map_conf.txt"), mods.map_lines, mods.npc_lines,
-                 credentials.as_ref().map(|c| format!("userid: s1\npasswd: {}\n", c.interserver)).unwrap_or_default()))?;
+                 credentials.as_ref().map(|c| format!("userid: s1\npasswd: {}\n", c.interserver)).unwrap_or_default(),
+                 ports.map_conf()))?;
 
-    let endpoint = format!(
-        "{{\"host\":\"{advertise}\",\"login\":6900,\"char\":6121,\"map\":5121}}\n");
+    let endpoint = endpoint_json(&advertise, &ports);
     fs::write(cfg.state.join("endpoint.json"), &endpoint)
         .map_err(|e| format!("writing endpoint.json: {e}"))?;
     // The game page reads this from the asset server's static root. It exists
@@ -1712,9 +1718,12 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     // all three: packets.hpp is compiled into login and char as well as map.
     let era = if is_prerenewal(cfg) { "-prere" } else { "" };
     let ver = crate::packetver::suffix(packetver);
-    run_server(cfg, dk, "ragnarok-login", 6900, &format!("/rathena/login-server{ver}"), lan)?;
-    run_server(cfg, dk, "ragnarok-char", 6121, &format!("/rathena/char-server{era}{ver}"), lan)?;
-    run_server(cfg, dk, "ragnarok-map", 5121, &format!("/rathena/map-server{era}{ver}"), lan)?;
+    // Published one to one: each server listens inside its container on the
+    // very port it is reached on, because that is the number it hands the
+    // client (login names char's, char names map's).
+    run_server(cfg, dk, "ragnarok-login", ports.login, &format!("/rathena/login-server{ver}"), lan)?;
+    run_server(cfg, dk, "ragnarok-char", ports.char, &format!("/rathena/char-server{era}{ver}"), lan)?;
+    run_server(cfg, dk, "ragnarok-map", ports.map, &format!("/rathena/map-server{era}{ver}"), lan)?;
     phase(cfg, "Loading maps and NPCs…");
     wait_for_maps(dk)?;
     // After the map server has read its tables and before anyone is told the
@@ -1726,9 +1735,17 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     // The one string a host pastes to a friend. Printed rather than only
     // written, so it is visible from a terminal too.
     if lan {
-        println!("join address: http://{advertise}:3338/");
+        println!("join address: http://{advertise}:{}/", ports.asset);
     }
     Ok(())
+}
+
+/// What `up` tells the shell about where the game servers are.
+fn endpoint_json(advertise: &str, ports: &crate::ports::Ports) -> String {
+    format!(
+        "{{\"host\":\"{advertise}\",\"login\":{},\"char\":{},\"map\":{},\"asset\":{}}}\n",
+        ports.login, ports.char, ports.map, ports.asset
+    )
 }
 
 pub fn down(cfg: &Config, dk: &Docker) -> Result<(), String> {
@@ -2275,6 +2292,23 @@ fn human(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    /// What the shell reads to learn where this world's servers are. The
+    /// default install's file keeps its keys and values, with the asset port
+    /// added.
+    #[test]
+    fn the_endpoint_names_the_configured_ports() {
+        let moved = crate::ports::Ports { asset: 13338, login: 16900, char: 16121, map: 15121, agent: 17490 };
+        assert_eq!(
+            super::endpoint_json("127.0.0.1", &moved),
+            "{\"host\":\"127.0.0.1\",\"login\":16900,\"char\":16121,\"map\":15121,\"asset\":13338}\n"
+        );
+        let parsed = crate::json::parse(&super::endpoint_json("192.168.1.20", &crate::ports::Ports::DEFAULT)).unwrap();
+        assert_eq!(parsed.str("host"), Some("192.168.1.20"));
+        for (key, port) in [("login", 6900.0), ("char", 6121.0), ("map", 5121.0), ("asset", 3338.0)] {
+            assert!(matches!(parsed.get(key), Some(crate::json::Value::Number(n)) if *n == port), "{key}");
+        }
+    }
 
     #[test]
     fn logs_follow_names_only_game_services() {

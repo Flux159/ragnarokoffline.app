@@ -14,8 +14,10 @@ unless the page opts in. Shipped builds carry it switched off.
 
 ## Setting up a world
 
-Quit the packaged app first and wait for it to leave the Dock. The ports are
-fixed, so only one world can run at a time.
+A world uses the app's ports unless told otherwise, so either quit the
+packaged app first (and wait for it to leave the Dock), or move the world's
+ports and run it beside the app — see
+[Running beside the app](#running-beside-the-app).
 
 Build what the world copies in. The client has to be the **full** build:
 `api.html`, which the landing page opens, is only written by `build:all`.
@@ -60,6 +62,60 @@ scripts/rotest login tester tester123
 scripts/rotest create 0 Tester    # first time only
 scripts/rotest char 0
 ```
+
+## Running beside the app
+
+Every world listens on the same five host ports as the app unless these are
+set. Set them in the shell that runs `rotest`, and keep them set for every
+`rotest` command against that world — `world up`, `start`, `server`, `world
+down`:
+
+| Variable | Default | What listens there |
+|---|---|---|
+| `RAGNAROK_OFFLINE_ASSET_PORT` | 3338 | the asset server; the game page is `http://127.0.0.1:<port>/` |
+| `RAGNAROK_OFFLINE_LOGIN_PORT` | 6900 | rAthena login |
+| `RAGNAROK_OFFLINE_CHAR_PORT` | 6121 | rAthena char |
+| `RAGNAROK_OFFLINE_MAP_PORT` | 5121 | rAthena map |
+| `RAGNAROK_OFFLINE_AGENT_PORT` | 7490 | the shell's AI-agent API, when a test copy of the app is run with `--user-data-dir` |
+
+```sh
+export RAGNAROK_OFFLINE_ASSET_PORT=13338 RAGNAROK_OFFLINE_LOGIN_PORT=16900 \
+       RAGNAROK_OFFLINE_CHAR_PORT=16121 RAGNAROK_OFFLINE_MAP_PORT=15121 \
+       RAGNAROK_OFFLINE_AGENT_PORT=17490 ROTEST_PORT=17480
+scripts/rotest world up && scripts/rotest start
+```
+
+- Each must be 1024–65535 and all five must differ. The supervisor is the
+  only thing that parses them (`ragnarok-stack ports` prints what it settled
+  on). The shell, `world.cjs` and `rotest` ask it, and an override it refuses
+  stops them. Nothing falls back to the default ports, because the default
+  ports belong to the app.
+- The world needs a `ragnarok-stack` that knows `ports`. A world prepared
+  before this change still has the old one in `runtime/bin`. Copy a current
+  build over it, and move the old one aside first.
+- rAthena's ports are not remapped. Login tells the client which port char
+  is on, and char tells it map's, using the port each server *listens* on. A
+  `-p 16121:6121` remap would therefore send the client to 6121, which is the
+  app's char server. So the supervisor writes `login_port`, `char_port` and
+  `map_port` into the generated `conf/import` files and publishes each port
+  one to one.
+- The client config names the login port, and `link-assets` writes it. `world
+  up` notices when a world's served `Config.local.js` names a different port
+  and relinks it from `RO_E2E_CLIENT_JSON`.
+- The VM is the world's own. `NEBULA_HOME` is `<world>/nebula`, so its socket,
+  pid file, disks and VM are separate from the app's. The engine's own API,
+  DNS and k8s ports (7462/42062/6462 in `config/nebula.toml`) are the same
+  numbers in both, but `port_conflict = "auto"` moves whichever engine starts
+  second, and `world up` stops checking 7462 when ports are moved. Start the
+  two one after the other, not at the same moment: nebula checks those ports
+  before booting and binds them after, so two engines starting together can
+  both pick the same ones.
+- If two engines publish the same game port, the second one's forward fails
+  and the port silently goes on reaching the first. `docker run` reports no
+  error. So a world beside the app must move **all four** game ports, not
+  just the asset port.
+- `ROTEST_PORT` (default 7480) is the `rotest` daemon's own port. Move it too
+  if a second `rotest` is running.
 
 ## Commands
 

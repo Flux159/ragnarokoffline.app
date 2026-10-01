@@ -62,6 +62,10 @@ pub struct Config {
     /// The app's release version -- "1.0.5" -- or `None` when this build
     /// cannot tell. Only mods use it, to say what they need.
     pub app_version: Option<String>,
+    /// The host ports this world listens on: the defaults unless overridden
+    /// (see ports.rs). Read once here, so an invalid override stops every
+    /// command before it starts anything.
+    pub ports: crate::ports::Ports,
 }
 
 /// What version of the app this runtime tree belongs to.
@@ -130,7 +134,10 @@ impl Config {
             None => root.join(format!("bin/docker-slim{EXE}")),
         };
 
+        let ports = crate::ports::Ports::from_env()?;
+
         Ok(Config {
+            ports,
             app_version: app_version(&root),
             root,
             state,
