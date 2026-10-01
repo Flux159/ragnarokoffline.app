@@ -766,7 +766,7 @@ diff --git a/src/map/battle.cpp b/src/map/battle.cpp
 index 5420fbd..9322f40 100644
 --- a/src/map/battle.cpp
 +++ b/src/map/battle.cpp
-@@ -31,6 +31,7 @@
+@@ -30,6 +30,7 @@
  #include "mob.hpp"
  #include "party.hpp"
  #include "path.hpp"
