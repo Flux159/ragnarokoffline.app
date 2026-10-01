@@ -5,7 +5,8 @@
  * before anything else is, every ground pixel the sun cannot see is
  * darkened. RO bakes soft shadows into each map's lightmap already, so these
  * are a moderate, sharper layer on top. Two map hook stages: 'begin' draws
- * the shadow map, 'ground' applies it.
+ * the shadow map, 'models' applies it -- with contact shadows (ambient
+ * occlusion from the depth) where walls meet the ground.
  */
 
 import SceneCopy from './scene-copy.js';
@@ -41,6 +42,8 @@ let _fbo = null;
 let _program = null;
 let _current = null;
 let _apply = null;
+let _occlusion = 0;
+let _radius = 4.0;
 let _quad = null;
 
 function lookAt(eye, center, up) {
@@ -127,29 +130,84 @@ const APPLY_FRAGMENT = `#version 300 es
 precision highp float;
 in vec2 vUv;
 uniform sampler2D uDepth;
+uniform sampler2D uColor;
 uniform sampler2D uShadowMap;
 uniform mat4 uInverseViewProjection;
 uniform mat4 uShadowMat;
+uniform vec2 uProj;        // projection[10], projection[14]
+uniform vec2 uResolution;
 uniform float uTexel;
-uniform float uStrength;
+uniform float uStrength;   // sun shadows, 0 .. 1
+uniform float uOcclusion;  // contact shadows, 0 .. 1
+uniform bool uHasShadowMap;
+uniform mat4 uProjection;
+uniform mat4 uInverseProjection;
+uniform float uRadius;      // contact-shadow reach, world units
 out vec4 fragColor;
+
+vec3 viewPosition(vec2 uv) {
+	vec4 p = uInverseProjection * vec4(vec3(uv, texture(uDepth, uv).r) * 2.0 - 1.0, 1.0);
+	return p.xyz / p.w;
+}
+
 void main() {
 	float depth = texture(uDepth, vUv).r;
 	if (depth >= 1.0) discard;
-	vec4 world = uInverseViewProjection * vec4(vec3(vUv, depth) * 2.0 - 1.0, 1.0);
-	world /= world.w;
-	vec4 light = uShadowMat * world;
-	vec3 p = light.xyz / light.w * 0.5 + 0.5;
-	if (p.x <= 0.0 || p.x >= 1.0 || p.y <= 0.0 || p.y >= 1.0 || p.z >= 1.0) discard;
-	// 0 lit .. 1 hidden from the sun, averaged over 3x3 texels for soft edges.
-	float hidden = 0.0;
-	for (int x = -1; x <= 1; x++) {
-		for (int y = -1; y <= 1; y++) {
-			float closest = texture(uShadowMap, p.xy + vec2(float(x), float(y)) * uTexel).r;
-			hidden += p.z - 0.0015 > closest ? 1.0 : 0.0;
+	float shade = 1.0;
+
+	// Sun: where the shadow map says the sun is blocked -- but only where
+	// the map is not already in shadow (its lightmap baked it in), so the
+	// two never stack into black.
+	if (uHasShadowMap && uStrength > 0.0) {
+		vec4 world = uInverseViewProjection * vec4(vec3(vUv, depth) * 2.0 - 1.0, 1.0);
+		world /= world.w;
+		vec4 light = uShadowMat * world;
+		vec3 p = light.xyz / light.w * 0.5 + 0.5;
+		if (p.x > 0.0 && p.x < 1.0 && p.y > 0.0 && p.y < 1.0 && p.z < 1.0) {
+			float hidden = 0.0;
+			for (int x = -1; x <= 1; x++) {
+				for (int y = -1; y <= 1; y++) {
+					float closest = texture(uShadowMap, p.xy + vec2(float(x), float(y)) * uTexel).r;
+					hidden += p.z - 0.0015 > closest ? 1.0 : 0.0;
+				}
+			}
+			vec3 here = texture(uColor, vUv).rgb;
+			float lit = smoothstep(0.25, 0.55, dot(here, vec3(0.299, 0.587, 0.114)));
+			shade *= 1.0 - hidden / 9.0 * uStrength * 0.55 * lit;
 		}
 	}
-	float shade = 1.0 - hidden / 9.0 * uStrength * 0.6;
+
+	// Contact: points in a small hemisphere above the surface here; the
+	// share of them that end up inside something is how enclosed it is --
+	// the foot of a wall, under eaves, between crates.
+	if (uOcclusion > 0.0) {
+		vec3 here = viewPosition(vUv);
+		vec3 normal = normalize(cross(dFdx(here), dFdy(here)));
+		if (dot(normal, here) > 0.0) normal = -normal;   // facing the camera
+		float spin = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) * 6.2831;
+		vec3 helper = abs(normal.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+		vec3 tangent = normalize(cross(helper, normal));
+		vec3 bitangent = cross(normal, tangent);
+		float occluded = 0.0;
+		const int N = 12;
+		for (int i = 0; i < N; i++) {
+			float k = (float(i) + 0.5) / float(N);
+			float a = float(i) * 2.39996 + spin;
+			float r = sqrt(k);
+			vec3 dir = tangent * cos(a) * r + bitangent * sin(a) * r + normal * sqrt(max(1.0 - k, 0.0));
+			vec3 point = here + dir * uRadius * mix(0.2, 1.0, k * k);
+			vec4 clip = uProjection * vec4(point, 1.0);
+			vec2 uv = clip.xy / clip.w * 0.5 + 0.5;
+			if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) continue;
+			float scene = viewPosition(uv).z;
+			// Something in front of the sample point (closer to the eye),
+			// and near enough to be what encloses it.
+			float range = smoothstep(0.0, 1.0, uRadius / max(abs(here.z - scene), 1e-3));
+			occluded += (scene >= point.z + 0.02 * uRadius ? 1.0 : 0.0) * range;
+		}
+		shade *= 1.0 - min(occluded / float(N) * 1.6, 1.0) * uOcclusion * 0.75;
+	}
+
 	// Multiplied into what is there (blend DST_COLOR, ZERO).
 	fragColor = vec4(vec3(shade), 1.0);
 }`;
@@ -176,10 +234,11 @@ function drawMap(ctx, strength) {
 }
 
 function apply(ctx) {
-	if (!_current) return;
+	if (!_current && !(_occlusion > 0)) return;
 	const { gl } = ctx;
 	const depth = SceneCopy.depth(gl);
 	if (!depth) return;
+	const color = SceneCopy.color(gl);
 	if (!_apply) _apply = ctx.createProgram(APPLY_VERTEX, APPLY_FRAGMENT);
 	if (!_quad) {
 		_quad = gl.createBuffer();
@@ -194,13 +253,25 @@ function apply(ctx) {
 	gl.bindTexture(gl.TEXTURE_2D, depth);
 	gl.uniform1i(uniform.uDepth, 0);
 	gl.activeTexture(gl.TEXTURE1);
-	gl.bindTexture(gl.TEXTURE_2D, _fbo.texture);
+	gl.bindTexture(gl.TEXTURE_2D, _current ? _fbo.texture : null);
 	gl.uniform1i(uniform.uShadowMap, 1);
+	gl.activeTexture(gl.TEXTURE2);
+	gl.bindTexture(gl.TEXTURE_2D, color);
+	gl.uniform1i(uniform.uColor, 2);
 	gl.activeTexture(gl.TEXTURE0);
+	const vp = gl.getParameter(gl.VIEWPORT);
+	gl.uniform2f(uniform.uResolution, vp[2], vp[3]);
+	gl.uniform2f(uniform.uProj, ctx.projection[10], ctx.projection[14]);
+	gl.uniformMatrix4fv(uniform.uProjection, false, ctx.projection);
+	const inverseProjection = invert(ctx.projection);
+	if (inverseProjection) gl.uniformMatrix4fv(uniform.uInverseProjection, false, inverseProjection);
+	gl.uniform1f(uniform.uRadius, _radius);
+	gl.uniform1i(uniform.uHasShadowMap, _current ? 1 : 0);
+	gl.uniform1f(uniform.uOcclusion, _occlusion);
 	gl.uniformMatrix4fv(uniform.uInverseViewProjection, false, inverse);
-	gl.uniformMatrix4fv(uniform.uShadowMat, false, _current.matrix);
+	gl.uniformMatrix4fv(uniform.uShadowMat, false, _current ? _current.matrix : new Float32Array(16));
 	gl.uniform1f(uniform.uTexel, 1 / SIZE);
-	gl.uniform1f(uniform.uStrength, _current.strength);
+	gl.uniform1f(uniform.uStrength, _current ? _current.strength : 0);
 	gl.bindBuffer(gl.ARRAY_BUFFER, _quad);
 	gl.enableVertexAttribArray(_apply.attribute.aPosition);
 	gl.vertexAttribPointer(_apply.attribute.aPosition, 2, gl.FLOAT, false, 0, 0);
@@ -219,15 +290,17 @@ function apply(ctx) {
 	gl.disableVertexAttribArray(_apply.attribute.aPosition);
 }
 
-/** Shadows as a map hook. strength: 0..1 */
-export function shadowsHook(strength) {
+/** Shadows as a map hook. strength: sun shadows 0..1; occlusion: contact shadows 0..1 */
+export function shadowsHook(strength, occlusion = 0) {
+	_occlusion = occlusion;
 	return {
 		name: 'Shadows',
 		render(stage, ctx) {
 			if (stage === 'begin') {
 				drawMap(ctx, strength);
 				if (_current) ctx.restoreTarget();
-			} else if (stage === 'ground') {
+			} else if (stage === 'models') {
+				// After the models: they take shadows and contact shading too.
 				apply(ctx);
 			}
 		},

@@ -1,0 +1,10 @@
+{
+  "name": "hd-ground-texture",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "Example texture pack: the paths of Prontera's fields (prt_fild*) at 1024x1024 -- the dirt and both grass-to-dirt edge textures. With Graphics+ on, the ground keeps its full resolution. The dirt is ambientCG Ground104 (CC0), tinted to the original's colour.",
+  "requires": {
+    "app": ">=1.4.0",
+    "era": "any"
+  }
+}

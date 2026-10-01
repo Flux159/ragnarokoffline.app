@@ -33,6 +33,10 @@ uniform sampler2D uSceneDepth;
 uniform vec2 uScreen;
 uniform vec2 uProj;
 uniform sampler2D uSceneColor;
+// The light the ground was drawn with: its tint is taken back out before
+// asking whether the ground is green (a warm sun makes everything yellower).
+uniform vec3 uLightAmbient;
+uniform vec3 uLightDiffuse;
 out vec3 vGround;
 out float vFern;
 out vec2 vTex;
@@ -74,11 +78,13 @@ void main() {
 		if (covering < -rootEye.z - 0.08) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
 		// Grass only grows where the ground under it is green: not on the
 		// dirt or the stone a grassy tile also shows.
-		vec3 c = textureLod(uSceneColor, at, 0.0).rgb;
+		vec3 lit = textureLod(uSceneColor, at, 0.0).rgb;
+		vec3 tint = max(uLightAmbient + uLightDiffuse, vec3(0.05));
+		vec3 c = lit / (tint / tint.g);
 		float greenness = smoothstep(0.95, 1.0, c.g / max(c.r, 0.01)) * step(1.45, c.g / max(c.b, 0.01));
 		if (greenness < 0.05) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
 		else gl_Position = uProjectionMat * (rootEye0 + vec4(local * mix(0.5, 1.0, greenness), 0.0, 0.0));
-		vGround = c;
+		vGround = lit;
 	} else {
 		vGround = vec3(0.3, 0.45, 0.2);
 	}

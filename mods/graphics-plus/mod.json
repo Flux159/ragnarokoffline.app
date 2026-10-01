@@ -2,7 +2,7 @@
   "name": "graphics-plus",
   "version": "1.0.0",
   "author": "Ragnarok Offline",
-  "description": "A different look for the whole game: painted grass and ferns on grassy ground, water that reflects the world and glows teal along the shore, a warm sun, shadows from buildings and trees, lamp glows from each map's own lights, colour grading, tone mapping and a vignette, with haze, tilt-shift, colour fringing and drops on the lens to taste. Every effect has its own switch. Also the worked example of api.graphics.",
+  "description": "A different look for the whole game: painted grass and ferns on grassy ground, water that reflects the world and glows teal along the shore, a warm sun on the maps you choose, shadows from buildings and trees, lamp glows from each map's own lights, colour grading, tone mapping and a vignette, with haze, tilt-shift, colour fringing and drops on the lens to taste. Every effect has its own switch. Also the worked example of api.graphics.",
   "default": "off",
   "requires": {
     "app": ">=1.4.0",
@@ -21,18 +21,18 @@
     {
       "key": "sunlight",
       "type": "number",
-      "default": 70,
+      "default": 0,
       "min": 0,
       "max": 100,
       "label": "Warm sunlight",
-      "description": "A golden sun and a cooler sky in place of the map's own light. 0 keeps the map's."
+      "description": "A golden sun and a cooler sky in place of each map's own light, everywhere. 0 (the default) keeps every map's own light; use the list below to warm only some maps."
     },
     {
       "key": "sunlight_maps",
       "type": "string",
-      "default": "*_dun*:0 *_in:0",
+      "default": "",
       "label": "Sunlight per map",
-      "description": "Warm sunlight for particular maps, as name:strength (0-100), e.g. \"prt_fild*:90 izlude:100\". * matches anything; the first match wins, and other maps use the setting above. Dungeons and indoor maps are off by default."
+      "description": "Maps that differ from the setting above, as name:strength (0-100). With the setting above at 0, only these maps are warmed, e.g. \"izlude:100 prt_fild*:80\"; with it above 0, these override it, e.g. \"*_dun*:0 *_in:0\" to leave dungeons and indoors alone. * matches anything; the first match wins."
     },
     {
       "key": "glow",
@@ -53,6 +53,29 @@
       "description": "Water mirrors the buildings, rocks and sky above it. Draws the map a second time on maps with water, so it costs more than the others. 0 is off."
     },
     {
+      "key": "water_detail",
+      "type": "number",
+      "default": 0,
+      "min": 0,
+      "max": 100,
+      "label": "Water waves",
+      "description": "The map's own animated waves on top of the reflections, everywhere. 0 shows only the reflections (Izlude's clear look); use the list below for particular maps."
+    },
+    {
+      "key": "water_detail_maps",
+      "type": "string",
+      "default": "alberta:70 comodo:70 *_fild*:50",
+      "label": "Water waves per map",
+      "description": "Maps that differ from the setting above, as name:strength (0-100), e.g. \"alberta:70 izlude:0\". * matches anything; the first match wins."
+    },
+    {
+      "key": "hd_ground",
+      "type": "boolean",
+      "default": true,
+      "label": "High-resolution ground",
+      "description": "When a texture pack gives a map larger ground textures, keep their full detail (the client otherwise shrinks every ground texture to 256x256). Does nothing on maps without them."
+    },
+    {
       "key": "grass",
       "type": "number",
       "default": 50,
@@ -68,7 +91,16 @@
       "min": 0,
       "max": 100,
       "label": "Shadows",
-      "description": "Buildings and trees cast shadows from the map's sun onto the ground, on top of the soft ones the map already has. 0 is off."
+      "description": "Shadows from buildings and trees in the map's sun, on the ground and on other buildings, where the map has none baked in. 0 is off."
+    },
+    {
+      "key": "occlusion",
+      "type": "number",
+      "default": 60,
+      "min": 0,
+      "max": 100,
+      "label": "Contact shadows",
+      "description": "Soft darkening where walls meet the ground, under eaves and around crates and trees (ambient occlusion). 0 is off."
     },
     {
       "key": "fog",

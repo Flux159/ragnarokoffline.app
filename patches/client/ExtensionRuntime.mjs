@@ -179,6 +179,29 @@ export function createRuntime({ storage, report = (...args) => console.error(...
                 supported: () => Boolean(bridge.graphicsSupported?.()),
                 lights: () => freeze(copy(bridge.mapLights?.() || [])),
             }),
+            // Map models drawn as glTF/GLB instead (GltfModels.mjs): names of
+            // RSM files under data/model/, each to { url, size?, scale? }.
+            // For maps loaded from now on; undone with the plugin.
+            models: Object.freeze({
+                replace(map) {
+                    if (disposed) throw new Error(`Plugin ${name} is disposed`);
+                    if (!map || typeof map !== 'object') throw new TypeError("replace takes { 'folder/name.rsm': { url } }");
+                    const checked = {};
+                    for (const [model, spec] of Object.entries(map)) {
+                        if (typeof model !== 'string' || !/\.rsm2?$/i.test(model)) throw new TypeError(`replace: ${model} is not an .rsm name`);
+                        const url = typeof spec === 'string' ? spec : spec?.url;
+                        if (typeof url !== 'string' || !url) throw new TypeError(`replace: ${model} needs a url`);
+                        checked[model] = {
+                            url: String(new URL(url, location.href)),
+                            size: Number.isFinite(spec?.size) ? spec.size : undefined,
+                            scale: Number.isFinite(spec?.scale) ? spec.scale : undefined,
+                        };
+                    }
+                    if (typeof bridge.replaceModels !== 'function') return () => {};
+                    const remove = bridge.replaceModels(checked, error => report(`[Plugin ${name}] models`, error));
+                    return cleanup(() => remove?.());
+                },
+            }),
             // A window of the plugin's own: a titled, draggable frame whose
             // body (in its own shadow root) the plugin fills. Remembered where
             // the player left it; typing in it doesn't move the character.

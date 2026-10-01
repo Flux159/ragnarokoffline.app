@@ -3,6 +3,7 @@
 import Runtime from './ExtensionRuntime.mjs';
 import { install as installAgentHook } from './AgentHook.mjs';
 import * as Graphics from './GraphicsPasses.mjs';
+import * as Gltf from './GltfModels.mjs';
 import * as Windows from './PluginWindows.mjs';
 import Session from 'Engine/SessionStorage.js';
 import Camera from 'Renderer/Camera.js';
@@ -356,6 +357,7 @@ export function init() {
         // Graphics passes (api.graphics); GraphicsPasses.mjs.
         registerPass: Graphics.registerPass,
         graphicsHook: Graphics.hook,
+        replaceModels: Gltf.replace,
         // Plugin windows, item tables, server requests (PluginWindows.mjs).
         createWindow: Windows.createWindow,
         searchItems: Windows.searchItems,

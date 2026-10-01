@@ -1235,40 +1235,61 @@ export default function init(parameters, api) {
 }
 ```
 
-Some features live inside the renderer rather than in a pass, and are switched
-on with `api.graphics.configure`:
-
-| Feature | |
-|---|---|
-| `waterReflection: 0..1` | water mirrors the sky, ground and buildings above it. The map is drawn a second time at half resolution where there's water |
-| `shadows: 0..1` | buildings and trees cast shadows from the map's sun onto the ground, on top of the soft ones baked into the map |
-| `grass: { textures, density, height, width, wind, distance, tint }` | painted grass and ferns on every ground cell whose texture name contains one of `textures` (the client's are Korean: `'풀'` grass, `'잔디'` lawn). Only on open ground that is green where it grows: not under buildings or models, not on the dirt or stone a grassy tile also shows. Coloured by the ground under it, and never covers a sprite. `density`, `wind` 0..1; `height`, `width`, `distance` in cells; `tint` `[r, g, b]` |
-| `rain: 0..1` | rain on the water: rings where drops land, and a duller surface. Rain in the air and drops on the lens are a pass's job; Graphics+ does both |
-| `light: { ambient, diffuse }` | the map's sun and sky replaced, each `[r, g, b]` in 0..1 (`diffuse` may go a little over): a warmer sun, a cooler sky. The direction and the map's baked lightmap stay the map's. `null` gives the map's own back |
+Some things have to be drawn inside the 3D scene rather than over the
+finished frame: grass among the models, other water, a shadow map. A
+**map hook** does that, with `api.graphics.hook`:
 
 ```js
-api.graphics.configure({ waterReflection: 0.6 });
-```
-
-`configure` returns a function that takes the setting back, so a feature can
-follow the map. Lighting per map, for instance -- warm in the fields, the
-map's own underground:
-
-```js
-let undo = null;
-api.on('map:enter', ({ name }) => {
-    undo?.();
-    undo = name.includes('_dun')
-        ? null
-        : api.graphics.configure({ light: { ambient: [0.16, 0.2, 0.3], diffuse: [1.1, 0.92, 0.68] } });
+api.graphics.hook({
+    name: 'Grass',
+    init(gl, map) { /* the map's ground is ready: build buffers */ },
+    render(stage, ctx) { if (stage === 'models') { /* draw */ } },
+    free(gl) { /* the map, or the mod, is going away: delete what you made */ },
 });
 ```
 
-Graphics+ does this with two settings: "Warm sunlight" for everywhere, and
-"Sunlight per map" (`prt_fild*:90 *_dun*:0`) for the maps that differ.
+| | |
+|---|---|
+| `render(stage, ctx)` | each frame, at each stage: `'begin'` before the ground (draw into targets of your own, then `ctx.restoreTarget()`), `'ground'` the ground is drawn, `'models'` the map's models are drawn and the sprites not yet, `'end'` everything is drawn. With `replaces: ['water']`, also `'water'`, where you draw the water in the client's place |
+| `ctx` | `gl`, `modelView`, `projection`, `fog`, `light`, `tick`, `player` (position), `lightmap`, and `drawScene(view, projection)` (sky, ground and models again, depth tested, into whatever is bound), `drawModelsDepth(program)` (the models with your program: `aPosition`, `aTextureCoord`), `restoreTarget()`, `createProgram(vertex, fragment)` |
+| `init(gl, map)` | `map`: `name`, `width`, `height`; per ground cell `cellTexture`, `cellHeights`, `cellUv`; `textureNames`; `groundTextures()` (atlas, lightmap); `water()` (mesh, animation frames, waves, level; `null` without water); `altitude` (`cellType`, `cellHeight`, `TYPE`); `lights` |
+| `light(light)` | return `{ ambient: [r,g,b], diffuse: [r,g,b] }` to light this frame with a sun and sky of your own (a warmer sun, a cooler sky), `null` for the map's |
+| `free(gl)` | delete every buffer, texture, program and framebuffer you made: the map is going away, or your mod is |
 
-If two mods set the same feature, the last one wins, and each mod's setting is
-withdrawn when that mod is. `api.graphics.features()` lists what this client has.
+A hook that throws is taken out (and freed), and says so in the console; it
+never takes the frame down. Hooks go with the mod that added them.
+
+Lighting per map, for instance -- warm in the fields, the map's own
+underground:
+
+```js
+let sun = null;
+api.on('map:enter', ({ name }) => {
+    sun = name.includes('_dun') ? null : { ambient: [0.16, 0.2, 0.3], diffuse: [1.1, 0.92, 0.68] };
+});
+api.graphics.hook({ name: 'Sunlight', light: () => sun });
+```
+
+**Higher-resolution textures.** A texture pack replaces a texture by
+shipping a larger file at the same path, e.g.
+`data/texture/필드바닥/prt_흙02.bmp` at 1024x1024 (the Korean path is the
+client's own; `link-assets` serves it the way the client asks for it). The
+client shrinks every ground texture to 256x256 in the map's atlas; with
+Graphics+ "High-resolution ground" on, the atlas is rebuilt at up to four
+times that, capped at 4096x4096 (every texture in the atlas is scaled, so a
+map with many textures gets 512). The gain shows close up: at the default
+zoom a ground tile is about 64 pixels on screen. Replace a map's whole set,
+including the hand-painted edge tiles, or the new texture's tile shows next
+to the old ones. `examples/mods/hd-ground-texture` replaces Prontera field
+dirt with a CC0 texture from ambientCG.
+
+Graphics+ is the worked example: its grass (`grass.js`), water and
+reflections (`water.js`, `reflection.js`) and shadows (`shadows.js`) are
+each a map hook. Its sunlight is the example above as settings: off
+everywhere by default, "Warm sunlight" to turn it on for every map, and
+"Sunlight per map" for the exceptions -- `izlude:100 prt_fild*:80` to warm
+only those maps, or `*_dun*:0` to leave dungeons alone when it is on
+everywhere.
 
 `uniforms()` is called every frame and returns your own uniforms by name
 (numbers, or arrays of 2, 3, 4 or 16). `enabled()` turns the pass off without

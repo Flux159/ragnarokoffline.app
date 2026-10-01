@@ -62,6 +62,7 @@ uniform bool      uHasDepth;
 uniform sampler2D uSceneDepth;
 uniform vec2      uProj;   // projection[10], projection[14]
 uniform float     uRain;   // 0 dry .. 1 pouring: rings where drops land
+uniform float     uDetail; // the map's own wave pattern on the surface, 0 .. 1
 
 uniform sampler2D uDiffuse;
 
@@ -149,6 +150,22 @@ void main(void) {
         color += uLightDiffuse * sun * 0.35;
         color += vec3(0.4, 0.5, 0.55) * rings * 0.5 * uRain;
         color *= mix(1.0, 0.85, uRain);  // overcast
+        // The map's own animated waves, back on the surface: their light
+        // and dark, rippled, on top of the reflection.
+        if (uDetail > 0.0) {
+            vec2 st = vTextureCoord.st + ripple * 0.5;
+            vec3 waves = texture(uDiffuse, st).rgb;
+            float wl = dot(waves, vec3(0.299, 0.587, 0.114));
+            // The texture's average brightness, from samples spread across
+            // it (water textures have no mipmaps to ask).
+            vec3 spread = texture(uDiffuse, st + vec2(0.25, 0.0)).rgb + texture(uDiffuse, st + vec2(0.0, 0.25)).rgb
+                        + texture(uDiffuse, st + vec2(0.5, 0.5)).rgb + texture(uDiffuse, st + vec2(0.75, 0.25)).rgb;
+            float mean = dot(spread * 0.25, vec3(0.299, 0.587, 0.114));
+            float crest = wl - mean;
+            color += vec3(0.55, 0.75, 0.8) * max(crest, 0.0) * 1.6 * uDetail;
+            color *= 1.0 + min(crest, 0.0) * 0.9 * uDetail;
+            color = mix(color, color * (waves / max(wl, 0.05)), 0.25 * uDetail);
+        }
         // A line of light where it meets the shore.
         color += vec3(0.18, 0.24, 0.22) * exp(-thick * 1.2) * (0.75 + 0.25 * sin(t * 2.0 + vWorld.x + vWorld.z));  // a soft lap of light at the edge
         textureSample = vec4(color, mix(textureSample.a, alpha, uReflect));
@@ -167,6 +184,7 @@ let _program = null;
 let _reflection = null;   // this frame's reflection texture
 let _map = null;
 let _settings = { reflection: 0.6 };
+let _detail = 0;   // this map's surface detail
 
 function draw(ctx) {
 	const water = _map && _map.water();
@@ -213,6 +231,7 @@ function draw(ctx) {
 		}
 		gl.uniform2f(uniform.uProj, projection[10], projection[14]);
 		gl.uniform1f(uniform.uRain, 0);
+		gl.uniform1f(uniform.uDetail, _detail);
 		// Up (-y in RO) and the sun, in eye space.
 		const n = [-modelView[4], -modelView[5], -modelView[6]];
 		const nl = Math.hypot(n[0], n[1], n[2]) || 1;
@@ -245,7 +264,7 @@ function draw(ctx) {
 	gl.disableVertexAttribArray(attribute.aTextureCoord);
 }
 
-/** The water as a map hook. settings: { reflection: 0..1 } */
+/** The water as a map hook. settings: { reflection: 0..1, detail(mapName) -> 0..1 } */
 export function waterHook(settings) {
 	_settings = { reflection: 0.6, ...settings };
 	return {
@@ -254,6 +273,7 @@ export function waterHook(settings) {
 		init(gl, map) {
 			_map = map;
 			_reflection = null;
+			_detail = map && typeof _settings.detail === 'function' ? _settings.detail(map.name) : 0;
 		},
 		render(stage, ctx) {
 			if (stage === 'begin') {
