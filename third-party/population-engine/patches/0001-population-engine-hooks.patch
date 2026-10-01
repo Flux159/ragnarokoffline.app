@@ -766,14 +766,14 @@ diff --git a/src/map/battle.cpp b/src/map/battle.cpp
 index 5420fbd..9322f40 100644
 --- a/src/map/battle.cpp
 +++ b/src/map/battle.cpp
-@@ -33,6 +33,7 @@
+@@ -31,6 +31,7 @@
+ #include "mob.hpp"
+ #include "party.hpp"
+ #include "path.hpp"
++#include "population_engine.hpp"
  #include "pc.hpp"
  #include "pc_groups.hpp"
  #include "pet.hpp"
-+#include "population_engine.hpp"
- #include "./skills/skill_impl.hpp"
- 
- using namespace rathena;
 @@ -8140,6 +8141,26 @@ int32 battle_check_target( const block_list* src, const block_list* target, int3
  		return (flag&state)?1:-1;
  	}
