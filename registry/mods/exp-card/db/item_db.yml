@@ -1,0 +1,267 @@
+# Exp Cards -- two tiered families in the 50000-99999 block docs/MODDING.md
+# reserves for mods' items: stock rAthena has nothing there (its items sit
+# below 32409 and from 100000 up), so no rAthena update will collide. Dropped by npc/exp_card.txt on a small chance
+# from any mob kill, bound to the killer via makeitemowned.
+#
+# Ids are laid out in two contiguous ranges so the on-kill script can pick
+# an item by simple arithmetic (base id + level):
+#
+#   50051..50060  Base_Exp_Card_1  .. Base_Exp_Card_10   -- grant BASE exp
+#   50061..50070  Job_Exp_Card_1   .. Job_Exp_Card_10    -- grant JOB exp
+#
+# Exp per card is a roughly geometric curve, anchored at Lv 10 = 60,000
+# (~5% of the Renewal level-98 base-exp requirement, ~1.25M in
+# db/re/job_exp.yml). Each level down halves-or-so, matching the shape
+# of rAthena's own NextBaseExp curve -- so a Lv 1 card at player level 5
+# is roughly the same 3-5% chunk of the next level that a Lv 10 card is
+# at player level 98:
+#
+#   Lv 1  ->     100      Lv 6  ->  4,000
+#   Lv 2  ->     250      Lv 7  ->  7,500
+#   Lv 3  ->     500      Lv 8  -> 15,000
+#   Lv 4  ->   1,000      Lv 9  -> 30,000
+#   Lv 5  ->   2,000      Lv 10 -> 60,000
+#
+# Job cards use the same numbers on the job axis. If you want a different
+# curve, edit the twenty scripts below -- and keep System/itemInfo.lua's
+# EXP_BY_LEVEL table in sync so descriptions still show the right +N.
+#
+# EquipLevelMin gates use to a player who is at least "expected level for
+# this tier". rAthena's pc_isUseitem checks it before consuming the item,
+# so a low-level player who picks up a Lv 10 card just carries it around
+# until they hit the level. The gate is (card_level - 1) * 10 + 1:
+#
+#   Lv 1 -> 1     Lv 6  -> 51
+#   Lv 2 -> 11    Lv 7  -> 61
+#   Lv 3 -> 21    Lv 8  -> 71
+#   Lv 4 -> 31    Lv 9  -> 81
+#   Lv 5 -> 41    Lv 10 -> 91
+#
+# Version 3 is the ITEM_DB version this build reads; take it from the
+# header of vendor/rathena/db/import-tmpl/item_db.yml if you retarget.
+Header:
+  Type: ITEM_DB
+  Version: 3
+
+Body:
+  # -- Base Exp Cards ------------------------------------------------------
+  - Id: 50051
+    AegisName: Base_Exp_Card_1
+    Name: Base Exp Card Lv1
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 1
+    Script: |
+      getexp 100, 0;
+      dispbottom "Base Exp Card Lv1: +100 base experience.";
+
+  - Id: 50052
+    AegisName: Base_Exp_Card_2
+    Name: Base Exp Card Lv2
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 11
+    Script: |
+      getexp 250, 0;
+      dispbottom "Base Exp Card Lv2: +250 base experience.";
+
+  - Id: 50053
+    AegisName: Base_Exp_Card_3
+    Name: Base Exp Card Lv3
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 21
+    Script: |
+      getexp 500, 0;
+      dispbottom "Base Exp Card Lv3: +500 base experience.";
+
+  - Id: 50054
+    AegisName: Base_Exp_Card_4
+    Name: Base Exp Card Lv4
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 31
+    Script: |
+      getexp 1000, 0;
+      dispbottom "Base Exp Card Lv4: +1,000 base experience.";
+
+  - Id: 50055
+    AegisName: Base_Exp_Card_5
+    Name: Base Exp Card Lv5
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 41
+    Script: |
+      getexp 2000, 0;
+      dispbottom "Base Exp Card Lv5: +2,000 base experience.";
+
+  - Id: 50056
+    AegisName: Base_Exp_Card_6
+    Name: Base Exp Card Lv6
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 51
+    Script: |
+      getexp 4000, 0;
+      dispbottom "Base Exp Card Lv6: +4,000 base experience.";
+
+  - Id: 50057
+    AegisName: Base_Exp_Card_7
+    Name: Base Exp Card Lv7
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 61
+    Script: |
+      getexp 7500, 0;
+      dispbottom "Base Exp Card Lv7: +7,500 base experience.";
+
+  - Id: 50058
+    AegisName: Base_Exp_Card_8
+    Name: Base Exp Card Lv8
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 71
+    Script: |
+      getexp 15000, 0;
+      dispbottom "Base Exp Card Lv8: +15,000 base experience.";
+
+  - Id: 50059
+    AegisName: Base_Exp_Card_9
+    Name: Base Exp Card Lv9
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 81
+    Script: |
+      getexp 30000, 0;
+      dispbottom "Base Exp Card Lv9: +30,000 base experience.";
+
+  - Id: 50060
+    AegisName: Base_Exp_Card_10
+    Name: Base Exp Card Lv10
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 91
+    Script: |
+      getexp 60000, 0;
+      dispbottom "Base Exp Card Lv10: +60,000 base experience.";
+
+  # -- Job Exp Cards -------------------------------------------------------
+  - Id: 50061
+    AegisName: Job_Exp_Card_1
+    Name: Job Exp Card Lv1
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 1
+    Script: |
+      getexp 0, 100;
+      dispbottom "Job Exp Card Lv1: +100 job experience.";
+
+  - Id: 50062
+    AegisName: Job_Exp_Card_2
+    Name: Job Exp Card Lv2
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 11
+    Script: |
+      getexp 0, 250;
+      dispbottom "Job Exp Card Lv2: +250 job experience.";
+
+  - Id: 50063
+    AegisName: Job_Exp_Card_3
+    Name: Job Exp Card Lv3
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 21
+    Script: |
+      getexp 0, 500;
+      dispbottom "Job Exp Card Lv3: +500 job experience.";
+
+  - Id: 50064
+    AegisName: Job_Exp_Card_4
+    Name: Job Exp Card Lv4
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 31
+    Script: |
+      getexp 0, 1000;
+      dispbottom "Job Exp Card Lv4: +1,000 job experience.";
+
+  - Id: 50065
+    AegisName: Job_Exp_Card_5
+    Name: Job Exp Card Lv5
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 41
+    Script: |
+      getexp 0, 2000;
+      dispbottom "Job Exp Card Lv5: +2,000 job experience.";
+
+  - Id: 50066
+    AegisName: Job_Exp_Card_6
+    Name: Job Exp Card Lv6
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 51
+    Script: |
+      getexp 0, 4000;
+      dispbottom "Job Exp Card Lv6: +4,000 job experience.";
+
+  - Id: 50067
+    AegisName: Job_Exp_Card_7
+    Name: Job Exp Card Lv7
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 61
+    Script: |
+      getexp 0, 7500;
+      dispbottom "Job Exp Card Lv7: +7,500 job experience.";
+
+  - Id: 50068
+    AegisName: Job_Exp_Card_8
+    Name: Job Exp Card Lv8
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 71
+    Script: |
+      getexp 0, 15000;
+      dispbottom "Job Exp Card Lv8: +15,000 job experience.";
+
+  - Id: 50069
+    AegisName: Job_Exp_Card_9
+    Name: Job Exp Card Lv9
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 81
+    Script: |
+      getexp 0, 30000;
+      dispbottom "Job Exp Card Lv9: +30,000 job experience.";
+
+  - Id: 50070
+    AegisName: Job_Exp_Card_10
+    Name: Job Exp Card Lv10
+    Type: Usable
+    Buy: 0
+    Weight: 1
+    EquipLevelMin: 91
+    Script: |
+      getexp 0, 60000;
+      dispbottom "Job Exp Card Lv10: +60,000 job experience.";

@@ -1,0 +1,65 @@
+// exp-card -- roll a chance on every mob kill; on success drop one of the
+// twenty tiered Exp Cards, bound to the killer for the standard priority
+// window. See db/item_db.yml for the item ids and the exp each card grants.
+//
+// Header lines below are separated by TAB characters, not spaces.
+//
+// Which card drops:
+//   family = coin flip (50% base exp card, 50% job exp card)
+//   level  = clamp((mob_level + 9) / 10, 1, 10)
+//
+// So mob levels  1..10 -> Lv 1 cards,  11..20 -> Lv 2, ..., 91+ -> Lv 10.
+// Higher-level content produces higher-tier cards; the mod scales itself
+// against whatever mobs the player is fighting without any per-mob tuning.
+//
+// Item id layout, matching db/item_db.yml:
+//   50051..50060  Base_Exp_Card_1  .. Base_Exp_Card_10
+//   50061..50070  Job_Exp_Card_1   .. Job_Exp_Card_10
+//
+// The drop uses makeitemowned, a native rAthena script command on our
+// pin: first_charid defaults to the attached player's char_id, so
+// passing no extra args here is exactly what we want. The pickup
+// window comes from battle.conf's item_first_get_time -- same knob
+// regular drops use.
+
+// A floating, invisible NPC (sprite -1) that owns the on-kill roll.
+-	script	exp_card_ctrl	-1,{
+	end;
+
+OnInit:
+	// Chance is stored in 0.01% units so 225 = 2.25%. F_ModSetting keeps
+	// this working on an app too old to know the setting; the fallback
+	// tracks the default in mod.json.
+	.chance = callfunc("F_ModSetting", "exp-card", "drop_chance", 225);
+	if (.chance < 1) .chance = 1;
+	if (.chance > 10000) .chance = 10000;
+	end;
+
+// Fires once per mob kill, on the top damager (first_sd). rand(10000)
+// against .chance is the same roll shape mob drop tables use.
+OnNPCKillEvent:
+	if (rand(10000) >= .chance) end;
+
+	// Pick the card LEVEL from the dead mob's level so tougher content
+	// gives better cards. MOB_LV is the mob_db field; getmonsterinfo
+	// returns -1 for an unknown mob id, which the clamp below handles.
+	.@mob_lv = getmonsterinfo(killedrid, MOB_LV);
+	if (.@mob_lv < 1) .@mob_lv = 1;
+	.@card_lv = (.@mob_lv + 9) / 10;
+	if (.@card_lv < 1)  .@card_lv = 1;
+	if (.@card_lv > 10) .@card_lv = 10;
+
+	// Pick the card FAMILY -- 50/50 between base and job. rand(2) returns
+	// 0 or 1, so the ternary picks the right id base for the family.
+	.@is_job = rand(2);
+	.@item = (.@is_job ? 50060 : 50050) + .@card_lv;
+
+	// Attached RID is the drop recipient. getmapxy with no explicit type
+	// defaults to BL_PC and reads the attached player's position, which is
+	// where the drop lands. makeitemowned with no explicit first_charid
+	// defaults to that same attached player's char_id, so the drop is
+	// bound to them for item_first_get_time and free for everyone after.
+	getmapxy(.@map$, .@x, .@y);
+	makeitemowned .@item, 1, .@map$, .@x, .@y;
+	end;
+}

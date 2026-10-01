@@ -68,6 +68,58 @@
       ]
     },
     {
+      "name": "exp-card",
+      "version": "1.0.0",
+      "author": "BlaXun",
+      "description": "Every monster kill has a chance to drop a tiered Exp Card, bound to the killer for the standard pickup window. Two families -- Base Exp Cards and Job Exp Cards -- each with ten levels; higher-level mobs drop higher-level cards. A level 10 card grants roughly 5% of the exp a level-98 character needs for the next level, and each lower level is about half the one above it. Streamlines offline levelling without touching per-mob drop tables.",
+      "homepage": "https://github.com/Flux159/ragnarokoffline.app/tree/main/registry/mods/exp-card",
+      "tags": [
+        "drops",
+        "experience",
+        "leveling",
+        "quality-of-life"
+      ],
+      "icon": "images/icon.png",
+      "screenshots": [
+        "images/exp-card.png"
+      ],
+      "requires": {
+        "mods": [],
+        "era": "any",
+        "app": ">=1.3.9"
+      },
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "41bf812d670f32ad1641f1e1b171a20ed33fb5bd94e2f9604f42e2667a1fc008"
+        },
+        {
+          "path": "System/itemInfo.lua",
+          "sha256": "65998dffa84ae55470b28231d7f1d990ffbc50b72196e263ecb4fc712feb133e"
+        },
+        {
+          "path": "db/item_db.yml",
+          "sha256": "20b3d15e771766dfe8ad32d2277c4eb358f8456997760d7f3f34783868a14d9f"
+        },
+        {
+          "path": "images/exp-card.png",
+          "sha256": "db0708ca853343c748ecab3d9d9b41514fd9479c85281f88170dff0a56437cea"
+        },
+        {
+          "path": "images/icon.png",
+          "sha256": "e222062ad889ad8cf5f253d8eecd3ffbcf00e12d706ae84a532d11bfd9ed9355"
+        },
+        {
+          "path": "mod.json",
+          "sha256": "4e7d04f78ecc9dc979f8966abb31e24f828131a01d7c55a3a99d9d7b26eb58e7"
+        },
+        {
+          "path": "npc/exp_card.txt",
+          "sha256": "e06490d46d57710a922eb67fffdb3f584e98725fb8bebb1a4264d8b0536bd774"
+        }
+      ]
+    },
+    {
       "name": "no-seed-cost",
       "version": "1.0.1",
       "author": "Ragnarok Offline",
