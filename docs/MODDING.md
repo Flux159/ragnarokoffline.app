@@ -446,8 +446,8 @@ forms:
 | `itemheal rand(120,180),0;` | a potion |
 
 The chances in `bAutoSpell…` and `autobonus` are out of 1000. Anything a bonus can't express
-("only below 30% HP", "every fifth hit") is what [Lua item hooks](#items)
-are for.
+("only below 30% HP", "every fifth hit") is what [Lua](#lua--changing-how-a-skill-works)
+is for.
 
 ### A new monster
 
@@ -646,7 +646,6 @@ has been dealt, and not at all if the unit has died by then:
 | `c:heal(hp, sp)` | restores the caster |
 | `c:status("SC_STUN", rate, ms, val1, who)` | a status on `"target"` (default) or `"caster"`; `rate` is out of 10000 |
 | `c:polymorph()` | Hylozoist Card's effect: the target becomes a random monster. Never a boss |
-| `c:cast("MG_FIREBOLT", 3, who)` | casts a skill at `"target"` (default) or `"caster"` the way the `bAutoSpell` bonuses do: the skill's own checks, item requirements and after-cast delay. A skill cast this way doesn't run Lua hooks itself, so nothing can loop |
 
 Three functions work anywhere:
 
@@ -655,38 +654,6 @@ Three functions work anywhere:
 | `const("SC_STUN")` | any constant a server script can use: `SC_*`, `ELE_*`, `RC_*`, `Job_*` |
 | `setting("<mod>", "<key>", default)` | a [setting](#settings--options-the-app-renders-for-you) from Settings → Mods. Booleans are `true`/`false` and numbers keep their fractions, unlike in an NPC script |
 | `log(...)` | a line in the map server's log, with your mod's name on it |
-
-### Items
-
-An item hooks the same way, by its AegisName, for whoever has it equipped. A
-card counts when it's slotted in something equipped.
-
-```lua
--- Below 30% HP, being hit has a 20% chance to cast Heal Lv 5 on yourself.
-item("Moon_Ribbon", {
-  on_hit_taken = function(c)
-    if c.caster.hp * 100 < c.caster.maxhp * 30 and c:chance(2000) then
-      c:cast("AL_HEAL", 5, "caster")
-    end
-  end,
-})
-```
-
-| Hook | Called |
-|---|---|
-| `on_attack(c)` | each time the wearer lands a hit, normal attack or skill |
-| `on_hit_taken(c)` | each time the wearer is hit |
-
-They run where rAthena's own `bAutoSpell` and `bAutoSpellWhenHit` do. `c.caster`
-is always the wearer and `c.target` the other one; `c.skill` is the skill used,
-or `nil` for a normal attack. `c.item` and `c.item_id` name the item, and
-`c.attack` (`"weapon"`, `"magic"`, `"misc"`) and `c.ranged` describe the hit.
-Every action above works except `c:drain()`, which needs a hit's damage and
-only has one in a skill's `on_hit`.
-
-Prefer an item script bonus when one says what you mean (see
-[Making new things](#making-new-things-items-monsters-and-how-they-look)),
-and use a hook for the rest: a condition, a count, a mod setting.
 
 ### What a script cannot do
 
@@ -719,9 +686,7 @@ needs anything more than a mod:
 | A monster, item, drop, skill's cast time/cooldown/cost/duration | `db/` | Only the fields you name |
 | An NPC, a quest, a warp, a shop, what happens on an event | `npc/` | rAthena's script language |
 | A skill's damage formula, accuracy or element | `lua/` | `ratio`, `hit`, `element` |
-| What a skill does when it hits: drain, heal, a status, polymorph, cast another skill | `lua/` | `on_hit` |
-| An item that casts, heals or applies a status on a condition | `lua/` | `item(...)`: `on_attack`, `on_hit_taken` |
-| An item that casts a skill at a flat chance | `db/item_db.yml` | `bonus3 bAutoSpell`, no Lua needed |
+| What a skill does when it hits: drain, heal, a status, polymorph | `lua/` | `on_hit` |
 | A server setting from the allowlist | `conf/` | |
 | Switch on one of the fork's server extensions, or set its values | `db/extension_db.yml` | `@extensions` in game lists them; `@extensioninfo <id>` shows what one does |
 | How the client looks or behaves | `data/`, `System/`, `client/` | |
