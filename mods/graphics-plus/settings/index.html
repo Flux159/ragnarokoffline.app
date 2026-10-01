@@ -40,6 +40,7 @@
   .row output.off { opacity: .6; }
   .row.toggle { grid-template-columns: 1fr auto; }
   .switch { position: relative; width: 36px; height: 20px; }
+  .row select { padding: 3px 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
   .switch input { opacity: 0; width: 0; height: 0; }
   .switch span { position: absolute; inset: 0; border-radius: 20px; background: #8885; transition: .15s; cursor: pointer; }
   .switch span::after { content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; border-radius: 50%; background: #fff; transition: .15s; }
@@ -89,7 +90,7 @@ const $ = id => document.getElementById(id);
 
 // How the page groups them. A key not listed here still shows, under "More".
 const SECTIONS = [
-  { title: 'World', note: 'drawn into the map itself', keys: ['grass', 'trees', 'hd_ground', 'shadows', 'occlusion'] },
+  { title: 'World', note: 'drawn into the map itself', keys: ['grass', 'trees', 'hd_ground', 'shadows', 'shadow_size', 'occlusion'] },
   { title: 'Water', note: 'mirrors what stands above it', keys: ['water', { key: 'water_detail', maps: 'water_detail_maps', valued: true }] },
   { title: 'Light and colour', note: 'the sun, and the grade over the frame', keys: [{ key: 'sunlight', maps: 'sunlight_maps', valued: true }, 'grade', 'tonemap', 'glow'] },
   { title: 'Camera', note: 'effects of the lens', keys: ['vignette', 'fog', 'tilt_shift', 'fringe', { key: 'drops', maps: 'drop_maps', valued: false }] },
@@ -97,10 +98,10 @@ const SECTIONS = [
 
 // Presets set every effect at once. Map lists are left as they are.
 const PRESETS = [
-  { name: 'Off', note: 'the stock look', values: { grass: 0, trees: false, hd_ground: false, shadows: 0, occlusion: 0, water: 0, water_detail: 0, sunlight: 0, grade: 0, tonemap: 0, glow: 0, vignette: 0, fog: 0, tilt_shift: 0, fringe: 0, drops: 0 } },
-  { name: 'Subtle', note: 'close to stock', values: { grass: 30, hd_ground: true, shadows: 30, occlusion: 40, water: 40, water_detail: 0, sunlight: 0, grade: 40, tonemap: 40, glow: 40, vignette: 20, fog: 0, tilt_shift: 0, fringe: 0, drops: 0 } },
+  { name: 'Off', note: 'the stock look', values: { grass: 0, trees: false, hd_ground: false, shadow_size: 1024, shadows: 0, occlusion: 0, water: 0, water_detail: 0, sunlight: 0, grade: 0, tonemap: 0, glow: 0, vignette: 0, fog: 0, tilt_shift: 0, fringe: 0, drops: 0 } },
+  { name: 'Subtle', note: 'close to stock', values: { grass: 30, hd_ground: true, shadow_size: 1024, shadows: 30, occlusion: 40, water: 40, water_detail: 0, sunlight: 0, grade: 40, tonemap: 40, glow: 40, vignette: 20, fog: 0, tilt_shift: 0, fringe: 0, drops: 0 } },
   { name: 'Standard', note: 'the defaults', values: null },
-  { name: 'Cinematic', note: 'warm, deep, filmic', values: { grass: 70, trees: true, hd_ground: true, shadows: 70, occlusion: 80, water: 80, water_detail: 0, sunlight: 70, grade: 100, tonemap: 90, glow: 80, vignette: 50, fog: 30, tilt_shift: 25, fringe: 20, drops: 60 } },
+  { name: 'Cinematic', note: 'warm, deep, filmic', values: { grass: 70, trees: true, hd_ground: true, shadow_size: 4096, shadows: 70, occlusion: 80, water: 80, water_detail: 0, sunlight: 70, grade: 100, tonemap: 90, glow: 80, vignette: 50, fog: 30, tilt_shift: 25, fringe: 20, drops: 60 } },
 ];
 
 let declared = {};      // key -> setting as the app describes it
@@ -180,10 +181,26 @@ function mapList(setting, valued) {
   return box;
 }
 
+// A number with a few fixed values: a choice, not a slider.
+const CHOICES = { shadow_size: [[512, 'Low'], [1024, 'Medium'], [2048, 'High'], [4096, 'Ultra']] };
+function choice(setting, options) {
+  const row = document.createElement('div');
+  row.className = 'row toggle';
+  row.innerHTML = '<div class="text"><b></b><small></small></div><select></select>';
+  row.querySelector('b').textContent = setting.label || setting.key;
+  row.querySelector('small').textContent = setting.description || '';
+  const select = row.querySelector('select');
+  for (const [value, label] of options) select.add(new Option(`${label} (${value})`, value));
+  select.onchange = changed;
+  controls[setting.key] = { get: () => Number(select.value), set: v => { select.value = String(v); } };
+  return row;
+}
+
 function control(spec) {
   const key = typeof spec === 'string' ? spec : spec.key;
   const setting = declared[key];
   if (!setting) return [];
+  if (CHOICES[key]) return [choice(setting, CHOICES[key])];
   const out = [setting.type === 'boolean' ? toggle(setting) : setting.type === 'number' ? slider(setting) : mapList(setting, true)];
   if (spec.maps && declared[spec.maps]) out.push(mapList(declared[spec.maps], spec.valued));
   return out;

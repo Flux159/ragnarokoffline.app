@@ -69,15 +69,6 @@ void main() {
 	// The colour of the ground it grows from (the green test was done once,
 	// when the clumps were placed).
 	vGround = textureLod(uAtlas, aUv.xy, 0.0).rgb;
-	// A clump whose root a model covers (a porch, a wall) is not drawn.
-	if (uHasDepth) {
-		vec4 rootEye = uModelViewMat * vec4(aInstance.xyz, 1.0);
-		vec4 root = uProjectionMat * rootEye;
-		vec2 at = root.xy / root.w * 0.5 + 0.5;
-		float zn = textureLod(uSceneDepth, at, 0.0).r * 2.0 - 1.0;
-		float covering = uProj.y / (zn + uProj.x);
-		if (covering < -rootEye.z - 0.3) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-	}
 }`;
 const FRAGMENT = `#version 300 es
 precision highp float;
@@ -301,8 +292,13 @@ function greenness(texture, u, v) {
 	if (!px) return 1;
 	const x = Math.min(63, Math.max(0, Math.floor(u * 64))), y = Math.min(63, Math.max(0, Math.floor(v * 64)));
 	const o = (y * 64 + x) * 4;
-	const ratio = px[o + 1] / Math.max(px[o], 1);
-	return Math.min(Math.max((ratio - 0.9) / 0.07, 0), 1);
+	// Measured on the client's textures: lawn is clearly greener than red
+	// (green/red 1.3-1.5); field grass only a little (about 1.05) but well
+	// greener than blue (2.4); dirt (0.87) and mossy rock and roots (green/red
+	// about 1.0, green/blue 1.5, greyish) are neither.
+	const r = Math.max(px[o], 1), g = px[o + 1], b = Math.max(px[o + 2], 1);
+	const step = (x, lo, hi) => Math.min(Math.max((x - lo) / (hi - lo), 0), 1);
+	return Math.max(step(g / r, 1.15, 1.25), step(g / r, 0.97, 1.01) * step(g / b, 1.8, 1.95));
 }
 
 const CHUNK = 16;   // ground cells per side of a culling chunk
@@ -354,7 +350,9 @@ function build(gl, settings) {
 			const fy = random(i, k * 2 + 1);
 			const gx = (x + fx) * 2, gz = (y + fy) * 2;
 			const type = _alt.cellType(Math.floor(gx), Math.floor(gz));
-			if (!(type & _alt.TYPE.WALKABLE) || type & _alt.TYPE.WATER) continue;
+			// Not in water. Cells you can't walk on are fine (raised lawns,
+			// gardens): the green and height checks keep grass off the rest.
+			if (type & _alt.TYPE.WATER) continue;
 			const ground = h[0] * (1 - fx) * (1 - fy) + h[1] * fx * (1 - fy) + h[2] * (1 - fx) * fy + h[3] * fx * fy;
 			if (Math.abs(-_alt.cellHeight(gx - .5, gz - .5) - ground) > .6) continue;
 			let uv;
@@ -380,8 +378,10 @@ function build(gl, settings) {
 	}
 	const instances = [], uvs = [];
 	for (const chunk of chunks.values()) {
-		// Grass rises up to a few units (up is -y).
-		chunk.min[1] -= 4;
+		// Grass rises up to a few units (up is -y), and its cards reach out
+		// past their roots: grow the box so edge clumps never drop out early.
+		chunk.min[1] -= 6;
+		chunk.min[0] -= 3; chunk.min[2] -= 3; chunk.max[0] += 3; chunk.max[2] += 3; chunk.max[1] += 1;
 		_chunks.push({ first: instances.length / 4, count: chunk.instances.length / 4, min: chunk.min, max: chunk.max });
 		for (const v of chunk.instances) instances.push(v);
 		for (const v of chunk.uvs) uvs.push(v);
@@ -476,7 +476,7 @@ function render(ctx) {
 	gl.bindTexture(gl.TEXTURE_2D, _bladeTexture);
 	gl.uniform1i(uniform.uBlades, 2);
 	const current = gl.getParameter(gl.FRAMEBUFFER_BINDING);
-	const saved = current ? SceneCopy.depth(gl, ctx.tick + ':models') : null;
+	const saved = null;   // grass needs no copy of the scene's depth
 	gl.activeTexture(gl.TEXTURE3);
 	gl.bindTexture(gl.TEXTURE_2D, saved);
 	gl.uniform1i(uniform.uSceneDepth, 3);

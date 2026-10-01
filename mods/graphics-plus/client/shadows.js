@@ -12,7 +12,7 @@
 import SceneCopy from './scene-copy.js';
 import { invert } from './reflection.js';
 
-const SIZE = 2048;     // shadow map, texels
+let SIZE = 2048;       // shadow map, texels (the setting)
 const EXTENT = 56;     // half the width of the shadowed area, in cells
 const DEPTH = 400;
 
@@ -301,8 +301,9 @@ function apply(ctx) {
 }
 
 /** Shadows as a map hook. strength: sun shadows 0..1; occlusion: contact shadows 0..1 */
-export function shadowsHook(strength, occlusion = 0) {
+export function shadowsHook(strength, occlusion = 0, size = 2048) {
 	_occlusion = occlusion;
+	SIZE = [512, 1024, 2048, 4096].includes(size) ? size : 2048;
 	return {
 		name: 'Shadows',
 		render(stage, ctx) {

@@ -273,10 +273,17 @@ async function flatten(gltf) {
 			const mid = [0, 0, 0], lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
 			for (let i = 0; i < n; i++) for (let j = 0; j < 3; j++) { const v = group.positions[i * 3 + j]; mid[j] += v / n; lo[j] = Math.min(lo[j], v); hi[j] = Math.max(hi[j], v); }
 			mid[1] = lo[1] + (hi[1] - lo[1]) * 0.35;   // a little low: the top is the bright side
+			const reach = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2 || 1;
 			for (let i = 0; i < n; i++) {
 				const d = [0, 1, 2].map(j => group.positions[i * 3 + j] - mid[j]);
 				const l = Math.hypot(...d) || 1;
 				for (let j = 0; j < 3; j++) group.normals[i * 3 + j] = d[j] / l;
+				// Depth in the canopy, as painted foliage shows it: darker inside
+				// and underneath, lighter at the outer tips and the top.
+				const outer = Math.min(l / reach, 1);
+				const up = (group.positions[i * 3 + 1] - lo[1]) / ((hi[1] - lo[1]) || 1);
+				const shade = 0.5 + 0.35 * outer + 0.25 * up;
+				for (let j = 0; j < 3; j++) group.colors[i * 4 + j] *= Math.min(shade, 1.1);
 			}
 		}
 		const factor = pbr.baseColorFactor || [1, 1, 1, 1];

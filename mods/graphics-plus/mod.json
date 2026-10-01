@@ -90,7 +90,7 @@
       "type": "boolean",
       "default": false,
       "label": "Painted trees",
-      "description": "The fields' common trees drawn from painted 3D models (Quaternius's Stylized Nature MegaKit, CC0) instead of the map's own. Takes effect on the next map you enter."
+      "description": "The common trees drawn from painted 3D models (Quaternius's Stylized Nature MegaKit, CC0) instead of the map's own: the broadleaf trees of the fields and towns, and the conifers. Palms stay as they are. Takes effect on the next map you enter."
     },
     {
       "key": "shadows",
@@ -100,6 +100,15 @@
       "max": 100,
       "label": "Shadows",
       "description": "Shadows from buildings and trees in the map's sun, on the ground and on other buildings, where the map has none baked in. 0 is off."
+    },
+    {
+      "key": "shadow_size",
+      "type": "number",
+      "default": 2048,
+      "min": 512,
+      "max": 4096,
+      "label": "Shadow quality",
+      "description": "The size of the shadow map: 512, 1024, 2048 or 4096. Lower is softer and lighter on the GPU."
     },
     {
       "key": "occlusion",

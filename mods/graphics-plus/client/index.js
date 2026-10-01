@@ -95,7 +95,8 @@ void main() {
 		color = mix(color, haze, clamp(amount, 0.0, 0.8));
 	}
 
-	// Lamp glow: a soft additive halo at each of the map's lights.
+	// Lamp glow: a soft halo at each of the map's lights -- small, never
+	// saturating (screen blend), and faint by day: it is for the dark.
 	if (uGlow > 0.0) {
 		vec3 glow = vec3(0.0);
 		float aspect = uResolution.x / uResolution.y;
@@ -103,10 +104,12 @@ void main() {
 			if (i >= uLightCount) break;
 			vec4 light = uLights[i];
 			vec2 offset = (uv - light.xy) * vec2(aspect, 1.0);
-			float radius = max(light.z, 0.01);
-			glow += uLightColors[i] * exp(-dot(offset, offset) / (radius * radius * 0.3));
+			float radius = clamp(light.z * 0.35, 0.008, 0.05);
+			glow += clamp(uLightColors[i], 0.0, 1.0) * exp(-dot(offset, offset) / (radius * radius));
 		}
-		color += glow * uGlow * 0.55;
+		float day = clamp(dot(uAmbient + uSunColor, vec3(0.333)), 0.0, 1.0);
+		vec3 halo = clamp(glow * uGlow * 0.6 * mix(1.0, 0.35, day), 0.0, 1.0);
+		color = 1.0 - (1.0 - color) * (1.0 - halo);
 	}
 
 	// Grading: golden light, teal-blue shadows, rich colour and contrast --
@@ -202,7 +205,7 @@ export default function init(parameters, api) {
     // Drawn in the map renderer itself, each by a map hook of its own
     // (grass.js, water.js, shadows.js): only the ones switched on.
     const addAll = () => {
-    if (percent('shadows') > 0 || percent('occlusion') > 0) add(shadowsHook(percent('shadows'), percent('occlusion')));
+    if (percent('shadows') > 0 || percent('occlusion') > 0) add(shadowsHook(percent('shadows'), percent('occlusion'), Number(parameters?.shadow_size) || 2048));
     if (percent('water') > 0) add(waterHook({
         reflection: percent('water'),
         // The map's own waves on top: on some maps the plain mirror is best
@@ -214,10 +217,13 @@ export default function init(parameters, api) {
     // Alt+G leaves them be; switch them in the settings.
     if (parameters?.trees === true && api.models?.replace) {
         const here = file => new URL(`./trees/${file}`, import.meta.url).href;
-        const colors = { Leaves_NormalTree: [1.6, 1.55, 1] };
+        const colors = { Leaves_NormalTree: [1.6, 1.55, 1], Leaves_Pine: [1.1, 1.1, 1.0] };
         api.models.replace({
+            // The broadleaf trees of the fields and towns.
             '나무잡초꽃/나무01.rsm': { url: here('CommonTree_3.gltf'), colors },
             '나무잡초꽃/나무02.rsm': { url: here('CommonTree_5.gltf'), colors },
+            // The conifers (Alberta, and others).
+            '나무잡초꽃/나무03.rsm': { url: here('Pine_2.gltf'), colors },
         });
     }
 
@@ -226,7 +232,8 @@ export default function init(parameters, api) {
     if (percent('grass') > 0) add(grassHook({
         // Ground textures whose names say grass: the client's are Korean
         // (풀 grass, 잔디 lawn, 초원 meadow, 들판 field), a mod's often English.
-        textures: ['풀', '잔디', '초원', '들판', 'grass'],
+        // Forest floor (숲) too: only the green parts of any of these grow it.
+        textures: ['풀', '잔디', '초원', '들판', '숲', 'grass'],
         density: percent('grass'),
         wind: 0.3,
     }));
