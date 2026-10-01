@@ -1270,6 +1270,31 @@ api.on('map:enter', ({ name }) => {
 api.graphics.hook({ name: 'Sunlight', light: () => sun });
 ```
 
+**glTF models in place of the map's.** `api.models.replace` draws a glTF
+2.0 model (`.glb`, or `.gltf` with its files beside it) wherever a map
+places one of the client's own models:
+
+```js
+const here = file => new URL(file, import.meta.url).href;   // beside index.js
+api.models.replace({
+    '나무잡초꽃/나무01.rsm': { url: here('tree_oak.glb'), size: 1, colors: { leafsGreen: [0.33, 0.55, 0.2] } },
+});
+```
+
+The key is the model's file under `data/model/` (Korean and all, `/` or
+`\`). Every placement, on every map, gets the glTF instead: fitted to the
+original's height (`size` multiplies that; `scale` sets an exact scale),
+standing on its base, turned as it was, and lit by the map's sun, ambient
+light and fog. `colors` replaces named materials' base colour. It applies
+to maps loaded after the call, so call it when the plugin starts.
+
+Supported: triangle meshes with normals and texture coordinates, node
+hierarchies, base colour factors and textures, alpha mask and blend. Not
+skins, animation, morph targets or extensions. Keep models light -- a
+field may place the same tree a few hundred times (they are instanced: one
+draw per material). `examples/mods/gltf-trees` replaces two field trees
+with Kenney's Nature Kit trees (CC0).
+
 **Higher-resolution textures.** A texture pack replaces a texture by
 shipping a larger file at the same path, e.g.
 `data/texture/필드바닥/prt_흙02.bmp` at 1024x1024 (the Korean path is the

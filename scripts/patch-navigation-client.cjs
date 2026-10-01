@@ -480,9 +480,11 @@ if (patched.split(navigationInitialPositionNeedle).length !== 2) throw Error('Na
 patched = patched.replace(navigationInitialPositionNeedle, `\t\tthis._host.style.top = \`\${Math.max(0, Math.min(Renderer.height - 430, 120))}px\`;
 \t\tthis._host.style.left = \`\${Math.max(0, Math.min(Renderer.width - 390, 120))}px\`;`);
 
-const groundRenderNeedle = '\t\t\tGround_default.render(gl, modelView, projection, normalMat, fog, light);\n\t\t\tEffects_default.spam(SessionStorage_default.Entity.position, tick);';
+// The scene's ground draw (not the ones hooks ask for with other matrices):
+// the navigation path goes on the ground right after it, whatever follows.
+const groundRenderNeedle = '\t\t\tGround_default.render(gl, modelView, projection, normalMat, fog, light);\n';
 if (patched.split(groundRenderNeedle).length !== 2) throw Error('Map ground render call not found');
-patched = patched.replace(groundRenderNeedle, '\t\t\tGround_default.render(gl, modelView, projection, normalMat, fog, light);\n\t\t\trenderNavigationGroundPath(gl, modelView, projection, tick);\n\t\t\tEffects_default.spam(SessionStorage_default.Entity.position, tick);');
+patched = patched.replace(groundRenderNeedle, groundRenderNeedle + '\t\t\trenderNavigationGroundPath(gl, modelView, projection, tick);\n');
 
 const navigationMapEventsNeedle = '\t\troot.querySelector(".map-display").addEventListener("click", (e) => this.onMapClick(e));';
 if (patched.split(navigationMapEventsNeedle).length !== 2) throw Error('Navigation map event hook not found');
