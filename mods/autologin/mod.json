@@ -1,0 +1,17 @@
+{
+  "name": "autologin",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "Opens the game on the character you played last, skipping the login and character-select screens. Escape → Exit logs you out for real; hold Shift at launch to skip it once. Off until you turn it on.",
+  "default": "off",
+  "requires": { "app": ">=1.3.9", "era": "any" },
+  "settings": [
+    {
+      "key": "remember_character",
+      "type": "boolean",
+      "default": true,
+      "label": "Also play my last character",
+      "description": "Turn this off to be logged in automatically but stop at character select every time."
+    }
+  ]
+}

@@ -1374,8 +1374,8 @@ It is a supported interface, not a sandbox for untrusted JavaScript.
 
 | API | Contract |
 | --- | --- |
-| `api.on(event, listener, { replay: true })` | Returns an unsubscribe function; subscriptions also end at disposal. Events: `map:enter`, `map:leave`, `connection`, `ui:append`, `ui:remove`, `movement:clear`, `preferences:change`, and `item:use` (`{ itemId }`, the item's id, sent when the client asks to use it -- before the server says whether it worked). |
-| `api.snapshot()` | Frozen copy of map, connection, player position/HP/SP, selected target identity/name/HP, camera, packet version and movement counters. Server movement acknowledgements are read-only evidence. |
+| `api.on(event, listener, { replay: true })` | Returns an unsubscribe function; subscriptions also end at disposal. Events: `map:enter`, `map:leave`, `connection`, `ui:append`, `ui:remove`, `movement:clear`, `preferences:change`, `item:use` (`{ itemId }`, the item's id, sent when the client asks to use it -- before the server says whether it worked), and `exit` (`{ to, from }`, the player chose to leave -- [below](#leaving-the-game-and-remembered-logins--exit-and-apiaccount)). |
+| `api.snapshot()` | Frozen copy of map, connection, player position/HP/SP/name/`characterId`, selected target identity/name/HP, camera, packet version and movement counters. Server movement acknowledgements are read-only evidence. |
 | `api.components.current()` | Mounted `{ name, root, host }` descriptors. DOM references support styling; do not retain detached components after `ui:remove`. |
 | `api.preferences.get(key, fallback)` / `.set(key, value)` | JSON values isolated by plugin, browser and server origin. Storage failure is reported by `set`. Do not store secrets. |
 | `api.movement.register(name, onCancel)` | Returns `begin(x,y)`, `update(x,y)`, `end()`, `dispose()`. Screen-up is positive Y. Only a deliberate `begin` can take ownership; a stale `update` cannot. |
@@ -1390,6 +1390,7 @@ It is a supported interface, not a sandbox for untrusted JavaScript.
 | `api.server.request(command, text, { timeout })` | Ask the mod's server script for something; resolves with its answer. See [Windows and server requests](#windows-and-server-requests). |
 | `api.cleanup(fn)` | Register idempotent cleanup immediately after allocating a resource. The returned function can release it early. Runs on failure, scope replacement and page teardown. |
 | `api.screens.replace(screen, hook)` / `.stage(canvas)` / `.image(path)` | Draw the login screen, server list, character select or character creation yourself. See [below](#the-screens-before-the-game--apiscreens). |
+| `api.account.status()` / `.remember()` / `.resume()` / `.forget()` | A remembered login the page never holds, traded for a one-time login token. See [below](#leaving-the-game-and-remembered-logins--exit-and-apiaccount). |
 
 ### Graphics passes
 
@@ -1694,6 +1695,54 @@ The hooks themselves are `UI/ScreenHooks.js` in the roBrowser fork:
 `register(screen, { show, update, hide })`, called by each of those windows as
 it opens, changes and closes. `api.screens` is the supported way to reach it.
 See [`examples/mods/pregame-stage`](../examples/mods/pregame-stage).
+
+### Leaving the game, and remembered logins — `exit` and `api.account`
+
+A mod that keeps something in step with where the player is needs to know when
+the player *chose* to leave, as opposed to being disconnected. The `exit` event
+says so, before the client acts:
+
+| `{ to, from }` | The player pressed |
+|---|---|
+| `{ to: 'charSelect', from: 'escape' }` | Escape menu → Character select |
+| `{ to: 'login', from: 'escape' }` | Escape menu → Exit |
+| `{ to: 'login', from: 'charSelect' }` | Cancel (or Escape) on character select, and confirmed |
+
+It is the choice, not the outcome: the server can still refuse to let a
+character leave mid-fight. A disconnect, a kick or a closed window is never
+reported. It comes from `UI/ExitHooks.js` in the roBrowser fork
+(`ExitHooks.on(listener)`, emitted by the Escape window and character select).
+
+`api.account` keeps a login for the player without the page ever holding
+anything that could be replayed later:
+
+```js
+const { available, remembered } = await api.account.status();
+await api.account.remember();                   // in game: remember this account
+const { username, token } = await api.account.resume(); // -> view.login(username, token)
+await api.account.forget();                     // revoke it, here and on the server
+```
+
+`remember()` asks whoever serves the page — the app, for the host's own window;
+the friend gateway, for a friend — to keep a random credential for the account
+the page is logged in to now. The page's proof is the session it is in (the
+login server's web auth token), so a mod cannot remember an account it is not
+playing. The credential stays with the app (a file of its own, for the host's
+window) or in an HttpOnly cookie on the origin the game was loaded from: a
+`__Host-` Secure one through the HTTPS sharing link (quick tunnel or the host's
+own domain), or, for a LAN join, a plain-HTTP one that the asset server's
+`/_friend/remember/` route hands to the app. No script in the page can read
+it. `remember()` resolves `{ username, secure }`, and `secure` is false only
+on a plain-HTTP LAN origin. `resume()` trades it for a
+one-time login token (60 seconds, one use) to hand straight to the login
+screen's `view.login`. It rejects with `.code` `'none'`, `'revoked'` (it is
+already forgotten) or `'unavailable'` (the server is not up; try later).
+Changing an account's password or disabling it in Settings → Accounts revokes
+all of its remembered logins. Where nothing answers, `status()` says
+`available: false`. That covers a LAN join while the host has LAN off, an
+older host, and any other server.
+
+See [`mods/autologin`](../mods/autologin), which uses all three.
 
 ---
 

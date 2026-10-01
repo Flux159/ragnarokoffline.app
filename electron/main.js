@@ -97,6 +97,9 @@ function getSharing() {
             return require('./accounts').runAccounts(stackBin(), stackEnv(), { ...request, action: 'invite-create', era });
         }),
         signIn: () => buildSignIn(),
+        // Remembered logins for a friend (the autologin mod): kept in an
+        // HttpOnly cookie by the gateway, exchanged here like the host's own.
+        remember: () => rememberLogin(),
     });
 }
 // Sign in with Google or Apple (sharing/oidc.js, docs/FRIENDS_SHARING.md):
@@ -673,6 +676,11 @@ async function assetsStart() {
 			return [key, filename, stat.size, stat.mtimeMs];
 		} catch { return [key, filename, 'missing']; }
 	});
+	// Remembered logins for LAN players (sharing/lan-remember.js): the asset
+	// server forwards /_friend/remember/ to a loopback endpoint of ours, only
+	// while hosting with LAN on. Its port is fixed for the life of this
+	// process, so the fingerprint below does not change between starts.
+	const appProxy = client.mode === 'host' && client.lan ? await lanRememberTarget() : null;
 	// Pass every RemoteClient setting explicitly, so .env/default changes
 	// cannot create a different effective server behind the same fingerprint.
 	return assetServer.start({
@@ -703,8 +711,30 @@ async function assetsStart() {
 			RAGNAROK_MANIFEST_ID: sha256(readIfExists(path.join(stateDir(), 'asset-config/DATA.INI'))),
 			RAGNAROK_CLIENT_CONFIG_ID: sha256(readIfExists(path.join(stateDir(), 'assets/Config.local.js'))),
 			RAGNAROK_ASSET_SOURCES_ID: sha256(JSON.stringify(sources)),
+			...(appProxy ? { APP_PROXY_PREFIX: appProxy.prefix, APP_PROXY_TARGET: appProxy.target } : {}),
 		},
 	});
+}
+
+// Started once, on first need; null if it cannot listen (LAN players then see
+// autologin as unavailable, and nothing else changes).
+let lanRememberInstance = null;
+async function lanRememberTarget() {
+	try {
+		if (!lanRememberInstance) {
+			const { LanRemember, PREFIX } = require('./sharing/lan-remember');
+			const server = new LanRemember({
+				remember: rememberLogin(),
+				enabled: () => { const c = getClientPaths(); return c.mode === 'host' && Boolean(c.lan); },
+				log: appLog,
+			});
+			lanRememberInstance = { prefix: PREFIX, target: `127.0.0.1:${await server.start()}` };
+		}
+		return lanRememberInstance;
+	} catch (error) {
+		appLog(`lan remember: not available: ${error.message}`);
+		return null;
+	}
 }
 
 async function assetsStop() { if (sharing) await sharing.stop(); return assetServer.stop(); }
@@ -2775,6 +2805,14 @@ const handlers = {
 		if (getClientPaths().mode !== 'host') throw new Error('Accounts belong to the host. Switch to your own server to manage them.');
 		return require('./accounts').runAccounts(stackBin(), stackEnv(), request);
 	},
+	// Remembered logins for the autologin mod (remember-login.js): the one
+	// handler the game page may call, and only the host's own game page on
+	// its own world -- never a page served by somebody else's host.
+	remember_login: (request, event) => {
+		if (!callerIsLocalGame(event)) return { ok: false, code: 'unavailable', error: 'Remembered logins are only for your own world.' };
+		const era = getSettings().prerenewal ? 'prerenewal' : 'renewal';
+		return require('./remember-login').handleLocal(request, { remember: rememberLogin(), store: rememberStore(), era });
+	},
 	host_ram_mib: () => Math.floor(require('os').totalmem() / (1024 * 1024)),
 	// Whether idle guest memory comes back. vz (macOS) balloons; the krun
 	// backend behind Windows and Linux does not, and is not expected to, so on
@@ -2884,6 +2922,7 @@ const handlers = {
 		// boots, and clearing it out from under a running client would be a
 		// race for no gain.
 		if (c.mode !== 'join') await dropStaleClientCache();
+		localGameOrigin = c.mode === 'join' ? null : new URL(base).origin;
 		const win = openGame();
 		try {
 			await win.loadURL(c.mode === 'join' ? joinSession.url(base) : base + GAME_PATH);
@@ -2986,10 +3025,41 @@ function appLog(line) {
 // loaded from three exact bundled files and own the controls. The game is
 // loaded over HTTP or HTTPS and gets only what is on this list.
 //
-// It is empty today because the game page needs nothing. Adding a name here is
-// a decision about what a page served by a stranger may do to this machine —
-// not a convenience.
-const GAME_PAGE_HANDLERS = new Set([]);
+// Adding a name here is a decision about what a page served by a stranger may
+// do to this machine — not a convenience.
+//
+// The one name on it, `remember_login`, checks for itself that the page is
+// this app's own game window on its own world (callerIsLocalGame) and answers
+// no to anything else, so a joined host's page gets nothing from it. Even on
+// our own page it can only remember the account that page is already logged
+// in to, and hand back a one-time login token for it.
+const GAME_PAGE_HANDLERS = new Set(['remember_login']);
+
+// The host's own game window, on the host's own world: the main frame of the
+// game window, at the asset server's origin, while not joined to anyone.
+function callerIsLocalGame(event) {
+	const game = windows.game;
+	if (!event || !game || game.isDestroyed() || event.sender !== game.webContents) return false;
+	if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
+	if (getClientPaths().mode !== 'host' || !localGameOrigin) return false;
+	try { return new URL(event.senderFrame.url).origin === localGameOrigin; } catch { return false; }
+}
+// The origin launch_game loaded our own world's game page from -- whatever
+// port the asset server is on -- or null while joined to someone else's.
+let localGameOrigin = null;
+
+// Remembered logins (remember-login.js). Each request is one `ragnarok-stack
+// accounts` call, given hashes only; none stops the game.
+let rememberLoginInstance = null;
+function rememberLogin() {
+	return rememberLoginInstance ||= require('./remember-login').createRememberLogin({
+		run: request => require('./accounts').runAccounts(stackBin(), stackEnv(),
+			{ ...request, era: getSettings().prerenewal ? 'prerenewal' : 'renewal' }),
+	});
+}
+function rememberStore() {
+	return require('./remember-login').createFileStore(path.join(stateDir(), 'remembered-login.json'));
+}
 // Includes settings writes before their supervisor call: an era marker must
 // not change halfway through an account operation. Read-only status stays live.
 const SERVER_OPERATIONS = new Set(['sharing_connect', 'sharing_start', 'sharing_forget', 'accounts', 'hosting_check', 'save_settings', 'set_mode', 'set_client_paths', 'start_stack',
@@ -3072,7 +3142,9 @@ ipcMain.handle('invoke', async (event, name, args) => {
 			if (!NEVER_RESUMES_SHARING.has(name)) resumeSharing(`after ${name}`);
 			return result;
 		}
-		return await fn(args || {});
+		// The event goes along for the one game-page handler that has to know
+		// which page asked (remember_login); every other handler ignores it.
+		return await fn(args || {}, event);
 	} catch (e) {
 		const msg = (e && e.message) || String(e);
 		appLog(`${name} failed: ${msg}`);

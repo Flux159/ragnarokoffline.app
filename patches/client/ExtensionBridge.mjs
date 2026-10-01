@@ -7,6 +7,8 @@ import * as Gltf from './GltfModels.mjs';
 import * as Windows from './PluginWindows.mjs';
 import { install as installSignIn } from './SignIn.mjs';
 import * as Pregame from './PregameScreens.mjs';
+import { createAccount } from './RememberLogin.mjs';
+import ExitHooks from 'UI/ExitHooks.js';
 import Session from 'Engine/SessionStorage.js';
 import Camera from 'Renderer/Camera.js';
 import Renderer from 'Renderer/Renderer.js';
@@ -256,6 +258,9 @@ export function init() {
     // Google/Apple sign-in buttons on the login window; inert unless the
     // friend gateway says the host has set it up.
     installSignIn();
+    // The player choosing to leave (Escape menu, character select's Cancel),
+    // as the plugin event 'exit'.
+    ExitHooks.on(event => Runtime.exit(event));
     // Any other set() is the client targeting for itself. Hand it back its own
     // callbacks first, or the pending plugin pick would swallow the click and
     // the skill would never be cast.
@@ -295,7 +300,7 @@ export function init() {
             const player = Session.Entity;
             const target = EntityManager.getFocusEntity();
             return { packetVersion: PACKETVER.value, input: inputState(),
-                player: player ? { id: player.GID, position: Array.from(player.position).slice(0, 2), action: player.action,
+                player: player ? { id: player.GID, characterId: Number(Session.GID) || null, name: String(player.display?.name || ''), position: Array.from(player.position).slice(0, 2), action: player.action,
                     hp: player.life.hp, maxHp: player.life.hp_max, sp: player.life.sp, maxSp: player.life.sp_max } : null,
                 camera: { direction: Camera.direction },
                 target: target ? { id: target.GID, class: target._job ?? target.job, name: target.display?.name || '', hp: target.life?.hp, maxHp: target.life?.hp_max } : null };
@@ -376,6 +381,12 @@ export function init() {
         replaceScreen: Pregame.replace,
         createStage: Pregame.createStage,
         screenImage: Pregame.image,
+        // api.account (RememberLogin.mjs). The proof of login goes to the app
+        // or the gateway, never to a plugin.
+        account: createAccount({
+            session: () => Session.AID ? { accountId: Session.AID, webToken: String(Session.WebToken || '').replace(/\0[\s\S]*$/, '') } : null,
+            invoke: window.__ELECTRON__?.core?.invoke,
+        }),
     });
     const clear = () => Runtime.movement.clear('focus-lost');
     const compose = () => { composing = true; clear(); };

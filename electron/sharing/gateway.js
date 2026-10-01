@@ -17,6 +17,11 @@ const COOKIE = '__Host-ro-friend';
 // SameSite=Strict like the session: Apple returns with a cross-site POST and
 // Google with a cross-site redirect, and neither would carry it.
 const BINDING = '__Host-ro-sign-in';
+// A remembered login (the autologin mod, ../remember-login.js). HttpOnly, so
+// no script in the game page -- a mod's included -- can read it; only this
+// gateway can exchange it, and only for a one-time login token.
+const REMEMBER = '__Host-ro-remember';
+const RememberRoutes = require('./remember-routes');
 const html = value => String(value).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 const cookieValue = (req, name) => {
   const values = String(req.headers.cookie || '').split(';').map(s => s.trim()).filter(s => s.startsWith(name + '='));
@@ -103,12 +108,14 @@ class FriendGateway {
   // { flow: SignInFlow (oidc.js), accounts: { find, create, link, token },
   //   checkLogin } -- see main.js for what each does. Without it every
   // /_friend/sign-in/ path is a 404 and nothing else changes.
+  // `remember` is remember-login.js's { issue, resume, forget }; without it
+  // every /_friend/remember/ path is a 404.
   // `ports` is this copy's (electron/ports.js): the asset server it fronts and
   // the three game servers its WebSocket paths may name. Defaults otherwise.
-  constructor({ origin, ports = DEFAULT_PORTS, upstreamPort = ports.asset, register, now = Date.now, lifetime = 8 * 60 * 60 * 1000, maxSessions = 32, invite = null, signIn = null }) {
+  constructor({ origin, ports = DEFAULT_PORTS, upstreamPort = ports.asset, register, now = Date.now, lifetime = 8 * 60 * 60 * 1000, maxSessions = 32, invite = null, signIn = null, remember = null }) {
     const url = new URL(origin);
     if (url.protocol !== 'https:' || url.origin !== origin || url.username || url.password) throw Error('An HTTPS game hostname is required');
-    Object.assign(this, { origin, upstreamPort, register, now, lifetime, maxSessions, signIn });
+    Object.assign(this, { origin, upstreamPort, register, now, lifetime, maxSessions, signIn, remember });
     this.socketPaths = new Set(gameTargets(ports).map(target => '/ws/' + target));
     this.loginPath = '/ws/127.0.0.1:' + ports.login;
     this.host = url.host; this.sessions = new Map(); this.sockets = new Set(); this.requests = new Set();
@@ -178,6 +185,7 @@ class FriendGateway {
     if (!entry) return this.reply(res, 401, { error: 'A current invitation is required' });
     if (req.url === '/_friend/session' && req.method === 'GET') return this.reply(res, 200, { ok: true });
     if (req.url.startsWith('/_friend/sign-in/')) return this.signInRequest(req, res, entry);
+    if (req.url.startsWith('/_friend/remember/')) return this.rememberRequest(req, res, entry);
     if (req.url === '/_friend/register' && req.method === 'POST') {
       if (!this.sameOrigin(req) || req.headers['content-type'] !== 'application/json') return this.reply(res, 403, { error: 'Open the original invitation link' });
       if (this.pendingRegistrations >= 2) return this.reply(res, 429, { error: 'Another friend is creating an account. Try again shortly.' });
@@ -339,6 +347,24 @@ class FriendGateway {
       catch { return this.reply(res, 409, { error: 'That account could not be linked. It may already belong to another sign-in.' }); }
     }
     return this.reply(res, 404, { error: 'Not found' });
+  }
+  // ---- Remembered logins (the autologin mod, ../remember-login.js) ----
+  // The page asks; the credential never leaves the cookie. Every answer is
+  // { ok, ... } or { ok: false, code, error }, the same as the host's window
+  // gets over IPC, so the client has one shape to read.
+  async rememberRequest(req, res, entry) {
+    if (!this.remember) return this.reply(res, 404, { error: 'Not found' });
+    const route = req.url.slice('/_friend/remember/'.length);
+    if (req.method !== 'POST' || !RememberRoutes.ROUTES.includes(route)) return this.reply(res, 404, { error: 'Not found' });
+    if (!this.sameOrigin(req) || req.headers['content-type'] !== 'application/json') return this.reply(res, 403, { error: 'Open the original invitation link' });
+    let input; try { input = JSON.parse(await body(req, 1024)); } catch { return this.reply(res, 400, { error: 'Invalid request' }); }
+    if (this.closed || this.session(req) !== entry) return this.reply(res, 401, { error: 'A current invitation is required' });
+    // Bounded per invitation session, like sign-in tokens: a page left open
+    // cannot mint them in a loop.
+    entry.rememberLimit ||= RememberRoutes.createLimiter(this.now);
+    const result = await RememberRoutes.answer({ route, input, credential: cookieValue(req, REMEMBER), remember: this.remember, allow: () => entry.rememberLimit('session') });
+    const headers = result.cookie === undefined ? {} : { 'set-cookie': `${REMEMBER}=${result.cookie || ''}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=${result.cookie ? RememberRoutes.DAYS * 86400 : 0}` };
+    return this.reply(res, result.status, result.body, undefined, headers);
   }
   upgrade(req, socket, head) {
     const entry = this.session(req);

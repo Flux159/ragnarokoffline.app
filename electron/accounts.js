@@ -21,6 +21,10 @@ function runAccounts(binary, options, request) {
       "identity-create",
       "identity-link",
       "login-token",
+      // Remembered logins for the autologin mod (stack/src/remember.rs).
+      "remember-issue",
+      "remember-resume",
+      "remember-forget",
     ].includes(request.action) ||
     !["renewal", "prerenewal"].includes(request.era)
   ) {

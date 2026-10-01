@@ -196,6 +196,7 @@ in `vendor/rathena/sql-files/main.sql`; these are the ones worth knowing.
 | `cp_population_stats` | ours, not rAthena's: the population engine's live shell count |
 | `login_tokens` | one-time login tokens for [Google/Apple sign-in](FRIENDS_SHARING.md#sign-in-with-google-or-apple): the SHA-256 only, the account, an expiry 60 seconds out, and whether it was used. From our rAthena fork; rows expire and are deleted as new ones are issued |
 | `app_sign_in_identities` | ours: which game account a Google or Apple sign-in plays as, by the provider's id for the person and the email it verified |
+| `app_remembered_logins` | ours: the [autologin](../mods/autologin) mod's remembered logins -- the SHA-256 of each credential, its account, and when it was made and last used. Each launch trades one for a `login_tokens` row. Deleting a row signs that browser or window out; rows unused for 30 days are deleted, and a password change or disabling the account in Settings → Accounts deletes all of that account's |
 
 `char` is quoted in SQL — `` `char` `` — because it is also a type name.
 

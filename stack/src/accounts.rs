@@ -428,7 +428,12 @@ fn statement(action: &str, request: &Value) -> Result<String, String> {
                 "disable" => "state=5".into(),
                 _ => "state=0".into(),
             };
-            format!("UPDATE login SET {assignment} WHERE account_id={id} AND BINARY userid={} AND sex<>'S'; SELECT ROW_COUNT();", hex(name))
+            // A new password or a disabled account also ends every
+            // remembered login it has (remember.rs): whoever was kept signed
+            // in has to sign in again. Before the UPDATE, so ROW_COUNT() is
+            // still the UPDATE's.
+            let revoke = if action == "enable" { String::new() } else { crate::remember::revoke_account_sql(id) };
+            format!("{revoke}UPDATE login SET {assignment} WHERE account_id={id} AND BINARY userid={} AND sex<>'S'; SELECT ROW_COUNT();", hex(name))
         }
         // Made if missing, re-keyed if it is already the agent's. The count at
         // the end is 1 only when an agent-group account of that name exists
@@ -473,6 +478,12 @@ pub fn run(cfg: &Config, dk: &Docker) -> Result<(), String> {
     // the friend gateway (sign_in.rs). Never a stop/restart of the game.
     if crate::sign_in::ACTIONS.contains(&action) {
         println!("{}", crate::sign_in::run(cfg, dk, action, &request)?);
+        return Ok(());
+    }
+    // Remembered logins for the autologin mod (remember.rs), in any mode.
+    // Also never a stop/restart.
+    if crate::remember::ACTIONS.contains(&action) {
+        println!("{}", crate::remember::run(dk, action, &request)?);
         return Ok(());
     }
     if action == "password" || action == "create" || action == "invite-create" || action == "agent" {
@@ -595,6 +606,24 @@ mod tests {
             assert!(sql.contains(&format!("'{DEFAULT_BIRTHDATE}'")));
             assert!(sql.contains("group_id,birthdate"));
         }
+    }
+    #[test]
+    fn a_new_password_or_a_disabled_account_ends_its_remembered_logins() {
+        let body = |action: &str| {
+            json::parse(&format!(
+                "{{\"id\":\"2000001\",\"username\":\"player_1\",\"password\":{p},\"confirmation\":{p},\"action\":{}}}",
+                json::quote(action),
+                p = json::quote("a-test-only-secret")
+            ))
+            .unwrap()
+        };
+        for action in ["password", "disable"] {
+            let sql = statement(action, &body(action)).unwrap();
+            assert!(sql.starts_with("DELETE FROM app_remembered_logins WHERE account_id=2000001;"), "{action}");
+            // The count the caller reads is still the UPDATE's.
+            assert!(sql.find("UPDATE login").unwrap() < sql.find("SELECT ROW_COUNT()").unwrap());
+        }
+        assert!(!statement("enable", &body("enable")).unwrap().contains("app_remembered_logins"));
     }
     #[test]
     fn the_birthdate_migration_only_fills_in_what_is_missing() {

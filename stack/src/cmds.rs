@@ -1568,6 +1568,9 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     // our identity table. Before the game servers, so the login server never
     // starts without the table it checks tokens against.
     crate::sign_in::ensure_sign_in_tables(dk)?;
+    // Remembered logins for the autologin mod (remember.rs): exchanged for
+    // the login tokens of the table above, so made after it.
+    crate::remember::ensure_remember_table(dk)?;
 
     // Only sql/03-account.sql seeds the GM, during first database creation.
     // An existing database may intentionally have renamed, disabled or deleted
