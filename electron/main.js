@@ -11,6 +11,13 @@
 // everywhere is worth ~60 MB of download.
 //
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell, clipboard, screen, session, safeStorage, powerMonitor, protocol, net } = require('electron');
+
+// TEST BUILD ONLY (test/batch-140): a world of its own, beside the real
+// install. This build stores passwords as salted hashes, which a release
+// before 1.4.0 cannot read, so it must never open the real install's data.
+if (!process.env.RAGNAROK_OFFLINE_HOME) {
+	process.env.RAGNAROK_OFFLINE_HOME = require('node:path').join(app.getPath('appData'), 'Ragnarok Offline Test');
+}
 // Mods' own settings pages are served from a private scheme, which Chromium
 // only accepts if it is declared before the app is ready.
 // Every privileged scheme in one call (Electron keeps only the last): the mod

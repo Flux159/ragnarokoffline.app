@@ -1,6 +1,6 @@
 {
   "name": "ragnarokoffline",
-  "productName": "Ragnarok Offline",
+  "productName": "Ragnarok Offline Test",
   "version": "1.4.0",
   "description": "Ragnarok Online, offline, in one app",
   "license": "GPL-3.0",
@@ -18,8 +18,8 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.chronotale.ragnarokoffline",
-    "productName": "Ragnarok Offline",
+    "appId": "com.chronotale.ragnarokoffline.test",
+    "productName": "Ragnarok Offline Test",
     "copyright": "GPL-3.0",
     "directories": {
       "output": "dist/electron",
