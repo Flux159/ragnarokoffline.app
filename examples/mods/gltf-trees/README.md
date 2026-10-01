@@ -5,8 +5,8 @@ that uses them:
 
 | Map model (RSM) | Drawn as |
 |---|---|
-| `나무잡초꽃/나무01.rsm` (tree 01, everywhere in the fields) | `tree_oak.glb` |
-| `나무잡초꽃/나무02.rsm` (tree 02) | `tree_detailed.glb` |
+| `나무잡초꽃/나무01.rsm` (tree 01, everywhere in the fields) | `CommonTree_3.gltf` (3,500 triangles) |
+| `나무잡초꽃/나무02.rsm` (tree 02) | `CommonTree_5.gltf` (3,200 triangles) |
 
 `api.models.replace` takes RSM names (as under `data/model/`, Korean and
 all) and a `.glb` or `.gltf` URL each. The client leaves those models out
@@ -19,5 +19,7 @@ glTF support: triangle meshes with normals and texture coordinates, node
 hierarchies, base colour factors and textures, alpha mask and blend. Not
 skins, animation or morph targets.
 
-The models are from Kenney's [Nature Kit](https://kenney.nl/assets/nature-kit),
-CC0 1.0 (see `client/KENNEY-LICENSE.txt`).
+The trees are from Quaternius's [Stylized Nature MegaKit](https://quaternius.com/packs/stylizednaturemegakit.html)
+(free version), CC0 1.0 (see `client/QUATERNIUS-LICENSE.txt`): painted bark
+and alpha-masked leaves. The textures are reduced to 512x512, and the bark's
+normal map is left out (the client does not use one).

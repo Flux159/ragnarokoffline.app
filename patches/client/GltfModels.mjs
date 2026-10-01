@@ -23,10 +23,16 @@ uniform mat4 uModelViewMat;
 uniform mat4 uProjectionMat;
 out vec3 vNormal;
 out vec2 vUv;
+flat out float vMirrored;
 void main() {
 	vec4 world = aInstance * vec4(aPosition, 1.0);
 	gl_Position = uProjectionMat * uModelViewMat * world;
-	vNormal = normalize(mat3(aInstance) * aNormal);
+	// The inverse transpose keeps normals right under non-uniform scale.
+	mat3 m = mat3(aInstance);
+	vNormal = normalize(transpose(inverse(m)) * aNormal);
+	// Turning glTF's +y up into RO's -y up mirrors the model, which swaps
+	// which side of each triangle the GPU calls the front.
+	vMirrored = determinant(m) < 0.0 ? 1.0 : 0.0;
 	vUv = aUv;
 }`;
 
@@ -34,6 +40,7 @@ const FRAGMENT = `#version 300 es
 precision highp float;
 in vec3 vNormal;
 in vec2 vUv;
+flat in float vMirrored;
 out vec4 fragColor;
 uniform vec4 uBaseColor;
 uniform bool uHasTexture;
@@ -42,6 +49,8 @@ uniform float uAlphaCutoff;   // < 0: no cutoff
 uniform vec3 uLightDirection;
 uniform vec3 uLightAmbient;
 uniform vec3 uLightDiffuse;
+uniform vec3 uLightEnv;
+uniform bool uLightMapUse;
 uniform bool uFogUse;
 uniform float uFogNear;
 uniform float uFogFar;
@@ -50,11 +59,15 @@ void main() {
 	vec4 color = uBaseColor;
 	if (uHasTexture) color *= texture(uTexture, vUv);
 	if (uAlphaCutoff >= 0.0 && color.a < uAlphaCutoff) discard;
-	// As the map's own models are lit: the sun on the facing side, the
-	// ambient everywhere. Two-sided: the normal faces the camera.
-	vec3 n = normalize(gl_FrontFacing ? vNormal : -vNormal);
-	float sun = max(dot(n, uLightDirection), 0.0);
-	color.rgb *= clamp(uLightAmbient + uLightDiffuse * sun, 0.0, 1.0);
+	// Lit exactly as the map's own models are (Models.fs): the sun by the
+	// surface's angle to it (full sun with lightmaps off), plus ambient,
+	// times the map's light tint. Two-sided: a face seen from behind is lit
+	// from behind.
+	bool front = gl_FrontFacing != (vMirrored > 0.5);
+	vec3 n = normalize(front ? vNormal : -vNormal);
+	float sun = uLightMapUse ? max(dot(n, uLightDirection), 0.0) : 1.0;
+	color.rgb *= clamp(sun * uLightDiffuse + uLightAmbient, 0.0, 1.0);
+	color.rgb *= clamp(uLightEnv, 0.0, 1.0);
 	fragColor = color;
 	if (uFogUse) {
 		float depth = gl_FragCoord.z / gl_FragCoord.w;
@@ -372,6 +385,8 @@ function createHook(models, report) {
 		gl.uniform3fv(uniform.uLightDirection, light.direction || [0, -1, 0]);
 		gl.uniform3fv(uniform.uLightAmbient, light.ambient);
 		gl.uniform3fv(uniform.uLightDiffuse, light.diffuse);
+		gl.uniform3fv(uniform.uLightEnv, light.env || [1, 1, 1]);
+		gl.uniform1i(uniform.uLightMapUse, ctx.lightmap === false ? 0 : 1);
 		gl.uniform1i(uniform.uFogUse, fog.use && fog.exist);
 		gl.uniform1f(uniform.uFogNear, fog.near);
 		gl.uniform1f(uniform.uFogFar, fog.far);

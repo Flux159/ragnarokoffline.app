@@ -2,10 +2,21 @@
   "name": "gltf-trees",
   "version": "1.0.0",
   "author": "Ragnarok Offline",
-  "description": "Example: the common trees of the fields drawn from glTF models (Kenney's Nature Kit, CC0) instead of the map's own. Shows api.models.replace.",
+  "description": "Example: the common trees of the fields drawn from glTF models (Quaternius's Stylized Nature MegaKit, CC0) instead of the map's own. Shows api.models.replace.",
   "default": "off",
-  "requires": { "app": ">=1.4.0", "era": "any" },
+  "requires": {
+    "app": ">=1.4.0",
+    "era": "any"
+  },
   "settings": [
-    { "key": "size", "type": "number", "default": 100, "min": 50, "max": 200, "label": "Tree size", "description": "As a percentage of the original tree's height." }
+    {
+      "key": "size",
+      "type": "number",
+      "default": 100,
+      "min": 50,
+      "max": 200,
+      "label": "Tree size",
+      "description": "As a percentage of the original tree's height."
+    }
   ]
 }
