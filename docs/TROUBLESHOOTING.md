@@ -259,6 +259,32 @@ folder in your antivirus and repair once more:
 %APPDATA%\Ragnarok Offline\nebula
 ```
 
+## The login box is missing: bare inputs, "Replay" and "Sign Up" (iRO, LATAM)
+
+The login screen shows the background with two inputs, a "keep" checkbox and
+the words "Replay" and "Sign Up", but no box around them. Logging in still
+works. You only see this with a client that is not Korean.
+
+At the app's default client version the login screen is the newer, round-button
+window, drawn from `login_interface/bg_login.tga`, `bt_start_*` and `bt_join_*`
+in `data/texture/유저인터페이스/`. Only Korean (kRO) client data contains those
+files. International data (iRO, LATAM) has the art for the older login window
+and not for the newer one. The files are missing, not renamed. Your
+`state/assets/logs/missing-files.log` will list them.
+
+**Fixed in the next release:** when `bg_login.tga` is missing, the client shows
+the older login window, using the art your client does have
+([roBrowserLegacy #49](https://github.com/Flux159/roBrowserLegacy/pull/49)).
+Until then, Scottiboi's **ui-fixes** mod supplies the missing art. Installing it
+on top of a fixed build causes no conflict: its files are found first, so you
+get the newer window drawn with its art. Once the fixed build is out, its
+*Fix the storage search box* setting is no longer needed (storage search works
+since 1.3.6) and is best switched off. Otherwise it replaces the client's own
+search panel with its in-place filter.
+
+iRO data is also reported to be missing the bank window's background and the
+storage search button. Those are not fixed yet; the same mod covers them.
+
 ## `ragnarok` / `ragnarok` does not work on the very first login
 
 **Close the app and open it again**, then log in. This has fixed it for everyone
