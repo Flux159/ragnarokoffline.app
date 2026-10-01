@@ -330,3 +330,87 @@ test('a stalled initializer does not strand login and its late cleanup still run
     complete(); await Promise.resolve(); await Promise.resolve();
     assert.equal(cleaned, 1); loader.dispose();
 });
+
+test('api.screens hands a screen to the bridge, reports a throwing hook and gives the screen back on disposal', async () => {
+    const [, { createRuntime }] = await modules;
+    const errors = [];
+    const runtime = createRuntime({ report: (...args) => errors.push(args[0]) });
+    const registered = [];
+    runtime.configure({
+        screensSupported: () => true,
+        replaceScreen(screen, hook) { const entry = { screen, hook, removed: false }; registered.push(entry); return () => { entry.removed = true; }; },
+    });
+    const scope = runtime.scope('stage');
+    const { screens } = scope.api;
+    assert.equal(screens.supported(), true);
+    assert.deepEqual([...screens.list()], ['login', 'serverList', 'charSelect', 'charCreate']);
+    assert.throws(() => screens.replace('shop', { show() {} }), TypeError);
+    assert.throws(() => screens.replace('login', {}), TypeError);
+
+    const shown = [];
+    screens.replace('charSelect', { show: view => shown.push(view.index) });
+    screens.replace('login', { show() { throw new Error('broken'); } });
+    assert.deepEqual(registered.map(e => e.screen), ['charSelect', 'login']);
+    // No update of its own: the bridge redraws with show.
+    assert.equal(registered[0].hook.update, undefined);
+    registered[0].hook.show({ index: 3 });
+    assert.deepEqual(shown, [3]);
+    // A throw is reported under the plugin's name and passed on, so the
+    // client's ScreenHooks switches the hook off and shows its own window.
+    assert.throws(() => registered[1].hook.show({}), /broken/);
+    assert.deepEqual(errors, ['[Plugin stage] login show']);
+
+    scope.dispose();
+    assert.deepEqual(registered.map(e => e.removed), [true, true]);
+    assert.throws(() => screens.replace('login', { show() {} }), /disposed/);
+});
+
+test('pregame views copy the window state and check every action before the window acts', async () => {
+    const { buildView } = await import('../patches/client/PregameViews.mjs');
+    const calls = [];
+    const record = name => (...args) => calls.push([name, ...args]);
+
+    const live = { name: 'Aldebaran', CharNum: 2, GID: 150001, job: 4008, level: 99, head: 5, headpalette: 3, Robe: 7, lastMap: 'prontera.gat', DeleteDate: 0 };
+    const select = buildView('charSelect', {
+        characters: [live], maxSlots: 9, index: 2, sex: 1, enabled: true, deleteReservation: true,
+        select: record('select'), play: record('play'), create: record('create'), requestDelete: record('requestDelete'),
+        cancelDelete: record('cancelDelete'), confirmDelete: record('confirmDelete'), exit: record('exit'),
+    }, { jobName: job => (job === 4008 ? 'Lord Knight' : ''), mapName: () => 'Prontera', root: null });
+    assert.equal(Object.isFrozen(select.characters[0].look), true);
+    assert.equal(select.selected.name, 'Aldebaran');
+    assert.equal(select.selected.jobName, 'Lord Knight');
+    assert.equal(select.selected.map, 'prontera');
+    assert.equal(select.selected.look.robe, 7);
+    assert.equal(select.selected.deletePending, false);
+    assert.throws(() => { 'use strict'; select.characters[0].look.job = 0; }, TypeError);
+    assert.equal(live.job, 4008);
+    assert.throws(() => select.select(9), RangeError);
+    assert.throws(() => select.select('x'), RangeError);
+    select.play(4);
+    select.requestDelete();
+    assert.deepEqual(calls.splice(0), [['select', 4], ['play'], ['requestDelete']]);
+
+    const create = buildView('charCreate', {
+        sex: 1, chooseSex: true, hasStats: false, create: record('make'), exit: record('exit'),
+        races: [{ job: 0, hair: { min: 1, max: 23 }, hairColor: { min: 0, max: 8 } }, { job: 4218, hair: { min: 1, max: 6 }, hairColor: { min: 0, max: 7 } }],
+    });
+    assert.throws(() => create.create({ name: 'Doramy', job: 4218, hair: 7 }), RangeError);
+    assert.throws(() => create.create({ name: 'Nobody', job: 4001 }), RangeError);
+    assert.throws(() => create.create({ name: 'Two', sex: 2 }), RangeError);
+    create.create({ name: 'Testa', sex: 0, hair: 3, hairColor: 4 });
+    assert.deepEqual(calls.splice(0), [['make', { name: 'Testa', job: 0, sex: 0, hair: 3, hairColor: 4,
+        stats: { str: 5, agi: 5, vit: 5, int: 5, dex: 5, luk: 5 } }]]);
+
+    const login = buildView('login', { savedId: 'tester', saveId: true, login: record('login'), signup: record('signup'), exit: record('exit') });
+    assert.equal(login.savedId, 'tester');
+    assert.throws(() => login.login('', 'x'), TypeError);
+    // A token from another sign-in goes the same way a password does.
+    login.login('someone@example.com', 'eyJhbGciOi.token', { saveId: false });
+    assert.deepEqual(calls.splice(0), [['login', 'someone@example.com', 'eyJhbGciOi.token', false]]);
+
+    const servers = buildView('serverList', { servers: ['One', 'Two'], index: 0, select: record('server'), exit: record('exit') });
+    assert.deepEqual(servers.servers.map(s => s.label), ['One', 'Two']);
+    assert.throws(() => servers.select(2), RangeError);
+    servers.select(1);
+    assert.deepEqual(calls.splice(0), [['server', 1]]);
+});

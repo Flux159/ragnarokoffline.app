@@ -1,0 +1,514 @@
+/* pregame-stage: every picture on these screens is CSS, except the job
+   icons and the characters, which are the client's own. */
+
+:host {
+	--accent: #f08a3c;
+	--accent-hi: #ffb067;
+	--panel: rgba(18, 16, 20, 0.86);
+	--panel-line: rgba(255, 255, 255, 0.08);
+	--text: #ece6dc;
+	--muted: #9c958c;
+	--danger: #e0605a;
+	font: 13px/1.35 system-ui, -apple-system, 'Segoe UI', sans-serif;
+	color: var(--text);
+}
+
+* {
+	box-sizing: border-box;
+}
+
+.screen {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+	user-select: none;
+}
+
+/* --- The scene: scene.js draws the picture ----------------------------- */
+
+.scene {
+	position: absolute;
+	inset: 0;
+	background: #141c3d;
+}
+
+.scene svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+.vignette {
+	position: absolute;
+	inset: 0;
+	background: radial-gradient(ellipse at 50% 55%, transparent 55%, rgba(0, 0, 0, 0.55));
+	pointer-events: none;
+}
+
+/* --- Common pieces ------------------------------------------------------ */
+
+.wordmark {
+	position: absolute;
+	left: 28px;
+	top: 18px;
+	font: italic 900 44px/1 Georgia, 'Times New Roman', serif;
+	letter-spacing: 1px;
+	color: #e8f1ff;
+	-webkit-text-stroke: 2px #1b3f8c;
+	text-shadow: 0 3px 0 #0e2350, 0 0 18px rgba(80, 140, 255, 0.6);
+}
+
+.wordmark small {
+	display: block;
+	margin: 4px 0 0 4px;
+	font: 700 12px/1 system-ui, sans-serif;
+	letter-spacing: 6px;
+	color: var(--accent-hi);
+	-webkit-text-stroke: 0;
+	text-shadow: 0 1px 2px #000;
+}
+
+.title {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 44px;
+	text-align: center;
+	font: 800 20px/1 system-ui, sans-serif;
+	letter-spacing: 5px;
+	color: var(--accent);
+	text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
+}
+
+.title::before,
+.title::after {
+	content: '';
+	display: inline-block;
+	width: 18vw;
+	max-width: 160px;
+	height: 2px;
+	margin: 0 14px;
+	vertical-align: middle;
+	background: linear-gradient(90deg, transparent, var(--accent));
+}
+
+.title::after {
+	background: linear-gradient(90deg, var(--accent), transparent);
+}
+
+.panel {
+	background: var(--panel);
+	border: 1px solid var(--panel-line);
+	border-radius: 6px;
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+button {
+	font: inherit;
+	color: var(--text);
+	border: 0;
+	border-radius: 4px;
+	cursor: pointer;
+}
+
+button:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.primary {
+	background: linear-gradient(180deg, var(--accent-hi), var(--accent));
+	color: #1d1209;
+	font-weight: 800;
+	letter-spacing: 1px;
+}
+
+.primary:hover:not(:disabled) {
+	filter: brightness(1.08);
+}
+
+.danger {
+	background: linear-gradient(180deg, #ef7b74, var(--danger));
+	color: #fff;
+}
+
+.quiet {
+	background: #3a3f52;
+}
+
+.quiet:hover {
+	background: #4a5068;
+}
+
+input[type='text'],
+input[type='password'] {
+	width: 100%;
+	padding: 9px 10px;
+	font: inherit;
+	color: var(--text);
+	background: #14131a;
+	border: 1px solid #3a3644;
+	border-radius: 4px;
+	outline: none;
+}
+
+input:focus {
+	border-color: var(--accent);
+}
+
+/* Where the character stands: a pool of warm light on the deck. */
+.spot {
+	position: absolute;
+	left: 50%;
+	bottom: 12%;
+	width: 320px;
+	height: 70px;
+	transform: translateX(-50%);
+	border-radius: 50%;
+	background: radial-gradient(ellipse at 50% 50%, rgba(255, 214, 160, 0.45), rgba(255, 170, 90, 0.12) 55%, transparent 72%);
+	pointer-events: none;
+}
+
+canvas.stage {
+	position: absolute;
+	left: 50%;
+	bottom: 10%;
+	transform: translateX(-50%);
+	image-rendering: pixelated;
+	pointer-events: none;
+}
+
+/* --- Login --------------------------------------------------------------- */
+
+.login {
+	position: absolute;
+	left: 50%;
+	top: 56%;
+	width: 300px;
+	padding: 20px 22px 18px;
+	transform: translate(-50%, -50%);
+}
+
+.login h2 {
+	margin: 0 0 14px;
+	font-size: 15px;
+	letter-spacing: 3px;
+	color: var(--accent);
+	text-align: center;
+}
+
+.login label {
+	display: block;
+	margin: 10px 0 4px;
+	color: var(--muted);
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 1px;
+}
+
+.login .remember {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-top: 12px;
+	text-transform: none;
+	letter-spacing: 0;
+	font-size: 12px;
+}
+
+.login .go {
+	width: 100%;
+	height: 40px;
+	margin-top: 14px;
+	font-size: 15px;
+}
+
+.login .row {
+	display: flex;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+.login .row button {
+	flex: 1;
+	height: 28px;
+	font-size: 12px;
+}
+
+/* --- Character select ---------------------------------------------------- */
+
+.slots {
+	position: absolute;
+	left: 24px;
+	top: 120px;
+	bottom: 24px;
+	width: 300px;
+	padding: 8px;
+	overflow-y: auto;
+}
+
+.slot {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	height: 66px;
+	margin-bottom: 6px;
+	padding: 5px 8px;
+	border-radius: 4px;
+	border-left: 3px solid transparent;
+	cursor: pointer;
+}
+
+.slot:hover {
+	background: rgba(255, 255, 255, 0.05);
+}
+
+.slot.selected {
+	background: linear-gradient(90deg, rgba(240, 138, 60, 0.28), rgba(240, 138, 60, 0.06));
+	border-left-color: var(--accent);
+}
+
+.portrait {
+	position: relative;
+	flex: none;
+	width: 56px;
+	height: 56px;
+	border-radius: 4px;
+	background: radial-gradient(circle at 50% 35%, #4a4252, #241f2a);
+	overflow: hidden;
+}
+
+.portrait canvas {
+	image-rendering: pixelated;
+}
+
+.portrait.empty {
+	background: rgba(255, 255, 255, 0.04);
+}
+
+.portrait.empty::before,
+.portrait.empty::after {
+	content: '';
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	width: 18px;
+	height: 2px;
+	background: #6b6672;
+	transform: translate(-50%, -50%);
+}
+
+.portrait.empty::after {
+	transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.portrait img {
+	position: absolute;
+	right: 1px;
+	bottom: 1px;
+	width: 18px;
+	height: 18px;
+}
+
+.slot .name {
+	color: var(--accent-hi);
+	font-weight: 700;
+}
+
+.slot .sub {
+	color: var(--muted);
+	font-size: 11px;
+}
+
+.slot.empty .name {
+	color: var(--muted);
+	font-weight: 400;
+}
+
+.deleting {
+	color: var(--danger);
+	font-size: 11px;
+}
+
+.info {
+	position: absolute;
+	right: 24px;
+	top: 120px;
+	width: 230px;
+	padding: 14px 16px;
+}
+
+.info h3 {
+	margin: 0 0 2px;
+	font-size: 17px;
+	color: var(--accent-hi);
+}
+
+.info .job {
+	color: var(--muted);
+	margin-bottom: 10px;
+}
+
+.info dl {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 3px 12px;
+	margin: 0;
+}
+
+.info dt {
+	color: var(--muted);
+}
+
+.info dd {
+	margin: 0;
+	text-align: right;
+}
+
+.info .stats {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 4px;
+	margin-top: 10px;
+	text-align: center;
+	font-size: 11px;
+}
+
+.info .stats span {
+	padding: 4px 0;
+	background: rgba(255, 255, 255, 0.05);
+	border-radius: 3px;
+}
+
+.actions {
+	position: absolute;
+	left: 50%;
+	bottom: 26px;
+	width: 320px;
+	transform: translateX(-50%);
+}
+
+.actions .play {
+	width: 100%;
+	height: 46px;
+	font-size: 20px;
+}
+
+.actions .row {
+	display: flex;
+	gap: 8px;
+	margin-top: 6px;
+}
+
+.actions .row button {
+	flex: 1;
+	height: 26px;
+	font-size: 12px;
+}
+
+/* --- Character creation -------------------------------------------------- */
+
+.maker {
+	position: absolute;
+	left: 24px;
+	top: 120px;
+	width: 300px;
+	padding: 14px 16px;
+}
+
+.maker h4 {
+	margin: 14px 0 6px;
+	font-size: 12px;
+	color: var(--muted);
+	text-transform: uppercase;
+	letter-spacing: 1px;
+}
+
+.maker h4:first-child {
+	margin-top: 0;
+}
+
+.choice {
+	display: flex;
+	gap: 6px;
+}
+
+.choice button {
+	flex: 1;
+	height: 30px;
+	background: #2a2733;
+}
+
+.choice button.on {
+	background: var(--accent);
+	color: #1d1209;
+	font-weight: 700;
+}
+
+.stepper {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.stepper button {
+	width: 32px;
+	height: 28px;
+	background: #2a2733;
+}
+
+.stepper output {
+	flex: 1;
+	text-align: center;
+}
+
+.swatches {
+	display: grid;
+	grid-template-columns: repeat(5, 1fr);
+	gap: 6px;
+}
+
+.swatches button {
+	height: 30px;
+	border: 2px solid transparent;
+}
+
+.swatches button.on {
+	border-color: var(--accent-hi);
+	box-shadow: 0 0 0 1px #000 inset;
+}
+
+.namebar {
+	position: absolute;
+	left: 50%;
+	bottom: 26px;
+	width: 340px;
+	transform: translateX(-50%);
+}
+
+/* Turn the character: one arrow either side of it. */
+.namebar .turn {
+	position: absolute;
+	left: 50%;
+	bottom: 190px;
+	display: flex;
+	gap: 200px;
+	transform: translateX(-50%);
+}
+
+.namebar .turn button {
+	width: 44px;
+	height: 24px;
+	background: #2a2f44;
+}
+
+.namebar .row {
+	display: flex;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+.namebar .row button {
+	flex: 1;
+	height: 32px;
+}

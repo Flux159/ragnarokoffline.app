@@ -1,0 +1,22 @@
+{
+  "name": "pregame-stage",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "A painted harbour at dusk for the screens before the game: login, a portrait slot list with your character on a stage and a big Play button, and character creation on the same stage.",
+  "requires": { "app": ">=1.4.0", "era": "any" },
+  "settings": [
+    {
+      "key": "login",
+      "type": "boolean",
+      "default": true,
+      "label": "Restyle the login screen",
+      "description": "Off leaves the client's own login window, and restyles only character select and creation."
+    },
+    {
+      "key": "create",
+      "type": "boolean",
+      "default": true,
+      "label": "Restyle character creation"
+    }
+  ]
+}

@@ -1389,6 +1389,7 @@ It is a supported interface, not a sandbox for untrusted JavaScript.
 | `api.items.search(text, limit)` / `.get(id)` / `.icon(id)` | Items from the client's own tables, mods' included: `{ id, name, description, slots }`, and an icon URL for an `<img>`. |
 | `api.server.request(command, text, { timeout })` | Ask the mod's server script for something; resolves with its answer. See [Windows and server requests](#windows-and-server-requests). |
 | `api.cleanup(fn)` | Register idempotent cleanup immediately after allocating a resource. The returned function can release it early. Runs on failure, scope replacement and page teardown. |
+| `api.screens.replace(screen, hook)` / `.stage(canvas)` / `.image(path)` | Draw the login screen, server list, character select or character creation yourself. See [below](#the-screens-before-the-game--apiscreens). |
 
 ### Graphics passes
 
@@ -1589,6 +1590,110 @@ be assigned from the inventory and skills toolbars. Storage adds quantity and
 whole-stack deposit/withdraw controls, with explicit focus buttons between it
 and inventory. Shops reuse the native buy/sell selection, quantity dialog and
 transaction callbacks. Their nested geometry also has a separate phone bank.
+
+### The screens before the game — `api.screens`
+
+A mod can draw the login screen, the server list, character select and
+character creation itself: its own background, its own layout, the character
+standing on a stage of its own. The client's window for that screen is still
+there, hidden, and still does the work — it holds the character list, sends
+the packets, and raises its own dialogs ("wrong password", "delete this
+character?") above whatever the mod drew. The mod gets the screen's data and
+the window's own buttons.
+
+```js
+export default function (params, api) {
+	if (!api.screens?.supported()) return; // an older app: the stock screens stay
+
+	api.screens.replace('charSelect', {
+		show(view) {
+			view.root.innerHTML = `<link rel="stylesheet" href="${new URL('./style.css', import.meta.url)}">
+				<ul class="slots"></ul><canvas width="300" height="300"></canvas><button>Play</button>`;
+			const stage = api.screens.stage(view.root.querySelector('canvas'), { scale: 2 });
+			this.stage = stage;
+			this.update(view);
+			view.root.querySelector('button').onclick = () => this.view.play();
+		},
+		update(view) {
+			this.view = view;
+			view.root.querySelector('.slots').replaceChildren(...view.characters.map(c => {
+				const li = document.createElement('li');
+				li.textContent = `${c.name} — Lv. ${c.level} ${c.jobName}`;
+				li.onclick = () => view.select(c.slot);
+				return li;
+			}));
+			this.stage.clear();
+			if (view.selected) this.stage.add(view.selected.look, { action: 'ready' });
+		},
+		hide() { this.stage.dispose(); },
+	});
+}
+```
+
+`show(view)` runs when the screen opens; `update(view)` whenever its data
+changes — a character arrives, the selection moves, a deletion is answered —
+and without one, `show` is called again on an emptied layer; `hide()` when it
+closes. `view.root` is a shadow root covering the window, above the 3D canvas
+and below every client window. It is emptied and removed when the screen
+closes, so there is nothing to clean up in it.
+
+| screen | data | actions |
+|---|---|---|
+| `login` | `savedId`, `saveId` | `login(user, password, { saveId })`, `signup()`, `exit()` |
+| `serverList` | `servers: [{ index, label }]`, `index` | `select(index)`, `exit()` |
+| `charSelect` | `characters`, `selected`, `index`, `maxSlots`, `sex`, `enabled`, `deleteReservation` | `select(slot)`, `play(slot?)`, `create(slot?)`, `requestDelete(slot?)`, `cancelDelete(slot?)`, `confirmDelete(slot?)`, `exit()` |
+| `charCreate` | `races: [{ job, name, hair: {min,max}, hairColor: {min,max} }]`, `sex`, `chooseSex`, `hasStats` | `create({ name, job, sex, hair, hairColor, stats? })`, `exit()` |
+
+Each action is what the matching button of the client's window does, so the
+same things follow from it: `login` runs the client's login (the password is
+what the login packet carries — a password, or a token a sign-in service gave
+in place of one), `play` the loading screen and the map, `exit` on character
+select asks "are you sure?" first, and a name the server refuses comes back as
+the client's own message box. Arguments are checked first: a slot outside
+`0…maxSlots-1`, a hair style outside the race's range or a job that is not one
+of `races` throws, and the window never sees it.
+
+A character is `{ id, slot, name, job, jobName, level, jobLevel, exp, jobExp,
+hp, maxHp, sp, maxSp, zeny, stats: { str, agi, vit, int, dex, luk }, map,
+mapName, sex, deletePending, look }`. Everything in a view is a frozen copy.
+
+**`api.screens.stage(canvas, { scale })`** draws characters on a canvas of
+yours, the way character select draws its slots. `stage.add(look, place)`
+takes a character's `look` — or any of `job`, `sex`, `head`, `headpalette`,
+`bodypalette`, `weapon`, `shield`, `accessory`, `accessory2`, `accessory3`,
+`robe`, `effectState` — and `place`: `x` and `y` as fractions of the canvas
+(where the feet go; beyond 0…1 crops, which is how a portrait is made),
+`direction` 0…7 (0 faces the viewer), `action` (`idle`, `walk`, `sit`,
+`ready`, `attack`, `hurt`, `die`, `pickup`) and `kind: 'monster'` for a pet
+or a companion beside the character. It returns `{ set(look), place(place),
+action(name), remove() }`. A mount is part of the look: it is the
+`effectState` bits the server sent, and is drawn as the game draws it.
+`stage.dispose()` stops it; disposal of the plugin does too.
+
+**`api.screens.image(path)`** resolves to a URL for a picture in the game
+data — BMPs with their magenta made transparent, as the client draws them —
+or `null`. A bare name is looked up in the interface folder, so
+`api.screens.image('renewalparty/icon_jobs_4008.bmp')` is the Lord Knight
+icon. Use it for the client's own art; ship your own beside `index.js`.
+
+Three things to know:
+
+- **A mod that throws gets the screen taken away from it.** An error in
+  `show`, `update` or `hide` is reported under the plugin's name, the hook is
+  switched off, and the client's own window comes back, so a broken mod never
+  leaves a player unable to log in. Two mods that replace the same screen:
+  the one loaded later draws it, and the other takes over if it goes.
+- **Keys are yours while your screen is up.** The hidden client window
+  ignores them; handle Enter and Escape in your own markup if you want them.
+- **Character creation only sends what the server accepts at creation:**
+  name, job, sex, hair style and hair colour. A body (clothes) colour can be
+  shown on the stage with `bodypalette`, but the server will not store it until
+  a stylist changes it in game.
+
+The hooks themselves are `UI/ScreenHooks.js` in the roBrowser fork:
+`register(screen, { show, update, hide })`, called by each of those windows as
+it opens, changes and closes. `api.screens` is the supported way to reach it.
+See [`examples/mods/pregame-stage`](../examples/mods/pregame-stage).
 
 ---
 

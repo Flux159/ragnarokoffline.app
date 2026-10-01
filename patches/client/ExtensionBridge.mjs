@@ -6,6 +6,7 @@ import * as Graphics from './GraphicsPasses.mjs';
 import * as Gltf from './GltfModels.mjs';
 import * as Windows from './PluginWindows.mjs';
 import { install as installSignIn } from './SignIn.mjs';
+import * as Pregame from './PregameScreens.mjs';
 import Session from 'Engine/SessionStorage.js';
 import Camera from 'Renderer/Camera.js';
 import Renderer from 'Renderer/Renderer.js';
@@ -370,6 +371,11 @@ export function init() {
         serverRequest: (command, text, timeout) => Windows.request(command, text, timeout, serverCommand),
         graphicsSupported: Graphics.supported,
         mapLights: Graphics.mapLights,
+        // The screens before the game (api.screens); PregameScreens.mjs.
+        screensSupported: Pregame.supported,
+        replaceScreen: Pregame.replace,
+        createStage: Pregame.createStage,
+        screenImage: Pregame.image,
     });
     const clear = () => Runtime.movement.clear('focus-lost');
     const compose = () => { composing = true; clear(); };

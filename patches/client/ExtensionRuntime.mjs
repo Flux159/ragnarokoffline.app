@@ -1,5 +1,7 @@
 import { createMovement } from './MovementCore.mjs';
 
+import { SCREENS } from './PregameViews.mjs';
+
 const EVENTS = new Set(['map:enter', 'map:leave', 'connection', 'ui:append', 'ui:remove', 'movement:clear', 'preferences:change', 'item:use']);
 const copy = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 function freeze(value) {
@@ -240,6 +242,56 @@ export function createRuntime({ storage, report = (...args) => console.error(...
                 search: (text, limit = 50) => freeze(copy(bridge.searchItems?.(String(text ?? ''), Math.min(Math.max(Number(limit) || 50, 1), 200)) || [])),
                 get: id => { const item = Number.isInteger(id) ? bridge.item?.(id) : null; return item ? freeze(copy(item)) : null; },
                 icon: id => Promise.resolve(Number.isInteger(id) ? bridge.itemIcon?.(id) ?? null : null),
+            }),
+            // The screens before the game -- login, server list, character
+            // select and creation -- drawn by the plugin in the client's
+            // place (PregameScreens.mjs; the fork's UI/ScreenHooks.js). The
+            // client's window still does the work: the plugin is handed the
+            // screen's data and the window's own actions. Given back to the
+            // client when the plugin goes, or if it throws.
+            screens: Object.freeze({
+                list: () => SCREENS,
+                supported: () => Boolean(bridge.screensSupported?.()),
+                replace(screen, hook) {
+                    if (disposed) throw new Error(`Plugin ${name} is disposed`);
+                    if (!SCREENS.includes(screen)) throw new TypeError(`replace: screen must be one of ${SCREENS.join(', ')}`);
+                    if (!hook || typeof hook.show !== 'function') throw new TypeError('replace takes { show(view), update?(view), hide?() }');
+                    const guard = (what, fn) => (...args) => {
+                        try { return fn(...args); }
+                        catch (error) { report(`[Plugin ${name}] ${screen} ${what}`, error); throw error; }
+                    };
+                    const checked = {
+                        name: `${name}: ${screen}`,
+                        show: guard('show', view => hook.show(view)),
+                        update: typeof hook.update === 'function' ? guard('update', view => hook.update(view)) : undefined,
+                        hide: guard('hide', () => hook.hide?.()),
+                    };
+                    if (typeof bridge.replaceScreen !== 'function') return () => {};
+                    const remove = bridge.replaceScreen(screen, checked);
+                    return cleanup(() => remove?.());
+                },
+                // A <canvas> the client draws characters on: the look of a
+                // character from charSelect, or a look being made.
+                stage(canvas, options = {}) {
+                    if (disposed) throw new Error(`Plugin ${name} is disposed`);
+                    if (typeof bridge.createStage !== 'function') throw new Error('this client cannot draw a stage');
+                    const stage = bridge.createStage(canvas, { scale: Number(options?.scale) || 1 },
+                        error => report(`[Plugin ${name}] stage`, error));
+                    const release = cleanup(() => stage.dispose());
+                    return Object.freeze({
+                        add: (look, place) => stage.add(copy(look), copy(place)),
+                        scale: value => stage.scale(Number(value)),
+                        clear: () => stage.clear(),
+                        dispose: () => release(),
+                    });
+                },
+                // An image from the game data, as a URL; a bare name is in
+                // the interface folder. Resolves null if there is none.
+                image(path) {
+                    if (typeof path !== 'string' || !path || path.length > 512 || path.includes('..') || /^[a-z]+:/i.test(path))
+                        return Promise.reject(new TypeError('image: path must be a game-data path'));
+                    return Promise.resolve(bridge.screenImage?.(path) ?? null);
+                },
             }),
             server: Object.freeze({
                 // Ask the mod's server script for something: it answers an
