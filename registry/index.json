@@ -226,6 +226,50 @@
         "asset": "standart-npc-*.zip"
       },
       "files": []
+    },
+    {
+      "name": "steal-cards",
+      "version": "1.0.0",
+      "author": "BlaXun",
+      "description": "The Thief's Steal skill can take a monster's card. Every non-MVP monster that drops a card (1,260 of them) has that drop made stealable; drop rates and everything else about the monster are unchanged. MVP cards stay unstealable. Renewal only.",
+      "homepage": "https://github.com/Flux159/ragnarokoffline.app/tree/main/registry/mods/steal-cards",
+      "tags": [
+        "cards",
+        "drops",
+        "steal",
+        "thief"
+      ],
+      "icon": "images/icon.png",
+      "screenshots": [
+        "images/steal-cards.png"
+      ],
+      "requires": {
+        "mods": [],
+        "era": "renewal",
+        "app": ">=1.3.9"
+      },
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "292975911b5bd2b9d91d1962b8900795b46cc4da326614475da18ae3450a0d5f"
+        },
+        {
+          "path": "db/mob_db.yml",
+          "sha256": "fa2331cb9fca381ca655ed6c3cb3a1ccf0c0c2dbf992bc20d4b19391b37baf96"
+        },
+        {
+          "path": "images/icon.png",
+          "sha256": "af99e2cfe2cf9e6a566739522e7db9d768e1c587bd6daab33ad2339aca1c81aa"
+        },
+        {
+          "path": "images/steal-cards.png",
+          "sha256": "83a6bc29a1a6766b325ce4c148b35d44d272631dee4fadf3a50e72841e19f7c5"
+        },
+        {
+          "path": "mod.json",
+          "sha256": "9c68a52092b9bdcee68080635cf3ec29c730a207119a04c5b98408dffa18e409"
+        }
+      ]
     }
   ]
 }
