@@ -1,0 +1,24 @@
+From 0000000000000000000000000000000000000016
+Subject: [PATCH] @companion honours the population master switch
+
+With population_engine_enable: 0 the engine loads none of its databases, but @companion still
+ran: it listed, summoned and drafted companions, and changed their saved rows. Refuse it the
+way 0002 refuses @populate, before any subcommand, so a disabled engine reads and writes no
+companion row and turning it back on finds every companion as it was. The companion window
+asks through "@companion list raw", so it shows nothing while the engine is off.
+
+--- a/src/custom/atcommand.inc
++++ b/src/custom/atcommand.inc
+@@ -275,6 +275,12 @@
+ ACMD_FUNC(companion)
+ {
+ 	nullpo_retr(-1, sd);
++	// The population master switch covers companions too: with it off nothing here runs and no
++	// saved companion is read or changed, so turning it back on brings them all back as they were.
++	if (!battle_config.population_engine_enable) {
++		clif_displaymessage(fd, "The population engine is disabled. Turn it on in the app's settings.");
++		return -1;
++	}
+ 	// RAGNAROKMAC: room for a full 23-character name AND what follows it ("homunculus <name> off",
+ 	// "skills <name> toggle <id>", "gear <name> weapon shield"). A NAME_LENGTH buffer cut those
+ 	// off after the name, so the trailing word was silently dropped. Names are still bounded to

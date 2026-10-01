@@ -1142,12 +1142,21 @@ const COMPANION_COLUMNS: &[(&str, &str)] = &[
     // v9: which worn positions hold gear the owner gave. Only those come back through
     // @companion gear; 0 for an existing row, so its generated gear stays its own.
     ("given_mask", "INT UNSIGNED NOT NULL DEFAULT 0"),
+    // v10: companions belong to a character, not an account. 0 on an existing row means
+    // "saved before this"; the first character of that account to log in claims it.
+    ("owner_char_id", "INT UNSIGNED NOT NULL DEFAULT 0"),
+];
+
+/// Indexes added after the table first shipped, as (name, columns).
+const COMPANION_INDEXES: &[(&str, &str)] = &[
+    ("idx_owner_char", "`owner_account_id`, `owner_char_id`"),
 ];
 
 fn companion_table_sql() -> String {
     let added: Vec<String> = COMPANION_COLUMNS
         .iter()
         .map(|(column, definition)| format!("ADD COLUMN IF NOT EXISTS `{column}` {definition}"))
+        .chain(COMPANION_INDEXES.iter().map(|(name, columns)| format!("ADD INDEX IF NOT EXISTS `{name}` ({columns})")))
         .collect();
     format!("{COMPANION_SCHEMA}\nALTER TABLE `cp_companion_persistence` {};\n", added.join(", "))
 }
@@ -2439,8 +2448,13 @@ mod tests {
             let declared = format!("`{column}` {}", squash(definition));
             assert!(schema.contains(&declared), "the CREATE must declare {declared}");
         }
+        for (name, columns) in COMPANION_INDEXES {
+            let declared = format!("KEY `{name}` ({})", squash(columns));
+            assert!(schema.contains(&declared), "the CREATE must declare {declared}");
+        }
         let sql = companion_table_sql();
         assert!(sql.len() <= crate::docker::SQL_INPUT_LIMIT, "the migration must fit one call");
+        assert_eq!(sql.matches("ADD INDEX IF NOT EXISTS").count(), COMPANION_INDEXES.len());
         assert_eq!(sql.matches("ALTER TABLE").count(), 1, "one ALTER, not one call per column");
         assert_eq!(sql.matches("ADD COLUMN IF NOT EXISTS").count(), COMPANION_COLUMNS.len());
         assert!(!sql.contains("REPLACE") && !sql.contains("DROP"), "only new objects, nothing one-way");

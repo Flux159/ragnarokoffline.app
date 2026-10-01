@@ -77,7 +77,7 @@ test('a companion is resolved by IDENTITY, not by index alone', () => {
 	// Three sites resolve "the live shell for this row". Each must require that the candidate
 	// really is this owner's recruited companion, or a coincidental shell can receive the
 	// selection - the failure this whole commit addresses.
-	const ownerChecks = src.match(/if \(cand->pop\.companion_owner_account != owner_account\)/g) || [];
+	const ownerChecks = src.match(/if \(cand->pop\.companion_owner_account != owner_account\s*\n\s*\|\| cand->pop\.companion_owner_char != pop_online_char\(owner_account\)\)/g) || [];
 	assert.ok(ownerChecks.length >= 3,
 		`all three live-shell lookups need the ownership check (found ${ownerChecks.length})`);
 	const companionChecks = src.match(/if \(!pop_is_companion\(cand\)\)/g) || [];

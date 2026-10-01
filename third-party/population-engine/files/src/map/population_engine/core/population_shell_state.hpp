@@ -197,6 +197,9 @@ struct s_population {
 	uint32_t party_request_account = 0; ///< Player who requested this one-shot invitation.
 	t_tick party_request_until = 0; ///< Whisper permission expires after 60 seconds.
 	uint32_t companion_owner_account = 0; ///< Real player this shell follows after joining their party.
+	/// The owning CHARACTER. Companions belong to a character, not an account: two characters of
+	/// one account each have their own, and only the owning character's session is "the owner".
+	uint32_t companion_owner_char = 0;
 	PopulationCompanionMode companion_mode = PopulationCompanionMode::Defensive; ///< Party-leader controlled engagement policy.
 	/// Support healer thresholds, persisted with the companion row (v6). The support
 	/// skill presets gate on ally_hp_below; these are the profile defaults they use.

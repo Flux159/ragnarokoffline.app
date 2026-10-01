@@ -534,7 +534,8 @@ static void population_engine_load_shell_homunculus(map_session_data *sd, int *e
 	char q[320];
 	snprintf(q, sizeof(q),
 		"SELECT hom_enabled, hom_class, hom_level, hom_exp FROM `cp_companion_persistence`"
-		" WHERE owner_account_id=%u AND shell_index=%u", owner, index_);
+		" WHERE owner_account_id=%u AND owner_char_id=%u AND shell_index=%u",
+		owner, sd->pop.companion_owner_char, index_);
 	if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
 		Sql_ShowDebug(mmysql_handle);
 		return;
@@ -930,11 +931,15 @@ void population_engine_shell_release(map_session_data* sd)
 
 static bool pop_is_companion(const map_session_data *sd);
 static map_session_data *pop_companion_owner(map_session_data *sd);
+static uint32_t pop_online_char(uint32_t account_id);
+static map_session_data *pop_companion_owner_session(const map_session_data *shell);
+static bool pop_companion_owned_by(const map_session_data *shell, const map_session_data *player);
+static void pop_companion_set_owner(map_session_data *shell, const map_session_data *owner);
 static void pop_companion_register_local_party(map_session_data *sd, map_session_data *owner);
 /// Item 9: close a vending stall so a companion can follow and fight (helper is defined
 /// next to pop_companion_register_local_party, which is after the recruit hook that needs it).
 static void population_engine_shell_close_stall(map_session_data *sd);
-bool population_engine_persist_companion_row(map_session_data *sd, uint32_t owner_account);
+bool population_engine_persist_companion_row(map_session_data *sd, const map_session_data *owner);
 
 /// Removes stale shells from g_population_engine_pcs and returns them.
 /// Caller must call population_engine_shell_release on each returned pointer.
@@ -974,7 +979,8 @@ std::vector<map_session_data*> population_engine_collect_stale_shells()
 			// and returns without re-registering it. Ownership (the account link) is
 			// the durable identity, so heal the local party row and retry.
 			if (owner == nullptr && sd->pop.companion_owner_account != 0) {
-				map_session_data *cand = map_id2sd(sd->pop.companion_owner_account);
+				// The owning CHARACTER only: another character of the same account is not it.
+				map_session_data *cand = pop_companion_owner_session(sd);
 				if (cand != nullptr && !population_engine_is_population_pc(cand->id)
 					&& cand->state.active && cand->prev != nullptr) {
 					pop_companion_register_local_party(sd, cand);
@@ -1683,6 +1689,56 @@ static bool pop_is_companion(const map_session_data *sd)
 		&& sd->pop.companion_owner_account != 0;
 }
 
+// RAGNAROKMAC (companions per character) ------------------------------------------
+// Companions belong to a CHARACTER. map_id2sd(account_id) returns whichever character of
+// that account is logged in, so keying ownership on the account alone made a second
+// character of the same account the owner of the first one's companions: they stayed in the
+// world after character 1 logged out, showed up in character 2's list, and did not follow.
+// Every "who owns this" question goes through these four.
+
+/// The character of this account that is logged in right now, or 0. rAthena allows one
+/// character per account online at a time, so for a command the player just typed this is
+/// exactly the character asking.
+static uint32_t pop_online_char(uint32_t account_id)
+{
+	if (account_id == 0)
+		return 0;
+	const map_session_data *sd = map_id2sd(account_id);
+	if (sd == nullptr || population_engine_is_population_pc(sd->id))
+		return 0;
+	return sd->status.char_id;
+}
+
+/// The owner's session, only if the owning CHARACTER is the one logged in.
+static map_session_data *pop_companion_owner_session(const map_session_data *shell)
+{
+	if (shell == nullptr || shell->pop.companion_owner_account == 0)
+		return nullptr;
+	map_session_data *sd = map_id2sd(shell->pop.companion_owner_account);
+	if (sd == nullptr || population_engine_is_population_pc(sd->id)
+		|| sd->status.char_id != shell->pop.companion_owner_char)
+		return nullptr;
+	return sd;
+}
+
+static bool pop_companion_owned_by(const map_session_data *shell, const map_session_data *player)
+{
+	return shell != nullptr && player != nullptr && shell->pop.companion_owner_account != 0
+		&& shell->pop.companion_owner_account == player->status.account_id
+		&& shell->pop.companion_owner_char == player->status.char_id;
+}
+
+static void pop_companion_set_owner(map_session_data *shell, const map_session_data *owner)
+{
+	shell->pop.companion_owner_account = owner != nullptr ? owner->status.account_id : 0;
+	shell->pop.companion_owner_char = owner != nullptr ? owner->status.char_id : 0;
+}
+
+bool population_engine_companion_owned_by(const map_session_data *shell, const map_session_data *player)
+{
+	return pop_companion_owned_by(shell, player);
+}
+
 // RAGNAROKMAC -- companion cap, configurable per install. Read from battle_conf:
 // population_engine_companion_limit (default 4, clamped there to [4, 11]).
 // rAthena's MAX_PARTY is 12 including the leader, so 11 is the most that can
@@ -1710,7 +1766,7 @@ bool population_engine_can_recruit_companion(const map_session_data *owner)
 			((owner->status.party_id > 0 && owner->status.party_id < 0x70000000 &&
 			  candidate->status.party_id == owner->status.party_id) ||
 			 (owner->status.party_id == 0 &&
-			  candidate->pop.companion_owner_account == owner->status.account_id)) &&
+			  pop_companion_owned_by(candidate, owner))) &&
 			++count >= pop_companion_limit())
 			return false;
 	}
@@ -1721,7 +1777,7 @@ static map_session_data *pop_companion_owner(map_session_data *sd)
 {
 	if (!pop_is_companion(sd))
 		return nullptr;
-	map_session_data *owner = map_id2sd(sd->pop.companion_owner_account);
+	map_session_data *owner = pop_companion_owner_session(sd);
 	if (!owner || population_engine_is_population_pc(owner->id)
 		|| !owner->state.active || owner->prev == nullptr
 		|| owner->status.party_id != sd->status.party_id)
@@ -1754,7 +1810,7 @@ static bool pop_companion_formation_cell(map_session_data *sd, map_session_data 
 	std::vector<map_session_data *> companions;
 	for (map_session_data *candidate : g_population_engine_pcs) {
 		if (pop_is_companion(candidate) && candidate->state.active &&
-			candidate->pop.companion_owner_account == owner->status.account_id)
+			pop_companion_owned_by(candidate, owner))
 			companions.push_back(candidate);
 	}
 	std::sort(companions.begin(), companions.end(), [](const map_session_data *lhs, const map_session_data *rhs) {
@@ -2281,7 +2337,7 @@ static int32 pop_combat_tick_bot_in_range(block_list *bl, va_list ap)
 		sd->pop.accept_party_request = false;
 		sd->pop.party_request_account = 0;
 		if (!pop_is_companion(sd))
-			sd->pop.companion_owner_account = 0;
+			pop_companion_set_owner(sd, nullptr);
 	}
 	// Dedupe across multiple real-PC viewers.
 	if (!ctx->ticked.insert(sd->id).second)
@@ -2461,8 +2517,7 @@ static void pop_companion_try_job_advance(map_session_data *sd)
 	if (next == 0) return;
 	// Player-given gear the new class cannot wear goes back to the player, so the player has to
 	// be here to take it. Otherwise wait: the next level-up check tries again.
-	map_session_data *owner = sd->pop.companion_owner_account != 0
-		? map_id2sd(sd->pop.companion_owner_account) : nullptr;
+	map_session_data *owner = pop_companion_owner_session(sd);
 	if (pop_companion_given_worn(sd) != 0 && (owner == nullptr || !owner->state.active))
 		return;
 	std::vector<int16> given_before;
@@ -2556,10 +2611,11 @@ int population_engine_companion_set_heal_thresholds(uint32_t owner_account, int1
 	if (heal_at < 1 || heal_at > 99 || emergency_at < 1 || emergency_at > 99)
 		return -1;
 	int applied = 0;
+	const uint32_t owner_char = pop_online_char(owner_account);
 	for (map_session_data *sd : g_population_engine_pcs) {
 		if (!sd || !pop_is_companion(sd))
 			continue;
-		if (sd->pop.companion_owner_account != owner_account)
+		if (sd->pop.companion_owner_account != owner_account || sd->pop.companion_owner_char != owner_char)
 			continue;
 		sd->pop.companion_heal_at = heal_at;
 		sd->pop.companion_emergency_at = emergency_at;
@@ -2710,7 +2766,8 @@ int population_engine_companion_set_skill_override(uint32_t owner_account, const
 			continue;
 		if (cand->status.char_id != POPULATION_ENGINE_CHAR_ID_BASE + index_)
 			continue;
-		if (cand->pop.companion_owner_account != owner_account)
+		if (cand->pop.companion_owner_account != owner_account
+			|| cand->pop.companion_owner_char != pop_online_char(owner_account))
 			continue; // another owner's shell, or an ambient one: not ours
 		if (!pop_is_companion(cand))
 			continue;
@@ -2737,8 +2794,8 @@ int population_engine_companion_set_skill_override(uint32_t owner_account, const
 	} else {
 		char q[256];
 		snprintf(q, sizeof(q),
-			"SELECT job_id FROM `cp_companion_persistence` WHERE owner_account_id=%u AND shell_index=%u",
-			owner_account, index_);
+			"SELECT job_id FROM `cp_companion_persistence` WHERE owner_account_id=%u AND owner_char_id=%u AND shell_index=%u",
+			owner_account, pop_online_char(owner_account), index_);
 		if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
 			Sql_ShowDebug(mmysql_handle);
 			return -1;
@@ -2805,13 +2862,13 @@ int population_engine_companion_set_skill_override(uint32_t owner_account, const
 		if (want_auto)
 			snprintf(q, sizeof(q),
 				"UPDATE `cp_companion_persistence` SET skill_preset=NULL"
-				" WHERE owner_account_id=%u AND shell_index=%u",
-				owner_account, index_);
+				" WHERE owner_account_id=%u AND owner_char_id=%u AND shell_index=%u",
+				owner_account, pop_online_char(owner_account), index_);
 		else
 			snprintf(q, sizeof(q),
 				"UPDATE `cp_companion_persistence` SET skill_preset='%s'"
-				" WHERE owner_account_id=%u AND shell_index=%u",
-				preset, owner_account, index_);
+				" WHERE owner_account_id=%u AND owner_char_id=%u AND shell_index=%u",
+				preset, owner_account, pop_online_char(owner_account), index_);
 		if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
 			Sql_ShowDebug(mmysql_handle);
 			if (out_msg != nullptr)
@@ -2881,7 +2938,8 @@ int population_engine_companion_toggle_skill(uint32_t owner_account, const char*
 			continue;
 		if (cand->status.char_id != POPULATION_ENGINE_CHAR_ID_BASE + index_)
 			continue;
-		if (cand->pop.companion_owner_account != owner_account)
+		if (cand->pop.companion_owner_account != owner_account
+			|| cand->pop.companion_owner_char != pop_online_char(owner_account))
 			continue;
 		if (!pop_is_companion(cand))
 			continue;
@@ -2896,8 +2954,8 @@ int population_engine_companion_toggle_skill(uint32_t owner_account, const char*
 		char q[320];
 		snprintf(q, sizeof(q),
 			"SELECT job_id, skill_preset FROM `cp_companion_persistence`"
-			" WHERE owner_account_id=%u AND shell_index=%u",
-			owner_account, index_);
+			" WHERE owner_account_id=%u AND owner_char_id=%u AND shell_index=%u",
+			owner_account, pop_online_char(owner_account), index_);
 		if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
 			Sql_ShowDebug(mmysql_handle);
 			return -1;
@@ -2984,8 +3042,8 @@ int population_engine_companion_toggle_skill(uint32_t owner_account, const char*
 		char q[768];
 		snprintf(q, sizeof(q),
 			"UPDATE `cp_companion_persistence` SET skill_preset='%s'"
-			" WHERE owner_account_id=%u AND shell_index=%u",
-			preset, owner_account, index_);
+			" WHERE owner_account_id=%u AND owner_char_id=%u AND shell_index=%u",
+			preset, owner_account, pop_online_char(owner_account), index_);
 		if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
 			Sql_ShowDebug(mmysql_handle);
 			if (out_msg != nullptr)
@@ -3026,7 +3084,8 @@ void population_engine_companion_skill_list(uint32_t owner_account, const char* 
 			continue;
 		if (cand->status.char_id != POPULATION_ENGINE_CHAR_ID_BASE + index_)
 			continue;
-		if (cand->pop.companion_owner_account != owner_account)
+		if (cand->pop.companion_owner_account != owner_account
+			|| cand->pop.companion_owner_char != pop_online_char(owner_account))
 			continue;
 		if (!pop_is_companion(cand))
 			continue;
@@ -3044,8 +3103,8 @@ void population_engine_companion_skill_list(uint32_t owner_account, const char* 
 		char q[320];
 		snprintf(q, sizeof(q),
 			"SELECT job_id, skill_preset FROM `cp_companion_persistence`"
-			" WHERE owner_account_id=%u AND shell_index=%u",
-			owner_account, index_);
+			" WHERE owner_account_id=%u AND owner_char_id=%u AND shell_index=%u",
+			owner_account, pop_online_char(owner_account), index_);
 		if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
 			Sql_ShowDebug(mmysql_handle);
 			clif_displaymessage(fd, "@CPSKFAIL query failed");
@@ -3150,7 +3209,7 @@ uint32_t population_engine_companion_draft(map_session_data *owner, uint16_t job
 		return 0;
 
 	// Attach it to the owner as a summoned companion and give it a party slot.
-	shell->pop.companion_owner_account = owner->status.account_id;
+	pop_companion_set_owner(shell, owner);
 	shell->pop.flags |= PSF::Mortal;
 
 	// Register the shell BEFORE anything else touches it. Every driver - the
@@ -3185,7 +3244,7 @@ uint32_t population_engine_companion_draft(map_session_data *owner, uint16_t job
 	// persist_companion_gear() is the recurring UPDATE and would affect zero rows
 	// here (the row does not exist yet) while reporting no error - which is exactly
 	// how a drafted companion stayed invisible to @companion list. Create the row.
-	population_engine_persist_companion_row(shell, owner->status.account_id);
+	population_engine_persist_companion_row(shell, owner);
 	// Tell an open panel about the new companion; the roster changed.
 	population_engine_push_companion_list(owner);
 	ShowInfo("population_engine: drafted companion '%s' (job %u) for owner %u.\n",
@@ -4859,7 +4918,7 @@ static void pop_escape_name(char (&out)[NAME_LENGTH * 2 + 1], const char *name)
 }
 
 static void population_engine_persist_companion_sql(
-	uint32_t owner_account, uint32_t index_, const char* name_, int16_t job_id, int sex,
+	uint32_t owner_account, uint32_t owner_char, uint32_t index_, const char* name_, int16_t job_id, int sex,
 	int hair_style, int hair_color, int cloth_color, uint32_t garment_nameid,
 	uint32_t option_, uint32_t weapon, uint32_t shield, uint32_t head_top,
 	uint32_t head_mid, uint32_t head_bottom, uint32_t armor, uint32_t shoes,
@@ -4878,12 +4937,13 @@ static void population_engine_persist_companion_sql(
 	// a new one, so re-inviting a companion that already has a row (expelled, then invited
 	// again) reset everything this statement does not list - the player's skill selection,
 	// the homunculus switch and the pet's level, favorite, stance, duty and heal thresholds.
-	// Those are kept for the same owner and reset only when the row changes hands. The
-	// assignments run left to right, so the owner comparisons come before owner_account_id
-	// is overwritten. Costume and shadow slots are left to the gear snapshot.
+	// Those are kept for the same owner CHARACTER and reset only when the row changes hands
+	// (a row with owner_char_id 0 predates per-character ownership and counts as this
+	// account's). The assignments run left to right, so the owner comparisons come before
+	// the owner columns are overwritten. Costume and shadow slots are left to the gear snapshot.
 	const int written = snprintf(q, sizeof(q),
 		"INSERT INTO `cp_companion_persistence`"
-		"(owner_account_id, shell_index, name, job_id, sex, hair_style, hair_color,"
+		"(owner_account_id, owner_char_id, shell_index, name, job_id, sex, hair_style, hair_color,"
 		" cloth_color, garment_nameid, option_, weapon_nameid, shield_nameid,"
 		" head_top_nameid, head_mid_nameid, head_bottom_nameid, armor_nameid,"
 		" shoes_nameid, acc_l_nameid, acc_r_nameid, costume_top_nameid,"
@@ -4892,22 +4952,23 @@ static void population_engine_persist_companion_sql(
 		" shadow_shoes_nameid, shadow_acc_l_nameid, shadow_acc_r_nameid,"
 		" base_level, job_level, str_,"
 		" agi_, vit_, intl_, dex_, luk_, pow_, sta_, wis_, spl_, con_, crt_, map_id, active)"
-		" VALUES(%u,%u,'%s',%d,%d,%d,%d,%d,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,"
+		" VALUES(%u,%u,%u,'%s',%d,%d,%d,%d,%d,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,"
 		"%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%d,%d,"
 		"%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,1)"
 		" ON DUPLICATE KEY UPDATE"
-		" skill_preset=IF(owner_account_id=VALUES(owner_account_id), skill_preset, NULL),"
-		" hom_enabled=IF(owner_account_id=VALUES(owner_account_id), hom_enabled, NULL),"
-		" hom_class=IF(owner_account_id=VALUES(owner_account_id), hom_class, 0),"
-		" hom_level=IF(owner_account_id=VALUES(owner_account_id), hom_level, 0),"
-		" hom_exp=IF(owner_account_id=VALUES(owner_account_id), hom_exp, 0),"
-		" favorite=IF(owner_account_id=VALUES(owner_account_id), favorite, 0),"
-		" mode=IF(owner_account_id=VALUES(owner_account_id), mode, 1),"
-		" duty=IF(owner_account_id=VALUES(owner_account_id), duty, 0),"
-		" heal_at=IF(owner_account_id=VALUES(owner_account_id), heal_at, 75),"
-		" emergency_at=IF(owner_account_id=VALUES(owner_account_id), emergency_at, 35),"
-		" given_mask=IF(owner_account_id=VALUES(owner_account_id), given_mask, 0),"
-		" owner_account_id=VALUES(owner_account_id), name=VALUES(name), job_id=VALUES(job_id),"
+		" skill_preset=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), skill_preset, NULL),"
+		" hom_enabled=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), hom_enabled, NULL),"
+		" hom_class=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), hom_class, 0),"
+		" hom_level=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), hom_level, 0),"
+		" hom_exp=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), hom_exp, 0),"
+		" favorite=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), favorite, 0),"
+		" mode=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), mode, 1),"
+		" duty=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), duty, 0),"
+		" heal_at=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), heal_at, 75),"
+		" emergency_at=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), emergency_at, 35),"
+		" given_mask=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), given_mask, 0),"
+		" owner_account_id=VALUES(owner_account_id), owner_char_id=VALUES(owner_char_id),"
+		" name=VALUES(name), job_id=VALUES(job_id),"
 		" sex=VALUES(sex), hair_style=VALUES(hair_style), hair_color=VALUES(hair_color),"
 		" cloth_color=VALUES(cloth_color), garment_nameid=VALUES(garment_nameid),"
 		" option_=VALUES(option_), weapon_nameid=VALUES(weapon_nameid),"
@@ -4920,7 +4981,7 @@ static void population_engine_persist_companion_sql(
 		" luk_=VALUES(luk_), pow_=VALUES(pow_), sta_=VALUES(sta_), wis_=VALUES(wis_),"
 		" spl_=VALUES(spl_), con_=VALUES(con_), crt_=VALUES(crt_), map_id=VALUES(map_id),"
 		" active=1",
-		owner_account, index_, esc_name, job_id, sex, hair_style, hair_color, cloth_color,
+		owner_account, owner_char, index_, esc_name, job_id, sex, hair_style, hair_color, cloth_color,
 		garment_nameid, option_, weapon, shield, head_top, head_mid, head_bottom,
 		armor, shoes, acc_l, acc_r, 0u, 0u, 0u, 0u,
 		0u, 0u, 0u, 0u, 0u, 0u,
@@ -4949,12 +5010,15 @@ static void population_engine_persist_companion_sql(
 /// invisible to @companion list despite walking and fighting normally.
 ///
 /// @return true when the row was written.
-bool population_engine_persist_companion_row(map_session_data *sd, uint32_t owner_account)
+bool population_engine_persist_companion_row(map_session_data *sd, const map_session_data *owner)
 {
-	if (!sd || !sd->state.active || owner_account == 0)
+	if (!sd || !sd->state.active || owner == nullptr || owner->status.account_id == 0
+		|| population_engine_is_population_pc(owner->id))
 		return false;
 	if (sd->status.char_id < POPULATION_ENGINE_CHAR_ID_BASE)
 		return false;
+	// The recruiting CHARACTER owns it, in memory and in the row.
+	pop_companion_set_owner(sd, owner);
 	const uint32_t index_ = sd->status.char_id - POPULATION_ENGINE_CHAR_ID_BASE;
 
 	uint32_t weapon = 0, shield = 0, armor = 0, shoes = 0, acc_l = 0, acc_r = 0;
@@ -4970,7 +5034,7 @@ bool population_engine_persist_companion_row(map_session_data *sd, uint32_t owne
 	}
 
 	population_engine_persist_companion_sql(
-		owner_account, index_, sd->status.name, (int16_t)sd->status.class_, (int)sd->status.sex,
+		owner->status.account_id, owner->status.char_id, index_, sd->status.name, (int16_t)sd->status.class_, (int)sd->status.sex,
 		(int)sd->status.hair, (int)sd->status.hair_color, (int)sd->status.clothes_color,
 		(uint32_t)sd->status.robe, sd->status.option, weapon, shield,
 		(uint32_t)sd->status.head_top, (uint32_t)sd->status.head_mid, (uint32_t)sd->status.head_bottom,
@@ -4988,7 +5052,7 @@ bool population_engine_companion_can_trade_with(const map_session_data *player, 
 {
 	if (!player || !target) return false;
 	if (!population_engine_is_population_pc(target->id)) return false;
-	if (target->pop.companion_owner_account != player->status.account_id) return false;
+	if (!pop_companion_owned_by(target, player)) return false;
 	if (!target->state.active || target->prev == nullptr) return false;
 	if (map_id2bl(target->id) != target) return false;
 	if (target->m != player->m) return false;
@@ -5195,7 +5259,7 @@ void population_engine_persist_companion_gear(map_session_data *sd)
 		" base_level=%d, job_level=%d, job_id=%d, str_=%d, agi_=%d, vit_=%d, intl_=%d,"
 		" dex_=%d, luk_=%d, pow_=%d, sta_=%d, wis_=%d, spl_=%d, con_=%d, crt_=%d,"
 		" mode=%d, duty=%d, heal_at=%d, emergency_at=%d, given_mask=%u%s"
-		" WHERE owner_account_id=%u AND shell_index=%u",
+		" WHERE owner_account_id=%u AND owner_char_id=%u AND shell_index=%u",
 		weapon, shield, sd->status.head_top, sd->status.head_mid, sd->status.head_bottom,
 		armor, shoes, acc_l, acc_r,
 		garment, c_top, c_mid, c_low, c_garment,
@@ -5207,7 +5271,7 @@ void population_engine_persist_companion_gear(map_session_data *sd)
 		(int)sd->pop.companion_heal_at, (int)sd->pop.companion_emergency_at,
 		pop_companion_given_worn(sd),
 		hom_frag,
-		owner, index_);
+		owner, sd->pop.companion_owner_char, index_);
 	if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
 		Sql_ShowDebug(mmysql_handle);
 		ShowError("population_engine: gear re-snapshot for companion %u FAILED\n", index_);
@@ -5230,36 +5294,36 @@ void population_engine_persist_recruited_companion(map_session_data *sd, map_ses
 	// party_member_added before that field was cleared (Cases A/C). Last resort: the
 	// first real (non-shell) member of the shell's party via map_id2sd; never scan
 	// g_population_engine_pcs, which holds only shells and can never name a real player.
-	uint32_t owner = sd->pop.companion_owner_account;
-	if (owner == 0 && peer != nullptr && peer->state.active
+	// The owner is a CHARACTER: the session that recruited it. pop_companion_owner_session()
+	// only answers when that exact character is logged in.
+	map_session_data *owner = pop_companion_owner_session(sd);
+	if (owner == nullptr && peer != nullptr && peer->state.active
 	    && peer->status.account_id != 0
 	    && !population_engine_is_population_pc(peer->id))
-		owner = peer->status.account_id;
-	if (owner == 0) {
+		owner = peer;
+	if (owner == nullptr) {
 		struct party_data *p = party_search(sd->status.party_id);
 		if (p != nullptr)
-			for (int j = 0; j < MAX_PARTY && owner == 0; ++j) {
+			for (int j = 0; j < MAX_PARTY && owner == nullptr; ++j) {
 				const uint32_t mbr_account = p->party.member[j].account_id;
 				if (mbr_account == 0)
 					continue;
 				map_session_data *cand = map_id2sd(mbr_account);
 				if (cand != nullptr && cand->status.account_id == mbr_account
+					&& cand->status.char_id == p->party.member[j].char_id
 					&& !population_engine_is_population_pc(cand->id))
-					owner = mbr_account;
+					owner = cand;
 			}
 	}
-	if (owner == 0) {
+	if (owner == nullptr) {
 		ShowWarning("population_engine: persist companion (char_id %u, party %d): no owner resolved\n",
 			char_id, sd->status.party_id);
 		return;
 	}
 
-	const uint32_t index_ = char_id - POPULATION_ENGINE_CHAR_ID_BASE;
-
 	// Same insert the draft path uses, so a recruit and a draft cannot produce
 	// different rows (nor drift apart again as this one did).
 	population_engine_persist_companion_row(sd, owner);
-	(void)index_;
 
 	// The roster changed (a shell was recruited into the party) - tell an open panel
 	// so a right-click recruit in the world shows up without reopening the window.
@@ -5276,8 +5340,9 @@ void population_engine_set_companion_active(uint32_t owner_account, uint32_t ind
 	if (mmysql_handle == nullptr) return;
 	char q[256];
 	snprintf(q, sizeof(q),
-		"UPDATE `cp_companion_persistence` SET active=%d WHERE owner_account_id=%u AND shell_index=%u",
-		active ? 1 : 0, owner_account, index_);
+		"UPDATE `cp_companion_persistence` SET active=%d"
+		" WHERE owner_account_id=%u AND owner_char_id=%u AND shell_index=%u",
+		active ? 1 : 0, owner_account, pop_online_char(owner_account), index_);
 	if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
 		Sql_ShowDebug(mmysql_handle);
 		ShowError("population_engine: set companion %u active=%d for owner %u FAILED\n",
@@ -5325,8 +5390,9 @@ bool population_engine_companion_set_favorite(uint32_t owner_account, const char
 	pop_escape_name(esc_name, name_);
 	char q[300];
 	snprintf(q, sizeof(q),
-		"UPDATE `cp_companion_persistence` SET favorite=%d WHERE owner_account_id=%u AND name='%s'",
-		favorite ? 1 : 0, owner_account, esc_name);
+		"UPDATE `cp_companion_persistence` SET favorite=%d"
+		" WHERE owner_account_id=%u AND owner_char_id=%u AND name='%s'",
+		favorite ? 1 : 0, owner_account, pop_online_char(owner_account), esc_name);
 	if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
 		Sql_ShowDebug(mmysql_handle);
 		return false;
@@ -5345,8 +5411,8 @@ bool population_engine_companion_find(uint32_t owner_account, const char* name_,
 	char q[300];
 	snprintf(q, sizeof(q),
 		"SELECT shell_index, active FROM `cp_companion_persistence`"
-		" WHERE owner_account_id=%u AND name='%s' LIMIT 1",
-		owner_account, esc_name);
+		" WHERE owner_account_id=%u AND owner_char_id=%u AND name='%s' LIMIT 1",
+		owner_account, pop_online_char(owner_account), esc_name);
 	if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
 		Sql_ShowDebug(mmysql_handle);
 		return false;
@@ -5398,7 +5464,8 @@ int population_engine_companion_set_homunculus(uint32_t owner_account, const cha
 		char q[320];
 		snprintf(q, sizeof(q),
 			"SELECT hom_enabled FROM `cp_companion_persistence`"
-			" WHERE owner_account_id=%u AND shell_index=%u", owner_account, index_);
+			" WHERE owner_account_id=%u AND owner_char_id=%u AND shell_index=%u",
+			owner_account, pop_online_char(owner_account), index_);
 		if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
 			Sql_ShowDebug(mmysql_handle);
 			if (out_msg != nullptr)
@@ -5428,7 +5495,8 @@ int population_engine_companion_set_homunculus(uint32_t owner_account, const cha
 		char q[320];
 		snprintf(q, sizeof(q),
 			"UPDATE `cp_companion_persistence` SET hom_enabled=%d"
-			" WHERE owner_account_id=%u AND shell_index=%u", want, owner_account, index_);
+			" WHERE owner_account_id=%u AND owner_char_id=%u AND shell_index=%u",
+			want, owner_account, pop_online_char(owner_account), index_);
 		if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
 			Sql_ShowDebug(mmysql_handle);
 			if (out_msg != nullptr)
@@ -5443,7 +5511,8 @@ int population_engine_companion_set_homunculus(uint32_t owner_account, const cha
 	for (map_session_data *cand : g_population_engine_pcs) {
 		if (cand == nullptr || !pop_is_companion(cand))
 			continue;
-		if (cand->pop.companion_owner_account != owner_account)
+		if (cand->pop.companion_owner_account != owner_account
+			|| cand->pop.companion_owner_char != pop_online_char(owner_account))
 			continue;
 		if (cand->status.char_id != POPULATION_ENGINE_CHAR_ID_BASE + index_)
 			continue;
@@ -5487,8 +5556,9 @@ bool population_engine_companion_delete(uint32_t owner_account, uint32_t shell_i
 	if (mmysql_handle == nullptr || shell_index == 0) return false;
 	char q[160];
 	snprintf(q, sizeof(q),
-		"DELETE FROM `cp_companion_persistence` WHERE owner_account_id=%u AND shell_index=%u",
-		owner_account, shell_index);
+		"DELETE FROM `cp_companion_persistence`"
+		" WHERE owner_account_id=%u AND owner_char_id=%u AND shell_index=%u",
+		owner_account, pop_online_char(owner_account), shell_index);
 	if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
 		Sql_ShowDebug(mmysql_handle);
 		return false;
@@ -5503,8 +5573,9 @@ bool population_engine_companion_holds_given_gear(uint32_t owner_account, uint32
 	if (mmysql_handle == nullptr || shell_index == 0) return false;
 	char q[160];
 	snprintf(q, sizeof(q),
-		"SELECT given_mask FROM `cp_companion_persistence` WHERE owner_account_id=%u AND shell_index=%u",
-		owner_account, shell_index);
+		"SELECT given_mask FROM `cp_companion_persistence`"
+		" WHERE owner_account_id=%u AND owner_char_id=%u AND shell_index=%u",
+		owner_account, pop_online_char(owner_account), shell_index);
 	if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
 		Sql_ShowDebug(mmysql_handle);
 		return false;
@@ -5527,8 +5598,8 @@ void population_engine_companion_list(uint32_t owner_account, int fd)
 	char q[400];
 	snprintf(q, sizeof(q),
 		"SELECT name, job_id, active, favorite, base_level FROM `cp_companion_persistence`"
-		" WHERE owner_account_id=%u ORDER BY favorite DESC, name ASC",
-		owner_account);
+		" WHERE owner_account_id=%u AND owner_char_id=%u ORDER BY favorite DESC, name ASC",
+		owner_account, pop_online_char(owner_account));
 	if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
 		Sql_ShowDebug(mmysql_handle);
 		clif_displaymessage(fd, "Companion list query failed (see map-server console).");
@@ -5716,9 +5787,7 @@ void population_engine_push_companion_list(map_session_data *owner)
 /// A convenience for the roster-changing paths, which all have the shell in hand.
 void population_engine_push_companion_list_for_shell(map_session_data *shell)
 {
-	if (!shell || shell->pop.companion_owner_account == 0)
-		return;
-	map_session_data *owner = map_id2sd(shell->pop.companion_owner_account);
+	map_session_data *owner = pop_companion_owner_session(shell);
 	if (owner != nullptr)
 		population_engine_push_companion_list(owner);
 }
@@ -5750,9 +5819,9 @@ void population_engine_reassert_companions(int32_t party_id)
 		// characters in different parties, and map_id2sd() resolves by account, so it
 		// may return the sibling. Resolve the session whose char also belongs to THIS
 		// party, otherwise a companion lands in the wrong character's party.
-		map_session_data *owner = map_id2sd(sd->pop.companion_owner_account);
+		map_session_data *owner = pop_companion_owner_session(sd);
 		if (owner != nullptr && owner->status.party_id != party_id)
-			owner = nullptr; // account's session is a different character's party
+			owner = nullptr; // the owning character is in a different party
 		if (owner == nullptr) {
 			// Fall back to scanning the party for a real (non-shell) member whose
 			// account matches, which is unambiguous when both characters are online.
@@ -5762,7 +5831,7 @@ void population_engine_reassert_companions(int32_t party_id)
 					continue;
 				if (population_engine_is_population_pc(cand->id))
 					continue;
-				if (cand->status.account_id == sd->pop.companion_owner_account) {
+				if (pop_companion_owned_by(sd, cand)) {
 					owner = cand;
 					break;
 				}
@@ -5825,8 +5894,8 @@ void population_engine_companion_list_raw(uint32_t owner_account, int fd)
 	char q[400];
 	snprintf(q, sizeof(q),
 		"SELECT name, job_id, active, favorite, base_level, hom_enabled FROM `cp_companion_persistence`"
-		" WHERE owner_account_id=%u ORDER BY favorite DESC, name ASC",
-		owner_account);
+		" WHERE owner_account_id=%u AND owner_char_id=%u ORDER BY favorite DESC, name ASC",
+		owner_account, pop_online_char(owner_account));
 	if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
 		Sql_ShowDebug(mmysql_handle);
 		clif_displaymessage(fd, "@CPFAIL");
@@ -5862,7 +5931,8 @@ void population_engine_companion_list_raw(uint32_t owner_account, int fd)
 		for (map_session_data *sd : g_population_engine_pcs) {
 			if (sd == nullptr || !pop_is_companion(sd))
 				continue;
-			if (sd->pop.companion_owner_account != owner_account)
+			if (sd->pop.companion_owner_account != owner_account
+				|| sd->pop.companion_owner_char != pop_online_char(owner_account))
 				continue;
 			if (strcmp(sd->status.name, namebuf) != 0)
 				continue;
@@ -5931,7 +6001,7 @@ static void population_engine_recall_one_companion(map_session_data *owner, int1
 			continue;
 		if (!existing->state.active || existing->prev == nullptr || map_id2bl(existing->id) != existing)
 			continue; // dead or deregistered: a fresh spawn is safe
-		existing->pop.companion_owner_account = owner->status.account_id;
+		pop_companion_set_owner(existing, owner);
 		pop_companion_register_local_party(existing, owner);
 		if (existing->m != owner->m) {
 			pc_setpos(existing, map_id, x, y, CLR_TELEPORT);
@@ -6043,7 +6113,7 @@ static void population_engine_recall_one_companion(map_session_data *owner, int1
 	status_calc_pc(shell, SCO_NONE);
 
 	// Mark as the owner's companion and align membership with the owner.
-	shell->pop.companion_owner_account = owner->status.account_id;
+	pop_companion_set_owner(shell, owner);
 	if (owner->status.party_id > 0 && owner->status.party_id < 0x70000000) {
 		// RAGNAROKMAC: join the owner's party LOCALLY. The char-server round-trip
 		// this replaced could never work: the char server persists membership as
@@ -6102,7 +6172,7 @@ static TIMER_FUNC(population_engine_recall_verify_timer)
 				// Match on OWNERSHIP, not on pop_is_companion(): that predicate requires
 				// the party id this timer exists to repair, so filtering on it made the
 				// timer blind to exactly the case it was written for.
-				if (shell->pop.companion_owner_account != owner->status.account_id) continue;
+				if (!pop_companion_owned_by(shell, owner)) continue;
 				if (shell->status.party_id == party) continue;
 				ShowInfo("population_engine: recall verify: shell %u (party %d) missing from party %d; re-registering.\n",
 					shell->status.char_id, shell->status.party_id, party);
@@ -6125,9 +6195,63 @@ static TIMER_FUNC(population_engine_recall_verify_timer)
 ///                    shell index. That is what `@companion summon <name>` needs:
 ///                    the batch form re-recalls and re-places everyone, which
 ///                    undoes a bench the player just made.
+/// A character is leaving the map server (logout, or back to character select): its companions
+/// leave with it. Each is saved and despawned now, while the owner's session and party are still
+/// whole, so another character of the same account logging in next finds none of them in the
+/// world; the owning character's next login recalls them (rows stay active=1, and the release
+/// leaves the party with LEAVE, not EXPEL). Before this, the stale sweep released them only once
+/// map_id2sd(account) came back empty - which never happens if a sibling character is already
+/// logged in - so they stayed behind, listed under the other character, following nobody.
+void population_engine_on_owner_quit(map_session_data *owner)
+{
+	if (owner == nullptr || population_engine_is_population_pc(owner->id))
+		return;
+	std::vector<map_session_data *> mine;
+	for (map_session_data *shell : g_population_engine_pcs) {
+		if (shell != nullptr && pop_companion_owned_by(shell, owner))
+			mine.push_back(shell);
+	}
+	for (map_session_data *shell : mine) {
+		if (shell->state.active)
+			population_engine_persist_companion_gear(shell);
+		population_engine_shell_release(shell);
+	}
+	if (!mine.empty())
+		ShowInfo("Population engine: %s left; released %zu companion(s) until they log in again.\n",
+			owner->status.name, mine.size());
+}
+
+/// Rows saved before companions belonged to a character have owner_char_id 0. The first
+/// character of that account to log in after the upgrade claims all of them: those builds
+/// had one shared list per account, so whichever character the player picks up first keeps
+/// it intact, and nobody's companions are lost or split arbitrarily. Moving one to another
+/// character afterwards is "remove" on one and recruit on the other, like any companion.
+static void pop_claim_unowned_companions(const map_session_data *owner)
+{
+	char q[256];
+	snprintf(q, sizeof(q),
+		"UPDATE `cp_companion_persistence` SET owner_char_id=%u"
+		" WHERE owner_account_id=%u AND owner_char_id=0",
+		owner->status.char_id, owner->status.account_id);
+	if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
+		Sql_ShowDebug(mmysql_handle);
+		return;
+	}
+	const uint64 claimed = Sql_NumRowsAffected(mmysql_handle);
+	if (claimed > 0)
+		ShowInfo("Population engine: %s claimed %llu companion(s) saved before companions were per character.\n",
+			owner->status.name, static_cast<unsigned long long>(claimed));
+}
+
 int population_engine_recall_companions(map_session_data *owner, uint32_t only_index)
 {
 	if (!owner || mmysql_handle == nullptr) return 0;
+	// The population master switch (Settings -> AI population) covers companions too. Off, the
+	// engine loads no databases, so a recalled shell would have no profiles or skills; and no
+	// row is read, claimed or changed, so turning it back on brings every companion back.
+	if (!battle_config.population_engine_enable) return 0;
+	if (population_engine_is_population_pc(owner->id)) return 0;
+	pop_claim_unowned_companions(owner);
 	const int16_t map_id = (int16_t)owner->m;
 	char q[1024]; // must fit the full v4 recall SELECT (~590 bytes with account id)
 	snprintf(q, sizeof(q),
@@ -6139,8 +6263,8 @@ int population_engine_recall_companions(map_session_data *owner, uint32_t only_i
 		" costume_top_nameid, costume_mid_nameid, costume_low_nameid, costume_garment_nameid,"
 		" shadow_armor_nameid, shadow_weapon_nameid, shadow_shield_nameid,"
 		" shadow_shoes_nameid, shadow_acc_l_nameid, shadow_acc_r_nameid, skill_preset, given_mask"
-		" FROM `cp_companion_persistence` WHERE owner_account_id=%u AND active=1%s",
-		owner->status.account_id, only_index != 0 ? " AND shell_index=" : "");
+		" FROM `cp_companion_persistence` WHERE owner_account_id=%u AND owner_char_id=%u AND active=1%s",
+		owner->status.account_id, owner->status.char_id, only_index != 0 ? " AND shell_index=" : "");
 	// The index is a number, so append it rather than parameterising the format.
 	if (only_index != 0) {
 		char tail[32];
@@ -6267,7 +6391,7 @@ int population_engine_recall_companions(map_session_data *owner, uint32_t only_i
 			if (p != nullptr) {
 				for (map_session_data *shell : g_population_engine_pcs) {
 					if (!shell || !shell->state.active) continue;
-					if (shell->pop.companion_owner_account != owner->status.account_id) continue;
+					if (!pop_companion_owned_by(shell, owner)) continue;
 					pop_companion_register_local_party(shell, owner);
 				}
 				clif_party_info(*p, nullptr);
@@ -7333,7 +7457,7 @@ void population_engine_on_whisper_to_population_pc(map_session_data* from_sd, ma
 		}
 		if (is_party_request) {
 			const bool already_recruited = pop_is_companion(bot_sd) &&
-				bot_sd->pop.companion_owner_account == from_sd->status.account_id;
+				pop_companion_owned_by(bot_sd, from_sd);
 			if (!already_recruited && !population_engine_can_recruit_companion(from_sd)) {
 				char limit_reply[CHAT_SIZE_MAX];
 				safesnprintf(limit_reply, sizeof(limit_reply), "You already have %zu companions.",
@@ -7367,7 +7491,7 @@ void population_engine_on_whisper_to_population_pc(map_session_data* from_sd, ma
 			bot_sd->pop.accept_party_request = true;
 			bot_sd->pop.party_request_account = from_sd->status.account_id;
 			bot_sd->pop.party_request_until = gettick() + 60000;
-			bot_sd->pop.companion_owner_account = from_sd->status.account_id;
+			pop_companion_set_owner(bot_sd, from_sd);
 			// Shells can otherwise wander away or reacquire a combat target while
 			// the player is trying to open the context menu and send the invite.
 			population_shell_target_change(bot_sd, 0);

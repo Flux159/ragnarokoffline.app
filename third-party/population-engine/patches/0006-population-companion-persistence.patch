@@ -133,7 +133,7 @@ diff --git a/src/map/trade.cpp b/src/map/trade.cpp
 +	// partner's client - which does not exist for a shell). Without it the
 +	// owner's Trade button never enables and the trade sticks at lock 1.
 +	if (population_engine_is_population_pc(target_sd->id) &&
-+	    target_sd->pop.companion_owner_account == sd->status.account_id) {
++	    population_engine_companion_owned_by(target_sd, sd)) {
 +		target_sd->state.deal_locked = 1;
 +		clif_tradedeal_lock( *sd, true );
 +	}
@@ -149,7 +149,7 @@ diff --git a/src/map/trade.cpp b/src/map/trade.cpp
 +	// the exchange completes in this same call instead of waiting forever at
 +	// deal_locked 1.
 +	if (tsd->state.deal_locked == 1 && population_engine_is_population_pc(tsd->id) &&
-+	    tsd->pop.companion_owner_account == sd->status.account_id) {
++	    population_engine_companion_owned_by(tsd, sd)) {
 +		tsd->state.deal_locked = 2;
 +	}
 +

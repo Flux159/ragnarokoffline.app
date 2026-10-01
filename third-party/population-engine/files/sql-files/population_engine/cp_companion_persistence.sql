@@ -10,6 +10,7 @@
 CREATE TABLE IF NOT EXISTS `cp_companion_persistence` (
   `id`               INT UNSIGNED  NOT NULL AUTO_INCREMENT,
   `owner_account_id` INT UNSIGNED  NOT NULL,
+  `owner_char_id`    INT UNSIGNED  NOT NULL DEFAULT 0,  -- the owning CHARACTER (v10); 0 = saved before companions were per character, claimed at that account's next login
   `shell_index`      INT UNSIGNED  NOT NULL,          -- spawn index_ (char/account id - BASE) -> identity survives restart
   `name`             VARCHAR(24)   NOT NULL DEFAULT '',-- persistent display name (v2)
   `job_id`           SMALLINT      NOT NULL DEFAULT 0,
@@ -69,5 +70,6 @@ CREATE TABLE IF NOT EXISTS `cp_companion_persistence` (
                  ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_index` (`shell_index`),
-  KEY `idx_owner` (`owner_account_id`)
+  KEY `idx_owner` (`owner_account_id`),
+  KEY `idx_owner_char` (`owner_account_id`, `owner_char_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

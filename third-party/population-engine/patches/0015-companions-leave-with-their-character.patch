@@ -1,0 +1,26 @@
+From 0000000000000000000000000000000000000015
+Subject: [PATCH] Companions leave with the character that owns them
+
+Companions belong to a character. On logout, or on the way back to character select, the
+character's companions are saved and despawned while its session and party are still whole
+(population_engine_on_owner_quit), and its next login recalls them. Without this they were
+released only once map_id2sd(account) came back empty, which never happens if another
+character of the same account logs in straight away: they stayed in the world, listed under
+that character, following nobody. Skipped during shutdown, where the engine's finalize takes
+the shells down itself.
+
+--- a/src/map/map.cpp
++++ b/src/map/map.cpp
+@@ -2267,6 +2267,12 @@
+ 
+ 	if (!IS_POPULATION_ENGINE_ACCOUNT_ID(sd->status.account_id))
+ 		npc_script_event( *sd, NPCE_LOGOUT );
++
++	// RAGNAROKMAC: companions belong to a character and leave with it - on logout and on the
++	// way back to character select alike - so another character of this account never finds
++	// them in the world. Not during shutdown: the engine's own finalize takes the shells down.
++	if (!IS_POPULATION_ENGINE_ACCOUNT_ID(sd->status.account_id) && global_core->is_running())
++		population_engine_on_owner_quit(sd);
+ 
+ 	//Unit_free handles clearing the player related data,
+ 	//map_quit handles extra specific data which is related to quitting normally

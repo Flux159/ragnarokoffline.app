@@ -57,7 +57,7 @@ test('the engine exposes the switch, in the header and the TU', () => {
 
 test('the switch is stored as an explicit 0 or 1 on the companion row', () => {
 	const body = setterBody();
-	assert.match(body, /UPDATE `cp_companion_persistence` SET hom_enabled=%d"\s*\n?\s*" WHERE owner_account_id=%u AND shell_index=%u/,
+	assert.match(body, /UPDATE `cp_companion_persistence` SET hom_enabled=%d"\s*\n?\s*" WHERE owner_account_id=%u AND owner_char_id=%u AND shell_index=%u/,
 		'the switch must be written to the column, keyed like every other per-companion write');
 	assert.match(body, /if \(want < 0\)\s*\n\s*want = \(enabled == 0\) \? 1 : 0;/,
 		'a request without a state flips the current one');

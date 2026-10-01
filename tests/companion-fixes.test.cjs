@@ -36,7 +36,7 @@ const patch6 = fs.readFileSync(PATCH6, 'utf8').replace(/\r\n/g, '\n');
 test('recall can target a single companion index', () => {
 	assert.match(hpp, /population_engine_recall_companions\(map_session_data \*owner, uint32_t only_index = 0\)/,
 		'recall needs an optional only_index so one companion can be recalled alone');
-	assert.match(src, /WHERE owner_account_id=%u AND active=1%s/, 'the recall query must be able to filter by shell_index');
+	assert.match(src, /WHERE owner_account_id=%u AND owner_char_id=%u AND active=1%s/, 'the recall query must be able to filter by shell_index');
 	assert.match(src, /only_index != 0 \? " AND shell_index=" : ""/, 'the filter must be applied from only_index');
 });
 
@@ -165,7 +165,7 @@ test('both spawn paths share one row-creating function', () => {
 	// Recruit and draft must not be able to drift again - this is the third
 	// omission of the same class on this project (registry push, then party
 	// registration, now the insert).
-	assert.match(src, /bool population_engine_persist_companion_row\(map_session_data \*sd, uint32_t owner_account\)/,
+	assert.match(src, /bool population_engine_persist_companion_row\(map_session_data \*sd, const map_session_data \*owner\)/,
 		'the shared row insert is missing');
 	const calls = (src.match(/population_engine_persist_companion_row\(/g) || []).length;
 	assert.ok(calls >= 3, `expected the helper to be declared and called from both paths, saw ${calls} mentions`);
@@ -246,6 +246,6 @@ test('the re-assert matches the owner character, not just the account', () => {
 	const body = fn.slice(0, 3500);
 	assert.match(body, /owner->status\.party_id != party_id/,
 		'the account-resolved session must be rejected when it is in another party');
-	assert.match(body, /cand->status\.account_id == sd->pop\.companion_owner_account/,
+	assert.match(body, /pop_companion_owned_by\(sd, cand\)/,
 		'and the party must be scanned for the right real member');
 });

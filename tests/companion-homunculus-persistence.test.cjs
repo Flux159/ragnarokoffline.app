@@ -75,7 +75,7 @@ test('the engine reads the stored state with the house SQL idiom', () => {
 	assert.match(engine, /static void population_engine_load_shell_homunculus\(map_session_data \*sd, int \*enabled,/,
 		'the loader must exist');
 	assert.match(engine,
-		/SELECT hom_enabled, hom_class, hom_level, hom_exp FROM `cp_companion_persistence`"\s*\n?\s*" WHERE owner_account_id=%u AND shell_index=%u/,
+		/SELECT hom_enabled, hom_class, hom_level, hom_exp FROM `cp_companion_persistence`"\s*\n?\s*" WHERE owner_account_id=%u AND owner_char_id=%u AND shell_index=%u/,
 		'the row is keyed exactly like every other per-companion read');
 	assert.match(engine, /if \(SQL_SUCCESS == Sql_NextRow\(mmysql_handle\)\)/,
 		'use the same read pattern as the rest of the engine');
@@ -122,7 +122,7 @@ test('the recurring snapshot writes the pet state only when a pet exists', () =>
 		'the level written must come from the live pet');
 	assert.match(body, /" mode=%d, duty=%d, heal_at=%d, emergency_at=%d(, given_mask=%u)?%s"/,
 		'the fragment must actually be interpolated into the statement');
-	assert.match(body, /hom_frag,\s*\n\s*owner, index_\);/,
+	assert.match(body, /hom_frag,\s*\n\s*owner, sd->pop\.companion_owner_char, index_\);/,
 		'and bound to the right placeholder');
 });
 
@@ -143,7 +143,7 @@ test('creating a row that already exists keeps the player\'s choices', () => {
 	assert.match(body, /ON DUPLICATE KEY UPDATE/, 'the companion row must be an upsert');
 	const update = body.slice(body.indexOf('ON DUPLICATE KEY UPDATE'));
 	for (const kept of ['skill_preset', 'hom_enabled', 'hom_level', 'hom_exp', 'favorite', 'mode', 'duty', 'heal_at', 'emergency_at'])
-		assert.match(update, new RegExp(` ${kept}=IF\\(owner_account_id=VALUES\\(owner_account_id\\), ${kept},`),
+		assert.match(update, new RegExp(` ${kept}=IF\\(owner_account_id=VALUES\\(owner_account_id\\) AND owner_char_id IN \\(0, VALUES\\(owner_char_id\\)\\), ${kept},`),
 			`${kept} must survive a re-invite by the same owner`);
 	assert.ok(update.indexOf('emergency_at=IF(') < update.indexOf(' owner_account_id=VALUES(owner_account_id)'),
 		'the owner comparisons must run before owner_account_id is overwritten');

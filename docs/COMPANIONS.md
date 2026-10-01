@@ -31,6 +31,14 @@ saved list. A companion's name, job, level, equipment, duty and skill selection 
 survive a full server and app shutdown. Party membership does not survive - after a restart, open
 the companion window's **Party** tab and press **Summon** to bring it back out.
 
+Companions belong to the character that recruited them, not to the account. Each character of an
+account has its own saved list. When a character logs out or goes back to character select, its
+companions leave the world with it, and they come back when that character logs in again.
+
+Companions saved by a build from before they were per character have no owning character yet.
+The first character of that account to log in afterwards takes all of them. To move one to
+another character, remove it from the first character's list and recruit it with the other.
+
 ## Loot
 
 Monster drops earned by a recruited companion use its active same-map owner as
