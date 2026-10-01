@@ -7,7 +7,7 @@
 // already on screen) is described in docs/MODDING.md, "client/".
 
 const FRAGMENT = `
-uniform float uGrade, uGlow, uFog, uTonemap, uVignette, uTilt, uFringe, uRain, uDrops;
+uniform float uGrade, uGlow, uFog, uTonemap, uVignette, uTilt, uFringe, uDrops;
 
 
 vec3 aces(vec3 x) {
@@ -28,10 +28,10 @@ vec4 drop(vec2 uv, float cells, float seed) {
 	vec2 cell = floor(p);
 	float r = hash(cell + seed);
 	float slide = floor(uTime * 0.15 + r * 7.0);
-	float alive = step(0.55, hash(cell + seed + slide * 1.7));
+	float alive = step(0.72, hash(cell + seed + slide * 1.7));
 	vec2 centre = cell + 0.5 + (vec2(hash(cell + seed + 3.1), hash(cell + seed + 5.7)) - 0.5) * 0.6;
 	centre.y -= fract(uTime * 0.15 + r * 7.0) * 0.25 * step(0.8, r);
-	float radius = mix(0.12, 0.32, hash(cell + seed + 9.3));
+	float radius = mix(0.08, 0.2, hash(cell + seed + 9.3));
 	vec2 d = (p - centre) / radius;
 	float dist = length(d);
 	if (dist > 1.0 || alive < 0.5) return vec4(0.0);
@@ -53,12 +53,14 @@ vec3 frame(vec2 uv) {
 void main() {
 	vec2 uv = vUv;
 	vec3 color = frame(uv);
-	if (uDrops > 0.0) {
-		vec4 a = drop(uv, 9.0, 0.0), b = drop(uv, 17.0, 31.0);
+	// Drops gather low on the lens, thinning out towards the middle.
+	float lens = uDrops * (1.0 - smoothstep(0.08, 0.45, uv.y));
+	if (lens > 0.0) {
+		vec4 a = drop(uv, 48.0, 0.0), b = drop(uv, 80.0, 31.0);
 		vec4 d = a.z > 0.0 ? a : b;
 		if (d.z > 0.0) {
 			vec3 seen = frame(uv + d.xy) * 1.05;
-			color = mix(color, seen + d.w * 0.35, d.z * uDrops);
+			color = mix(color, seen + d.w * 0.35, d.z * lens);
 		}
 	}
 
@@ -120,22 +122,12 @@ void main() {
 
 	if (uVignette > 0.0) color *= mix(1.0, smoothstep(0.9, 0.3, length(uv - 0.5)), uVignette);
 
-	// Rain: thin streaks falling at a slight slant, and a duller sky.
-	if (uRain > 0.0) {
-		vec2 p = uv * vec2(90.0, 3.0);
-		p.y += uTime * 5.0;
-		p.x += p.y * 0.12;
-		float streak = step(0.986, hash(floor(p))) * smoothstep(0.0, 0.25, fract(p.y)) * (1.0 - fract(p.y));
-		color = mix(color, vec3(0.82, 0.88, 0.95), streak * 0.4 * uRain);
-		color *= mix(1.0, 0.86, uRain);
-	}
-
 	fragColor = vec4(color, 1.0);
 }
 `;
 
-const SETTINGS = ['grade', 'glow', 'fog', 'tonemap', 'vignette', 'tilt_shift', 'fringe', 'rain', 'drops'];
-const UNIFORM = { grade: 'uGrade', glow: 'uGlow', fog: 'uFog', tonemap: 'uTonemap', vignette: 'uVignette', tilt_shift: 'uTilt', fringe: 'uFringe', rain: 'uRain', drops: 'uDrops' };
+const SETTINGS = ['grade', 'glow', 'fog', 'tonemap', 'vignette', 'tilt_shift', 'fringe', 'drops'];
+const UNIFORM = { grade: 'uGrade', glow: 'uGlow', fog: 'uFog', tonemap: 'uTonemap', vignette: 'uVignette', tilt_shift: 'uTilt', fringe: 'uFringe', drops: 'uDrops' };
 
 // A setting as 0..1. Read defensively: a missing or odd value is off.
 export function strengths(parameters = {}) {
@@ -145,6 +137,19 @@ export function strengths(parameters = {}) {
         out[UNIFORM[key]] = Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) / 100 : 0;
     }
     return out;
+}
+
+/**
+ * The maps with a wet lens, from a list like "um_fild* gef_fild01" (spaces or
+ * commas; * matches anything). "*" is everywhere, an empty list nowhere.
+ */
+export function wetMaps(list) {
+    const patterns = String(list ?? '').split(/[\s,]+/).filter(Boolean)
+        .map(p => new RegExp('^' + p.toLowerCase().replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$'));
+    return name => {
+        const map = String(name).toLowerCase().replace(/\.(gat|rsw)$/, '');
+        return patterns.some(p => p.test(map));
+    };
 }
 
 export default function init(parameters, api) {
@@ -161,7 +166,6 @@ export default function init(parameters, api) {
     const features = {};
     if (percent('water') > 0) features.waterReflection = percent('water');
     if (percent('shadows') > 0) features.shadows = percent('shadows');
-    if (percent('rain') > 0) features.rain = percent('rain');
     // Warm sunlight: a golden sun and a cooler sky in place of the map's.
     const sun = percent('sunlight');
     if (sun > 0) {
@@ -176,10 +180,25 @@ export default function init(parameters, api) {
         wind: 0.3,
     };
     if (Object.keys(features).length) api.graphics.configure(features);
+
+    // Drops on the lens only on the maps listed as wet.
+    const wet = wetMaps(parameters?.drop_maps);
+    let raining = false;
+    const weather = name => {
+        raining = !!name && wet(name);
+    };
+    api.on('map:enter', ({ name }) => weather(name));
+    api.on('map:leave', () => weather(null));
+    weather(api.snapshot?.().map);
+
+    const live = { ...uniforms };
     api.graphics.registerPass({
         name: 'Graphics+',
         fragment: FRAGMENT,
         enabled: () => anything,
-        uniforms: () => uniforms,
+        uniforms: () => {
+            live.uDrops = raining ? uniforms.uDrops : 0;
+            return live;
+        },
     });
 }

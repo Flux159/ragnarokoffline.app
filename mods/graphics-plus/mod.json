@@ -2,7 +2,7 @@
   "name": "graphics-plus",
   "version": "1.0.0",
   "author": "Ragnarok Offline",
-  "description": "A different look for the whole game: grass on grassy ground, shadows from buildings and trees, water that reflects the world, lamp glows from each map's own lights, colour grading, distance haze, tone mapping and a vignette, with tilt-shift, colour fringing and rain to taste. Every effect has its own switch. Also the worked example of api.graphics.",
+  "description": "A different look for the whole game: painted grass and ferns on grassy ground, water that reflects the world and glows teal along the shore, a warm sun, shadows from buildings and trees, lamp glows from each map's own lights, colour grading, tone mapping and a vignette, with haze, tilt-shift, colour fringing and drops on the lens to taste. Every effect has its own switch. Also the worked example of api.graphics.",
   "default": "off",
   "requires": {
     "app": ">=1.4.0",
@@ -109,22 +109,20 @@
       "description": "Splits colour slightly toward the edges, like a camera lens. 0 is off."
     },
     {
-      "key": "rain",
-      "type": "number",
-      "default": 0,
-      "min": 0,
-      "max": 100,
-      "label": "Rain",
-      "description": "Rain streaks in the air, rings where it lands on water, and a duller sky. 0 is off."
-    },
-    {
       "key": "drops",
       "type": "number",
-      "default": 0,
+      "default": 60,
       "min": 0,
       "max": 100,
       "label": "Drops on the lens",
-      "description": "Water drops on the camera, each a tiny lens. Goes well with rain. 0 is off."
+      "description": "Small water drops low on the camera, each a tiny lens, on the maps listed below. 0 is off."
+    },
+    {
+      "key": "drop_maps",
+      "type": "string",
+      "default": "um_fild* gef_fild* mosk_fild* ayo_fild*",
+      "label": "Maps with a wet lens",
+      "description": "The maps where drops gather on the camera: names separated by spaces, * matches anything (\"*\" is everywhere, empty is never)."
     }
   ]
 }
