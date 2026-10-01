@@ -241,6 +241,7 @@ async function flatten(gltf) {
 			normals: new Float32Array(group.normals),
 			uvs: new Float32Array(group.uvs),
 			indices: new Uint32Array(group.indices),
+			name: material.name || '',
 			color: [toSrgb(factor[0]), toSrgb(factor[1]), toSrgb(factor[2]), factor[3]],
 			image, sampler,
 			alpha: material.alphaMode || 'OPAQUE',
@@ -305,7 +306,7 @@ function createHook(models, report) {
 				gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
 				gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 			}
-			return { buffer, index, count: group.indices.length, texture, color: group.color, alpha: group.alpha, cutoff: group.cutoff };
+			return { buffer, index, count: group.indices.length, texture, color: group.color, alpha: group.alpha, cutoff: group.cutoff, name: group.name };
 		});
 	}
 
@@ -408,7 +409,13 @@ function createHook(models, report) {
 					gl.bufferData(gl.ARRAY_BUFFER, matrices, gl.STATIC_DRAW);
 					const previous = meshes.get(original.name);
 					if (previous) release(previous);
-					meshes.set(original.name, { groups: upload(flat), instanceBuffer, instances: original.instances.length });
+					const groups = upload(flat);
+					// A mod's own colours for named materials ({ leafsGreen: [r, g, b] }, 0..1, sRGB).
+					for (const group of groups) {
+						const color = spec.colors && spec.colors[group.name];
+						if (Array.isArray(color) && color.length >= 3) group.color = [color[0], color[1], color[2], group.color[3]];
+					}
+					meshes.set(original.name, { groups, instanceBuffer, instances: original.instances.length });
 				}).catch(error => report(new Error(`${spec.url}: ${error.message}`)));
 			}
 		},
@@ -427,7 +434,8 @@ function createHook(models, report) {
 }
 
 /**
- * Replace map models with glTF ones: { 'folder/name.rsm': { url, size?, scale? } }.
+ * Replace map models with glTF ones: { 'folder/name.rsm': { url, size?, scale?, colors? } }.
+ * colors: { materialName: [r, g, b] } in place of those materials' base colour.
  * size: a multiple of the original's height (default 1); scale: an exact
  * scale instead. Applies to maps loaded from now on. Returns a function that
  * undoes it.

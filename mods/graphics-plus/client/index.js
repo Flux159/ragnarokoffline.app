@@ -192,24 +192,34 @@ export default function init(parameters, api) {
     const anything = Object.values(uniforms).some(value => value > 0);
     const percent = key => { const value = Number(parameters?.[key]); return Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) / 100 : 0; };
 
+    // Alt+G turns everything off and on again, live, to compare with the
+    // stock look while moving. Off takes every hook out (freeing what it
+    // made); on puts them back.
+    let on = true;
+    const hooks = [];
+    const add = hook => hooks.push({ hook, remove: api.graphics.hook(hook) });
+
     // Drawn in the map renderer itself, each by a map hook of its own
     // (grass.js, water.js, shadows.js): only the ones switched on.
-    if (percent('shadows') > 0 || percent('occlusion') > 0) api.graphics.hook(shadowsHook(percent('shadows'), percent('occlusion')));
-    if (percent('water') > 0) api.graphics.hook(waterHook({
+    const addAll = () => {
+    if (percent('shadows') > 0 || percent('occlusion') > 0) add(shadowsHook(percent('shadows'), percent('occlusion')));
+    if (percent('water') > 0) add(waterHook({
         reflection: percent('water'),
         // The map's own waves on top: on some maps the plain mirror is best
         // (Izlude), on others the waves are what makes the water (Alberta).
         detail: perMap(parameters?.water_detail_maps, percent('water_detail')),
     }));
     // Texture packs' larger ground textures, at their own resolution.
-    if (parameters?.hd_ground !== false) api.graphics.hook(groundHdHook());
-    if (percent('grass') > 0) api.graphics.hook(grassHook({
+    if (parameters?.hd_ground !== false) add(groundHdHook());
+    if (percent('grass') > 0) add(grassHook({
         // Ground textures whose names say grass: the client's are Korean
         // (풀 grass, 잔디 lawn, 초원 meadow, 들판 field), a mod's often English.
         textures: ['풀', '잔디', '초원', '들판', 'grass'],
         density: percent('grass'),
         wind: 0.3,
     }));
+    };
+    addAll();
 
     // Drops on the lens only on the maps listed as wet.
     const wet = wetMaps(parameters?.drop_maps);
@@ -225,7 +235,7 @@ export default function init(parameters, api) {
         const mix = (a, b) => a.map((v, i) => v + (b[i] - v) * sun);
         sunlight = sun > 0 ? { ambient: mix([0.3, 0.3, 0.3], [0.16, 0.2, 0.3]), diffuse: mix([1, 1, 1], [1.1, 0.92, 0.68]) } : null;
     };
-    api.graphics.hook({ name: 'Sunlight', light: () => sunlight });
+    api.graphics.hook({ name: 'Sunlight', light: () => (on ? sunlight : null) });
     api.on('map:enter', ({ name }) => weather(name));
     api.on('map:leave', () => weather(null));
     weather(api.snapshot?.().map);
@@ -234,10 +244,22 @@ export default function init(parameters, api) {
     api.graphics.registerPass({
         name: 'Graphics+',
         fragment: FRAGMENT,
-        enabled: () => anything,
+        enabled: () => on && anything,
         uniforms: () => {
             live.uDrops = raining ? uniforms.uDrops : 0;
             return live;
         },
     });
+
+    const toggle = event => {
+        if (!(event.altKey && event.code === 'KeyG')) return;
+        event.preventDefault();
+        on = !on;
+        if (on) addAll();
+        else hooks.splice(0).forEach(({ remove }) => remove());
+        console.log(`[graphics-plus] ${on ? 'on' : 'off'} (Alt+G)`);
+        api.notify?.(`Graphics+ ${on ? 'on' : 'off'}`);
+    };
+    addEventListener('keydown', toggle, true);
+    api.cleanup(() => removeEventListener('keydown', toggle, true));
 }

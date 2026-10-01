@@ -6,9 +6,11 @@
 export default function init(parameters, api) {
     const size = Math.min(Math.max(Number(parameters?.size) || 100, 50), 200) / 100;
     const here = file => new URL(file, import.meta.url).href;
+    // Kenney's leaves are a mint green; these are closer to Prontera's.
+    const colors = { leafsGreen: [0.33, 0.55, 0.2], woodBark: [0.45, 0.32, 0.2] };
     api.models.replace({
         // 나무잡초꽃 is the client's "trees, grass, flowers" folder.
-        '나무잡초꽃/나무01.rsm': { url: here('tree_oak.glb'), size },
-        '나무잡초꽃/나무02.rsm': { url: here('tree_detailed.glb'), size },
+        '나무잡초꽃/나무01.rsm': { url: here('tree_oak.glb'), size, colors },
+        '나무잡초꽃/나무02.rsm': { url: here('tree_detailed.glb'), size, colors },
     });
 }
