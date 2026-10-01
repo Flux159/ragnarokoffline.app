@@ -8,6 +8,8 @@
  * textures are all 256x256 are left alone.
  */
 
+import { textureUrl } from './scene-copy.js';
+
 const SLOT = 258;   // the client's: 256 and a 1-pixel border each side
 
 let _map = null;
@@ -47,7 +49,8 @@ function buildAtlas(images, scale) {
 }
 
 async function prepare(map, generation, maxSize) {
-	const urls = map.textureUrls || [];
+	// The files themselves, by path: the client revokes its own copies' URLs.
+	const urls = (map.textureNames || []).map(textureUrl);
 	if (!urls.length) return;
 	const images = await Promise.all(urls.map(loadImage));
 	if (generation !== _generation) return;   // another map since

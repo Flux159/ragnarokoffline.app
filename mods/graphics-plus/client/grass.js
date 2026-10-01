@@ -12,7 +12,7 @@
  * through is never cut off. Drawn by a map hook (api.graphics.hook) after the map's models.
  */
 
-import SceneCopy from './scene-copy.js';
+import SceneCopy, { textureUrl } from './scene-copy.js';
 
 const VERTEX = `#version 300 es
 precision highp float;
@@ -283,7 +283,11 @@ function loadSwatches(urls, grassy) {
 			image.onerror = () => resolve(null);
 			image.src = url;
 		});
-	})).then(list => { if (_swatchesFor === urls) _swatches = list; });
+	})).then(list => {
+		if (_swatchesFor === urls) _swatches = list;
+		const loaded = list.filter(Boolean).length;
+		if (!loaded && grassy.some(Boolean)) console.warn('[graphics-plus] grass: could not read the ground textures; growing on every grassy tile');
+	});
 }
 
 /** 0..1: how green the ground texture is at its own (u, v). */
@@ -321,8 +325,8 @@ function build(gl, settings) {
 		const decoded = decodeName(name);
 		return patterns.some((pattern) => decoded.includes(pattern));
 	});
-	const urls = _data.textureUrls || [];
-	if (urls.length && _swatchesFor !== urls) loadSwatches(urls, grassy);
+	const urls = _data.textureNames.map(textureUrl);
+	if (urls.length && (!_swatchesFor || _swatchesFor.join() !== urls.join())) loadSwatches(urls, grassy);
 	if (urls.length && !_swatches) return;
 	_builtFor = settings;
 

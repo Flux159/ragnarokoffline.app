@@ -98,4 +98,19 @@ function free(gl) {
 	_depthKey = _depthTexture = null;
 }
 
+/**
+ * A ground texture's URL on the asset server, from its name in the map
+ * (CP949 bytes in a binary string, e.g. 필드바닥\\prt_초원01.bmp). The client's
+ * own copies are blob URLs it revokes once the map's atlas is built.
+ */
+export function textureUrl(name) {
+	const path = 'data/texture/' + String(name).replace(/\\/g, '/');
+	let encoded = '';
+	for (const ch of path) {
+		const code = ch.charCodeAt(0) & 0xff;
+		encoded += /[A-Za-z0-9._\-\/]/.test(ch) && code < 0x80 ? ch : '%' + code.toString(16).toUpperCase().padStart(2, '0');
+	}
+	return new URL('/' + encoded, location.href).href;
+}
+
 export default { depth, color, free };
