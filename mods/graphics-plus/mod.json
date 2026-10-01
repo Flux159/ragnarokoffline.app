@@ -28,6 +28,13 @@
       "description": "A golden sun and a cooler sky in place of the map's own light. 0 keeps the map's."
     },
     {
+      "key": "sunlight_maps",
+      "type": "string",
+      "default": "*_dun*:0 *_in:0",
+      "label": "Sunlight per map",
+      "description": "Warm sunlight for particular maps, as name:strength (0-100), e.g. \"prt_fild*:90 izlude:100\". * matches anything; the first match wins, and other maps use the setting above. Dungeons and indoor maps are off by default."
+    },
+    {
       "key": "glow",
       "type": "number",
       "default": 60,

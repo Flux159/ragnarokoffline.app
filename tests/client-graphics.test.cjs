@@ -36,22 +36,26 @@ test('a pass is handed to the bridge checked, and removed when the plugin is dis
     assert.equal(removed, 2, 'disposing the plugin removes what is left');
 });
 
-test('renderer features are configured through the bridge and withdrawn with the plugin', async () => {
+test('map hooks go to the renderer named for their plugin, and are taken out with it', async () => {
     const { createRuntime } = await runtimeModule;
     const runtime = createRuntime();
-    const set = [];
-    let withdrawn = 0;
-    runtime.configure({
-        configureGraphics: (settings, report) => { set.push(settings); return () => { withdrawn++; }; },
-        graphicsFeatures: () => ({ waterReflection: 0 }),
-    });
+    const added = [];
+    let removed = 0;
+    runtime.configure({ graphicsHook: hook => { added.push(hook); return () => { removed++; }; } });
     const scope = runtime.scope('graphics-plus');
-    scope.api.graphics.configure({ waterReflection: 0.6 });
-    assert.deepEqual(set, [{ waterReflection: 0.6 }]);
-    assert.deepEqual(scope.api.graphics.features(), { waterReflection: 0 });
-    assert.throws(() => scope.api.graphics.configure('water'), TypeError);
+    const seen = [];
+    const spec = { name: 'Grass', render(stage) { seen.push([stage, this === spec]); }, replaces: ['water', 'ground'], extra: 1 };
+    scope.api.graphics.hook(spec);
+    assert.equal(added.length, 1);
+    assert.equal(added[0].name, 'graphics-plus: Grass');
+    assert.deepEqual(added[0].replaces, ['water'], 'only the water stage can be taken over');
+    assert.equal(added[0].init, undefined);
+    added[0].render('models');
+    assert.deepEqual(seen, [['models', true]], 'called on the plugin\'s own object');
+    assert.throws(() => scope.api.graphics.hook('grass'), TypeError);
     scope.dispose();
-    assert.equal(withdrawn, 1);
+    assert.equal(removed, 1);
+    assert.throws(() => scope.api.graphics.hook({}), /disposed/);
 });
 
 test('what is not a shader is refused before it reaches the GPU', async () => {

@@ -6,6 +6,10 @@
 // What the pass is handed (the frame, its depth, the map's sun and its lights
 // already on screen) is described in docs/MODDING.md, "client/".
 
+import { grassHook } from './grass.js';
+import { waterHook } from './water.js';
+import { shadowsHook } from './shadows.js';
+
 const FRAGMENT = `
 uniform float uGrade, uGlow, uFog, uTonemap, uVignette, uTilt, uFringe, uDrops;
 
@@ -143,6 +147,31 @@ export function strengths(parameters = {}) {
  * The maps with a wet lens, from a list like "um_fild* gef_fild01" (spaces or
  * commas; * matches anything). "*" is everywhere, an empty list nowhere.
  */
+function mapPattern(pattern) {
+    return new RegExp('^' + pattern.toLowerCase().replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+}
+
+function mapName(name) {
+    return String(name).toLowerCase().replace(/\.(gat|rsw)$/, '');
+}
+
+/**
+ * How strong the warm sunlight is on a map, 0..1: the first entry of a list
+ * like "prt_fild*:90 *_dun*:0" whose name matches, else the default.
+ */
+export function sunlightFor(list, fallback) {
+    const entries = String(list ?? '').split(/[\s,]+/).filter(Boolean).map(entry => {
+        const [pattern, value] = entry.split(':');
+        const amount = Number(value);
+        return pattern && Number.isFinite(amount) ? { test: mapPattern(pattern), amount: Math.min(Math.max(amount, 0), 100) / 100 } : null;
+    }).filter(Boolean);
+    return name => {
+        const map = mapName(name);
+        const hit = entries.find(entry => entry.test.test(map));
+        return hit ? hit.amount : fallback;
+    };
+}
+
 export function wetMaps(list) {
     const patterns = String(list ?? '').split(/[\s,]+/).filter(Boolean)
         .map(p => new RegExp('^' + p.toLowerCase().replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$'));
@@ -160,33 +189,35 @@ export default function init(parameters, api) {
     }
     const uniforms = strengths(parameters);
     const anything = Object.values(uniforms).some(value => value > 0);
-    // Reflections, grass and shadows are drawn inside the renderer, not in
-    // this pass.
     const percent = key => { const value = Number(parameters?.[key]); return Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) / 100 : 0; };
-    const features = {};
-    if (percent('water') > 0) features.waterReflection = percent('water');
-    if (percent('shadows') > 0) features.shadows = percent('shadows');
-    // Warm sunlight: a golden sun and a cooler sky in place of the map's.
-    const sun = percent('sunlight');
-    if (sun > 0) {
-        const mix = (a, b) => a.map((v, i) => v + (b[i] - v) * sun);
-        features.light = { ambient: mix([0.3, 0.3, 0.3], [0.16, 0.2, 0.3]), diffuse: mix([1, 1, 1], [1.1, 0.92, 0.68]) };
-    }
-    if (percent('grass') > 0) features.grass = {
+
+    // Drawn in the map renderer itself, each by a map hook of its own
+    // (grass.js, water.js, shadows.js): only the ones switched on.
+    if (percent('shadows') > 0) api.graphics.hook(shadowsHook(percent('shadows')));
+    if (percent('water') > 0) api.graphics.hook(waterHook({ reflection: percent('water') }));
+    if (percent('grass') > 0) api.graphics.hook(grassHook({
         // Ground textures whose names say grass: the client's are Korean
         // (풀 grass, 잔디 lawn, 초원 meadow, 들판 field), a mod's often English.
         textures: ['풀', '잔디', '초원', '들판', 'grass'],
         density: percent('grass'),
         wind: 0.3,
-    };
-    if (Object.keys(features).length) api.graphics.configure(features);
+    }));
 
     // Drops on the lens only on the maps listed as wet.
     const wet = wetMaps(parameters?.drop_maps);
     let raining = false;
+    // Warm sunlight: a golden sun and a cooler sky in place of the map's,
+    // as strong as the setting says -- or as the map's own entry in
+    // "Sunlight per map" says.
+    const sunFor = sunlightFor(parameters?.sunlight_maps, percent('sunlight'));
+    let sunlight = null;
     const weather = name => {
         raining = !!name && wet(name);
+        const sun = name ? sunFor(name) : 0;
+        const mix = (a, b) => a.map((v, i) => v + (b[i] - v) * sun);
+        sunlight = sun > 0 ? { ambient: mix([0.3, 0.3, 0.3], [0.16, 0.2, 0.3]), diffuse: mix([1, 1, 1], [1.1, 0.92, 0.68]) } : null;
     };
+    api.graphics.hook({ name: 'Sunlight', light: () => sunlight });
     api.on('map:enter', ({ name }) => weather(name));
     api.on('map:leave', () => weather(null));
     weather(api.snapshot?.().map);

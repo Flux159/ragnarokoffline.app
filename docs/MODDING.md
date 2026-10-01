@@ -1250,6 +1250,23 @@ on with `api.graphics.configure`:
 api.graphics.configure({ waterReflection: 0.6 });
 ```
 
+`configure` returns a function that takes the setting back, so a feature can
+follow the map. Lighting per map, for instance -- warm in the fields, the
+map's own underground:
+
+```js
+let undo = null;
+api.on('map:enter', ({ name }) => {
+    undo?.();
+    undo = name.includes('_dun')
+        ? null
+        : api.graphics.configure({ light: { ambient: [0.16, 0.2, 0.3], diffuse: [1.1, 0.92, 0.68] } });
+});
+```
+
+Graphics+ does this with two settings: "Warm sunlight" for everywhere, and
+"Sunlight per map" (`prt_fild*:90 *_dun*:0`) for the maps that differ.
+
 If two mods set the same feature, the last one wins, and each mod's setting is
 withdrawn when that mod is. `api.graphics.features()` lists what this client has.
 

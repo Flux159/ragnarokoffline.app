@@ -11,7 +11,7 @@
 // reported, and stays off.
 
 import PostProcess from 'Renderer/Effects/PostProcess.js';
-import * as EnhancementsModule from 'Renderer/Effects/Enhancements.js';
+import MapHooks from 'Renderer/MapHooks.js';
 import WebGL from 'Utils/WebGL.js';
 
 export const MAX_LIGHTS = 32;
@@ -205,7 +205,7 @@ function makePass(spec, report) {
 
 /** Whether this client can take plugin passes (the fork's addExternal). */
 export function supported() {
-	return typeof PostProcess.addExternal === 'function';
+	return typeof PostProcess.addExternal === 'function' && typeof MapHooks?.register === 'function';
 }
 
 /**
@@ -223,50 +223,14 @@ export function registerPass(spec, report) {
 	return () => PostProcess.removeExternal(module);
 }
 
-// The renderer's optional features (the fork's Renderer/Effects/Enhancements.js).
-// Several plugins may set them; the last one to set a key wins, and a
-// plugin's settings are withdrawn when it is.
-const Enhancements = EnhancementsModule.default || null;
-const owners = new Map();  // key -> [{ token, value }], latest last
-const STOCK = Enhancements ? { ...Enhancements } : {};
-
-function apply(key) {
-    if (!Enhancements) return;
-    const stack = owners.get(key) || [];
-    Enhancements[key] = stack.length ? stack[stack.length - 1].value : STOCK[key];
-}
-
 /**
- * Set renderer features: { waterReflection: 0..1 }. Returns a function that
- * withdraws them. Unknown keys are reported, not applied.
+ * Add a map hook (the fork's Renderer/MapHooks.js): code that draws in the
+ * map renderer -- grass, water, a shadow map. Returns a function that takes
+ * it out and frees it.
+ * @param {object} hook - checked by ExtensionRuntime
  */
-export function configure(settings, report) {
-    if (!Enhancements) {
-        report(new Error('renderer features need a newer client (Renderer/Effects/Enhancements.js)'));
-        return () => {};
-    }
-    const token = {};
-    const keys = [];
-    for (const [key, value] of Object.entries(settings || {})) {
-        if (!(key in STOCK)) { report(new Error(`unknown renderer feature "${key}"`)); continue; }
-        if (typeof value !== typeof STOCK[key] && !(value === null || STOCK[key] === null)) { report(new Error(`${key} must be a ${typeof STOCK[key]}`)); continue; }
-        const stack = owners.get(key) || [];
-        stack.push({ token, value: typeof value === 'number' ? Math.min(Math.max(value, 0), 1) : value });
-        owners.set(key, stack);
-        keys.push(key);
-        apply(key);
-    }
-    return () => {
-        for (const key of keys) {
-            owners.set(key, (owners.get(key) || []).filter(entry => entry.token !== token));
-            apply(key);
-        }
-    };
-}
-
-/** The renderer features this client has, and their stock values. */
-export function features() {
-    return { ...STOCK };
+export function hook(spec) {
+    return MapHooks.register(spec);
 }
 
 /** The map's point lights, for a plugin that wants them itself. */

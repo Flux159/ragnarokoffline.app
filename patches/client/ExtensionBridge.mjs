@@ -355,14 +355,13 @@ export function init() {
         serverCommand,
         // Graphics passes (api.graphics); GraphicsPasses.mjs.
         registerPass: Graphics.registerPass,
-        configureGraphics: Graphics.configure,
+        graphicsHook: Graphics.hook,
         // Plugin windows, item tables, server requests (PluginWindows.mjs).
         createWindow: Windows.createWindow,
         searchItems: Windows.searchItems,
         item: Windows.item,
         itemIcon: Windows.itemIcon,
         serverRequest: (command, text, timeout) => Windows.request(command, text, timeout, serverCommand),
-        graphicsFeatures: Graphics.features,
         graphicsSupported: Graphics.supported,
         mapLights: Graphics.mapLights,
     });
