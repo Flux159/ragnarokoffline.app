@@ -1125,6 +1125,8 @@ fn ensure_images(cfg: &Config, dk: &Docker) -> Result<(), String> {
     }
     // Skip the load when the tags already point at this bundle (a marker from an older release, say).
     if !images_match(&expected, &before) {
+        // Room for the new bundle on a disk that earlier updates filled.
+        remove_untagged_images(dk);
         phase(cfg, "Loading the bundled server images…");
         // "Done" is the bundle's own images being in place -- not merely some
         // image under each tag. On an upgrade the previous release's images
@@ -1139,6 +1141,46 @@ fn ensure_images(cfg: &Config, dk: &Docker) -> Result<(), String> {
         return Err(format!("loading the bundled server images did not replace {}; start again to retry", stale.join(" and ")));
     }
     fs::write(marker, image_marker(&fingerprint, &after)).map_err(|_| "Cannot record the loaded server image bundle".to_string())
+}
+
+/// The id in an `image inspect -f '{{.Id}} {{json .RepoTags}}'` line, when
+/// the image carries no tag at all.
+///
+/// The slim engine reports an untagged image as `["<none>:<none>"]` in a
+/// listing and `[]` from inspect; Docker says `[]` or `null`. All mean the
+/// same thing: nothing will ever run it by name again.
+fn untagged_image(line: &str) -> Option<&str> {
+    let (id, tags) = line.trim().split_once(' ')?;
+    let tagged = match crate::json::parse(tags.trim()).ok()? {
+        crate::json::Value::Array(tags) => tags.iter().any(|t| matches!(t, crate::json::Value::String(t) if !t.is_empty() && t != "<none>:<none>")),
+        crate::json::Value::Null => false,
+        _ => return None,
+    };
+    (!tagged && id.starts_with("sha256:")).then_some(id)
+}
+
+/// Delete the images an update left behind.
+///
+/// Loading a new bundle moves the fixed tags onto its images and leaves the
+/// previous release's untagged on the data disk, which is a fixed 16 GiB. No
+/// one removed them, so every update added another set until the disk was full
+/// and the server could no longer start.
+///
+/// Untagged only, one id at a time and never forced: the engine refuses an
+/// image any container still uses -- an old database left running, say -- and
+/// that one goes on a later start. `image prune` is not used because the slim
+/// engine has none, and it ignores `--filter dangling=true` in a listing.
+fn remove_untagged_images(dk: &Docker) {
+    let Ok(ids) = dk.output(["images", "-a", "-q", "--no-trunc"]) else { return };
+    let mut seen = std::collections::BTreeSet::new();
+    for id in ids.lines().map(str::trim).filter(|id| !id.is_empty()) {
+        let Ok(line) = dk.output(["image", "inspect", "-f", "{{.Id}} {{json .RepoTags}}", id]) else { continue };
+        if let Some(id) = untagged_image(&line) {
+            if seen.insert(id.to_string()) {
+                dk.quiet(["rmi", id]);
+            }
+        }
+    }
 }
 
 /// The Kafra teleport prices are hardcoded in the NPC script with no config
@@ -1853,6 +1895,9 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     // world is ready: this is the only moment rAthena's verdict on the mods'
     // own tables exists, and it exists in its log and nowhere else.
     crate::mods::record_load_report(cfg, dk);
+    // Every server now runs on the current images, so the ones a load just
+    // replaced are free to go.
+    remove_untagged_images(dk);
     phase(cfg, "Ready");
     println!("stack up");
     // The one string a host pastes to a friend. Printed rather than only
@@ -2826,6 +2871,20 @@ mod tests {
         // the old check left on stale images is verified on its next start.
         assert_ne!(super::image_marker("f", &new), "v1:f:ragnarokmac/rathena:20221005:ragnarokmac/mariadb:11.4\n");
         assert_ne!(super::image_marker("f", &new), super::image_marker("f", &old));
+    }
+
+    /// Only an image with no tag is removed; the slim engine and Docker spell
+    /// "no tag" three ways, and anything unreadable is left alone.
+    #[test]
+    fn only_untagged_images_are_removed() {
+        assert_eq!(super::untagged_image("sha256:aaa []\n"), Some("sha256:aaa"));
+        assert_eq!(super::untagged_image("sha256:aaa null"), Some("sha256:aaa"));
+        assert_eq!(super::untagged_image(r#"sha256:aaa ["<none>:<none>"]"#), Some("sha256:aaa"));
+        assert_eq!(super::untagged_image(r#"sha256:bbb ["ragnarokmac/rathena:20221005"]"#), None);
+        assert_eq!(super::untagged_image(r#"sha256:bbb ["<none>:<none>","ragnarokmac/mariadb:11.4"]"#), None);
+        assert_eq!(super::untagged_image("sha256:ccc"), None);
+        assert_eq!(super::untagged_image("sha256:ccc {broken"), None);
+        assert_eq!(super::untagged_image("Error: No such image []"), None);
     }
 
     use super::*;
