@@ -561,3 +561,6 @@ else:
 PY
 
 python3 "$ROOT/scripts/patch-client-controls.py" "$ROOT" "$RB"
+
+# The menu grows with its buttons; see the script for why (#390).
+python3 "$ROOT/scripts/patch-basicinfo-menu.py" "$RB"
