@@ -72,9 +72,9 @@ test('two ally buffs that cancel each other are not cast over each other', () =>
 	const find = fn('static map_session_data* population_shell_find_ally_target(');
 	assert.match(find, /ctx\.gives_sc\s+= gives_sc;/);
 	const calls = combat.match(/population_shell_find_ally_target\(\s*sd,[^;]*;/g) || [];
-	assert.equal(calls.length, 2, 'both ally searches are covered');
+	assert.equal(calls.length, 3, 'every ally search is covered: the cast condition and both casters');
 	for (const call of calls)
-		assert.match(call, /skill_get_sc\((bs|sk)\.skill_id\)\)/, 'each caller passes the status its skill gives');
+		assert.match(call, /skill_get_sc\((bs|sk)\.skill_id\), \1\.skill_id\)/, 'each caller passes the status its skill gives, and the skill');
 });
 
 test('the High Priest still carries both ally rows the clash gate keeps apart', () => {

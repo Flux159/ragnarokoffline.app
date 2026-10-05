@@ -35,7 +35,7 @@ test('the threshold reaches both the cast decision and the choice of whom to hea
 	const gate = functionBody('static inline bool pop_skill_cond_satisfied(');
 	assert.match(gate, /pop_ally_hp_threshold\(sd, sk\.skill_id, sk\.condition, sk\.cond_value_num\)/);
 	const finds = combat.match(/population_shell_find_ally_target\(\s*sd,[^;]*;/g) || [];
-	assert.equal(finds.length, 2, 'both ally-target searches');
+	assert.equal(finds.length, 3, 'every ally-target search: the cast condition and both casters');
 	for (const call of finds)
 		assert.match(call, /pop_ally_hp_threshold\(/, `the ally search must use the threshold: ${call}`);
 });

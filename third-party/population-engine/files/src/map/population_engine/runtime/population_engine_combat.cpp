@@ -276,6 +276,7 @@ struct PopAllySearchCtx {
 	map_session_data *result;          ///< Best ally found (nullptr if none)
 	sc_type           gives_sc = SC_NONE; ///< Status the skill gives the ally, if any
 	int               result_rank = 3;   ///< pop_ally_rank() of `result`; lower goes first
+	bool              allow_self = false; ///< The caster counts as one of its allies (pop_ally_row_may_self)
 };
 
 /// An ally no skill can be aimed at: a GM's @hide (OPTION_INVISIBLE), or hiding, cloaking or
@@ -480,7 +481,7 @@ static int32 pop_ally_hp_scan_cb(block_list *bl, va_list ap)
 	map_session_data *ally = BL_CAST(BL_PC, bl);
 	if (!ally) return 0;
 	PopAllySearchCtx *ctx = va_arg(ap, PopAllySearchCtx*);
-	if (ally->id == ctx->shell->id) return 0;
+	if (ally->id == ctx->shell->id && !ctx->allow_self) return 0;
 	// Real players are skipped UNLESS they are an arena ally of this shell
 	// (team-2 shell + real player on the same arena map = mutual allies).
 	if (!pop_shell_may_help(ctx->shell, ally))
@@ -572,7 +573,7 @@ static int32 pop_ally_status_scan_cb(block_list *bl, va_list ap)
 	map_session_data *ally = BL_CAST(BL_PC, bl);
 	if (!ally) return 0;
 	PopAllySearchCtx *ctx = va_arg(ap, PopAllySearchCtx*);
-	if (ally->id == ctx->shell->id) return 0;
+	if (ally->id == ctx->shell->id && !ctx->allow_self) return 0;
 	if (!pop_shell_may_help(ctx->shell, ally))
 		return 0;
 	if (!ally->state.active || ally->state.warping) return 0;
@@ -594,7 +595,7 @@ static int32 pop_ally_any_scan_cb(block_list *bl, va_list ap)
 	map_session_data *ally = BL_CAST(BL_PC, bl);
 	if (!ally) return 0;
 	PopAllySearchCtx *ctx = va_arg(ap, PopAllySearchCtx*);
-	if (ally->id == ctx->shell->id) return 0;
+	if (ally->id == ctx->shell->id && !ctx->allow_self) return 0;
 	if (!pop_shell_may_help(ctx->shell, ally))
 		return 0;
 	if (!ally->state.active || ally->state.warping) return 0;
@@ -629,17 +630,38 @@ static int32 pop_tank_intercept_cb(block_list *bl, va_list ap)
 	return 1; // stop scan on first match
 }
 
+/// Whether a Target: ally row may pick the caster itself. Blessing, Increase AGI and Kyrie
+/// Eleison went to everyone near the companion but never to it. Not the skills rAthena refuses
+/// on the caster (NoTargetSelf: Devotion, Providence, Marionette, pre-renewal Suffragium), nor
+/// White Imprison, which locks the caster up, nor Kaute, which pays the caster's HP for its own SP.
+static bool pop_ally_row_may_self(uint16 skill_id)
+{
+	if (skill_id == 0 || skill_get_inf2(skill_id, INF2_NOTARGETSELF))
+		return false;
+	return skill_id != WL_WHITEIMPRISON && skill_id != SP_KAUTE;
+}
+
+/// A condition about someone near the caster other than an enemy: an ally's HP or status.
+static bool pop_is_ally_condition(uint8_t condition)
+{
+	const PopSkillCondition c = static_cast<PopSkillCondition>(condition);
+	return c == PopSkillCondition::AllyHpBelow || c == PopSkillCondition::AllyStatus
+		|| c == PopSkillCondition::NotAllyStatus;
+}
+
 /// Find the best ally target within scan_range cells satisfying the given condition.
 /// An ally holding a buff that `gives_sc` would cancel, and that cancels it back, is passed over.
+/// `skill_id` says whether the caster may be its own target (pop_ally_row_may_self).
 /// Returns nullptr if no suitable ally exists.
 static map_session_data* population_shell_find_ally_target(
 	map_session_data *sd,
 	uint8_t condition, uint8_t threshold, int16_t sc_resolved,
-	int16_t scan_range = 9, sc_type gives_sc = SC_NONE)
+	int16_t scan_range = 9, sc_type gives_sc = SC_NONE, uint16 skill_id = 0)
 {
 	using C = PopSkillCondition;
 	const C cond = static_cast<C>(condition);
 	PopAllySearchCtx ctx{};
+	ctx.allow_self      = pop_ally_row_may_self(skill_id);
 	ctx.shell           = sd;
 	ctx.hp_threshold    = threshold;
 	ctx.sc_resolved     = sc_resolved;
@@ -1080,6 +1102,16 @@ static inline bool pop_skill_cond_satisfied(map_session_data* sd, const SkillT& 
 		if (radius > 0)
 			return pop_enemies_within(sd, radius) >= static_cast<int>(sk.cond_value_num);
 	}
+	// A Target: ally row gated on an ally's HP or status: the target search answers it, with the
+	// caster among the allies when the skill may go to it. The plain condition counts only the
+	// others, so a companion with nobody else near never buffed itself.
+	if (!sk.expanded && sk.target == 2 && pop_is_ally_condition(sk.condition)) {
+		const int16_t range = static_cast<int16_t>(
+			std::max(1, skill_get_range2(sd, sk.skill_id, sk.skill_lv, true)));
+		return population_shell_find_ally_target(sd, sk.condition,
+			pop_ally_hp_threshold(sd, sk.skill_id, sk.condition, sk.cond_value_num),
+			sk.cond_sc_resolved, range, skill_get_sc(sk.skill_id), sk.skill_id) != nullptr;
+	}
 	if (sk.expanded) {
 		expanded_ai::TargetBag bag;
 		bag.shell = sd;
@@ -1518,7 +1550,7 @@ static bool population_shell_cast_expired_self_buffs(map_session_data *sd, t_tic
 			map_session_data *ally = population_shell_find_ally_target(
 				sd, bs.condition, pop_ally_hp_threshold(sd, bs.skill_id, bs.condition, bs.cond_value_num),
 				bs.cond_sc_resolved, skill_range,
-				skill_get_sc(bs.skill_id));
+				skill_get_sc(bs.skill_id), bs.skill_id);
 			if (!ally)
 				continue;
 			// Party-only skills (e.g. Devotion) are rejected server-side when party_id == 0.
@@ -1687,7 +1719,7 @@ static bool population_shell_cast_ally_attack_skill(map_session_data *sd, t_tick
 		map_session_data *ally = population_shell_find_ally_target(
 			sd, sk.condition, pop_ally_hp_threshold(sd, sk.skill_id, sk.condition, sk.cond_value_num),
 			sk.cond_sc_resolved, skill_range,
-			skill_get_sc(sk.skill_id));
+			skill_get_sc(sk.skill_id), sk.skill_id);
 		if (!ally)
 			continue;
 		// Skip if the ally already carries the SC this skill would apply — without
