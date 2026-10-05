@@ -98,6 +98,9 @@ class PopulationEngineDatabase : public TypesafeYamlDatabase<uint16_t, Populatio
 	/// job ID if the YAML did not provide an explicit ArenaJobPool block. Used by
 	/// the PvP DB so the arena pool is implicitly the set of jobs in that file.
 	bool m_auto_arena_pool = false;
+	/// Pre-renewal: profile jobs and RenewalOnly gear sets passed over because the
+	/// server has no such class (3rd and 4th jobs), reported once in loadingFinished.
+	uint32_t m_era_skipped = 0;
 
 	ryml::NodeRef warnAnchorForJob(const ryml::NodeRef& node);
 	void markInvalidItem(const ryml::NodeRef& node, const char* yaml_key, uint16_t job_id, uint16_t bad_id);
@@ -144,10 +147,13 @@ public:
 
 class PopulationSkillDatabase : public YamlDatabase {
 	std::unordered_map<uint16_t, std::vector<s_pop_skill_entry>> jobs_;
+	/// Pre-renewal: job blocks passed over because the server has no such class.
+	uint32_t era_skipped_ = 0;
 
 public:
 	PopulationSkillDatabase();
 	void clear() override;
+	void loadingFinished() override;
 	const std::string getDefaultLocation() override;
 	uint64 parseBodyNode(const ryml::NodeRef& node) override;
 	const std::vector<s_pop_skill_entry>* find(uint16_t job_id) const;

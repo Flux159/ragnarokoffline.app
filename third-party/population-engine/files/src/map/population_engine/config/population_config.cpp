@@ -1458,6 +1458,7 @@ void PopulationEngineDatabase::clear()
 {
 	TypesafeYamlDatabase<uint16_t, PopulationEngine>::clear();
 	this->m_validationError = false;
+	this->m_era_skipped = 0;
 	this->m_gear_sets.clear();
 	this->m_profiles.clear();
 	this->m_vendor_by_key.clear();
@@ -1466,6 +1467,11 @@ void PopulationEngineDatabase::clear()
 
 void PopulationEngineDatabase::loadingFinished()
 {
+#ifndef RENEWAL
+	if (this->m_era_skipped > 0)
+		ShowInfo("Population engine (%s): skipped %u entries for 3rd and 4th classes and their gear, which pre-renewal does not have.\n",
+			this->m_filename_basename.c_str(), this->m_era_skipped);
+#endif
 	if (battle_config.population_engine_equipment_strict_load != 0 && this->m_validationError) {
 		ShowError("Population engine equipment: strict load is on - discarding all entries after validation errors (see warnings above).\n");
 		TypesafeYamlDatabase<uint16_t, PopulationEngine>::clear();
@@ -1751,6 +1757,15 @@ uint64 PopulationEngineDatabase::parseBodyNode(const ryml::NodeRef& node)
 		std::string name;
 		if (!this->asString(node, "GearSetName", name) || name.empty())
 			return 0;
+#ifndef RENEWAL
+		// RAGNAROKMAC: a set only 3rd and 4th classes wear, which pre-renewal does not have. Its
+		// items are renewal-only, and each one logged an unknown item on every start-up.
+		bool renewal_only = false;
+		if (this->nodeExists(node, "RenewalOnly") && this->asBool(node, "RenewalOnly", renewal_only) && renewal_only) {
+			++this->m_era_skipped;
+			return 1;
+		}
+#endif
 		PopulationGearSet gs;
 		// RAGNAROKMAC: a pre-renewal server takes a slot from the set's PreRenewal block when the
 		// block has it. Most sets are built from renewal-only items (the Paradise/Eden gear), which
@@ -1915,8 +1930,13 @@ uint64 PopulationEngineDatabase::parseBodyNode(const ryml::NodeRef& node)
 					}
 					job_id = kit->second;
 					if (!job_db.exists(job_id)) {
+#ifndef RENEWAL
+						// RAGNAROKMAC: a 3rd or 4th class, which pre-renewal does not have.
+						++this->m_era_skipped;
+#else
 						this->invalidWarning(jn, "Profile '%s' Jobs: job ID %hu not in job_db — skipped.\n",
 							prof_name.c_str(), job_id);
+#endif
 						continue;
 					}
 

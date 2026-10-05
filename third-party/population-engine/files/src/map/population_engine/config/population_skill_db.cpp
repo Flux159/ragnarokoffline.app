@@ -11,6 +11,7 @@
 
 #include <common/showmsg.hpp>
 
+#include "../../pc.hpp"      // job_db
 #include "../../skill.hpp"   // skill_name2id
 #include "../expanded_ai/expanded_parser.hpp"
 
@@ -105,6 +106,15 @@ PopulationSkillDatabase::PopulationSkillDatabase()
 void PopulationSkillDatabase::clear()
 {
 	this->jobs_.clear();
+	this->era_skipped_ = 0;
+}
+
+void PopulationSkillDatabase::loadingFinished()
+{
+	if (this->era_skipped_ > 0)
+		ShowInfo("population_skill_db: skipped %u job entries for classes this pre-renewal server does not have.\n",
+			this->era_skipped_);
+	YamlDatabase::loadingFinished();
 }
 
 const std::string PopulationSkillDatabase::getDefaultLocation()
@@ -117,6 +127,15 @@ uint64 PopulationSkillDatabase::parseBodyNode(const ryml::NodeRef& node)
 	uint16_t job_id = 0;
 	if (!this->asUInt16(node, "JobId", job_id))
 		return 0;
+#ifndef RENEWAL
+	// RAGNAROKMAC: pre-renewal has no 3rd or 4th classes (no job stats, no skill tree), and the
+	// 4th classes' skills are renewal-only, so each of their rows logged an unknown skill on
+	// every start-up. Nothing can spawn as one there; pass the block over without a word per row.
+	if (!job_db.exists(job_id)) {
+		++this->era_skipped_;
+		return 0;
+	}
+#endif
 
 	if (!this->nodeExists(node, "Skills"))
 		return 0;

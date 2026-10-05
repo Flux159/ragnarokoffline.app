@@ -105,6 +105,13 @@ if os.path.exists(pre_db) and os.path.exists(pre_jobs):
     gs = open(os.path.join(FILES, 'population_gear_sets.yml')).read()
     for blk in re.split(r'^  - GearSetName: ', gs, flags=re.M)[1:]:
         name = blk.split()[0]
+        # RenewalOnly: a set only 3rd and 4th classes wear; pre-renewal passes it over unread.
+        if re.search(r'^    RenewalOnly:\s*true\s*$', blk, re.M):
+            if name in sets_used:
+                print(f"FAIL {name}: RenewalOnly, but {', '.join(sorted(sets_used[name]))} "
+                      f"wear it in pre-renewal and would spawn without it")
+                fail += 1
+            continue
         own, pre = blk, ''
         if '\n    PreRenewal:' in blk:
             own, pre = blk.split('\n    PreRenewal:', 1)
@@ -120,9 +127,17 @@ if os.path.exists(pre_db) and os.path.exists(pre_jobs):
                         fail += 1
                 continue
             om = re.search(rf'^    {slot}:\s*\n((?:\s+-\s+\S+\n)+)', own, re.M)
-            if not om or name not in sets_used:
+            if not om:
                 continue
             items = re.findall(r'-\s+(\S+)', om.group(1))
+            # Each item pre-renewal lacks is logged as unknown on every start-up there.
+            missing = [i for i in items if not i.isdigit() and i not in pre_loc]
+            if missing:
+                print(f"FAIL {name}/{slot}: {', '.join(missing)} not in pre-renewal, logged on every start "
+                      f"there; add a PreRenewal {slot}, or mark the set RenewalOnly if no job of the era wears it")
+                fail += 1
+            if name not in sets_used:
+                continue
             if not any(i.isdigit() or i in pre_loc for i in items):
                 print(f"FAIL {name}/{slot}: nothing in it exists in pre-renewal, so "
                       f"{', '.join(sorted(sets_used[name]))} spawn there with it empty; add a PreRenewal {slot}")

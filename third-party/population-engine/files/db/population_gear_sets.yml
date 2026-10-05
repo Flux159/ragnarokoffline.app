@@ -37,6 +37,10 @@ Header:
   Type: POPULATION_ENGINE_DB
   Version: 2
 
+# RenewalOnly (optional): true for a set only 3rd and 4th classes wear. Pre-renewal has no such
+# class, and the set's items are renewal-only, so a pre-renewal server passes it over rather
+# than log each one as unknown. validate.py checks that no job of the era wears one.
+#
 # PreRenewal (optional): slot pools, keyed like the set's own, that a pre-renewal server uses
 # in place of the set's for each slot listed. Most sets are built from renewal-only items (the
 # Paradise/Eden gear), which the pre-renewal item db lacks; without it those slots spawn empty
@@ -730,6 +734,7 @@ Body:
   # --- 3rd classes: equip level <= 99, Eden IV armour ----------------------
 
   - GearSetName: third_2hsword        # Rune Knight
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat2
       - Bone_Helm_
@@ -756,6 +761,7 @@ Body:
       - Ring_
 
   - GearSetName: third_spear_shield   # Royal Guard
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat2
       - Bone_Helm_
@@ -783,6 +789,7 @@ Body:
       - Necklace_
 
   - GearSetName: third_wizard_staff   # Warlock
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat2
     HeadMid:
@@ -808,6 +815,7 @@ Body:
       - Necklace_
 
   - GearSetName: third_sage_staff     # Sorcerer
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat2
     HeadMid:
@@ -832,6 +840,7 @@ Body:
       - Necklace_
 
   - GearSetName: third_priest_staff   # Arch Bishop
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat2
     HeadMid:
@@ -856,6 +865,7 @@ Body:
       - Rosary_
 
   - GearSetName: third_knuckle        # Sura
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat2
     HeadMid:
@@ -879,6 +889,7 @@ Body:
       - Rosary_
 
   - GearSetName: third_bow            # Ranger, Minstrel, Wanderer
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat2
       - Apple_Of_Archer
@@ -904,6 +915,7 @@ Body:
       - Glove_
 
   - GearSetName: third_mechanic       # Mechanic
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat2
       - Goibne's_Helmet
@@ -929,6 +941,7 @@ Body:
       - Ring_
 
   - GearSetName: third_genetic        # Genetic
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat2
       - Goibne's_Helmet
@@ -956,6 +969,7 @@ Body:
       - Ring_
 
   - GearSetName: third_katar          # Guillotine Cross
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat2
       - Sahkkat
@@ -981,6 +995,7 @@ Body:
       - Ring_
 
   - GearSetName: third_dagger         # Shadow Chaser
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat2
       - Sahkkat
@@ -1009,6 +1024,7 @@ Body:
   # B magic, C agility, D recovery.
 
   - GearSetName: fourth_2hsword       # Dragon Knight
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat160
     HeadMid:
@@ -1034,6 +1050,7 @@ Body:
       - Para_Team_Necklace160A
 
   - GearSetName: fourth_spear_shield  # Imperial Guard
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat160
     HeadMid:
@@ -1061,6 +1078,7 @@ Body:
       - Para_Team_Necklace160A
 
   - GearSetName: fourth_wizard_staff  # Arch Mage
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat160
     HeadMid:
@@ -1086,6 +1104,7 @@ Body:
       - Para_Team_Necklace160B
 
   - GearSetName: fourth_magic_staff   # Elemental Master, Soul Ascetic
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat160
     HeadMid:
@@ -1109,6 +1128,7 @@ Body:
       - Para_Team_Necklace160B
 
   - GearSetName: fourth_priest_staff  # Cardinal
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat160
     HeadMid:
@@ -1132,6 +1152,7 @@ Body:
       - Para_Team_Necklace160D
 
   - GearSetName: fourth_knuckle       # Inquisitor
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat160
     HeadMid:
@@ -1156,6 +1177,7 @@ Body:
       - Para_Team_Necklace160A
 
   - GearSetName: fourth_book          # Sky Emperor
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat160
     HeadMid:
@@ -1178,6 +1200,7 @@ Body:
       - Para_Team_Necklace160C
 
   - GearSetName: fourth_bow           # Windhawk, Troubadour, Trouvere
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat160
       - Apple_Of_Archer
@@ -1204,6 +1227,7 @@ Body:
       - Para_Team_Necklace160C
 
   - GearSetName: fourth_mechanic      # Meister
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat160
     HeadMid:
@@ -1228,6 +1252,7 @@ Body:
       - Para_Team_Necklace160A
 
   - GearSetName: fourth_genetic       # Biolo
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat160
     HeadMid:
@@ -1253,6 +1278,7 @@ Body:
       - Para_Team_Necklace160D
 
   - GearSetName: fourth_katar         # Shadow Cross
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat160
     HeadMid:
@@ -1277,6 +1303,7 @@ Body:
       - Para_Team_Necklace160C
 
   - GearSetName: fourth_dagger        # Abyss Chaser
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat160
     HeadMid:
@@ -1300,6 +1327,7 @@ Body:
       - Para_Team_Necklace160A
 
   - GearSetName: fourth_huuma         # Shinkiro, Shiranui
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat160
     HeadMid:
@@ -1323,6 +1351,7 @@ Body:
       - Para_Team_Necklace160A
 
   - GearSetName: fourth_gun           # Night Watch
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat160
       - Sahkkat
@@ -1347,6 +1376,7 @@ Body:
       - Para_Team_Necklace160C
 
   - GearSetName: fourth_hyper_novice  # Hyper Novice
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat160
     HeadMid: 0                        # Elven Ears and the flowers exclude
@@ -1369,6 +1399,7 @@ Body:
       - Para_Team_Necklace160B
 
   - GearSetName: fourth_foxtail       # Spirit Handler
+    RenewalOnly: true
     HeadTop:
       - Para_Team_Hat160
     HeadMid:
