@@ -1,0 +1,90 @@
+name: release-notes
+
+# Replaces a published release's notes with the text given.
+#
+# build.yml publishes a release with GitHub's generated notes, and the
+# release routine then puts the real ones in place. The routine's cloud
+# session cannot edit a release itself (GitHub answers 403, "not permitted
+# for this session type"), but it can start a workflow, as it starts
+# release.yml. So it starts this one, and the edit is made with this
+# workflow's own token:
+#
+#   gh workflow run release-notes.yml -f version=1.5.1 -F notes=@notes.md
+#
+# Only the maintainer may run it, as with release.yml; the scheduled
+# routines act as the maintainer's account.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The released version, e.g. 1.5.1
+        required: true
+        type: string
+      notes:
+        description: The release notes, in Markdown
+        required: true
+        type: string
+
+permissions:
+  contents: write # edit the release
+
+concurrency:
+  group: release-notes-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  notes:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ inputs.version }}
+      # Through the environment, never pasted into the script: the notes are
+      # text, and nothing in them may run.
+      NOTES: ${{ inputs.notes }}
+    steps:
+      - name: Only the maintainer edits a release
+        run: |
+          if [ "${{ github.actor }}" != "Flux159" ]; then
+            echo "::error::release-notes.yml was started by ${{ github.actor }}; only Flux159 may edit a release."
+            exit 1
+          fi
+
+      - name: The release is there and published
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$VERSION' is not a version like 1.5.1"; exit 1
+          fi
+          state=$(gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" --json isDraft -q .isDraft) || {
+            echo "::error::there is no release v$VERSION"; exit 1
+          }
+          if [ "$state" = "true" ]; then
+            echo "::error::v$VERSION is still a draft; build.yml publishes it"; exit 1
+          fi
+
+      - name: The notes are notes
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$NOTES" > notes.md
+          # A notes input that is a path, or nearly empty, is a mistake in the
+          # call (`-f notes=@file` instead of `-F`), not notes.
+          if [ "$(wc -c < notes.md)" -lt 200 ]; then
+            echo "::error::the notes are $(wc -c < notes.md) bytes; expected the release notes themselves (gh workflow run ... -F notes=@file)"
+            exit 1
+          fi
+          if ! grep -q "compare/v.*\.\.\.v$VERSION" notes.md; then
+            echo "::error::the notes do not end with the Full Changelog link for v$VERSION"; exit 1
+          fi
+
+      - name: Replace the notes
+        run: |
+          set -euo pipefail
+          gh release edit "v$VERSION" -R "$GITHUB_REPOSITORY" --notes-file notes.md
+          # Read back, so the run says whether it took.
+          gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" --json body -q .body > published.md
+          # $(...) drops trailing newlines, which GitHub does too.
+          if [ "$(cat notes.md)" != "$(cat published.md)" ]; then
+            echo "::error::v$VERSION's notes do not match what was sent"; exit 1
+          fi
+          echo "v$VERSION's notes replaced ($(wc -c < notes.md) bytes)."
