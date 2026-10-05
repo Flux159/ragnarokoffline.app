@@ -1,0 +1,11 @@
+{
+  "name": "scroll-fix",
+  "author": "rhwski",
+  "description": "Mouse-wheel scrolling in NPC shop and sell windows (and other lists) moves a fixed number of rows per wheel notch instead of flying to the bottom. Fixes smooth wheels and touchpads and the camera zoom while a shop is open.",
+  "tags": ["client", "quality-of-life", "scrolling", "shop"],
+  "homepage": "https://github.com/rhewid/scroll-fix",
+  "source": {
+    "github": "rhewid/scroll-fix",
+    "asset": "scroll-fix-*.zip"
+  }
+}
