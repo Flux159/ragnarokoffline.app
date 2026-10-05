@@ -78,6 +78,26 @@ inline void timing_record_tick(const TickSample &s) {
     }
 }
 
+/// RAGNAROKMAC (#373) diagnostics: an ambient shell at 0 HP that rAthena does not count as dead
+/// walks the map for good and never respawns. Log it once, with what tells the causes apart:
+/// whether a hit took it to 0 HP (pc_damage), whether pc_dead then handled the death, and its
+/// dead_sit (0 stood up, 2 sat down after dying). -1 ms means it never happened.
+void pop_shell_log_unhandled_death(map_session_data *sd, t_tick now)
+{
+	if (sd->pop.diag_unhandled_logged)
+		return;
+	sd->pop.diag_unhandled_logged = true;
+	const auto since = [now](t_tick t) { return t ? static_cast<int>(DIFF_TICK(now, t)) : -1; };
+	ShowWarning("Population engine: [#373] shell %u (%s) at 0 HP without the dead flag on %s (%d,%d): "
+		"dead_sit %d, walking %d, behavior %u, respawn timer %d; ms since: hit to 0 HP %d, pc_dead %d, "
+		"last hit %d (attacker %u, skill %u).\n",
+		sd->id, sd->status.name, mapindex_id2name(sd->mapindex), sd->x, sd->y,
+		sd->state.dead_sit, unit_is_walking(sd) ? 1 : 0, static_cast<unsigned>(sd->pop.behavior),
+		sd->pop.respawn_timer, since(sd->pop.diag_zero_hp_tick), since(sd->pop.diag_death_tick),
+		since(sd->pop.last_attacked_tick), sd->pop.last_attacker_id,
+		static_cast<unsigned>(sd->pop.last_skill_used_on_me));
+}
+
 } // namespace
 
 void population_engine_path_erase_for_pc(int32 id)
@@ -221,6 +241,10 @@ TIMER_FUNC(population_engine_wander_timer)
 			// respawn, leaving stale unit_data and skipping the warp.
 			continue;
 		}
+		if (status_isdead(*sd))
+			pop_shell_log_unhandled_death(sd, now);
+		else
+			sd->pop.diag_unhandled_logged = false;
 
 		if (!population_engine_combat_shell_ac_ok(sd))
 			continue;

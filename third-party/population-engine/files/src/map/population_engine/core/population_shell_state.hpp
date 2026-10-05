@@ -100,6 +100,10 @@ struct s_population {
 	uint16_t last_cast_skill_id   = 0; ///< Skill ID of the last offensive/buff skill successfully cast by this shell. Powers afterskill combo condition.
 	uint16_t last_skill_used_on_me = 0; ///< Skill ID of the last skill used AGAINST this shell (set in on_shell_damaged from src unit_data). Powers skillused condition.
 	t_tick   last_skill_used_on_me_tick = 0; ///< Tick when last_skill_used_on_me was recorded. Used for 3s stale window in SkillUsed condition eval.
+	// RAGNAROKMAC (#373) diagnostics: shells found at 0 HP without rAthena's dead flag.
+	t_tick   diag_zero_hp_tick   = 0;     ///< Last time a hit left the shell at 0 HP (pc_damage, before pc_dead); 0 = never
+	t_tick   diag_death_tick     = 0;     ///< Last time pc_dead handled its death (population_engine_on_shell_death); 0 = never
+	bool     diag_unhandled_logged = false; ///< Already logged at 0 HP without the dead flag; cleared once it has HP again
 	t_tick   safetywall_kited_since = 0; ///< Tick when target first became unreachable while standing on SC_SAFETYWALL (0 = not kited). Used to abandon the wall after 4s so the bot can chase.
 
 	// -----------------------------------------------------------------------

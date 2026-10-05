@@ -4696,8 +4696,18 @@ TIMER_FUNC(population_engine_respawn_shell_timer)
 		ShowDebug("PopEngine respawn: engine stopped; skipping revive for shell %u.\n", sd->id);
 		return 0;
 	}
-	if (!pc_isdead(sd))
+	if (!pc_isdead(sd)) {
+		// #373 diagnostics: the shell died (pc_dead scheduled this timer) and lost its dead flag
+		// within the 5 s window, so it is never revived.
+		if (status_isdead(*sd))
+			ShowWarning("Population engine: [#373] respawn of shell %u (%s) skipped: 0 HP but not dead "
+				"(dead_sit %d, walking %d, behavior %u, %d ms since pc_dead) on %s (%d,%d).\n",
+				sd->id, sd->status.name, sd->state.dead_sit, unit_is_walking(sd) ? 1 : 0,
+				static_cast<unsigned>(sd->pop.behavior),
+				sd->pop.diag_death_tick ? static_cast<int>(DIFF_TICK(tick, sd->pop.diag_death_tick)) : -1,
+				mapindex_id2name(sd->mapindex), sd->x, sd->y);
 		return 0;
+	}
 	map_session_data *owner = pop_companion_owner(sd);
 	const int16_t respawn_map = owner ? owner->m : sd->pop.spawn_map_id;
 	struct map_data *mapdata = (respawn_map >= 0) ? map_getmapdata(respawn_map) : nullptr;
@@ -4776,6 +4786,7 @@ void population_engine_on_shell_death(map_session_data *sd)
 {
 	if (!sd)
 		return;
+	sd->pop.diag_death_tick = gettick(); // #373 diagnostics: pc_dead handled this death
 	if (!population_engine_shell_is_mortal(sd)) {
 		ShowDebug("PopEngine death: shell %u (%s) has no Mortal flag — no respawn scheduled.\n",
 			sd->id, sd->status.name);
@@ -9093,6 +9104,9 @@ void population_engine_on_shell_damaged(map_session_data *sd, struct block_list 
 		return;
 	sd->pop.last_attacked_tick = gettick();
 	sd->pop.last_attacker_id   = (src != nullptr) ? static_cast<uint32_t>(src->id) : 0u;
+	// #373 diagnostics: the hit that kills a shell lands here with HP already 0, before pc_dead.
+	if (status_isdead(*sd))
+		sd->pop.diag_zero_hp_tick = sd->pop.last_attacked_tick;
 	// last_damage_received is set by the caller (pc_damage) before calling here.
 	// Capture the skill_id from the attacker's unit_data (if any) for SkillUsed condition.
 	// unit_data::skill_id holds the skill currently being/just executed by the attacker;
