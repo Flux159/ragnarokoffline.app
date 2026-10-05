@@ -1360,7 +1360,7 @@ Body:
       - { SkillId: BD_ROKISWEIL, Level: 1, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_ROKISWEIL }
       - { SkillId: BD_SIEGFRIED, Level: 5, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_SIEGFRIED }
       - { SkillId: CG_HERMODE, Level: 5, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_HERMODE }
-      - { SkillId: CG_MARIONETTE, Level: 1, Rate: 8000, Target: ally, Condition: not_ally_status, CondValue: SC_MARIONETTE }
+      - { SkillId: CG_MARIONETTE, Level: 1, Rate: 8000, Target: ally, Condition: not_self_status, CondValue: SC_MARIONETTE }
 
   - JobId: 4021
     Skills:
@@ -1395,7 +1395,7 @@ Body:
       - { SkillId: BD_ROKISWEIL, Level: 1, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_ROKISWEIL }
       - { SkillId: BD_SIEGFRIED, Level: 5, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_SIEGFRIED }
       - { SkillId: CG_HERMODE, Level: 5, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_HERMODE }
-      - { SkillId: CG_MARIONETTE, Level: 1, Rate: 8000, Target: ally, Condition: not_ally_status, CondValue: SC_MARIONETTE }
+      - { SkillId: CG_MARIONETTE, Level: 1, Rate: 8000, Target: ally, Condition: not_self_status, CondValue: SC_MARIONETTE }
 
   - JobId: 4054
     Skills:
@@ -1514,7 +1514,6 @@ Body:
       - { SkillId: MG_THUNDERSTORM, Level: 10, Rate: 7000, AroundRange: 2, Condition: enemy_count_nearby, CondValue: 2 }
       - { SkillId: WL_RELEASE, Level: 2, Rate: 9000 }
       - { SkillId: WL_TELEKINESIS_INTENSE, Level: 5, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_TELEKINESIS_INTENSE }
-      - { SkillId: WL_WHITEIMPRISON, Level: 5, Rate: 8000, Target: ally, Condition: not_ally_status, CondValue: SC_WHITEIMPRISON }
       - { SkillId: WZ_EARTHSPIKE, Level: 5, Rate: 9000 }
       - { SkillId: WZ_FIREPILLAR, Level: 10, Rate: 7000, AroundRange: 2, Condition: enemy_count_nearby, CondValue: 2 }
       - { SkillId: WZ_HEAVENDRIVE, Level: 5, Rate: 7000, AroundRange: 2, Condition: enemy_count_nearby, CondValue: 2 }
@@ -2133,6 +2132,7 @@ Body:
       - { SkillId: MI_RUSH_WINDMILL,    Level: 5,  Rate: 8000, Target: self }
       - { SkillId: MI_ECHOSONG,         Level: 5,  Rate: 8000, Target: self }
       - { SkillId: MI_HARMONIZE,        Level: 5,  Rate: 7000, Target: ally }
+      - { SkillId: CG_MARIONETTE,       Level: 1,  Rate: 8000, Target: ally, Condition: not_self_status, CondValue: SC_MARIONETTE }
       - { SkillId: BA_WHISTLE,          Level: 10, Rate: 7000, Target: self, Cooldown: 30000 }
       - { SkillId: BA_ASSASSINCROSS,    Level: 10, Rate: 7000, Target: self, Cooldown: 30000 }
       - { SkillId: BA_POEMBRAGI,        Level: 10, Rate: 7000, Target: self, Cooldown: 30000 }
@@ -2212,6 +2212,7 @@ Body:
       - { SkillId: DC_DONTFORGETME,     Level: 10, Rate: 7000, Target: self, Cooldown: 30000 }
       - { SkillId: DC_FORTUNEKISS,      Level: 10, Rate: 7000, Target: self, Cooldown: 30000 }
       - { SkillId: DC_SERVICEFORYOU,    Level: 10, Rate: 7000, Target: self, Cooldown: 30000 }
+      - { SkillId: CG_MARIONETTE,       Level: 1,  Rate: 8000, Target: ally, Condition: not_self_status, CondValue: SC_MARIONETTE }
       - { SkillId: WM_SONG_OF_MANA,    Level: 5,  Rate: 6000, Target: self, Condition: sp_below, CondValue: 40 }
       - { SkillId: WM_DANCE_WITH_WUG,  Level: 5,  Rate: 6000, Target: self }
       - { SkillId: WM_LERADS_DEW,      Level: 5,  Rate: 5000, Target: self, Condition: ally_hp_below, CondValue: 60 }
@@ -2628,7 +2629,6 @@ Body:
       - { SkillId: WL_STASIS, Level: 5, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_STASIS }
       - { SkillId: WL_TELEKINESIS_INTENSE, Level: 5, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_TELEKINESIS_INTENSE }
       - { SkillId: WL_TETRAVORTEX, Level: 10, Rate: 7000, Condition: enemy_count_nearby, CondValue: 2 }
-      - { SkillId: WL_WHITEIMPRISON, Level: 5, Rate: 8000, Target: ally, Condition: not_ally_status, CondValue: SC_WHITEIMPRISON }
       - { SkillId: WZ_EARTHSPIKE, Level: 5, Rate: 9000 }
       - { SkillId: WZ_FIREPILLAR, Level: 10, Rate: 7000, AroundRange: 2, Condition: enemy_count_nearby, CondValue: 2 }
       - { SkillId: WZ_FROSTNOVA, Level: 10, Rate: 6000, Condition: not_enemy_status, CondValue: SC_FREEZE }
@@ -3083,7 +3083,7 @@ Body:
       - { SkillId: BD_SIEGFRIED, Level: 5, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_SIEGFRIED }
       - { SkillId: CG_ARROWVULCAN, Level: 10, Rate: 9000 }
       - { SkillId: CG_HERMODE, Level: 5, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_HERMODE }
-      - { SkillId: CG_MARIONETTE, Level: 1, Rate: 8000, Target: ally, Condition: not_ally_status, CondValue: SC_MARIONETTE }
+      - { SkillId: CG_MARIONETTE, Level: 1, Rate: 8000, Target: ally, Condition: not_self_status, CondValue: SC_MARIONETTE }
       - { SkillId: MI_ECHOSONG, Level: 5, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_ECHOSONG }
       - { SkillId: MI_HARMONIZE, Level: 5, Rate: 8000, Target: ally, Condition: not_ally_status, CondValue: SC_HARMONIZE }
       - { SkillId: MI_RUSH_WINDMILL, Level: 5, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_RUSHWINDMILL }
@@ -3133,7 +3133,7 @@ Body:
       - { SkillId: BD_SIEGFRIED, Level: 5, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_SIEGFRIED }
       - { SkillId: CG_ARROWVULCAN, Level: 10, Rate: 9000 }
       - { SkillId: CG_HERMODE, Level: 5, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_HERMODE }
-      - { SkillId: CG_MARIONETTE, Level: 1, Rate: 8000, Target: ally, Condition: not_ally_status, CondValue: SC_MARIONETTE }
+      - { SkillId: CG_MARIONETTE, Level: 1, Rate: 8000, Target: ally, Condition: not_self_status, CondValue: SC_MARIONETTE }
       - { SkillId: DC_DONTFORGETME, Level: 10, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_DONTFORGETME }
       - { SkillId: DC_FORTUNEKISS, Level: 10, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_FORTUNE }
       - { SkillId: DC_HUMMING, Level: 10, Rate: 8000, Target: self, Condition: not_self_status, CondValue: SC_HUMMING }

@@ -271,6 +271,7 @@ struct PopAllySearchCtx {
 	map_session_data *shell;
 	uint8_t           hp_threshold;    ///< HP% upper bound for AllyHpBelow scans
 	int16_t           sc_resolved;     ///< Resolved sc_type; -1 = none
+	uint16            skill_id = 0;    ///< The skill to cast, for pop_ally_skill_refused; 0 = none
 	bool              want_has_status; ///< true=find ally WITH status, false=WITHOUT
 	int               best_hp_pct;     ///< Tracks lowest HP% seen (100=no winner yet)
 	map_session_data *result;          ///< Best ally found (nullptr if none)
@@ -333,6 +334,64 @@ static bool pop_ally_devotion_refused(const map_session_data *shell, const map_s
 		if (shell->devotion[i] == ally->id || shell->devotion[i] == 0)
 			return false;
 	return true;
+}
+
+/// Whether rAthena would refuse `skill_id` on this ally when the cast completes, by the checks
+/// its skill makes on the target. The companion kept picking the same ally and losing the cast:
+/// a Crusader cast Providence at another Crusader forever. `skill_id` 0 (a condition check with
+/// no skill) refuses nothing.
+static bool pop_ally_skill_refused(const map_session_data *shell, const map_session_data *ally, uint16 skill_id)
+{
+	const auto lacks = [ally](int32 pos) { return pc_checkequip(ally, pos) < 0; };
+	const auto unarmed = [ally]() {
+		const int16 index = ally->equip_index[EQI_HAND_R];
+		return index < 0 || !ally->inventory_data[index] || ally->inventory_data[index]->type != IT_WEAPON;
+	};
+	switch (skill_id) {
+	case CR_DEVOTION:
+		return pop_ally_devotion_refused(shell, ally);
+	case CR_PROVIDENCE: // skills/swordman/resistantsouls.cpp: not on the Crusader line
+		return (ally->class_ & MAPID_SECONDMASK) == MAPID_CRUSADER;
+	case CG_MARIONETTE: // archer/marionettecontrol.cpp; a second cast on the same pair ends it
+		return ((ally->class_ & MAPID_SECONDMASK) == MAPID_BARDDANCER && ally->status.sex == shell->status.sex)
+			|| ally->sc.getSCE(SC_CURSE) || ally->sc.getSCE(SC_QUAGMIRE)
+			|| shell->sc.getSCE(SC_MARIONETTE) || ally->sc.getSCE(SC_MARIONETTE2);
+	case AM_CP_WEAPON: return lacks(EQP_WEAPON); // merchant/alchemicalweapon.cpp and the others
+	case AM_CP_SHIELD: return lacks(EQP_SHIELD);
+	case AM_CP_ARMOR:  return lacks(EQP_ARMOR);
+	case AM_CP_HELM:   return lacks(EQP_HEAD_TOP);
+	case CR_FULLPROTECTION: // merchant/fullprotection.cpp: fails with none of the four
+		return lacks(EQP_WEAPON) && lacks(EQP_SHIELD) && lacks(EQP_ARMOR) && lacks(EQP_HEAD_TOP);
+	case BO_ADVANCE_PROTECTION: // merchant/advanceprotection.cpp: needs shadow gear
+		return lacks(EQP_SHADOW_GEAR);
+	case SA_FLAMELAUNCHER: // mage/endow*.cpp: not on bare fists (pre-renewal, a miss unequips the weapon)
+	case SA_FROSTWEAPON:
+	case SA_LIGHTNINGLOADER:
+	case SA_SEISMICWEAPON:
+		return ally->status.weapon == W_FIST;
+	case SOA_TALISMAN_OF_MAGICIAN: // taekwon/talismanof*.cpp: needs a weapon in hand
+	case SOA_TALISMAN_OF_FIVE_ELEMENTS:
+		return unarmed();
+	case SP_KAUTE: { // taekwon/kaute.cpp, which also stuns the caster when it refuses
+		const status_change_entry *spirit = shell->sc.getSCE(SC_SPIRIT);
+		return !((spirit && spirit->val2 == SL_SOULLINKER)
+			|| (ally->class_ & MAPID_SECONDMASK) == MAPID_SOUL_LINKER
+			|| ally->status.char_id == shell->status.char_id
+			|| ally->status.char_id == shell->status.partner_id
+			|| ally->status.char_id == shell->status.child
+			|| ally->sc.getSCE(SC_SOULUNITY));
+	}
+	case SP_SOULREVOLVE: // taekwon/soulrevolution.cpp: only ends a soul link the ally holds
+		return !(ally->sc.getSCE(SC_SPIRIT) || ally->sc.getSCE(SC_SOULGOLEM) || ally->sc.getSCE(SC_SOULSHADOW)
+			|| ally->sc.getSCE(SC_SOULFALCON) || ally->sc.getSCE(SC_SOULFAIRY));
+	case AB_CLEARANCE: // acolyte/clearance.cpp: party members only
+	case SO_STRIKING:  // mage/striking.cpp
+		return shell != ally && battle_check_target(shell, ally, BCT_PARTY) <= 0;
+	case WL_WHITEIMPRISON: // mage/whiteimprison.cpp: the caster or an enemy, never an ally
+		return shell != ally;
+	default:
+		return false;
+	}
 }
 
 static bool pop_ally_buff_clashes(map_session_data *ally, sc_type sc_id)
@@ -490,7 +549,7 @@ static int32 pop_ally_hp_scan_cb(block_list *bl, va_list ap)
 	if (status_isdead(*ally)) return 0;
 	if (pop_ally_untargetable(ally)) return 0;
 	if (pop_ally_buff_clashes(ally, ctx->gives_sc)) return 0;
-	if (ctx->gives_sc == SC_DEVOTION && pop_ally_devotion_refused(ctx->shell, ally)) return 0;
+	if (pop_ally_skill_refused(ctx->shell, ally, ctx->skill_id)) return 0;
 	if (ally->battle_status.max_hp == 0) return 0;
 	const int pct = static_cast<int>(ally->battle_status.hp * 100 / ally->battle_status.max_hp);
 	if (pct < ctx->hp_threshold && pct < ctx->best_hp_pct) {
@@ -580,7 +639,7 @@ static int32 pop_ally_status_scan_cb(block_list *bl, va_list ap)
 	if (status_isdead(*ally)) return 0;
 	if (pop_ally_untargetable(ally)) return 0;
 	if (pop_ally_buff_clashes(ally, ctx->gives_sc)) return 0;
-	if (ctx->gives_sc == SC_DEVOTION && pop_ally_devotion_refused(ctx->shell, ally)) return 0;
+	if (pop_ally_skill_refused(ctx->shell, ally, ctx->skill_id)) return 0;
 	if (ctx->sc_resolved < 0) return 0;
 	const status_change *sca = status_get_sc(ally);
 	const bool has_it = sca && sca->hasSCE(static_cast<sc_type>(ctx->sc_resolved));
@@ -602,7 +661,7 @@ static int32 pop_ally_any_scan_cb(block_list *bl, va_list ap)
 	if (status_isdead(*ally)) return 0;
 	if (pop_ally_untargetable(ally)) return 0;
 	if (pop_ally_buff_clashes(ally, ctx->gives_sc)) return 0;
-	if (ctx->gives_sc == SC_DEVOTION && pop_ally_devotion_refused(ctx->shell, ally)) return 0;
+	if (pop_ally_skill_refused(ctx->shell, ally, ctx->skill_id)) return 0;
 	return pop_ally_offer(ctx, ally);
 }
 
@@ -669,6 +728,7 @@ static map_session_data* population_shell_find_ally_target(
 	ctx.best_hp_pct     = 101;
 	ctx.result          = nullptr;
 	ctx.gives_sc        = gives_sc;
+	ctx.skill_id        = skill_id;
 
 	switch (cond) {
 	case C::AllyHpBelow:

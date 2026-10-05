@@ -77,6 +77,7 @@ test('Devotion skips allies rAthena would refuse it on', () => {
 	assert.match(body[1], /shell->devotion\[i\] == ally->id \|\| shell->devotion\[i\] == 0/, 'a free slot');
 	for (const cb of ['pop_ally_hp_scan_cb', 'pop_ally_status_scan_cb', 'pop_ally_any_scan_cb']) {
 		const m = new RegExp(`static int32 ${cb}\\([^)]*\\)\\n\\{([\\s\\S]*?)\\n\\}`).exec(combat);
-		assert.ok(m && /ctx->gives_sc == SC_DEVOTION && pop_ally_devotion_refused\(ctx->shell, ally\)/.test(m[1]), cb);
+		assert.ok(m && /if \(pop_ally_skill_refused\(ctx->shell, ally, ctx->skill_id\)\) return 0;/.test(m[1]), cb);
 	}
+	assert.match(combat, /case CR_DEVOTION:\n\t\treturn pop_ally_devotion_refused\(shell, ally\);/, 'Devotion keeps its own checks');
 });

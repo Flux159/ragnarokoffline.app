@@ -213,6 +213,7 @@ SKIP = re.compile(
     r"|BD_ENCORE"  # renewal: recasts the last song, which Dissonance resets; the song rows recast instead
     r"|WM_DEADHILLHERE"  # revives a dead party member only; the engine casts it, like ALL_RESURRECTION
     r"|AL_WARP"  # opens a destination menu on the caster's own client; a companion has none, so no portal
+    r"|WL_WHITEIMPRISON"  # typed Support, but lands only on the caster or an enemy: an ally row never succeeds
     r"|MO_KITRANSLATION|SR_POWERVELOCITY"  # give the caster's spheres to a party member; heal nobody
     r"|HT_MAKINGARROW|AC_MAKINGARROW|HT_TALKIEBOX|HT_REMOVETRAP|HT_SPRINGTRAP|HT_PHANTASMIC"
     r"|TF_STEAL|TF_PICKSTONE|TF_THROWSTONE|TF_SPRINKLESAND"
@@ -234,6 +235,7 @@ HAND_WRITTEN = {
     "TF_DETOXIFY": "cure: needs Condition: ally_status per status, from detoxify.cpp",
     "GC_ANTIDOTE": "cure: needs Condition: ally_status per status, from antidote.cpp",
     "MO_ABSORBSPIRITS": "SP drain: cast on a monster when SP is low, not on a hurt ally",
+    "CG_MARIONETTE": "its SC_MARIONETTE is the caster's (the ally gets SC_MARIONETTE2): not_self_status",
 }
 
 def q(skill, extra):
