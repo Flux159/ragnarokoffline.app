@@ -453,6 +453,36 @@ one and a recalled companion gets its restored level's kind, and it is topped
 up when a rest ends at the upper mark. A shell back from a selling trip is
 spawned anew, so it has a fresh stock too.
 
+### Shells built to their level
+
+Upstream rolled each stat straight from the profile's `Str`..`Luk` range, whatever
+the shell's level, and a profile that declares no ranges got 90-109 in all six. The
+shipped `novice_default`, `combat_pve_low`, `combat_pve_low_transcended`,
+`combat_pve` and `combat_pve_high` declare none, so a level 10 Acolyte had about 100
+in everything.
+
+The rolls are now only the shape of the build (`pop_shell_spend_to_level`, marked
+`RAGNAROKMAC`):
+- every stat starts at 1;
+- the shell gets the points a character of its level has, the stock table plus the
+  transcendent bonus, as `pc_resetstate` gives them;
+- it spends them a point at a time, at the stock cost and within the job's cap, on
+  whichever stat is furthest behind its share of the target.
+
+A stat a profile leaves out is not invested in. A profile that declares none gets its
+job line's build (`pop_shell_job_build`) instead. Points left over stay in
+`status_point`, for a companion's growth to spend. A recalled companion keeps the
+stats saved with it.
+
+Trait stats (`Pow`..`Crt`) work the same way (`pop_shell_spend_traits_to_level`):
+- they start at 0;
+- the shell gets the trait points a character of its level has (none up to level 200,
+  about 4 a level after it, from `get_trait_table_point`);
+- they are spent toward the rolled ranges at the stock cost and within the trait cap.
+
+A trait the profile does not declare stays 0. Only the `companion_fourth_*` profiles
+declare any.
+
 ## Measured cost
 
 Alpine/musl, arm64, packetver 20221005, map server only, 4 GiB guest:

@@ -5509,6 +5509,132 @@ static void population_engine_sync_shell_vehicle(map_session_data *sd)
 		pc_setoption(sd, sd->sc.option | OPTION_MADOGEAR, MADO_ROBOT);
 }
 
+// ---- RAGNAROKMAC: shells built to their level -------------------------------
+//
+// Upstream rolled each stat straight from the profile's range, whatever the shell's
+// level, and a profile with no ranges got 90-109 in all six: a level 10 Swordsman or
+// Acolyte had ~100 everywhere, which a real character of that level could never buy.
+// Now the rolled values are only the shape of the build. The shell starts at 1 in every
+// stat with the points a character of its level has (as pc_resetstate gives them) and
+// spends them a point at a time on whichever stat is furthest behind its share of the
+// target, at the stock cost and within the job's cap. What is left stays in
+// status_point, for a companion's growth to spend later.
+
+/// A build for a profile that declares no stats, by job line: what a player of that
+/// line would put points into. Proportions, not values; Novice and anything not listed
+/// stay even.
+static void pop_shell_job_build(uint64 class_mapid, int16_t out[6])
+{
+	// STR, AGI, VIT, INT, DEX, LUK
+	static const int16_t even[6]       = { 50, 50, 50, 50, 50, 50 };
+	static const int16_t swordman[6]   = { 80, 40, 70,  1, 40, 10 };
+	static const int16_t mage[6]       = {  1, 20, 30, 90, 80,  1 };
+	static const int16_t archer[6]     = { 10, 70, 30, 10, 90, 30 };
+	static const int16_t acolyte[6]    = {  1, 20, 60, 90, 60, 10 };
+	static const int16_t merchant[6]   = { 80, 30, 60, 10, 50, 20 };
+	static const int16_t thief[6]      = { 60, 90, 40,  1, 50, 30 };
+	static const int16_t taekwon[6]    = { 70, 80, 40, 20, 50, 30 };
+	static const int16_t gunslinger[6] = { 20, 60, 30, 10, 90, 40 };
+	static const int16_t ninja[6]      = { 40, 70, 40, 60, 70, 20 };
+	const int16_t *b = even;
+	switch (class_mapid & MAPID_FIRSTMASK) {
+		case MAPID_SWORDMAN:   b = swordman; break;
+		case MAPID_MAGE:       b = mage; break;
+		case MAPID_ARCHER:     b = archer; break;
+		case MAPID_ACOLYTE:    b = acolyte; break;
+		case MAPID_MERCHANT:   b = merchant; break;
+		case MAPID_THIEF:      b = thief; break;
+		case MAPID_TAEKWON:    b = taekwon; break;
+		case MAPID_GUNSLINGER: b = gunslinger; break;
+		case MAPID_NINJA:      b = ninja; break;
+		default: break;
+	}
+	for (int i = 0; i < 6; ++i)
+		out[i] = b[i];
+}
+
+/// Spend the level's stat points toward `target` (STR..LUK). sd->status.base_level,
+/// class_ and sex must already be set; the six stats are overwritten.
+static void pop_shell_spend_to_level(map_session_data *sd, const int16_t target[6])
+{
+	uint16 *stat[6] = { &sd->status.str, &sd->status.agi, &sd->status.vit,
+		&sd->status.int_, &sd->status.dex, &sd->status.luk };
+	for (int i = 0; i < 6; ++i)
+		*stat[i] = 1;
+	int64 points = statpoint_db.get_table_point(sd->status.base_level);
+	if ((sd->class_ & JOBL_UPPER) || pc_is_primary_fourth(sd->class_))
+		points += battle_config.transcendent_status_points;
+
+	bool done[6];
+	for (int i = 0; i < 6; ++i)
+		done[i] = target[i] <= 1;
+	for (int guard = 0; guard < 4000; ++guard) {
+		// The stat furthest behind its share of the target: lowest cur/target.
+		int pick = -1;
+		for (int i = 0; i < 6; ++i) {
+			if (done[i])
+				continue;
+			if (*stat[i] >= target[i]) {
+				done[i] = true;
+				continue;
+			}
+			if (pick < 0 || static_cast<int64>(*stat[i]) * target[pick] < static_cast<int64>(*stat[pick]) * target[i])
+				pick = i;
+		}
+		if (pick < 0)
+			break;
+		// 0 at the job's cap; costs only rise, so a stat it cannot afford now is done.
+		const int32 cost = pc_need_status_point(sd, SP_STR + pick, 1);
+		if (cost <= 0 || cost > points) {
+			done[pick] = true;
+			continue;
+		}
+		points -= cost;
+		++*stat[pick];
+	}
+	sd->status.status_point = static_cast<uint32>(points);
+}
+
+/// The same for the 4th-job trait stats (POW..CRT): they start at 0, and the shell gets
+/// the trait points a character of its level has (0 up to level 200, about 4 a level
+/// after it; pc_resetstate's get_trait_table_point). A class without traits has a cap of
+/// 0, so nothing is spent and its traits stay 0.
+static void pop_shell_spend_traits_to_level(map_session_data *sd, const int16_t target[6])
+{
+	uint16 *trait[6] = { &sd->status.pow, &sd->status.sta, &sd->status.wis,
+		&sd->status.spl, &sd->status.con, &sd->status.crt };
+	for (int i = 0; i < 6; ++i)
+		*trait[i] = 0;
+	int64 points = statpoint_db.get_trait_table_point(sd->status.base_level);
+
+	bool done[6];
+	for (int i = 0; i < 6; ++i)
+		done[i] = target[i] <= 0;
+	for (int guard = 0; guard < 2000; ++guard) {
+		int pick = -1;
+		for (int i = 0; i < 6; ++i) {
+			if (done[i])
+				continue;
+			if (*trait[i] >= target[i]) {
+				done[i] = true;
+				continue;
+			}
+			if (pick < 0 || static_cast<int64>(*trait[i]) * target[pick] < static_cast<int64>(*trait[pick]) * target[i])
+				pick = i;
+		}
+		if (pick < 0)
+			break;
+		const int32 cost = pc_need_trait_point(sd, SP_POW + pick, 1);
+		if (cost <= 0 || cost > points) {
+			done[pick] = true;
+			continue;
+		}
+		points -= cost;
+		++*trait[pick];
+	}
+	sd->status.trait_point = static_cast<uint32>(points);
+}
+
 static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, int y, uint32_t index,
 	uint16_t job_id, char sex, uint8_t hair_style, uint16_t hair_color,
 	uint16_t weapon, uint16_t shield, uint16_t head_top, uint16_t head_mid,
@@ -5692,6 +5818,27 @@ static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, in
 		sd->status.luk = static_cast<uint16_t>(90 + (rnd() % 20));
 	}
 
+	// RAGNAROKMAC: the rolls above are the shape of the build; spend the level's points
+	// toward them (pop_shell_spend_to_level). A stat the profile does not declare is not
+	// invested in, and a profile that declares none gets its job line's build instead of
+	// upstream's 90-109 everywhere.
+	{
+		const bool declared[6] = {
+			pop_cfg != nullptr && pop_cfg->str_min >= 0, pop_cfg != nullptr && pop_cfg->agi_min >= 0,
+			pop_cfg != nullptr && pop_cfg->vit_min >= 0, pop_cfg != nullptr && pop_cfg->intl_min >= 0,
+			pop_cfg != nullptr && pop_cfg->dex_min >= 0, pop_cfg != nullptr && pop_cfg->luk_min >= 0 };
+		const uint16 rolled[6] = { sd->status.str, sd->status.agi, sd->status.vit,
+			sd->status.int_, sd->status.dex, sd->status.luk };
+		int16_t target[6];
+		if (std::none_of(std::begin(declared), std::end(declared), [](bool d) { return d; })) {
+			pop_shell_job_build(sd->class_, target);
+		} else {
+			for (int i = 0; i < 6; ++i)
+				target[i] = declared[i] ? static_cast<int16_t>(rolled[i]) : 1;
+		}
+		pop_shell_spend_to_level(sd, target);
+	}
+
 	// RAGNAROKMAC: 4th-job trait stats (Renewal trait era). No profile default means
 	// 0 — the classic-stat fallback above is fine for base stats, but traits must not
 	// inherit the 90+ rnd%%20 fallback or every 1st/2nd job shell would be
@@ -5719,6 +5866,19 @@ static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, in
 	if (pop_cfg != nullptr && pop_cfg->crt_min >= 0) {
 		const int16_t hi = pop_cfg->crt_max >= 0 ? pop_cfg->crt_max : pop_cfg->crt_min;
 		sd->status.crt = cap_value(static_cast<int16_t>(population_roll_closed_range(pop_cfg->crt_min, hi)), 0, 999);
+	}
+
+	// RAGNAROKMAC: as for the six stats above, the trait rolls are the shape of the build
+	// and the level's trait points are spent toward them. Undeclared traits stay 0.
+	{
+		const int16_t target[6] = {
+			(pop_cfg != nullptr && pop_cfg->pow_min >= 0) ? static_cast<int16_t>(sd->status.pow) : static_cast<int16_t>(0),
+			(pop_cfg != nullptr && pop_cfg->sta_min >= 0) ? static_cast<int16_t>(sd->status.sta) : static_cast<int16_t>(0),
+			(pop_cfg != nullptr && pop_cfg->wis_min >= 0) ? static_cast<int16_t>(sd->status.wis) : static_cast<int16_t>(0),
+			(pop_cfg != nullptr && pop_cfg->spl_min >= 0) ? static_cast<int16_t>(sd->status.spl) : static_cast<int16_t>(0),
+			(pop_cfg != nullptr && pop_cfg->con_min >= 0) ? static_cast<int16_t>(sd->status.con) : static_cast<int16_t>(0),
+			(pop_cfg != nullptr && pop_cfg->crt_min >= 0) ? static_cast<int16_t>(sd->status.crt) : static_cast<int16_t>(0) };
+		pop_shell_spend_traits_to_level(sd, target);
 	}
 
 	// HP/SP placeholders — status_calc_pc() overwrites these from job_stats.yml (includes
@@ -8340,6 +8500,12 @@ static void population_engine_recall_one_companion(map_session_data *owner, int1
 	shell->status.str = str; shell->status.agi = agi;
 	shell->status.vit = vit; shell->status.int_ = intl;
 	shell->status.dex = dex; shell->status.luk = luk;
+	// RAGNAROKMAC: the spawn above spent level 99's points on a job build and left
+	// what the build didn't need in status_point / trait_point. The saved build has
+	// replaced those stats, so the leftovers are not this companion's: kept, the
+	// next growth poll would spend them on top of it, on every recall.
+	shell->status.status_point = 0;
+	shell->status.trait_point  = 0;
 
 	population_engine_shell_equip_item(shell, armor, index_, "armor");
 	population_engine_shell_equip_item(shell, shoes, index_, "shoes");
