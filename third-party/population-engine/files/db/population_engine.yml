@@ -43,7 +43,10 @@
 #
 # Phase 2 — combat identity (omit to use engine defaults)
 # ---------------------------------------------------------
-# BaseLevel:     [min, max] base-level range assigned at spawn.
+# BaseLevel:     [min, max] base-level range assigned at spawn. On a map
+#                with monsters (population_engine_level_from_map), their
+#                median level + 8 is used instead: never below min, and
+#                above max where the monsters are, up to the class's cap.
 # JobLevel:      [min, max] job-level range assigned at spawn.
 # Str/Agi/Vit/Int/Dex/Luk:  [min, max] raw stat ranges at spawn.
 #                            Keep them within the job's max_*_parameter
