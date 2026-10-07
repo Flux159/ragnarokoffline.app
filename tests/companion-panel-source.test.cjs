@@ -78,8 +78,8 @@ test('the roster wire format matches what the server writes', () => {
 		path.join(ROOT, 'third-party', 'population-engine', 'files', 'src', 'map', 'population_engine.cpp'),
 		'utf8'
 	).replace(/\r\n/g, '\n');
-	assert.match(engine, /"@CP\|%s\|%s\|%d\|%d\|%d\|%d\|%s\|%d\|%d\|%d"/,
-		'server @CP format changed (expected the 11-field form: pet switch, duty, rebirth)');
+	assert.match(engine, /"@CP\|%s\|%s\|%d\|%d\|%d\|%d\|%s\|%d\|%d\|%d(\|%d\|%d\|%d\|%d)?"/,
+		'server @CP format changed (expected the 11-field form: pet switch, duty, rebirth; then the Battle tab thresholds)');
 	assert.match(engine, /"@CPEND\|%d"/, 'server sentinel changed');
 	// The client must consume exactly that prefix and that sentinel.
 	assert.match(src, /'@CP'/, 'client no longer keys on the @CP prefix');
@@ -135,7 +135,7 @@ test('the duty badge shows what the server holds, so it survives a restart', () 
 		path.join(ROOT, 'third-party', 'population-engine', 'files', 'src', 'map', 'population_engine.cpp'),
 		'utf8'
 	).replace(/\r\n/g, '\n');
-	assert.match(engine, /SELECT name, job_id, active, favorite, base_level, hom_enabled, duty(, job_level)? FROM/,
+	assert.match(engine, /SELECT name, job_id, active, favorite, base_level, hom_enabled, duty(, job_level)?(, heal_at, emergency_at, rest_below, rest_until)? FROM/,
 		'the roster reads the saved duty');
 	assert.match(engine, /duty = sd->pop\.role;/, 'and the live one when summoned');
 	assert.match(src, /const DUTY_NAMES = \{ 1: 'tank', 2: 'support', 3: 'attacker' \};/,

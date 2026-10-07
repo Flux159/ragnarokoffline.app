@@ -66,7 +66,7 @@ test('the placement recovery backs off instead of re-warping every tick', () => 
 
 test('the post-recall resync registers locally instead of asking the char server', () => {
 	const recall = src.slice(src.indexOf('int population_engine_recall_companions'));
-	const body = recall.slice(0, 9000);
+	const body = recall.slice(0, 10000);
 	assert.match(body, /pop_companion_register_local_party\(shell, owner\)/,
 		'the resync must register companions locally');
 	assert.ok(!/party_request_info\(owner->status\.party_id/.test(body),

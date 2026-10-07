@@ -1309,6 +1309,10 @@ const COMPANION_COLUMNS: &[(&str, &str)] = &[
     // v11: every worn piece in full -- refine, cards, options -- where the *_nameid
     // columns keep only an id. NULL on an existing row, which recalls as it always did.
     ("gear_detail", "TEXT NULL DEFAULT NULL"),
+    // v12: when the companion sits down to rest between fights, chosen in the Companions
+    // window. An existing row gets the defaults every companion starts with.
+    ("rest_below", "TINYINT NOT NULL DEFAULT 30"),
+    ("rest_until", "TINYINT NOT NULL DEFAULT 95"),
 ];
 
 /// Indexes added after the table first shipped, as (name, columns).

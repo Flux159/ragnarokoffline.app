@@ -206,7 +206,8 @@ function rosterBody(text) {
 
 /**
  * Parse one @CP line. Format (see population_engine_companion_list_raw):
- *   @CP|name|job|base_level|active|favorite|live_level|live_job|pet|duty
+ *   @CP|name|job|base_level|active|favorite|live_level|live_job|pet|duty|rebirth
+ *      |heal_at|emergency_at|rest_below|rest_until
  *   @CPEND|count
  *
  * @param {string} text
@@ -305,6 +306,32 @@ function _feeText(t) {
 	return parts.join(' and ');
 }
 
+/** A numeric @CP field by position, or null when this server does not send it. */
+function _field(parts, i) {
+	const raw = parts.length > i ? parseInt(parts[i], 10) : NaN;
+	return Number.isFinite(raw) ? raw : null;
+}
+
+/**
+ * The healer and resting thresholds to show on the Battle tab: what the server holds for
+ * the party, read from a summoned companion first (the commands set every summoned one),
+ * else any companion, else the defaults every companion starts with.
+ */
+function _thresholds() {
+	const fallback = { healAt: 75, emergencyAt: 35, restBelow: 30, restUntil: 95 };
+	const from = _roster.find(m => m.active && m.healAt !== null) || _roster.find(m => m.healAt !== null);
+	if (!from) {
+		return fallback;
+	}
+	const pick = key => (from[key] !== null && from[key] !== undefined ? from[key] : fallback[key]);
+	return {
+		healAt: pick('healAt'),
+		emergencyAt: pick('emergencyAt'),
+		restBelow: pick('restBelow'),
+		restUntil: pick('restUntil')
+	};
+}
+
 function parseRosterLine(text) {
 	const body = rosterBody(text);
 	if (body === null) {
@@ -322,7 +349,9 @@ function parseRosterLine(text) {
 				m.liveJob !== _roster[i].liveJob ||
 				m.level !== _roster[i].level || m.active !== _roster[i].active ||
 				m.liveLevel !== _roster[i].liveLevel || m.hom !== _roster[i].hom ||
-				m.duty !== _roster[i].duty);
+				m.duty !== _roster[i].duty ||
+				m.healAt !== _roster[i].healAt || m.emergencyAt !== _roster[i].emergencyAt ||
+				m.restBelow !== _roster[i].restBelow || m.restUntil !== _roster[i].restUntil);
 		_roster = fresh;
 		_pending = [];
 		const age = _rosterRequestedAt ? Math.round((Date.now() - _rosterRequestedAt) / 1000) : 0;
@@ -374,7 +403,13 @@ function parseRosterLine(text) {
 		rebirth: (() => {
 			const raw = parts.length > 10 ? parseInt(parts[10], 10) : NaN;
 			return Number.isFinite(raw) ? raw : -1;
-		})()
+		})(),
+		// The Battle tab's saved thresholds, appended after rebirth. null from an older server,
+		// which leaves the boxes on their defaults as before.
+		healAt: _field(parts, 11),
+		emergencyAt: _field(parts, 12),
+		restBelow: _field(parts, 13),
+		restUntil: _field(parts, 14)
 	});
 	// The server has answered for this companion; its duty is the one to show.
 	if (parts.length > 9) {
@@ -671,6 +706,9 @@ function _drawBattle() {
 	);
 	page.append(orders);
 
+	// What the server has saved, so the boxes open on the party's own values.
+	const saved = _thresholds();
+
 	const h3 = document.createElement('h4');
 	h3.textContent = 'Healer thresholds';
 	page.append(h3);
@@ -684,13 +722,13 @@ function _drawBattle() {
 	normal.type = 'number';
 	normal.min = 1;
 	normal.max = 99;
-	normal.value = '75';
+	normal.value = String(saved.healAt);
 	const emergency = document.createElement('input');
 	emergency.className = 'num';
 	emergency.type = 'number';
 	emergency.min = 1;
 	emergency.max = 99;
-	emergency.value = '35';
+	emergency.value = String(saved.emergencyAt);
 
 	page.append(_row(
 		(() => {
@@ -711,6 +749,55 @@ function _drawBattle() {
 			const a = Math.max(1, Math.min(99, Number(normal.value) || 75));
 			const b = Math.max(1, Math.min(99, Number(emergency.value) || 35));
 			talk(`@companion heal ${a} ${b}`, false);
+		})
+	));
+
+	// When companions sit down to rest between fights (whole party, like the
+	// healer thresholds). The server keeps "until" at least 5 above "below",
+	// or a companion would stand up and sit straight back down.
+	const h5 = document.createElement('h4');
+	h5.textContent = 'Resting';
+	page.append(h5);
+	const restHint = document.createElement('div');
+	restHint.className = 'hint';
+	restHint.textContent = 'Between fights, companions sit down to recover below this SP or HP level, '
+		+ 'and stand once both are back. 0 = never rest.';
+	page.append(restHint);
+
+	const restBelow = document.createElement('input');
+	restBelow.className = 'num';
+	restBelow.type = 'number';
+	restBelow.min = 0;
+	restBelow.max = 90;
+	restBelow.value = String(saved.restBelow);
+	const restUntil = document.createElement('input');
+	restUntil.className = 'num';
+	restUntil.type = 'number';
+	restUntil.min = 5;
+	restUntil.max = 100;
+	restUntil.value = String(saved.restUntil);
+
+	page.append(_row(
+		(() => {
+			const s = document.createElement('span');
+			s.className = 'nm';
+			s.textContent = 'Rest below';
+			return s;
+		})(),
+		restBelow,
+		(() => {
+			const s = document.createElement('span');
+			s.className = 'lv';
+			s.textContent = '% / until';
+			return s;
+		})(),
+		restUntil,
+		_button('Set', 'b', () => {
+			const a = Math.max(0, Math.min(90, Math.round(Number(restBelow.value)) || 0));
+			const b = Math.max(a + 5, Math.min(100, Math.round(Number(restUntil.value)) || 95));
+			restBelow.value = String(a);
+			restUntil.value = String(b);
+			talk(`@companion rest ${a} ${b}`, false);
 		})
 	));
 }

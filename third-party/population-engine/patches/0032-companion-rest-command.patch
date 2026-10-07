@@ -1,0 +1,53 @@
+From 0000000000000000000000000000000000000030
+Subject: [PATCH] @companion rest: when companions sit down to rest
+
+A companion low on SP or HP sits down between fights to recover faster, the
+way a player rests (pop_shell_rest in population_engine.cpp). "@companion rest
+<below%> <until%>" sets when, for every summoned companion of the player, like
+"@companion heal": it sits below <below>% of its SP or HP (0 = never) and stands
+again once both are back to <until>%. The values are stored with each companion
+row (v12). The Companions window's Battle tab sends this command.
+
+diff --git a/src/custom/atcommand.inc b/src/custom/atcommand.inc
+index 232a457..c23d38a 100644
+--- a/src/custom/atcommand.inc
++++ b/src/custom/atcommand.inc
+@@ -719,6 +719,29 @@
+ 		clif_displaymessage(fd, msg);
+ 		return 0;
+ 	}
++	// RAGNAROKMAC (rest): when companions sit down to rest between fights
++	// ("@companion rest <below%> <until%>"), for the whole party like the healer
++	// thresholds, and stored per companion row the same way. 0 below = never.
++	if (strcmpi(cmd, "rest") == 0) {
++		int below = -1, until = -1;
++		if (sscanf(param, "%d %d", &below, &until) != 2 || below < 0 || below > 90 ||
++			until < below + 5 || until > 100) {
++			clif_displaymessage(fd, "Usage: @companion rest <rest below % 0..90, 0 = never> <until % up to 100, at least 5 above>");
++			return -1;
++		}
++		const int applied = population_engine_companion_set_rest_thresholds(
++			sd->status.account_id, (int16_t)below, (int16_t)until);
++		char msg[128];
++		if (applied > 0 && below == 0)
++			snprintf(msg, sizeof(msg), "Companions: never rest (on %d companion(s)).", applied);
++		else if (applied > 0)
++			snprintf(msg, sizeof(msg), "Companions: rest below %d%% SP or HP, until %d%% (on %d companion(s)).",
++				below, until, applied);
++		else
++			snprintf(msg, sizeof(msg), "Companions: resting saved; no companion is summoned right now.");
++		clif_displaymessage(fd, msg);
++		return 0;
++	}
+ 	// RAGNAROKMAC (homunculus, phase 3c): the companion row's pet switch.
+ 	// The engine attaches this pet by itself at spawn, so this is not a summon - it is
+ 	// the switch the row shows. The state is the TRAILING token so a name may contain
+@@ -749,7 +772,7 @@
+ 		clif_displaymessage(fd, reply[0] ? reply : "Could not set that companion's homunculus.");
+ 		return 0;
+ 	}
+-	clif_displaymessage(fd, "Usage: @companion list | summon <name> | draft <job> [name] [m|f] | jobs | skills <name> [list|none|auto] | favorite <name> | remove <name> | dismiss <name> | gear <name> [slots] | heal <a%> <b%> | homunculus <name> [on|off]");
++	clif_displaymessage(fd, "Usage: @companion list | summon <name> | draft <job> [name] [m|f] | jobs | skills <name> [list|none|auto] | favorite <name> | remove <name> | dismiss <name> | gear <name> [slots] | heal <a%> <b%> | rest <a%> <b%> | homunculus <name> [on|off]");
+ 	return -1;
+ }
+ 

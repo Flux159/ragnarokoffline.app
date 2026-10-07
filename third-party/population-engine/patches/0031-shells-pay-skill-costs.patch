@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000029
+Subject: [PATCH] Shells pay their skill costs
+
+The immortality guard in status_damage() refused everything positive for a shell without the
+mortal flag, including the SP a skill costs: skill_consume_requirement() charges it with
+status_zap(), which is status_damage() with no source. Immortal shells cast for nothing.
+
+An immortal shell now refuses only what someone else does to it. With no source, SP and AP go
+through (skill costs, and the upkeep status_charge() takes for maintained statuses), and HP is
+dropped, since poison and bleeding ticks have no source either. Mortal shells are unchanged.
+
+diff --git a/src/map/status.cpp b/src/map/status.cpp
+index eabbed2..618eefa 100644
+--- a/src/map/status.cpp
++++ b/src/map/status.cpp
+@@ -1501,12 +1501,18 @@ int32 status_damage(block_list *src,block_list *target,int64 dhp, int64 dsp, int
+ 	nullpo_ret(target);
+ 
+ 	// Population shells are immortal by default; only shells with PSF::Mortal (Flags: mortal) take damage.
++	// An immortal shell still pays its own way: SP and AP with no source are what skills and
++	// maintained statuses cost (status_zap, status_charge), so those go through. HP never does,
++	// since poison and bleeding have no source either.
+ 	if (target->type == BL_PC) {
+ 		map_session_data *pop_sd = BL_CAST(BL_PC, target);
+ 		if (pop_sd != nullptr && population_engine_is_population_pc(pop_sd->id)
+-		    && !population_engine_shell_is_mortal(pop_sd)
+-		    && (hp > 0 || sp > 0 || ap > 0))
+-			return 0;
++		    && !population_engine_shell_is_mortal(pop_sd)) {
++			if (src != nullptr && (hp > 0 || sp > 0 || ap > 0))
++				return 0;
++			if (hp > 0)
++				hp = 0;
++		}
+ 	}
+ 
+ 	if(sp && !(target->type&BL_CONSUME))

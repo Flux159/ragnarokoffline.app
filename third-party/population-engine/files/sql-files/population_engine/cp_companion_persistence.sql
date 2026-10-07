@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS `cp_companion_persistence` (
   `hom_exp`          BIGINT        NOT NULL DEFAULT 0,  -- the pet's exp toward the next level (v8)
   `given_mask`       INT UNSIGNED  NOT NULL DEFAULT 0,  -- EQP_* positions worn by gear the OWNER gave (v9); only these come back
   `gear_detail`      TEXT          NULL DEFAULT NULL,   -- every worn piece in full: refine, cards, options (v11); NULL = saved before v11, recalled from the *_nameid columns alone
+  `rest_below`       TINYINT       NOT NULL DEFAULT 30, -- sits down between fights below this SP% or HP%, 0 = never (v12)
+  `rest_until`       TINYINT       NOT NULL DEFAULT 95, -- stands again once both are back to this % (v12)
   `map_id`           SMALLINT      NOT NULL DEFAULT 0, -- mapindex id of owner at recruit (recall target)
   `active`           TINYINT       NOT NULL DEFAULT 1, -- 1 = recalled on login; 0 = released (Goal 3 sets this)
   `favorite`         TINYINT       NOT NULL DEFAULT 0, -- 1 = owner favorited (friend list sort)

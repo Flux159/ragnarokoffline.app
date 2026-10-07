@@ -420,6 +420,39 @@ calls one of the commands.
 
 The player-facing reference is [docs/mods/shell-control.md](../../docs/mods/shell-control.md).
 
+### Shells pay for their skills
+
+Upstream's shells never spent SP, for two reasons:
+
+- `population_engine_spawn_shell` set `sd->state.autocast = 1` on every shell to
+  get past `skill_isNotOk`'s cast-spam check. rAthena treats `autocast` as a
+  card's or item's free skill, so `skill_consume_requirement` set every SP cost
+  to 0, companions included. The flag is no longer set (marked `RAGNAROKMAC`).
+  The spam check it bypassed is off at `skill_amotion_leniency: 0`, rAthena's
+  default, which the app keeps.
+- The immortality guard 0001 puts in `status_damage` refused everything
+  positive for a shell without the `mortal` flag, and a skill's cost arrives
+  there through `status_zap`. `patches/0031-shells-pay-skill-costs.patch`
+  narrows it: an immortal shell still refuses whatever someone else does to it,
+  but its own sourceless SP and AP costs (skills, and the upkeep `status_charge`
+  takes for maintained statuses) go through. Sourceless HP loss is still dropped,
+  since poison and bleeding ticks have no source either.
+
+Shells regenerate SP as players do: `map_addiddb` puts them on rAthena's regen
+list at spawn, and the engine's casting checks (`sp_cost > sp`, the minimum-SP
+floor for buffs) were already in place for when SP runs short.
+
+Shells also carry potions (`pop_shell_stock_potions`): 10 HP and 5 SP potions of
+their level's Tool Dealer kind, from Red Potion and Grape Juice up to White and
+Blue Potions. While needed (the test that stands a resting shell up) and below
+40% HP or 20% SP, `pop_shell_drink` uses one through `pc_useitem`, at most one a
+second, so the item delay and the heal script are the player's own. The use
+animation is sent by the engine (`ZC_USE_ITEM_ACK` to the area), because
+`clif_useitemack` sends nothing for a character without a session. The stock is given on the first combat tick, so vendors never get
+one and a recalled companion gets its restored level's kind, and it is topped
+up when a rest ends at the upper mark. A shell back from a selling trip is
+spawned anew, so it has a fresh stock too.
+
 ## Measured cost
 
 Alpine/musl, arm64, packetver 20221005, map server only, 4 GiB guest:

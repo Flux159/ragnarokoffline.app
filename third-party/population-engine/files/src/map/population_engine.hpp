@@ -115,6 +115,7 @@ void population_engine_companion_equip_traded(map_session_data *owner, map_sessi
 void population_engine_companion_trade_snapshot(map_session_data *shell);
 /// Goal 2: unequip every worn item on the shell and hand each piece to the owner (or drop at feet when overweight). Returns count moved, -1 on bad args.
 int population_engine_companion_return_gear(map_session_data *owner, map_session_data *shell, uint32_t slot_mask = 0);
+int population_engine_companion_set_rest_thresholds(uint32_t owner_account, int16_t below, int16_t until);
 int population_engine_companion_set_heal_thresholds(uint32_t owner_account, int16_t heal_at, int16_t emergency_at);
 /// Skill selector: replace one saved companion's skill choice.
 ///
