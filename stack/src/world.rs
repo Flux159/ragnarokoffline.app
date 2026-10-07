@@ -68,7 +68,7 @@ const SETTINGS: [(&str, &str); 5] = [
 /// The keys of `client.json` that are recorded. It describes this machine --
 /// where the GRFs are, how much memory the VM gets -- so a restore never
 /// applies it; it is there so a player moving machines can see what they had.
-const CLIENT_KEYS: [&str; 8] = ["mode", "lan", "data_grf", "rdata_grf", "official_grf", "bgm_dir", "vm_ram_mib", "hosting_scope"];
+const CLIENT_KEYS: [&str; 9] = ["mode", "lan", "data_grf", "rdata_grf", "official_grf", "bgm_dir", "fallback_grf", "vm_ram_mib", "hosting_scope"];
 const MACHINE_CLIENT: &str = "machine/client.json";
 
 /// What a backup never contains, and why. Written into every manifest.

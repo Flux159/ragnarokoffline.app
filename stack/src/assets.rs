@@ -274,6 +274,8 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
     let bgm = optional(3)?
         .or_else(|| first_dir(&[client_dir.join("BGM"), client_dir.join("dll_exe/BGM")]));
     let bgm = bgm.map(|p| readable_path(&p, true)).transpose()?;
+    // Another client's GRF, read only for what the player's own client lacks.
+    let fallback = optional(4)?;
     let ai = first_dir(&[client_dir.join("AI"), client_dir.join("dll_exe/AI")])
         .map(|p| readable_path(&p, true))
         .transpose()?;
@@ -297,11 +299,13 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     // Private absolute entries work across volumes without copying or linking
-    // the GRFs. Lower indices preserve official -> rdata -> data precedence.
+    // the GRFs. Lower indices preserve official -> rdata -> data precedence;
+    // the fallback GRF is last, so it fills only names the client has none of.
     let archives: Vec<_> = official
         .iter()
         .chain(rdata.iter())
         .chain(std::iter::once(&data))
+        .chain(fallback.iter())
         .collect();
     let mut ini = String::from("[Data]\n");
     for (i, path) in archives.iter().enumerate() {
@@ -926,6 +930,7 @@ mod tests {
             ("data.grf", "archive"),
             ("rdata.grf", "renewal"),
             ("official.grf", "official"),
+            ("fallback.grf", "other client"),
             ("BGM/theme.mp3", "music"),
             ("System/font.ttf", "font"),
             ("AI/AI.lua", "AI"),
@@ -954,7 +959,7 @@ mod tests {
             "nested mod",
         );
         crate::mods::set_enabled(&cfg.state, "music", true).unwrap();
-        let args: Vec<_> = ["data.grf", "rdata.grf", "official.grf", "BGM"]
+        let args: Vec<_> = ["data.grf", "rdata.grf", "official.grf", "BGM", "fallback.grf"]
             .iter()
             .map(|p| client.join(p).to_str().unwrap().to_string())
             .collect();
@@ -963,6 +968,7 @@ mod tests {
         assert!(manifest.lines().nth(1).unwrap().ends_with("official.grf"));
         assert!(manifest.lines().nth(2).unwrap().ends_with("rdata.grf"));
         assert!(manifest.lines().nth(3).unwrap().ends_with("data.grf"));
+        assert!(manifest.lines().nth(4).unwrap().ends_with("fallback.grf"));
         assert!(!cfg.state.join("assets/resources/data.grf").exists());
         assert!(!cfg.state.join("assets/resources/DATA.INI").exists());
         assert!(!cfg

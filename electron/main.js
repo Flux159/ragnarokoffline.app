@@ -696,7 +696,7 @@ async function assetsStart() {
 	const server = findTool('robrowser-remoteclient');
 	if (!server) throw new Error('the asset server binary is missing from this build');
 	const client = getClientPaths();
-	const sources = ['data_grf', 'rdata_grf', 'official_grf', 'bgm_dir'].map(key => {
+	const sources = ['data_grf', 'rdata_grf', 'official_grf', 'bgm_dir', 'fallback_grf'].map(key => {
 		const filename = client[key] || '';
 		try {
 			const stat = fs.statSync(filename);
@@ -784,6 +784,8 @@ async function assetsStop() { if (sharing) await sharing.stop(); return assetSer
 const DEFAULT_CLIENT = {
 	mode: 'host', join_host: '', lan: false,
 	data_grf: '', rdata_grf: '', official_grf: '', bgm_dir: '',
+	// Another client's GRF, read last: it only fills in what these lack.
+	fallback_grf: '',
 	// vm_ram_mib is deliberately absent: its default depends on the machine,
 	// so it is computed in getClientPaths() when the file does not name one.
 	// Anything written there -- by the slider in Settings -- wins permanently.
@@ -940,6 +942,7 @@ async function linkClientOwned(paths) {
 		['rdata_grf', paths.rdata_grf, 'rdata.grf', true],
 		['official_grf', paths.official_grf, 'official_data.grf', true],
 		['bgm_dir', paths.bgm_dir, 'the BGM folder', true],
+		['fallback_grf', paths.fallback_grf, 'the fallback GRF', true],
 	];
 	for (const [, p, label, optional] of ASSETS) {
 		if (!p) continue;
@@ -970,11 +973,11 @@ async function linkClientOwned(paths) {
 			throw new Error(`cannot read ${p}: ${e.message}\n\n${hint}`);
 		}
 	}
-	// Positional: an empty string keeps rdata's slot so official and bgm still
-	// land in theirs.
-	const args = ['link-assets', paths.data_grf, paths.rdata_grf || ''];
-	if (paths.official_grf || paths.bgm_dir) args.push(paths.official_grf || '');
-	if (paths.bgm_dir) args.push(paths.bgm_dir);
+	// Positional: an empty string keeps a slot so the ones after it still land
+	// in theirs. Trailing empty slots are dropped.
+	const args = ['link-assets', paths.data_grf, paths.rdata_grf || '',
+		paths.official_grf || '', paths.bgm_dir || '', paths.fallback_grf || ''];
+	while (args.length > 3 && !args[args.length - 1]) args.pop();
 	// Which client these GRFs are (kRO, iRO...), before link-assets: mods can
 	// be for one client, and their per-client folders are part of the overlay.
 	try { require('./client-detect').detectAndSave(stateDir(), paths, appLog); } catch (e) { appLog(`client: detection failed: ${e.message}`); }
@@ -3052,6 +3055,9 @@ const handlers = {
 		// Only when one was given: absent is allowed, wrong is not.
 		if (next.rdata_grf && !fs.existsSync(next.rdata_grf)) {
 			throw new Error('rdata.grf is not a file');
+		}
+		if (next.fallback_grf && !fs.existsSync(next.fallback_grf)) {
+			throw new Error('the fallback GRF is not a file');
 		}
 		if (Object.hasOwn(paths, 'lan')) {
 			next.hosting_scope = paths.lan ? 'lan' : 'local';

@@ -126,6 +126,16 @@
     </div>
   </div>
 
+  <!-- Not part of a client folder, so "Choose folder" leaves it alone. -->
+  <div class="field">
+    <div class="label"><span class="name">Fallback GRF</span><span class="tag">optional — another client's data.grf; used only for files yours lacks</span></div>
+    <div class="picker">
+      <div class="path" id="p-fallback_grf">Not selected</div>
+      <button data-pick="fallback_grf" class="ghost">Choose…</button>
+      <button data-clear="fallback_grf" class="ghost clear" id="c-fallback_grf" title="Forget this file">&times;</button>
+    </div>
+  </div>
+
   <!-- Not chosen: link-assets takes these from beside data.grf, so the most this
        screen can do is say whether they are there. -->
   <div class="field">
@@ -171,7 +181,10 @@ const { invoke } = window.__ELECTRON__.core;
 const { open } = window.__ELECTRON__.dialog;
 const $ = id => document.getElementById(id);
 const KEYS = ['data_grf', 'rdata_grf', 'official_grf', 'bgm_dir'];
-const paths = { data_grf: '', rdata_grf: '', official_grf: '', bgm_dir: '' };
+// A client folder fills KEYS; the fallback GRF is another client's and is
+// picked on its own.
+const SHOWN = [...KEYS, 'fallback_grf'];
+const paths = { data_grf: '', rdata_grf: '', official_grf: '', bgm_dir: '', fallback_grf: '' };
 let mode = 'host';
 
 const HINT = {
@@ -180,7 +193,7 @@ const HINT = {
 };
 
 function render() {
-  for (const k of KEYS) {
+  for (const k of SHOWN) {
     const el = $('p-' + k);
     el.textContent = paths[k] || 'Not selected';
     el.classList.toggle('set', !!paths[k]);
