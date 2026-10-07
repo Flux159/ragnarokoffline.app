@@ -9,6 +9,9 @@ for instance with setbattleflag) writes a shell's stall like a player's.
 
 A shell's cart has no cart_inventory rows, so its `cartinventory_id` holds the
 item id with the top bit set (0x80000000 | nameid); a player's rows are unchanged.
+Two slots of one item then share that key, so a shell's row keeps its cart slot in
+`index` and a sale finds the row by it: rAthena compacts sd.vending after a sale,
+so the list position a player's `index` holds would no longer match.
 Closing a stall and every sale always clean up, so turning the flag off leaves no
 rows behind. Shells are never `autotrade`, so restoring autotraders ignores them,
 and the tables are emptied at map-server start as before.
@@ -31,13 +34,14 @@ and the tables are emptied at map-server start as before.
 +int32 population_engine_list_stalls;
 --- a/src/map/vending.cpp
 +++ b/src/map/vending.cpp
-@@ -29,6 +29,17 @@
+@@ -29,6 +29,18 @@
  static uint32 vending_nextid = 0; ///Vending_id counter
  static DBMap *vending_db; ///DB holder the vender : charid -> map_session_data
  
 +/// Key of a cart slot in `vending_items`.`cartinventory_id`. A population shell's cart lives in memory
 +/// only, so its slots have no cart_inventory id; the item id is stored instead with the top bit set, so
-+/// a search of the table (e.g. a @whosell script) can still tell what the shell sells.
++/// a search of the table (e.g. a @whosell script) can still tell what the shell sells. Two slots of one
++/// item then share a key, so a shell's row is found by its `index` instead, which holds the cart slot.
 +static uint32 vending_item_key( const map_session_data& sd, int32 idx ){
 +	if( IS_POPULATION_ENGINE_ACCOUNT_ID(sd.status.account_id) ){
 +		const t_itemid nameid = sd.cart.u.items_cart[idx].nameid; // packed: copy out
@@ -49,7 +53,7 @@ and the tables are emptied at map-server start as before.
  //Autotrader
  static DBMap *vending_autotrader_db; /// Holds autotrader info: char_id -> struct s_autotrader
  static void vending_autotrader_remove(struct s_autotrader *at, bool remove);
-@@ -61,7 +72,7 @@
+@@ -61,7 +73,7 @@
  	nullpo_retv(sd);
  
  	if( sd->state.vending ) {
@@ -58,24 +62,28 @@ and the tables are emptied at map-server start as before.
  			if( Sql_Query( mmysql_handle, "DELETE FROM `%s` WHERE vending_id = %d;", vending_items_table, sd->vender_id ) != SQL_SUCCESS ||
  				Sql_Query( mmysql_handle, "DELETE FROM `%s` WHERE `id` = %d;", vendings_table, sd->vender_id ) != SQL_SUCCESS ) {
  					Sql_ShowDebug(mmysql_handle);
-@@ -243,13 +254,13 @@
+@@ -243,13 +255,17 @@
  		vsd->vending[vend_list[i]].amount -= amount;
  		z += ((double)vsd->vending[vend_list[i]].value * (double)amount);
  
 -			if( !IS_POPULATION_ENGINE_ACCOUNT_ID(vsd->status.account_id) ) {
 +			{
++			// A shell's row is keyed by its cart slot (`index`): its cartinventory_id is shared by every slot of the item.
++			const bool shell_row = IS_POPULATION_ENGINE_ACCOUNT_ID(vsd->status.account_id);
++			const char* row_column = shell_row ? "index" : "cartinventory_id";
++			const uint32 row_key = shell_row ? static_cast<uint32>(idx) : vending_item_key(*vsd, idx);
  			if( vsd->vending[vend_list[i]].amount ) {
 -				if( Sql_Query( mmysql_handle, "UPDATE `%s` SET `amount` = %d WHERE `vending_id` = %d and `cartinventory_id` = %d", vending_items_table, vsd->vending[vend_list[i]].amount, vsd->vender_id, vsd->cart.u.items_cart[idx].id ) != SQL_SUCCESS ) {
-+				if( Sql_Query( mmysql_handle, "UPDATE `%s` SET `amount` = %d WHERE `vending_id` = %d and `cartinventory_id` = %u", vending_items_table, vsd->vending[vend_list[i]].amount, vsd->vender_id, vending_item_key(*vsd, idx) ) != SQL_SUCCESS ) {
++				if( Sql_Query( mmysql_handle, "UPDATE `%s` SET `amount` = %d WHERE `vending_id` = %d and `%s` = %u", vending_items_table, vsd->vending[vend_list[i]].amount, vsd->vender_id, row_column, row_key ) != SQL_SUCCESS ) {
  					Sql_ShowDebug( mmysql_handle );
  				}
  			} else {
 -				if( Sql_Query( mmysql_handle, "DELETE FROM `%s` WHERE `vending_id` = %d and `cartinventory_id` = %d", vending_items_table, vsd->vender_id, vsd->cart.u.items_cart[idx].id ) != SQL_SUCCESS ) {
-+				if( Sql_Query( mmysql_handle, "DELETE FROM `%s` WHERE `vending_id` = %d and `cartinventory_id` = %u", vending_items_table, vsd->vender_id, vending_item_key(*vsd, idx) ) != SQL_SUCCESS ) {
++				if( Sql_Query( mmysql_handle, "DELETE FROM `%s` WHERE `vending_id` = %d and `%s` = %u", vending_items_table, vsd->vender_id, row_column, row_key ) != SQL_SUCCESS ) {
  					Sql_ShowDebug( mmysql_handle );
  				}
  			}
-@@ -406,7 +417,8 @@
+@@ -406,7 +422,8 @@
  	sd.vend_num = i;
  	safestrncpy(sd.message, message, MESSAGE_SIZE);
  	
@@ -85,12 +93,14 @@ and the tables are emptied at map-server start as before.
  		Sql_EscapeString( mmysql_handle, message_sql, sd.message );
  
  		if( Sql_Query( mmysql_handle, "INSERT INTO `%s`(`id`, `account_id`, `char_id`, `sex`, `map`, `x`, `y`, `title`, `autotrade`, `body_direction`, `head_direction`, `sit`) "
-@@ -418,7 +430,7 @@
+@@ -418,7 +435,9 @@
  		StringBuf_Init(&buf);
  		StringBuf_Printf(&buf, "INSERT INTO `%s`(`vending_id`,`index`,`cartinventory_id`,`amount`,`price`) VALUES", vending_items_table);
  		for (j = 0; j < i; j++) {
 -			StringBuf_Printf(&buf, "(%d,%d,%d,%d,%d)", sd.vender_id, j, sd.cart.u.items_cart[sd.vending[j].index].id, sd.vending[j].amount, sd.vending[j].value);
-+			StringBuf_Printf(&buf, "(%d,%d,%u,%d,%d)", sd.vender_id, j, vending_item_key(sd, sd.vending[j].index), sd.vending[j].amount, sd.vending[j].value);
++			// A shell's `index` is its cart slot, which stays put when a sale closes a gap in sd.vending.
++			const int32 row_index = IS_POPULATION_ENGINE_ACCOUNT_ID(sd.status.account_id) ? sd.vending[j].index : j;
++			StringBuf_Printf(&buf, "(%d,%d,%u,%d,%d)", sd.vender_id, row_index, vending_item_key(sd, sd.vending[j].index), sd.vending[j].amount, sd.vending[j].value);
  			if (j < i-1)
  				StringBuf_AppendStr(&buf, ",");
  		}
