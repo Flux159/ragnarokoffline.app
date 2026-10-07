@@ -256,13 +256,49 @@ Recruited companions are left out: their loot priority already belongs to their
 owner (0003). The shell's inventory is runtime-only, so what it picks up is gone
 when it despawns; a pickup that fails (full bag) gives the item up.
 
-**Weight.** A shell never sells what it picks up, so it stops looting at
+**Weight.** A shell stops looting at
 rAthena's first overweight step (`natural_heal_weight_rate`, 50% pre-renewal and
 70% renewal), with the same cap and the same unbonused carry limit as the ammo
 stock. Without that it would loot on to 90%, where `Weight90` stops it attacking
 and using skills, and a field would fill with shells standing still. A drop
 that would take it past the cap is left on the ground, as a player with a full
 bag would leave it.
+
+**Selling trips.** With looting enabled, ordinary ambient shells that have
+successfully picked something up leave with a teleport effect when their bag
+is nearly full: 90% of the loot weight cap, at most one free inventory slot,
+or an owned drop that would exceed the cap. They wait until not being attacked
+or casting. The population timer checks existing bags even outside the player's
+view, on maps containing a real player; combat and floor-item searches stay
+proximity-limited. Starting gear and ammunition alone never trigger a trip.
+
+A small in-memory snapshot reserves the shell's map/profile population slot
+for a random 2–4 minutes. The normal autosummon pass then returns the same
+name, class, base/job level, sex, hairstyle, colors, mounted appearance and
+worn equipment selections at a valid location on that map. It has a new
+internal id, freshly provisioned supplies and no collected loot. This is a
+simulated selling trip: no NPC sale, zeny payment or market stock is created.
+
+Reservations prevent normal refill during the absence and respect the global
+live-shell limit and spawn budget. When the global cap is below the map quota,
+other profiles on that same map cannot take the reserved slot; other maps can
+still use spare global capacity. A failed spawn retains its reservation for
+retry. Returns wait while the map has no real players; abandonment follows the
+normal grace window and capacity-pressure cleanup. Reduced quotas cancel excess
+returns. Reloading profiles, stopping the engine or disabling looting clears
+the snapshots; nothing survives a server restart. A conflicting online name
+cancels that return. Companions, vendors, manual/script-spawned actors, pending
+recruits, arena shells and script-held shells do not take these trips.
+
+The queue, trigger and deferred-departure checks execute C++ without a game server:
+`python3 tests/diagnostics/verify-shell-returns.py` (requires a C++17 compiler;
+`CXX` can select it). CI runs them alongside the server diagnostics. The callback
+and unloading checks compile verbatim `DIAGNOSTIC-BEGIN` / `DIAGNOSTIC-END`
+regions with server-boundary stubs. Keep each marker pair around its whole
+function; the harness validates the markers without relying on C++ indentation
+or brace placement. For live acceptance,
+observe pickup, departure, the reserved headcount and the same
+appearance returning, including map abandonment and recruitment during looting.
 
 **The log grows faster.** Every pickup is a `P` row in `picklog`, beside the `M`
 row the drop already wrote. rAthena never trims that table, so with a few

@@ -33,3 +33,6 @@ bool population_shell_loot_busy(const map_session_data *sd);
 
 // Drop all looting state, e.g. on death, teardown or when looting is switched off.
 void population_shell_loot_clear(map_session_data *sd);
+
+// Cheap inventory-only lifecycle check; no floor scan or proximity requirement.
+bool population_shell_loot_try_unload(map_session_data *sd, t_tick now);

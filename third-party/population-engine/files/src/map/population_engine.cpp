@@ -11,6 +11,7 @@
 #include "population_engine/runtime/population_engine_combat.hpp"
 #include "population_engine/runtime/population_shell_ammo.hpp"
 #include "population_engine/runtime/population_shell_loot.hpp"
+#include "population_engine/runtime/population_shell_selling.hpp"
 #include "population_engine/runtime/population_shell_runtime.hpp"
 
 #include <algorithm>
@@ -796,7 +797,8 @@ static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, in
 	PopulationDbSource db_source = PopulationDbSource::Main,
 	const PopulationVendorEntry* mod_entry = nullptr,
 	const PopulationModSpawn* mod_spawn = nullptr,
-	int16_t mod_seat = -1);
+	int16_t mod_seat = -1,
+	const PopulationShellReturn* returning = nullptr);
 static std::string generate_bot_name(uint32_t index);
 static std::string generate_population_pc_name(uint32_t index, const PopulationEngine* cfg);
 static int16_t get_random_job_id();
@@ -1351,7 +1353,7 @@ static uint32_t population_engine_allocate_index()
 /// Returns the number of shells actually spawned.
 static size_t autosummon_fill_map(int16_t map_id, size_t want, uint16_t job_hint = UINT16_MAX,
                                   size_t* tick_budget = nullptr, uint8_t map_category = 0,
-                                  bool bypass_existing_check = false)
+                                  bool bypass_existing_check = false, const PopulationShellReturn* returning = nullptr)
 {
 	if (want == 0)
 		return 0;
@@ -1401,6 +1403,10 @@ static size_t autosummon_fill_map(int16_t map_id, size_t want, uint16_t job_hint
 	for (size_t j = 0; j < want; ++j) {
 		// Re-check global limit each iteration (other calls may have consumed slots).
 		if (g_population_engine_count.load() >= max_global)
+			break;
+		// Even below this profile's quota, another profile on the same map must
+		// not consume a selling shell's slot when the global cap is the limit.
+		if (!returning && !population_shell_returns_allow_fresh(map_id, g_population_engine_count.load(), max_global))
 			break;
 
 		// Pre-resolve the equipment/behavior for this slot so vendor placement constraints
@@ -1593,9 +1599,11 @@ static size_t autosummon_fill_map(int16_t map_id, size_t want, uint16_t job_hint
 		map_session_data* sd = population_engine_spawn_shell(
 			map_id, x, y, index, job_id, sex, hair_style,
 			hair_color, weapon, shield, head_top, head_mid, head_bottom,
-			0 /*option*/, cloth_color, garment, init_script, skip_arrow, pop_cfg, map_category, pre_src);
+			0 /*option*/, cloth_color, garment, init_script, skip_arrow, pop_cfg, map_category, pre_src,
+			nullptr, nullptr, -1, returning);
 
 		if (sd) {
+			sd->pop.ambient_quota = !is_vendor_spawn && pre_src == PopulationDbSource::Main;
 			g_population_engine_pcs.push_back(sd);
 			g_population_engine_count++;
 			g_population_engine_stats.total_created++;
@@ -3168,6 +3176,8 @@ static void population_engine_mod_vendor_pass(size_t* pbudget, size_t max_global
 			// A vendor spawns as itself; a market spot rolls a theme and spawns
 			// as that, still counted as one of the market's spots.
 			auto spawn_here = [&](int16_t x, int16_t y, int16_t seat) -> bool {
+				if (respect && !population_shell_returns_allow_fresh(m, g_population_engine_count.load(), max_global))
+					return false;
 				if (!entry.is_market)
 					return pop_mod_vendor_spawn_one(m, entry, sp, *prof, x, y, seat);
 				const PopulationVendorEntry* theme = pop_market_pick(entry, m, sp, warned_no_profile);
@@ -3342,6 +3352,7 @@ TIMER_FUNC(population_engine_autosummon_timer)
 		// the map someone is standing on wins and grace is abandoned.
 		const size_t cap = static_cast<size_t>(max_global);
 		const bool under_pressure = g_population_engine_count.load() >= (cap - cap / 5);
+		population_shell_returns_prune(under_pressure);
 
 		std::vector<map_session_data*> abandoned;
 		for (map_session_data *sd : g_population_engine_pcs) {
@@ -3359,8 +3370,17 @@ TIMER_FUNC(population_engine_autosummon_timer)
 			population_engine_shell_release(sd);
 	}
 
-	if (g_population_engine_count.load() >= max_global)
-		return 0;
+	if (!battle_config.population_engine_demand_spawn)
+		population_shell_returns_prune(false);
+
+	// Selling is lifecycle work, not combat AI: a full shell may have wandered
+	// outside the player's viewport. Check only maps with a real player on them.
+	if (battle_config.population_engine_loot_enable) {
+		pop_occupancy_refresh();
+		for (map_session_data *sd : g_population_engine_pcs)
+			if (sd && g_pop_occupied_maps.count(sd->m) != 0)
+				population_shell_loot_try_unload(sd, tick);
+	}
 
 	const int32 batch_cfg = battle_config.population_engine_autosummon_batch_size;
 	size_t tick_budget = (batch_cfg > 0) ? static_cast<size_t>(batch_cfg) : 0;
@@ -3389,35 +3409,34 @@ TIMER_FUNC(population_engine_autosummon_timer)
 		// allow only one shell of a given job per map) does not throttle the
 		// per-shell loop here.
 		auto fill_category = [&](const std::vector<std::string>& maps, int32_t population, int32_t max_per_map, uint8_t category) -> bool {
-			if (population <= 0 || maps.empty())
+			if (maps.empty())
 				return false;
-			const size_t pop   = static_cast<size_t>(population);
+			const size_t pop   = static_cast<size_t>(std::max(0, population));
 			const size_t count = maps.size();
 			const size_t base  = pop / count;
 			const size_t extra = pop % count;
 			for (size_t i = 0; i < count; ++i) {
-				if (pbudget != nullptr && *pbudget == 0) return true;
 				size_t target = base + (i < extra ? 1u : 0u);
 				if (max_per_map > 0 && target > static_cast<size_t>(max_per_map))
 					target = static_cast<size_t>(max_per_map);
-				if (target == 0) continue;
 				const int16 mid = map_mapname2mapid(maps[i].c_str());
 				if (mid < 0) continue;
 				// RAGNAROKMAC: only populate maps somebody is on.
 				if (!pop_map_is_live(mid)) continue;
 				// Only spawn the deficit so the timer never stacks more shells
 				// than the YAML quota onto a map that is already at capacity.
-				const size_t existing_on_map =
-					population_engine_count_shells_on_map_for_profile(mid, profile_jobs);
-				if (existing_on_map >= target) continue;
-				const size_t deficit = target - existing_on_map;
+				size_t existing_on_map = population_engine_count_shells_on_map_for_profile(mid, profile_jobs);
+				population_shell_returns_fit(mid, profile_jobs, target, existing_on_map);
+				existing_on_map += population_shell_returns_fill(mid, profile_jobs, pbudget);
+				const size_t occupied = existing_on_map + population_shell_returns_count(mid, profile_jobs);
+				if (occupied >= target) continue;
+				const size_t deficit = target - occupied;
 				for (size_t s = 0; s < deficit; ++s) {
-					if (pbudget != nullptr && *pbudget == 0) return true;
-					if (g_population_engine_count.load() >= max_global) return true;
+					if (pbudget != nullptr && *pbudget == 0) break;
+					if (g_population_engine_count.load() >= max_global) break;
 					const uint16_t pick = profile_jobs[rnd() % profile_jobs.size()];
 					autosummon_fill_map(mid, 1, pick, pbudget, category, /*bypass_existing_check=*/true);
 				}
-				if (g_population_engine_count.load() >= max_global) return true;
 			}
 			return false;
 		};
@@ -5417,6 +5436,7 @@ void do_init_population_engine_load_databases() {
 
 bool population_engine_reload_equipment(uint32_t *out_entry_count)
 {
+	population_shell_returns_clear();
 	if (out_entry_count != nullptr)
 		*out_entry_count = 0;
 
@@ -5685,7 +5705,8 @@ static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, in
 	PopulationDbSource db_source,
 	const PopulationVendorEntry* mod_entry,
 	const PopulationModSpawn* mod_spawn,
-	int16_t mod_seat)
+	int16_t mod_seat,
+	const PopulationShellReturn* returning)
 {
 	PE_PERF_SCOPE("spawn_shell");
 	(void)skip_arrow; // Legacy GearSet Arrow toggle; unified ammo is managed at runtime.
@@ -5699,10 +5720,20 @@ static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, in
 		return nullptr;
 	}
 
+	// Restore before equipment, skills or packets are produced. The snapshot owns
+	// only identity; inventory and combat state are freshly provisioned as usual.
+	if (returning) {
+		sex = returning->sex;
+		hair_style = returning->hair;
+		hair_color = returning->hair_color;
+		cloth_color = returning->cloth_color;
+		option = 0; // Let normal mount initialization create its status effects first.
+		weapon = shield = head_top = head_mid = head_bottom = garment = 0;
+	}
 	uint8_t eff_hair = hair_style;
 	uint16_t eff_hair_color = hair_color;
 	uint16_t eff_cloth = cloth_color;
-	if (pop_cfg != nullptr) {
+	if (pop_cfg != nullptr && !returning) {
 		if (pop_cfg->hair_min >= 0) {
 			const int16_t hmax = pop_cfg->hair_max >= 0 ? pop_cfg->hair_max : pop_cfg->hair_min;
 			const int16_t valid_min = cap_value(pop_cfg->hair_min, static_cast<int16_t>(MIN_HAIR_STYLE), static_cast<int16_t>(MAX_HAIR_STYLE));
@@ -5723,7 +5754,7 @@ static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, in
 		}
 	}
 
-	std::string name = generate_population_pc_name(index, pop_cfg);
+	std::string name = returning ? returning->name : generate_population_pc_name(index, pop_cfg);
 	const uint32_t account_id = POPULATION_ENGINE_ACCOUNT_ID_BASE + index;
 	const uint32_t char_id    = POPULATION_ENGINE_CHAR_ID_BASE    + index;
 
@@ -5792,7 +5823,9 @@ static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, in
 	// MSI_OPEN_EQUIPEDITEM_REFUSED. Must sit after the memset of sd->status.
 	sd->status.show_equip = true;
 
-	if (pop_cfg != nullptr && pop_cfg->base_level_min >= 0) {
+	if (returning) {
+		sd->status.base_level = returning->level;
+	} else if (pop_cfg != nullptr && pop_cfg->base_level_min >= 0) {
 		const int16_t hi = pop_cfg->base_level_max >= 0 ? pop_cfg->base_level_max : pop_cfg->base_level_min;
 		int16_t rolled = population_roll_closed_range(pop_cfg->base_level_min, hi);
 		// RAGNAROKMAC: on a map with monsters, take the level from them rather
@@ -5820,7 +5853,9 @@ static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, in
 		// declares one; this stays as the upstream fallback.
 		sd->status.base_level = 99;
 	}
-	if (pop_cfg != nullptr && pop_cfg->job_level_min >= 0) {
+	if (returning) {
+		sd->status.job_level = returning->job_level;
+	} else if (pop_cfg != nullptr && pop_cfg->job_level_min >= 0) {
 		const int16_t hi = pop_cfg->job_level_max >= 0 ? pop_cfg->job_level_max : pop_cfg->job_level_min;
 		sd->status.job_level = cap_value(population_roll_closed_range(pop_cfg->job_level_min, hi), 1, MAX_LEVEL);
 	} else {
@@ -6227,6 +6262,10 @@ static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, in
 	// with ADDITEM_OVERWEIGHT. The final status_calc_pc at the end restores the correct value.
 	sd->max_weight = 2000000;
 
+	if (returning) {
+		for (const auto &gear : returning->gear)
+			population_engine_shell_equip_item(sd, gear.item_id, index, "return", gear.position);
+	} else {
 	if (weapon > 0) {
 		struct item tmp_item = {};
 		tmp_item.nameid   = weapon;
@@ -6391,6 +6430,8 @@ static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, in
         population_engine_shell_equip_item(sd, pick_pool_cfg(pop_cfg->acc_r_pool),   index, "acc_r", EQP_ACC_R);
     }
 
+	} // Fresh shells draw gear from their profile; returns keep their worn choices.
+
     // Stock consumable trap items for jobs that use trap skills.
     // Hunter/Sniper use Booby_Trap (1065); Ranger uses Special_Alloy_Trap (7940);
     // Genetic uses Seed_Of_Horny_Plant (6210).  Amount is generous to avoid running out.
@@ -6470,6 +6511,15 @@ static map_session_data* population_engine_spawn_shell(int16_t map_id, int x, in
     sd->vd.look[LOOK_HEAD_MID] = sd->status.head_mid;
     sd->vd.look[LOOK_HEAD_BOTTOM] = sd->status.head_bottom;
     sd->vd.look[LOOK_ROBE] = sd->status.robe;
+
+    if (returning) {
+        const uint32 mount_options = OPTION_RIDING | OPTION_FALCON | OPTION_DRAGON
+            | OPTION_WUG | OPTION_WUGRIDER | OPTION_MADOGEAR;
+        pc_setoption(sd, (sd->sc.option & ~mount_options) | returning->option, MADO_ROBOT);
+        sd->status.hair = sd->vd.look[LOOK_HAIR] = returning->hair;
+        sd->status.hair_color = sd->vd.look[LOOK_HAIR_COLOR] = returning->hair_color;
+        sd->status.clothes_color = sd->vd.look[LOOK_CLOTHES_COLOR] = returning->cloth_color;
+    }
 
     // Elysium stress_test fake PCs: sync paper doll to the map before spawn so observers match stock AC shells.
     clif_changelook(sd, LOOK_BASE, sd->vd.look[LOOK_BASE]);
@@ -9643,6 +9693,7 @@ bool population_engine_start(const PopulationEngineConfig& config, PopulationEng
 }
 
 void population_engine_stop() {
+	population_shell_returns_clear();
     // Cancel all timers first so no stale timer fires after running=false is set
     // or after a subsequent start() sets running=true again.
     // Timer operations are main-thread-only and must not be done under the mutex.
@@ -10059,6 +10110,7 @@ void population_engine_on_global_chat_mention(map_session_data* from_sd, const c
 
 // RAGNAROKMAC: shell control API for mods' NPC scripts (see the file).
 #include "population_engine/runtime/population_shell_control.cpp"
+#include "population_engine/runtime/population_shell_selling.cpp"
 
 void do_final_population_engine() {
 	// Stop first so shells are released while all DB shared_ptrs are still valid.

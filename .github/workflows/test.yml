@@ -36,6 +36,7 @@ jobs:
       # one of them, and the server says nothing. Gear is checked against the
       # renewal item database.
       - run: python3 third-party/population-engine/validate.py vendor/rathena
+      - run: python3 tests/diagnostics/verify-shell-returns.py
       # vendor/rathena is now the pin with the server mods applied, the tree the
       # navigation-server-npcs, -monsters and -warps indexes describe (each
       # one's test matches the name). The test skips without such a

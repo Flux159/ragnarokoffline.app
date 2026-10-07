@@ -287,6 +287,10 @@ struct s_population {
 	int16_t companion_formation_y = 0; ///< Current formation walk destination.
 
 	// --- RAGNAROKMAC (shell looting, population_shell_loot.cpp) ---
+	bool ambient_quota = false; ///< Only ordinary autosummon shells may reserve a selling return.
+	bool loot_selling_pending = false; ///< Deferred selling departure, rechecked before release.
+	bool loot_collected = false; ///< At least one real pickup this lifetime; starting supplies do not count.
+	bool loot_bag_blocked = false; ///< An owned drop would exceed the loot weight limit.
 	std::vector<PopulationShellLootEntry> loot_queue{};     ///< Items it means to pick up, in no particular order.
 	std::unordered_map<int32_t, t_tick> loot_seen{};      ///< Floor items already decided on (queued or forgotten) -> when to drop the record.
 	t_tick  loot_next_scan    = 0; ///< Rate limit for the floor-item scan.

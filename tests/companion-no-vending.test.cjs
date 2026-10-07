@@ -43,8 +43,8 @@ const CLOSE_SIG = 'static void population_engine_shell_close_stall(map_session_d
 const FUNNEL_SIG = 'static void pop_companion_register_local_party(map_session_data *sd, map_session_data *owner)\n{';
 const RECRUIT_SIG = 'void population_engine_persist_recruited_companion(map_session_data *sd, map_session_data *peer)\n{';
 // The end of population_engine_spawn_shell's parameter list (it gained the
-// mod-vendor parameters in #271).
-const SPAWN_SIG = 'int16_t mod_seat)\n{';
+// optional selling-return identity in #458).
+const SPAWN_SIG = 'const PopulationShellReturn* returning)\n{';
 
 test('the close helper is declared before it is used, and defined once', () => {
 	const decl = engine.indexOf('static void population_engine_shell_close_stall(map_session_data *sd);');

@@ -46,8 +46,8 @@ test('each drop is decided once: rare ones very likely, common ones at the base 
 
 test('a shell stops looting at the first overweight step, as the ammo stock does', () => {
 	assert.match(loot, /max_weight \* battle_config\.natural_heal_weight_rate \/ 100 - 1 - sd->weight/);
-	assert.match(loot, /if \(!loot_fits\(sd, fitem\)\)\s*continue;/, 'a drop that does not fit is not queued');
-	assert.match(loot, /if \(loot_fits\(sd, pick_item\)\)\s*pc_takeitem\(sd, pick_item\);/, 'checked again at pickup');
+	assert.match(loot, /if \(!loot_fits\(sd, fitem\)\)\s*\{\s*pe\.loot_bag_blocked = true;\s*continue;/, 'a drop that does not fit is not queued');
+	assert.match(loot, /if \(loot_fits\(sd, pick_item\)\)\s*\{\s*pc_takeitem\(sd, pick_item\);/, 'checked again at pickup');
 });
 
 test('rare drops are fetched mid-fight, others wait and may be forgotten after the fight', () => {

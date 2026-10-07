@@ -16,6 +16,7 @@
 // their owner (0003-companion-loot-owner.patch).
 
 #include "population_shell_loot.hpp"
+#include "population_shell_selling.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -63,7 +64,7 @@ flooritem_data *loot_resolve(const PopulationShellLootEntry &e, int16 m)
 
 /// Weight the shell can still carry before rAthena's first overweight step
 /// (natural_heal_weight_rate: 50% pre-renewal, 70% renewal), where natural
-/// regen stops. Shells never sell what they pick up, so without this cap they
+/// regen stops. Without this cap they
 /// would keep looting to 90%, where Weight90 stops them attacking and using
 /// skills: a field full of shells standing still. The same cap and the same
 /// unbonused carry limit as the ammo stock (population_shell_ammo.cpp), because
@@ -152,8 +153,10 @@ void loot_scan(map_session_data *sd, t_tick now)
 		if (!pe.loot_seen.emplace(fitem->id, now + remember_ms).second)
 			continue; // already decided
 		// A full bag: the shell leaves it, as a player with no room would.
-		if (!loot_fits(sd, fitem))
+		if (!loot_fits(sd, fitem)) {
+			pe.loot_bag_blocked = true;
 			continue;
+		}
 
 		// Whether it bothers at all: a player picks up most of what drops, nearly
 		// every rare drop, and walks past some of the rest.
@@ -195,8 +198,29 @@ void population_shell_loot_clear(map_session_data *sd)
 
 bool population_shell_loot_busy(const map_session_data *sd)
 {
-	return sd != nullptr && !sd->pop.loot_queue.empty();
+	return sd != nullptr && (sd->pop.loot_selling_pending || !sd->pop.loot_queue.empty());
 }
+
+// DIAGNOSTIC-BEGIN: population_shell_loot_try_unload
+bool population_shell_loot_try_unload(map_session_data *sd, t_tick now)
+{
+	if (!sd || !battle_config.population_engine_loot_enable || !sd->pop.ambient_quota
+		|| !sd->pop.loot_collected || !sd->state.active || !sd->prev)
+		return false;
+	if (pc_isdead(sd) || pc_issit(sd) || pc_ishiding(sd) || pc_cant_act(sd))
+		return false;
+	s_population &pe = sd->pop;
+	const int64 loot_limit = loot_weight_room(sd) + sd->weight + 1;
+	if (population_shell_needs_unload(pe.loot_collected, pe.loot_bag_blocked,
+		sd->weight, loot_limit, pc_inventoryblank(sd))
+		&& unit_counttargeted(sd) == 0 && sd->ud.skilltimer == INVALID_TIMER
+		&& (pe.last_attacked_tick == 0 || DIFF_TICK(now, pe.last_attacked_tick) >= kLootRecentHitMs)
+		&& population_shell_selling_depart(sd, now))
+		return true;
+
+	return false;
+}
+// DIAGNOSTIC-END: population_shell_loot_try_unload
 
 bool population_shell_loot_tick(map_session_data *sd, t_tick now)
 {
@@ -209,6 +233,8 @@ bool population_shell_loot_tick(map_session_data *sd, t_tick now)
 			population_shell_loot_clear(sd);
 		return false;
 	}
+	if (pe.hold.despawn_pending)
+		return true;
 	if (pc_isdead(sd) || pc_issit(sd) || pc_ishiding(sd) || pc_cant_act(sd))
 		return false;
 
@@ -312,8 +338,15 @@ bool population_shell_loot_tick(map_session_data *sd, t_tick now)
 		// fails (full inventory) the item is given up, as a player would. So is
 		// one that no longer fits under the weight cap: the queue was decided
 		// before the pickups ahead of it.
-		if (loot_fits(sd, pick_item))
+		if (loot_fits(sd, pick_item)) {
 			pc_takeitem(sd, pick_item);
+			// pc_takeitem also returns true on an add-item failure. Only removal
+			// of the floor item proves the shell really acquired this drop.
+			if (map_id2bl(item_id) == nullptr)
+				pe.loot_collected = true;
+		} else {
+			pe.loot_bag_blocked = true;
+		}
 		pe.loot_queue.erase(std::remove_if(pe.loot_queue.begin(), pe.loot_queue.end(),
 			[item_id](const PopulationShellLootEntry &e) { return e.item_bl_id == item_id; }),
 			pe.loot_queue.end());
