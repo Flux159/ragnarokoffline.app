@@ -1,0 +1,96 @@
+From 0000000000000000000000000000000000000028
+Subject: [PATCH] vending: population shells' stalls can be listed in the vending tables
+
+0001 kept a shell's stall out of `vendings` / `vending_items`, which makes it
+invisible to anything that searches those tables (a script or mod). The new
+battle flag population_engine_list_stalls (conf/battle/population_engine.conf,
+off by default, so nothing changes unless a mod or the server owner turns it on,
+for instance with setbattleflag) writes a shell's stall like a player's.
+
+A shell's cart has no cart_inventory rows, so its `cartinventory_id` holds the
+item id with the top bit set (0x80000000 | nameid); a player's rows are unchanged.
+Closing a stall and every sale always clean up, so turning the flag off leaves no
+rows behind. Shells are never `autotrade`, so restoring autotraders ignores them,
+and the tables are emptied at map-server start as before.
+
+--- a/src/custom/battle_config_init.inc
++++ b/src/custom/battle_config_init.inc
+@@ -74,3 +74,4 @@
+ { "population_engine_loot_timeout_ms",&battle_config.population_engine_loot_timeout_ms,15000,1000,600000,},
+ { "population_engine_loot_radius",&battle_config.population_engine_loot_radius,9,1,20,},
+ { "population_engine_loot_hp_abort_pct",&battle_config.population_engine_loot_hp_abort_pct,30,0,100,},
++{ "population_engine_list_stalls",&battle_config.population_engine_list_stalls,0,0,1,},
+--- a/src/custom/battle_config_struct.inc
++++ b/src/custom/battle_config_struct.inc
+@@ -150,3 +150,6 @@
+ int32 population_engine_loot_radius;
+ /// Below this HP% a shell stops going for even rare drops mid-fight.
+ int32 population_engine_loot_hp_abort_pct;
++/// 1 = a shell's vending stall and buying store are also written to the vendings / vending_items and
++/// buyingstores / buyingstore_items tables, so a script or mod can search them. 0 = memory only, as before.
++int32 population_engine_list_stalls;
+--- a/src/map/vending.cpp
++++ b/src/map/vending.cpp
+@@ -29,6 +29,17 @@
+ static uint32 vending_nextid = 0; ///Vending_id counter
+ static DBMap *vending_db; ///DB holder the vender : charid -> map_session_data
+ 
++/// Key of a cart slot in `vending_items`.`cartinventory_id`. A population shell's cart lives in memory
++/// only, so its slots have no cart_inventory id; the item id is stored instead with the top bit set, so
++/// a search of the table (e.g. a @whosell script) can still tell what the shell sells.
++static uint32 vending_item_key( const map_session_data& sd, int32 idx ){
++	if( IS_POPULATION_ENGINE_ACCOUNT_ID(sd.status.account_id) ){
++		const t_itemid nameid = sd.cart.u.items_cart[idx].nameid; // packed: copy out
++		return 0x80000000u | static_cast<uint32>(nameid);
++	}
++	return sd.cart.u.items_cart[idx].id;
++}
++
+ //Autotrader
+ static DBMap *vending_autotrader_db; /// Holds autotrader info: char_id -> struct s_autotrader
+ static void vending_autotrader_remove(struct s_autotrader *at, bool remove);
+@@ -61,7 +72,7 @@
+ 	nullpo_retv(sd);
+ 
+ 	if( sd->state.vending ) {
+-		if( !IS_POPULATION_ENGINE_ACCOUNT_ID(sd->status.account_id) ) {
++		{ // always: deleting rows that were never written (a shell with listing off) is harmless
+ 			if( Sql_Query( mmysql_handle, "DELETE FROM `%s` WHERE vending_id = %d;", vending_items_table, sd->vender_id ) != SQL_SUCCESS ||
+ 				Sql_Query( mmysql_handle, "DELETE FROM `%s` WHERE `id` = %d;", vendings_table, sd->vender_id ) != SQL_SUCCESS ) {
+ 					Sql_ShowDebug(mmysql_handle);
+@@ -243,13 +254,13 @@
+ 		vsd->vending[vend_list[i]].amount -= amount;
+ 		z += ((double)vsd->vending[vend_list[i]].value * (double)amount);
+ 
+-			if( !IS_POPULATION_ENGINE_ACCOUNT_ID(vsd->status.account_id) ) {
++			{
+ 			if( vsd->vending[vend_list[i]].amount ) {
+-				if( Sql_Query( mmysql_handle, "UPDATE `%s` SET `amount` = %d WHERE `vending_id` = %d and `cartinventory_id` = %d", vending_items_table, vsd->vending[vend_list[i]].amount, vsd->vender_id, vsd->cart.u.items_cart[idx].id ) != SQL_SUCCESS ) {
++				if( Sql_Query( mmysql_handle, "UPDATE `%s` SET `amount` = %d WHERE `vending_id` = %d and `cartinventory_id` = %u", vending_items_table, vsd->vending[vend_list[i]].amount, vsd->vender_id, vending_item_key(*vsd, idx) ) != SQL_SUCCESS ) {
+ 					Sql_ShowDebug( mmysql_handle );
+ 				}
+ 			} else {
+-				if( Sql_Query( mmysql_handle, "DELETE FROM `%s` WHERE `vending_id` = %d and `cartinventory_id` = %d", vending_items_table, vsd->vender_id, vsd->cart.u.items_cart[idx].id ) != SQL_SUCCESS ) {
++				if( Sql_Query( mmysql_handle, "DELETE FROM `%s` WHERE `vending_id` = %d and `cartinventory_id` = %u", vending_items_table, vsd->vender_id, vending_item_key(*vsd, idx) ) != SQL_SUCCESS ) {
+ 					Sql_ShowDebug( mmysql_handle );
+ 				}
+ 			}
+@@ -406,7 +417,8 @@
+ 	sd.vend_num = i;
+ 	safestrncpy(sd.message, message, MESSAGE_SIZE);
+ 	
+-	if( !IS_POPULATION_ENGINE_ACCOUNT_ID(sd.status.account_id) ) {
++	// A population shell is listed in the tables only when population_engine_list_stalls is on.
++	if( !IS_POPULATION_ENGINE_ACCOUNT_ID(sd.status.account_id) || battle_config.population_engine_list_stalls ) {
+ 		Sql_EscapeString( mmysql_handle, message_sql, sd.message );
+ 
+ 		if( Sql_Query( mmysql_handle, "INSERT INTO `%s`(`id`, `account_id`, `char_id`, `sex`, `map`, `x`, `y`, `title`, `autotrade`, `body_direction`, `head_direction`, `sit`) "
+@@ -418,7 +430,7 @@
+ 		StringBuf_Init(&buf);
+ 		StringBuf_Printf(&buf, "INSERT INTO `%s`(`vending_id`,`index`,`cartinventory_id`,`amount`,`price`) VALUES", vending_items_table);
+ 		for (j = 0; j < i; j++) {
+-			StringBuf_Printf(&buf, "(%d,%d,%d,%d,%d)", sd.vender_id, j, sd.cart.u.items_cart[sd.vending[j].index].id, sd.vending[j].amount, sd.vending[j].value);
++			StringBuf_Printf(&buf, "(%d,%d,%u,%d,%d)", sd.vender_id, j, vending_item_key(sd, sd.vending[j].index), sd.vending[j].amount, sd.vending[j].value);
+ 			if (j < i-1)
+ 				StringBuf_AppendStr(&buf, ",");
+ 		}

@@ -390,6 +390,13 @@ engine's vendors spawn exactly as upstream's do.
   sold-out stall. Its callouts come from `buyer_call` in population_chat.yml.
   Patch 0020 keeps shells' buying stores out of the database, as 0001 does
   for vending.
+- Patches 0029 (vending) and 0030 (buying stores): behind the battle flag
+  `population_engine_list_stalls` (off by default), a shell's stall is also written to
+  `vendings` / `vending_items` / `buyingstores` / `buyingstore_items` like a player's, so a script
+  or mod can search the fake players' shops (the whosell mod switches it on with
+  `setbattleflag`). A shell has no cart_inventory rows, so a vending row's `cartinventory_id` is
+  `0x80000000 | item id`; buying rows already hold the item id. Closing a stall and every sale
+  always clean up, so turning the flag off leaves nothing behind.
 - Patch 0021: a pet egg bought from a shell's stall is created for the buyer
   there and then (`pet_create_egg`), since a stall's eggs are placeholders
   with no pet row and would not hatch; unsold eggs leave nothing behind.
