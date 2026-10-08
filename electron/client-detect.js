@@ -73,9 +73,13 @@ function detectAndSave(stateDir, paths, log = () => {}, fallbackOf = detectFallb
 	let saved = null;
 	try { saved = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* none yet */ }
 	const sameMain = saved && saved.stamp === stamp;
-	if (sameMain && (saved.fallbackStamp || 'fallback_grf:') === fallbackStamp) return saved;
+	if (sameMain && 'date' in saved && (saved.fallbackStamp || 'fallback_grf:') === fallbackStamp) return saved;
 	const found = sameMain ? null : detectClient(paths);
 	const out = found ? { client: found.client, code: found.code, from: found.from, stamp } : { client: saved.client, code: saved.code, from: saved.from, stamp };
+	// The date of the GRF the answer came from; a detection saved before
+	// dates were kept gets one without reading the GRF again.
+	const fromKey = { 'data.grf': 'data_grf', 'rdata.grf': 'rdata_grf', 'official_data.grf': 'official_grf' }[out.from];
+	out.date = fileDate(fromKey ? paths[fromKey] : paths.data_grf);
 	out.fallbackStamp = fallbackStamp;
 	if (paths.fallback_grf) {
 		out.fallback = fallbackOf(paths.fallback_grf);
@@ -93,53 +97,47 @@ function detectAndSave(stateDir, paths, log = () => {}, fallbackOf = detectFallb
 	return out;
 }
 
-// Where the publisher dates its executable, that is the client's build
-// (kRO's 2026-02-19_Ragexe_1770960005.exe); otherwise the GRF's own date,
-// which is when its files were last patched.
-const DATED_EXE = /^(\d{4})-?(\d{2})-?(\d{2})_?ragexe[^\\/]*\.exe$/i;
+/**
+ * A GRF's date: when its files were last patched, on the player's own
+ * calendar, as Explorer shows it. `mtime` is a parameter for the tests.
+ */
+function fileDate(file, mtime = f => fs.statSync(f).mtime) {
+	if (!file) return null;
+	try {
+		const t = mtime(file);
+		return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+	} catch { return null; }
+}
 
 /**
- * Which client a fallback GRF is from, and how old:
- * { client, code, date, dateFrom: 'client' | 'files' }. `read`, `list` and
- * `mtime` are parameters for the tests.
+ * Which client a fallback GRF is from, and its date: { client, code, from,
+ * date }, `from` being the file's name only (a full path can be long).
+ * `read` and `mtime` are parameters for the tests.
  */
-function detectFallback(file, read = grfNames, list = dir => fs.readdirSync(dir), mtime = f => fs.statSync(f).mtime) {
+function detectFallback(file, read = grfNames, mtime) {
 	let code = null;
 	try { [code = null] = serviceCodes(read(file)); } catch { /* unreadable: no service */ }
-	let date = null, dateFrom = null;
-	try {
-		const dated = list(path.dirname(file)).map(n => DATED_EXE.exec(n)).filter(Boolean)
-			.map(m => `${m[1]}-${m[2]}-${m[3]}`).sort();
-		if (dated.length) { date = dated[dated.length - 1]; dateFrom = 'client'; }
-	} catch { /* folder not listable */ }
-	if (!date) {
-		try {
-			// The player's own calendar day, as Explorer shows the file.
-			const t = mtime(file);
-			date = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
-			dateFrom = 'files';
-		} catch { /* gone */ }
-	}
-	return { client: code ? SERVICES[code] || null : null, code, date, dateFrom };
+	return { client: code ? SERVICES[code] || null : null, code, from: path.basename(file), date: fileDate(file, mtime) };
 }
 
-/** "kRO, client 2026-02-19" or "iRO, files from 2026-10-07". */
-function describeFallback(f) {
-	const who = f.client || (f.code ? `unknown service "${f.code}"` : 'unknown client');
-	if (!f.date) return who;
-	return `${who}, ${f.dateFrom === 'client' ? 'client' : 'files from'} ${f.date}`;
+/** "iRO (from data.grf) · files 2026-10-07", for the main client and the fallback alike. */
+function describeOne(d) {
+	const who = d.client ? `${d.client} (from ${d.from})`
+		: d.code ? `unknown service "${d.code}" (from ${d.from})`
+			: d.from ? `unknown client (${d.from})` : 'not detected';
+	return d.date ? `${who} · files ${d.date}` : who;
 }
+const describeFallback = describeOne;
 
 /** What Settings and the diagnostics show; `fallback` is a text or null. */
 function describe(stateDir) {
 	try {
 		const d = JSON.parse(fs.readFileSync(path.join(stateDir, 'client-detected.json'), 'utf8'));
-		const fallback = d.fallback ? describeFallback(d.fallback) : null;
-		if (d.client) return { client: d.client, code: d.code, from: d.from, text: `${d.client} (from ${d.from})`, fallback };
-		if (d.code) return { client: null, code: d.code, from: d.from, text: `unknown service "${d.code}" (from ${d.from})`, fallback };
-		return { client: null, code: null, from: null, text: 'not detected', fallback };
+		const fallback = d.fallback ? describeOne(d.fallback) : null;
+		const text = d.client || d.code ? describeOne(d) : 'not detected';
+		return { client: d.client || null, code: d.code || null, from: d.from || null, date: d.date || null, text, fallback };
 	} catch { /* not detected yet */ }
-	return { client: null, code: null, from: null, text: 'not detected', fallback: null };
+	return { client: null, code: null, from: null, date: null, text: 'not detected', fallback: null };
 }
 
-module.exports = { detectClient, detectAndSave, detectFallback, describe, describeFallback, serviceCodes, SERVICES };
+module.exports = { detectClient, detectAndSave, detectFallback, describe, describeFallback, fileDate, serviceCodes, SERVICES };

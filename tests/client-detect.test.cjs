@@ -48,20 +48,25 @@ test('the answer is saved for the supervisor, and described for Settings', () =>
 	// What the supervisor reads: { "client": "...", ... }.
 	fs.writeFileSync(path.join(state, 'client-detected.json'), JSON.stringify({ client: 'iRO', code: 'us', from: 'data.grf', stamp: saved.stamp }));
 	assert.equal(detectAndSave(state, { data_grf: grf }).client, 'iRO', 'unchanged GRFs are not read again');
-	assert.equal(describe(state).text, 'iRO (from data.grf)');
+	// Saved before dates were kept: the date is added from the file alone.
+	const { fileDate } = require('../electron/client-detect');
+	assert.equal(describe(state).text, `iRO (from data.grf) · files ${fileDate(grf)}`);
 });
 
-test('a fallback GRF is named with its client and date, apart from the main client', () => {
+test('a GRF is dated by its file, on the player’s calendar', () => {
+	const { fileDate } = require('../electron/client-detect');
+	assert.equal(fileDate('/iro/data.grf', () => new Date(2026, 9, 7, 1, 19)), '2026-10-07');
+	assert.equal(fileDate('/gone.grf', () => { throw new Error('gone'); }), null);
+	assert.equal(fileDate(''), null);
+});
+
+test('a fallback GRF is named with its client, file name and date', () => {
 	const { detectFallback, describeFallback } = require('../electron/client-detect');
-	// kRO dates its executable; that wins over the GRF's own date.
-	const kro = detectFallback('/kro/data.grf', () => KRO, () => ['Setup.exe', '2026-02-19_Ragexe_1770960005.exe', 'data.grf'], () => new Date(2026, 4, 8));
-	assert.deepEqual(kro, { client: 'kRO', code: 'kr', date: '2026-02-19', dateFrom: 'client' });
-	assert.equal(describeFallback(kro), 'kRO, client 2026-02-19');
-	// iRO's is plain Ragexe.exe: the GRF's date, the day the player sees.
-	const iro = detectFallback('/iro/data.grf', () => IRO, () => ['Ragexe.exe', 'data.grf'], () => new Date(2026, 9, 7, 1, 19));
-	assert.equal(describeFallback(iro), 'iRO, files from 2026-10-07');
-	const unreadable = detectFallback('/x/data.grf', () => { throw new Error('not a GRF'); }, () => [], () => { throw new Error('gone'); });
-	assert.equal(describeFallback(unreadable), 'unknown client');
+	const kro = detectFallback('/games/kro/data.grf', () => KRO, () => new Date(2026, 2, 20));
+	assert.deepEqual(kro, { client: 'kRO', code: 'kr', from: 'data.grf', date: '2026-03-20' });
+	assert.equal(describeFallback(kro), 'kRO (from data.grf) · files 2026-03-20', 'the name only: a full path can be long');
+	const unreadable = detectFallback('/x/other.grf', () => { throw new Error('not a GRF'); }, () => { throw new Error('gone'); });
+	assert.equal(describeFallback(unreadable), 'unknown client (other.grf)');
 });
 
 test('picking a fallback GRF does not change the detected client', () => {
@@ -72,11 +77,11 @@ test('picking a fallback GRF does not change the detected client', () => {
 	fs.writeFileSync(other, 'not a grf either');
 	const first = detectAndSave(state, { data_grf: grf });
 	fs.writeFileSync(path.join(state, 'client-detected.json'), JSON.stringify({ ...first, client: 'iRO', code: 'us', from: 'data.grf' }));
-	const fake = () => ({ client: 'kRO', code: 'kr', date: '2026-02-19', dateFrom: 'client' });
+	const fake = () => ({ client: 'kRO', code: 'kr', from: 'data.grf', date: '2026-03-20' });
 	const withFallback = detectAndSave(state, { data_grf: grf, fallback_grf: other }, () => {}, fake);
 	assert.equal(withFallback.client, 'iRO', 'data.grf is not read again, and the fallback does not replace it');
-	assert.equal(describe(state).text, 'iRO (from data.grf)');
-	assert.equal(describe(state).fallback, 'kRO, client 2026-02-19');
+	assert.match(describe(state).text, /^iRO \(from data\.grf\) · files \d{4}-\d{2}-\d{2}$/);
+	assert.equal(describe(state).fallback, 'kRO (from data.grf) · files 2026-03-20');
 	const without = detectAndSave(state, { data_grf: grf }, () => {}, fake);
 	assert.equal(without.client, 'iRO');
 	assert.equal(describe(state).fallback, null, 'a cleared fallback is no longer named');
