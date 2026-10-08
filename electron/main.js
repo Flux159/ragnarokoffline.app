@@ -2579,10 +2579,16 @@ const handlers = {
 		// Paths only: a client folder name is not a secret, and knowing whether
 		// the GRFs were found is most of triage.
 		const c = getClientPaths();
+		const detected = require('./client-detect').describe(stateDir());
 		add('client', Object.entries(c)
 			.map(([k, v]) => `${k.padEnd(14)}${v === '' ? '(unset)' : v}`)
 			// Which client the GRFs are: a mod written for kRO's data breaks iRO.
-			.concat(`${'detected'.padEnd(14)}${require('./client-detect').describe(stateDir()).text}`).join('\n'));
+			.concat(`${'detected'.padEnd(14)}${detected.text}`)
+			// A second client's files mixed in explain a lot of odd reports.
+			.concat(c.fallback_grf ? [`${'fallback is'.padEnd(14)}${detected.fallback || 'not detected yet'}`] : []).join('\n'));
+		// The archives in the order the asset server reads them: the first that
+		// has a file wins.
+		add('asset archives (DATA.INI)', readIfExists(path.join(stateDir(), 'asset-config/DATA.INI')).trim() || '(none yet)');
 		add('settings', JSON.stringify(getSettings(), null, 2));
 		add('Cloudflare sharing', JSON.stringify({
 			state: sharing?.state || 'stopped',
@@ -3066,6 +3072,26 @@ const handlers = {
 		}
 		fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
 		return linkClient(next);
+	},
+	// Settings' advanced Fallback GRF: another client's archive, read after the
+	// player's own. Off unless chosen there; '' clears it. The asset server is
+	// brought back on the new list when it was running.
+	set_fallback_grf: async ({ path: file }) => {
+		const prev = getClientPaths();
+		if (prev.mode === 'join') throw new Error('a joining player plays with the host’s files');
+		if (!clientComplete(prev)) throw new Error('choose your client first');
+		const chosen = typeof file === 'string' ? file.trim() : '';
+		if (chosen && !fs.statSync(chosen, { throwIfNoEntry: false })?.isFile()) throw new Error('the fallback GRF is not a file');
+		if (chosen && path.resolve(chosen) === path.resolve(prev.data_grf)) throw new Error('that is your own data.grf');
+		const next = { ...prev, fallback_grf: chosen };
+		fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
+		const hadAssets = assetServer.running;
+		try {
+			await linkClient(next);
+		} finally {
+			if (hadAssets) await assetsStart();
+		}
+		return require('./client-detect').describe(stateDir());
 	},
 
 	// Host mode, LAN toggle, and the string a host gives out. Kept separate
@@ -3748,7 +3774,7 @@ const HEADLESS_PAGE_HANDLERS = new Set([
 	'get_settings', 'get_vm_ram_mib', 'host_facts', 'host_ram_mib', 'hosting_check', 'install_mod',
 	'install_registry_mod', 'install_skin', 'list_mods', 'list_registry_mods', 'mod_data_reset', 'mod_host_list', 'mod_host_set',
 	'open_data_folder', 'open_mods_folder', 'packetvers', 'registry_image', 'registry_release', 'remove_mod',
-	'report_issue', 'save_settings', 'secure_services', 'set_app_preference', 'set_client_paths',
+	'report_issue', 'save_settings', 'secure_services', 'set_app_preference', 'set_client_paths', 'set_fallback_grf',
 	'set_mod_enabled', 'set_mod_settings', 'set_mode', 'set_vm_ram_mib', 'sharing_status', 'sharing_token_help',
 	'sign_in_status', 'stack_down', 'stack_repair', 'stack_status', 'stack_up', 'start_stack', 'tools_list',
 	'accounts', 'save_diagnostics', 'sharing_connect', 'sharing_start', 'sharing_forget', 'sharing_stop',
