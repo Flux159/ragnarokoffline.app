@@ -233,8 +233,8 @@ richer is the mod's own UI problem. A number takes optional `min` and `max`, a
 string an optional `max_length` (200 at most); `key` is up to 40 letters,
 digits or underscores.
 
-**A mod may declare at most 20 settings.** The app refuses a `mod.json` with
-more ("a mod may declare at most 20 settings"), and a
+**A mod may declare at most 40 settings.** The app refuses a `mod.json` with
+more ("a mod may declare at most 40 settings"), and a
 [settings page](#settingspage--a-settings-window-of-your-own) does not lift
 the limit: it shows the same declared settings. If you need more, in order of
 preference:
@@ -364,7 +364,7 @@ await window.modSettings.apply();                        // restart the server, 
 you did not declare, or a value of the wrong type, is refused with the reason.
 
 So a settings page can't hold more options than `settings` declares, and the
-[20-setting limit](#settings--options-the-app-renders-for-you) applies to it as
+[40-setting limit](#settings--options-the-app-renders-for-you) applies to it as
 well. A page changes how the options look, not how many there are.
 `apply` resolves once the server is back up.
 

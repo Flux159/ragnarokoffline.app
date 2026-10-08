@@ -571,8 +571,8 @@ fn read_manifest(dir: &Path) -> Result<Option<Manifest>, String> {
             }
             m.settings.push(Setting { key, label, description, value, min, max });
         }
-        if m.settings.len() > 20 {
-            return Err("mod.json: a mod may declare at most 20 settings".into());
+        if m.settings.len() > 40 {
+            return Err("mod.json: a mod may declare at most 40 settings".into());
         }
     }
     if let Some(req) = v.get("requires") {
@@ -4263,6 +4263,22 @@ mod tests {
         let out = assemble(&cfg).unwrap();
         assert_eq!(fs::read_to_string(build.join("db/item_db.yml")).unwrap(), "# renewal\n");
         assert!(out.npc_lines.contains("npc: npc/mods/both-clients/iro.txt\n"), "{}", out.npc_lines);
+    }
+
+    /// A mod may declare up to 40 settings; one more is refused by name.
+    #[test]
+    fn a_mod_may_declare_forty_settings_and_no_more() {
+        let cfg = kind_config("settings-limit");
+        let dir = cfg.state.join("mods/m");
+        fs::create_dir_all(&dir).unwrap();
+        let settings = |n: usize| {
+            let list: Vec<String> = (0..n).map(|i| format!(r#"{{"key": "s{i}", "type": "boolean", "default": true}}"#)).collect();
+            format!(r#"{{"settings": [{}]}}"#, list.join(", "))
+        };
+        fs::write(dir.join("mod.json"), settings(40)).unwrap();
+        assert_eq!(read_manifest(&dir).unwrap().unwrap().settings.len(), 40);
+        fs::write(dir.join("mod.json"), settings(41)).unwrap();
+        assert!(read_manifest(&dir).unwrap_err().contains("at most 40 settings"));
     }
 
     #[test]

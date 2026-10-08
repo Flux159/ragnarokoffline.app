@@ -1,0 +1,29 @@
+{
+  "name": "eden-rework-2021",
+  "author": "akreao",
+  "description": "The Eden Group as kRO reworked it in April 2021. Instructors Ur and Boya and four new Administrators hand out the Paradise gear quests, six mission boards bring champion hunts and deliveries, and the update adds cave shortcuts, Odin's Past and English quest text. The old Eden gear and mission NPCs are hidden while it is on. Renewal only.",
+  "tags": [
+    "quest",
+    "eden",
+    "missions",
+    "gear",
+    "npc",
+    "kro",
+    "renewal"
+  ],
+  "icon": "images/icon.png",
+  "screenshots": [
+    "images/administrators.jpg",
+    "images/mission-board.jpg",
+    "images/champion-hunt.jpg",
+    "images/quest-window.jpg"
+  ],
+  "homepage": "https://github.com/akreao/eden-rework-2021",
+  "requires": {
+    "era": "renewal"
+  },
+  "source": {
+    "github": "akreao/eden-rework-2021",
+    "asset": "eden-rework-2021-*.zip"
+  }
+}

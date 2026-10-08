@@ -194,7 +194,10 @@
     color: inherit; font: inherit; text-align: left; cursor: pointer; }
   .mrow-hit:hover:not(:disabled) { background: none; }
   .mrow-hit:hover .mname { color: var(--accent-hi); }
-  .mrow-hit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The name is the row's keyboard control (aria-expanded); the rest of the row opens it on a click. */
+  button.mname, button.mname:hover:not(:disabled) { background: none; border: 0; padding: 0; text-align: left;
+    font: inherit; font-weight: 600; font-size: 13.5px; cursor: pointer; border-radius: 3px; }
+  button.mname:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .mrow-hit .modicon { width: 36px; height: 36px; font-size: 14px; }
   .mhead { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
   .mname { color: var(--text); font-weight: 600; font-size: 13.5px; overflow-wrap: anywhere; }
@@ -231,6 +234,19 @@
   .pill { font-size: 10.5px; font-weight: 600; padding: 0 7px; border-radius: 9px; line-height: 17px;
     white-space: nowrap; border: 1px solid var(--line); color: var(--dim); }
   .pill.gh { border-color: var(--accent-dim); color: var(--accent-hi); }
+  /* Settings -> Mods -> Favorites: the star beside a mod */
+  button.star, button.star:hover:not(:disabled), button.star:focus { background: none; border: none; box-shadow: none; }
+  .star { padding: 2px 6px; font-size: 17px; line-height: 1; cursor: pointer; min-width: 0;
+          color: var(--dim); flex: none; align-self: center; }
+  .star:hover { color: var(--text); }
+  .star[aria-pressed="true"] { color: var(--warn); }
+  .star:focus-visible { outline: 1px solid var(--accent-dim); border-radius: 4px; }
+  .modhead .star { align-self: baseline; padding: 0 4px; font-size: 16px; }
+  .mhead .star { padding: 0 2px; font-size: 16px; }
+  .favrow { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line, #8882); }
+  .favrow:last-child { border-bottom: none; }
+  .favrow .favname { font-weight: 600; font-size: 13px; color: var(--text); }
+  .favrow .favstate { flex: 1 1 auto; color: var(--dim); font-size: 12px; }
   .pill.upd { border-color: #d9a06688; color: var(--warn); }
   .pill.bad { border-color: #c97a7a88; color: var(--bad); }
   .pill.ok { border-color: #6fb98f66; color: var(--ok); }
@@ -806,6 +822,7 @@
   <div class="subbar">
     <div class="subtabs" role="tablist" aria-label="Mods">
       <button role="tab" class="tab" id="modstab-installed" aria-controls="mods-installed" aria-selected="true" tabindex="0">Installed</button>
+      <button role="tab" class="tab" id="modstab-favorites" aria-controls="mods-favorites-panel" aria-selected="false" tabindex="-1">Favorites</button>
       <button role="tab" class="tab" id="modstab-updates" aria-controls="mods-updates-panel" aria-selected="false" tabindex="-1">Updates<span class="tabcount" aria-hidden="true" hidden></span></button>
       <button role="tab" class="tab" id="modstab-find" aria-controls="mods-registry" aria-selected="false" tabindex="-1">Find Mods</button>
     </div>
@@ -826,6 +843,13 @@
      skin format, or a .zip or .rar of one; a cursor pack is a
      <code>cursors.spr</code> and <code>cursors.act</code>. Only one skin and one
      cursor pack are on at a time.</p>
+  </div>
+  <div id="mods-favorites-panel" role="tabpanel" aria-labelledby="modstab-favorites" hidden>
+  <div class="panel">
+    <div id="mods-fav-list" class="note">Looking…</div>
+  </div>
+  <p class="note">Star a mod (&#9734;) in Installed or Find Mods and it is listed here, installed
+     or not. Stars are only a list for you: they don't switch a mod on or change the server.</p>
   </div>
   <div id="mods-updates-panel" role="tabpanel" aria-labelledby="modstab-updates" hidden>
   <div class="panel">
@@ -2224,17 +2248,20 @@ function modRow(m, kindBoxes, pendingNames) {
   };
   if (m.kind && !m.refused) (kindBoxes[m.kind] = kindBoxes[m.kind] || []).push([m.name, cb]);
 
-  const hit = el('button', 'mrow-hit');
-  hit.type = 'button';
-  hit.setAttribute('aria-expanded', String(open));
+  // A click anywhere on the row opens it; the name is the button for the keyboard (and for a
+  // screen reader). Not one button around the whole row, so the star can sit on the title line.
+  const hit = el('div', 'mrow-hit');
+  const nameButton = el('button', 'mname', m.name);
+  nameButton.type = 'button';
+  nameButton.setAttribute('aria-expanded', String(open));
   const text = el('div');
   text.style.minWidth = '0';
   const head = el('div', 'mhead');
-  head.append(el('span', 'mname', m.name));
+  head.append(nameButton);
   if (m.version) head.append(el('span', 'modver', 'v' + m.version.replace(/^v/i, '')));
   const badges = el('span', 'mhead badges');
   badges.append(...modBadges(m, pendingNames));
-  head.append(badges);
+  head.append(badges, starButton(m.name));
   text.append(head, el('div', 'mone', m.refused ? 'Not loaded — ' + m.reason : (m.description || '')));
   hit.append(letterTile(m.name), text);
   main.append(sw, hit);
@@ -2242,12 +2269,13 @@ function modRow(m, kindBoxes, pendingNames) {
   const more = el('div', 'mrow-more');
   more.hidden = !open;
   more.id = 'mod-more-' + m.name;
-  hit.setAttribute('aria-controls', more.id);
+  nameButton.setAttribute('aria-controls', more.id);
+  // The name's click (a press of Enter or Space included) reaches the row's, once.
   hit.onclick = () => {
     const now = more.hidden;
     more.hidden = !now;
     row.classList.toggle('open', now);
-    hit.setAttribute('aria-expanded', String(now));
+    nameButton.setAttribute('aria-expanded', String(now));
     if (now) modsOpen.add(m.name); else modsOpen.delete(m.name);
   };
 
@@ -2445,6 +2473,7 @@ function renderModList() {
   modSettings = ModsState.keptOptions(modSettings, modSettingsBaseline);
   paintUpdates();
   paintModsStatus();
+  paintFavorites();
 }
 
 // A question for the Mods tab, asked in this window: a title, a line of text,
@@ -2887,7 +2916,7 @@ function openInstalled(name) {
   const row = [...$('mods-list').querySelectorAll('.mrow')].find(r => r.dataset.mod === name);
   if (!row) return;
   row.scrollIntoView({ block: 'center' });
-  row.querySelector('.mrow-hit').focus({ preventScroll: true });
+  row.querySelector('button.mname').focus({ preventScroll: true });
 }
 
 function tagChips(mod, after) {
@@ -2919,6 +2948,7 @@ function modCard(mod, { detail = false } = {}) {
   }
   head.append(name);
   if (mod.version) head.append(el('span', 'modver', 'v' + mod.version.replace(/^v/i, '')));
+  head.append(starButton(mod.name));
   body.append(head);
   const byline = el('div', 'modbyline');
   if (mod.author) {
@@ -3094,6 +3124,102 @@ function paintTagBar(query) {
   }
 }
 
+// ---- Favorites: mods the player starred (settings.json mod_favorites)
+
+let modFavorites = new Set();
+invoke('get_settings').then(s => {
+  modFavorites = new Set(Array.isArray(s.mod_favorites) ? s.mod_favorites : []);
+  paintStars();
+  paintFavorites();
+}).catch(() => {});
+
+// A star for one mod: in its Installed row and on its Find Mods card. Every star for
+// the same mod changes together, wherever it is drawn.
+function starButton(name) {
+  const b = el('button', 'star');
+  b.type = 'button';
+  b.dataset.star = name;
+  paintStar(b);
+  b.onclick = async event => {
+    event.stopPropagation();
+    const on = !modFavorites.has(name);
+    // At once on screen; the saved list is what comes back.
+    if (on) modFavorites.add(name); else modFavorites.delete(name);
+    paintStars();
+    paintFavorites();
+    try {
+      modFavorites = new Set(await invoke('mod_favorites_set', { name, favorite: on }));
+    } catch (e) {
+      if (on) modFavorites.delete(name); else modFavorites.add(name);
+      log('could not save the favourite: ' + String(e));
+    }
+    paintStars();
+    paintFavorites();
+  };
+  return b;
+}
+
+function paintStar(b) {
+  const on = modFavorites.has(b.dataset.star);
+  b.textContent = on ? '\u2605' : '\u2606';
+  b.setAttribute('aria-pressed', String(on));
+  b.title = on ? 'Remove from Favorites' : 'Add to Favorites';
+  b.setAttribute('aria-label', `${b.dataset.star}: ${b.title}`);
+}
+
+function paintStars() {
+  for (const b of document.querySelectorAll('.star[data-star]')) paintStar(b);
+}
+
+// Show a mod where it lives: its Installed row, opened, or its Find Mods page.
+function showFavorite(name) {
+  if ((modsListed || []).some(m => m.name === name)) {
+    showModsSub('installed');
+    const row = document.querySelector(`#mods-list .mrow[data-mod="${CSS.escape(name)}"]`);
+    if (row) {
+      const name = row.querySelector('button.mname');
+      if (name && name.getAttribute('aria-expanded') !== 'true') name.click();
+      row.scrollIntoView({ block: 'center' });
+      if (name) name.focus();
+    }
+    return;
+  }
+  const mod = (catalogue || []).find(m => m.name === name);
+  showModsSub('find');
+  if (mod) detailFor(mod);
+}
+
+function paintFavorites() {
+  const box = $('mods-fav-list');
+  if (!box) return;
+  box.replaceChildren();
+  if (!modFavorites.size) {
+    box.textContent = 'No favorites yet. Star a mod (\u2606) in Installed or Find Mods and it shows up here.';
+    return;
+  }
+  for (const name of [...modFavorites].sort((a, b) => a.localeCompare(b))) {
+    const installed = (modsListed || []).find(m => m.name === name);
+    const listed = (catalogue || []).find(m => m.name === name);
+    const row = el('div', 'favrow');
+    let state;
+    if (installed) {
+      state = installed.refused ? 'Installed, not loaded' : modState[name] ? 'Installed, on' : 'Installed, off';
+      if (installed.version) state += ` \u00b7 v${installed.version.replace(/^v/i, '')}`;
+    } else if (listed) {
+      state = 'Not installed';
+    } else {
+      state = catalogue ? 'Not installed, and not in the mod list' : 'Not installed';
+    }
+    const go = el('button', 'ghost', installed ? 'Show' : 'Find');
+    go.type = 'button';
+    go.title = installed ? 'Open it in Installed' : 'Open it in Find Mods';
+    go.disabled = !installed && catalogue !== null && !listed;
+    go.onclick = () => showFavorite(name);
+    row.append(starButton(name), el('span', 'favname', name), el('span', 'favstate', state), go);
+    box.append(row);
+  }
+}
+
 function paintCatalogue() {
   const box = $('mods-catalogue');
   const query = $('mods-search').value.trim().toLowerCase();
@@ -3129,6 +3255,7 @@ async function loadCatalogue({ fresh = false } = {}) {
   try {
     catalogue = await invoke('list_registry_mods', { fresh });
     paintCatalogue();
+    paintFavorites();
   } catch (e) {
     catalogue = [];
     $('mods-catalogue').textContent = 'Could not read the mod list: ' + String(e);
@@ -3138,7 +3265,7 @@ async function loadCatalogue({ fresh = false } = {}) {
 }
 
 // Mods' three lists, as tabs of their own, remembered the way the section is.
-const MODS_SUBS = { installed: 'mods-installed', updates: 'mods-updates-panel', find: 'mods-registry' };
+const MODS_SUBS = { installed: 'mods-installed', favorites: 'mods-favorites-panel', updates: 'mods-updates-panel', find: 'mods-registry' };
 const MODS_SUB_KEYS = Object.keys(MODS_SUBS);
 let modsSub = 'installed';
 function showModsSub(key, focus = false) {
@@ -3154,6 +3281,8 @@ function showModsSub(key, focus = false) {
   }
   if (focus) $('modstab-' + key).focus();
   if (key === 'find' && !$('panel-mods').hidden) loadCatalogue();
+  // Favorites lists starred mods that aren't installed from the mod list, so it wants the list too.
+  if (key === 'favorites' && !$('panel-mods').hidden) { paintFavorites(); loadCatalogue(); }
   // As with the section tabs: the other list's scroll is not this one's.
   if (changed) window.scrollTo(0, 0);
   try { localStorage.setItem('settings-mods-tab', key); } catch { /* private window */ }

@@ -1024,6 +1024,9 @@ const SETTINGS_DEFAULTS = {
 	// every start after, once it has been); off closes them and keeps them
 	// closed, editor or not.
 	map_editor_agent: true,
+	// Mods the player starred in Settings -> Mods, by folder name: the Favorites
+	// tab lists them. Installed or not; nothing about the server reads it.
+	mod_favorites: [],
 	// How long a friends invitation stays valid, in days. Nothing to do with
 	// Cloudflare -- the tunnel runs as long as the app shares; this is only how
 	// long the invite token is accepted. A link posted in Discord should still
@@ -1150,6 +1153,8 @@ function getSettings() {
 // only names set_app_preference will write. Everything else in that file
 // changes how the server runs and has to go through Apply.
 const APP_PREFERENCES = new Set(['open_settings_first']);
+// Settings -> Mods -> Favorites: how many mods can be starred (settings-store checks the same).
+const MOD_FAVORITES_MAX = 500;
 
 // The AI agent's bearer token, for redaction. Read from its connection file
 // rather than from the agent: it outlives the session that made it, and it is
@@ -3168,6 +3173,21 @@ const handlers = {
 		return next.vm_ram_mib;
 	},
 	save_settings: ({ settings }) => saveSettings(settings),
+	// Star or unstar a mod for Settings -> Mods -> Favorites. One name at a
+	// time, so two windows starring different mods don't overwrite each other.
+	mod_favorites_set: ({ name, favorite }) => {
+		name = String(name || '');
+		if (!/^[A-Za-z0-9_-]{1,64}$/.test(name)) throw new Error(`${name} is not a mod name`);
+		const list = (getSettings().mod_favorites || []).filter(n => n !== name);
+		if (favorite) {
+			// settings-store holds the list to the same 500, but its message is for a damaged file.
+			if (list.length >= MOD_FAVORITES_MAX) throw new Error(`You can star at most ${MOD_FAVORITES_MAX} mods. Unstar one first.`);
+			list.push(name);
+		}
+		const settings = require('./settings-store').write(path.join(stateDir(), 'settings.json'),
+			{ mod_favorites: list.sort() }, SETTINGS_DEFAULTS);
+		return settings.mod_favorites;
+	},
 	// The preferences the app acts on itself. Written straight to
 	// settings.json, and deliberately not server operations: nothing the
 	// supervisor reads is involved, and going the usual way would restart the
@@ -3774,7 +3794,8 @@ const HEADLESS_PAGE_HANDLERS = new Set([
 	'get_settings', 'get_vm_ram_mib', 'host_facts', 'host_ram_mib', 'hosting_check', 'install_mod',
 	'install_registry_mod', 'install_skin', 'list_mods', 'list_registry_mods', 'mod_data_reset', 'mod_host_list', 'mod_host_set',
 	'open_data_folder', 'open_mods_folder', 'packetvers', 'registry_image', 'registry_release', 'remove_mod',
-	'report_issue', 'save_settings', 'secure_services', 'set_app_preference', 'set_client_paths', 'set_fallback_grf',
+	'report_issue', 'save_settings', 'secure_services', 'set_app_preference', 'mod_favorites_set', 'set_client_paths',
+	'set_fallback_grf',
 	'set_mod_enabled', 'set_mod_settings', 'set_mode', 'set_vm_ram_mib', 'sharing_status', 'sharing_token_help',
 	'sign_in_status', 'stack_down', 'stack_repair', 'stack_status', 'stack_up', 'start_stack', 'tools_list',
 	'accounts', 'save_diagnostics', 'sharing_connect', 'sharing_start', 'sharing_forget', 'sharing_stop',

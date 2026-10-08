@@ -43,6 +43,12 @@ function validate(settings) {
       !(Number.isInteger(settings.agent_count) && settings.agent_count >= 1 && settings.agent_count <= 4)) {
     throw new Error('Cannot read the AI agent setting. Choose how many agents again in Settings.');
   }
+  // Settings -> Mods -> Favorites: mod folder names, at most a few hundred.
+  if (Object.hasOwn(settings, 'mod_favorites') &&
+      !(Array.isArray(settings.mod_favorites) && settings.mod_favorites.length <= 500 &&
+        settings.mod_favorites.every(n => typeof n === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(n)))) {
+    throw new Error('Cannot read the favourite mods. Star them again in Settings -> Mods.');
+  }
   for (const key of ['agent_play', 'agent_window', 'map_editor_agent']) {
     if (Object.hasOwn(settings, key) && typeof settings[key] !== 'boolean') {
       throw new Error('Cannot read the AI agent setting. Turn it off and on again in Settings.');

@@ -355,6 +355,60 @@
       ]
     },
     {
+      "name": "eden-rework-2021",
+      "version": "",
+      "author": "akreao",
+      "description": "The Eden Group as kRO reworked it in April 2021. Instructors Ur and Boya and four new Administrators hand out the Paradise gear quests, six mission boards bring champion hunts and deliveries, and the update adds cave shortcuts, Odin's Past and English quest text. The old Eden gear and mission NPCs are hidden while it is on. Renewal only.",
+      "homepage": "https://github.com/akreao/eden-rework-2021",
+      "tags": [
+        "eden",
+        "gear",
+        "kro",
+        "missions",
+        "npc",
+        "quest",
+        "renewal"
+      ],
+      "icon": "images/icon.png",
+      "screenshots": [
+        "images/administrators.jpg",
+        "images/mission-board.jpg",
+        "images/champion-hunt.jpg",
+        "images/quest-window.jpg"
+      ],
+      "requires": {
+        "mods": [],
+        "era": "renewal",
+        "app": ""
+      },
+      "source": {
+        "github": "akreao/eden-rework-2021",
+        "asset": "eden-rework-2021-*.zip"
+      },
+      "files": [
+        {
+          "path": "images/administrators.jpg",
+          "sha256": "0e1eff732d4e1e1fdadfcde1136361cdc2ccab997befe3d671c1ad894b518244"
+        },
+        {
+          "path": "images/champion-hunt.jpg",
+          "sha256": "2e4c65484382f092cb208afa8f595b81b72979df927dfede79a3ea66ce4e0900"
+        },
+        {
+          "path": "images/icon.png",
+          "sha256": "4be96bdf205c0a74919c87d05ddc4164d25c7230b1adf63761fa9df96203833d"
+        },
+        {
+          "path": "images/mission-board.jpg",
+          "sha256": "9667c7e52d9e7b7ad1cfba6a030a6031e4c4ea379495908fff856eff776416bc"
+        },
+        {
+          "path": "images/quest-window.jpg",
+          "sha256": "0ffe4208d0bb862628c81524bb131b00acde9d89fbc2c80a466492e5d9ded035"
+        }
+      ]
+    },
+    {
       "name": "exp-card",
       "version": "1.2.0",
       "author": "BlaXun",
@@ -622,6 +676,34 @@
           "sha256": "e256016b9a6e83b3b1fea49f281866c4002f0e5dcfb511fa7d404c920792f8aa"
         }
       ]
+    },
+    {
+      "name": "path-of-ragnarok",
+      "version": "",
+      "author": "rhewid",
+      "description": "A Path-of-Exile style passive skill tree. Your first class gives you an origin in the centre of a 695-node tree, every job level earns a point (50 max), and you grow outward through stats, resistances, damage against races and elements, skill boosts, auto-casts and free recasts, card sockets, masteries, job-line and rebirth branches, keystones and teleport rifts. Balanced around pre-renewal; it also loads on renewal but is not balanced for it.",
+      "homepage": "https://github.com/rhewid/path-of-ragnarok",
+      "tags": [
+        "cards",
+        "client",
+        "passive-tree",
+        "pre-renewal",
+        "progression",
+        "skills",
+        "stats"
+      ],
+      "icon": "",
+      "screenshots": [],
+      "requires": {
+        "mods": [],
+        "era": "",
+        "app": ""
+      },
+      "source": {
+        "github": "rhewid/path-of-ragnarok",
+        "asset": "path-of-ragnarok-*.zip"
+      },
+      "files": []
     },
     {
       "name": "prontera-vendors",

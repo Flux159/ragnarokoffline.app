@@ -28,6 +28,20 @@ fn overlapping_operation_is_rejected_and_lock_releases_on_drop() {
     let first = acquire(&state).unwrap();
     assert!(acquire(&state).is_err());
     drop(first);
-    drop(acquire(&state).unwrap());
+    // Released -- but not always at once under `cargo test`. Another test thread that spawns a
+    // process forks while `first` is open, and until that child execs, its copy of the
+    // descriptor (close-on-exec only closes it at exec) still holds the flock, which belongs to
+    // the shared open file. That made this fail now and then on macOS CI. Allow it a moment.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        match acquire(&state) {
+            Ok(again) => {
+                drop(again);
+                break;
+            }
+            Err(e) if std::time::Instant::now() >= deadline => panic!("the lock was never released: {e}"),
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(20)),
+        }
+    }
     std::fs::remove_dir_all(state).unwrap();
 }

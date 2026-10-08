@@ -1,0 +1,19 @@
+{
+  "name": "path-of-ragnarok",
+  "author": "rhewid",
+  "description": "A Path-of-Exile style passive skill tree. Your first class gives you an origin in the centre of a 695-node tree, every job level earns a point (50 max), and you grow outward through stats, resistances, damage against races and elements, skill boosts, auto-casts and free recasts, card sockets, masteries, job-line and rebirth branches, keystones and teleport rifts. Balanced around pre-renewal; it also loads on renewal but is not balanced for it.",
+  "tags": [
+    "passive-tree",
+    "progression",
+    "skills",
+    "stats",
+    "cards",
+    "client",
+    "pre-renewal"
+  ],
+  "homepage": "https://github.com/rhewid/path-of-ragnarok",
+  "source": {
+    "github": "rhewid/path-of-ragnarok",
+    "asset": "path-of-ragnarok-*.zip"
+  }
+}
