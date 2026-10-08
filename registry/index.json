@@ -2,6 +2,35 @@
   "version": 1,
   "mods": [
     {
+      "name": "adventurer-guide",
+      "version": "",
+      "author": "rhewid",
+      "description": "An Adventurer Guide NPC in Prontera (136,171) that reads your class and level. It tells you where to level, with a hunting tip for your class at every spot; what gear to buy from NPCs and which gear and cards to farm (with prices, drop rates and maps); stat and skill builds with several playstyles per class; MVPs that could be worth a try with the boss skills to watch for; and this server's EXP and drop rates. Pre-renewal and renewal each use their own data, taken from the server's own item, monster and shop tables.",
+      "homepage": "https://github.com/rhewid/adventurer-guide",
+      "tags": [
+        "builds",
+        "cards",
+        "drops",
+        "gear",
+        "guide",
+        "mvp",
+        "npc",
+        "quality-of-life"
+      ],
+      "icon": "",
+      "screenshots": [],
+      "requires": {
+        "mods": [],
+        "era": "",
+        "app": ""
+      },
+      "source": {
+        "github": "rhewid/adventurer-guide",
+        "asset": "adventurer-guide-*.zip"
+      },
+      "files": []
+    },
+    {
       "name": "affix-forge",
       "version": "",
       "author": "rhewid",
