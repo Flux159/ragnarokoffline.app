@@ -22,6 +22,12 @@ jobs:
       - run: python3 tests/diagnostics/verify-weapon-bounds.py vendor/rathena-upstream --expect-fault
       # Our fork, which carries the fixes, before and after our own additions.
       - run: bash scripts/vendor-fetch.sh rathena vendor/rathena
+      # The selection-package supplement is a bounded copy of stock Renewal
+      # rewards. Check before mods, against the configured pin; never skip.
+      - name: Supplementary selection packages describe the pinned server
+        env:
+          REQUIRE_PINNED_RATHENA: "1"
+        run: python3 tests/diagnostics/verify-selection-packages.py
       - run: python3 tests/diagnostics/verify-language.py vendor/rathena
       - run: python3 tests/diagnostics/verify-base-sp.py vendor/rathena
       - run: python3 tests/diagnostics/verify-skill-level.py vendor/rathena

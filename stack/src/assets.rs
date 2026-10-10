@@ -905,9 +905,14 @@ fn write_client_config(
     } else {
         body.replace("langtype: 0,", &format!("langtype: {},", text.langtype()))
     };
-    // The tables mods add to the client's own, each a list the client loads
-    // beside its base; client_tables says in which order, and why.
     let mut body = body;
+    // Only the stock Renewal server defines these packages. This separate file
+    // fills missing client boxes without replacing any native package table.
+    if !crate::cmds::is_prerenewal(cfg) {
+        body = insert_before_close(body,
+            "\titemPackageSupplement: 'data/luafiles514/lua files/selectpackage/selectpackageitem_supplement.lua',\n");
+    }
+    // The tables mods add beside the client's base tables.
     for entry in tables.config_entries(web) {
         body = insert_before_close(body, &entry);
     }
@@ -1480,6 +1485,40 @@ mod tests {
     }
 
     #[test]
+    fn package_supplement_is_staged_in_both_text_modes_but_only_enabled_for_renewal() {
+        let cfg = fixture_config("package-supplement");
+        let client = cfg.state.parent().unwrap().join("client");
+        write(&client.join("data.grf"), "native archive");
+        let en = cfg.root.join("vendor/ROenglishRE/Translation");
+        write(&en.join("Renewal/data/table.txt"), "English text");
+        write(&en.join("Renewal/SystemEN/LuaFiles514/itemInfo.lua"), "English items");
+        write(&en.join("Renewal/SystemEN/OngoingQuests.lub"), "English quests");
+        write(&cfg.root.join("config/Config.local.js"), include_str!("../../config/Config.local.js"));
+        write(&cfg.root.join("config/index.html"), "game entry");
+        let supplement = "data/luafiles514/lua files/selectpackage/selectpackageitem_supplement.lua";
+        let content = include_str!("../../client-assets/data/luafiles514/lua files/selectpackage/selectpackageitem_supplement.lua");
+        write(&cfg.root.join("client-assets").join(supplement), content);
+        let args = vec![client.join("data.grf").to_str().unwrap().to_string()];
+        for settings in ["{}", r#"{"game_text":"client_western"}"#] {
+            write(&cfg.state.join("settings.json"), settings);
+            link(&cfg, &args).unwrap();
+            assert_eq!(fs::read_to_string(cfg.state.join("assets").join(supplement)).unwrap(), content);
+            let config = fs::read_to_string(cfg.state.join("assets/Config.local.js")).unwrap();
+            assert!(config.contains(&format!("itemPackageSupplement: '{supplement}'")), "{config}");
+            assert!(!cfg.state.join("assets/data/luafiles514/lua files/selectpackage/selectpackageitem.lub").exists());
+        }
+        let before = fs::read_to_string(cfg.state.join("assets/overlay.id")).unwrap();
+        write(&cfg.root.join("client-assets").join(supplement), "updated supplement");
+        link(&cfg, &args).unwrap();
+        assert_ne!(fs::read_to_string(cfg.state.join("assets/overlay.id")).unwrap(), before);
+        write(&cfg.state.join("prerenewal"), "");
+        link(&cfg, &args).unwrap();
+        let config = fs::read_to_string(cfg.state.join("assets/Config.local.js")).unwrap();
+        assert!(!config.contains("itemPackageSupplement"), "{config}");
+        fs::remove_dir_all(cfg.state.parent().unwrap()).unwrap();
+    }
+
+    #[test]
     fn owned_copies_of_read_only_sources_remain_replaceable() {
         let cfg = fixture_config("readonly");
         let source = cfg.root.join("table.lua");
@@ -1689,7 +1728,7 @@ mod tests {
 
     /// The shipped template, with a test world's ports: the client dials the
     /// moved login server, and nothing else in the file changes. With no
-    /// override, the file is exactly what it always was.
+    /// override, the template plus the Renewal supplement entry is unchanged.
     #[test]
     fn the_client_dials_the_configured_login_port() {
         let template = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../config/Config.local.js")).unwrap();
@@ -1712,7 +1751,11 @@ mod tests {
         cfg.ports = crate::ports::Ports::DEFAULT;
         write_client_config(&cfg, &web, &[], &ModTables::default(), GameText::English, crate::packetver::default()).unwrap();
         let default = fs::read_to_string(web.join("Config.local.js")).unwrap();
-        assert_eq!(default, set_packetver(&template, crate::packetver::default()));
+        let expected = insert_before_close(
+            set_packetver(&template, crate::packetver::default()),
+            "\titemPackageSupplement: 'data/luafiles514/lua files/selectpackage/selectpackageitem_supplement.lua',\n",
+        );
+        assert_eq!(default, expected);
         fs::remove_dir_all(cfg.state.parent().unwrap()).unwrap();
     }
 
