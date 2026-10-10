@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000034
+Subject: [PATCH] population_vendor_lanefill: a mod sets how full its lanes get
+
+With Fill: Lanes, how much of a lane fills before the next one opens is the
+YAML's LaneFillPct, which a player can't change from the app. This lets a
+mod's OnInit hand a setting to the engine, per VendorKey prefix, like the
+other population_vendor_* commands. It does nothing unless a script calls it.
+
+--- a/src/custom/script.inc
++++ b/src/custom/script.inc
+@@ -527,3 +527,18 @@
+ 	script_pushint(st, 1);
+ 	return SCRIPT_CMD_SUCCESS;
+ }
++
++/*==========================================
++ * population_vendor_lanefill("<prefix>", <percent>)
++ *   With Fill: Lanes, the share of a lane's usable cells the mod vendors
++ *   whose VendorKey starts with the prefix take before the next lane opens
++ *   (1-100), over their YAML LaneFillPct: lower leaves wider gaps between
++ *   stalls and spreads them over more lanes. 0 or less goes back to the YAML.
++ *
++ *   population_vendor_lanefill "my-mod/", callfunc("F_ModSetting", "my-mod", "density", 80);
++ *------------------------------------------*/
++BUILDIN_FUNC(population_vendor_lanefill)
++{
++	population_engine_set_mod_vendor_lane_fill(script_getstr(st, 2), script_getnum(st, 3));
++	return SCRIPT_CMD_SUCCESS;
++}
+--- a/src/custom/script_def.inc
++++ b/src/custom/script_def.inc
+@@ -36,3 +36,4 @@
+ BUILDIN_DEF(population_whisper_event, "is"),
+ BUILDIN_DEF(population_whisper, "is"),
+ BUILDIN_DEF(population_lost_event, "is"),
++BUILDIN_DEF(population_vendor_lanefill, "si"),

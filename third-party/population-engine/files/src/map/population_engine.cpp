@@ -133,6 +133,7 @@ static std::unordered_map<int32, t_tick> g_pop_chat_next_tick; ///< Per-shell ne
 /// RAGNAROKMAC: last vendor callout per map, for a mod vendor's Callouts MapGapSeconds.
 static std::unordered_map<int16, t_tick> g_pop_vendor_last_callout;
 static bool pop_mod_vendor_callout_pace(const map_session_data* sd, const PopulationVendorEntry* ve, int& lo, int& hi);
+static int pop_mod_vendor_lane_fill_pct(const std::string& key);
 static int32 g_pop_chat_timer = INVALID_TIMER;
 static int32 g_population_combat_global_timer = INVALID_TIMER;
 static size_t g_chat_cursor = 0;    ///< Round-robin index for batched chat replies.
@@ -2626,16 +2627,20 @@ static bool pop_mod_vendor_near_npc(int16_t m, int16_t x, int16_t y) {
 /// leaves a gap), or anywhere in it when the lane is empty or its run is boxed
 /// in (an NPC, a wall). A lane's share is LaneFillPct of its usable cells
 /// (walkable, vending allowed, clear of NPCs), rolled once per lane in its
-/// [min, max]; 100 fills it. Once every lane has its share the rest fill in
-/// the same order, so a high Count still finds room. False if no cell is free.
+/// [min, max]; 100 fills it. A mod's population_vendor_lanefill replaces it,
+/// for a block without LaneFillPct too. Once every lane has its share the
+/// rest go to whichever lane is least full, so a high Count still finds room
+/// and no lane ends up packed beside empty ones. False if no cell is free.
 static bool pop_mod_vendor_lane_cell(int16_t m, const PopulationModSpawn& sp,
 	const std::vector<std::pair<int16_t, int16_t>>& mine, int16_t& out_x, int16_t& out_y)
 {
 	static std::unordered_map<std::string, int> lane_pct; // per lane, rolled once per run
 	const int reach = sp.min_spacing + 2;
+	const int mod_pct = pop_mod_vendor_lane_fill_pct(sp.spawn_id);
 	struct Lane {
 		std::vector<std::pair<int16_t, int16_t>> beside, free_cells;
 		bool has_shells = false, at_share = false;
+		int shells = 0, usable = 0;
 	};
 	std::vector<Lane> lanes(sp.areas.size());
 	for (size_t li = 0; li < sp.areas.size(); ++li) {
@@ -2670,7 +2675,9 @@ static bool pop_mod_vendor_lane_cell(int16_t m, const PopulationModSpawn& sp,
 			}
 		}
 		int pct = 100;
-		if (sp.lane_fill_min < 100) {
+		if (mod_pct > 0) {
+			pct = mod_pct;
+		} else if (sp.lane_fill_min < 100) {
 			const std::string key = sp.spawn_id + "#" + std::to_string(li);
 			auto it = lane_pct.find(key);
 			if (it == lane_pct.end())
@@ -2679,6 +2686,8 @@ static bool pop_mod_vendor_lane_cell(int16_t m, const PopulationModSpawn& sp,
 			pct = it->second;
 		}
 		lane.at_share = shells * 100 >= usable * pct;
+		lane.shells = shells;
+		lane.usable = usable;
 	}
 	auto take = [&](const Lane& lane) {
 		const auto& from = (lane.has_shells && !lane.beside.empty()) ? lane.beside : lane.free_cells;
@@ -2692,8 +2701,16 @@ static bool pop_mod_vendor_lane_cell(int16_t m, const PopulationModSpawn& sp,
 	for (const Lane& lane : lanes)
 		if (!lane.at_share && take(lane))
 			return true;
-	for (const Lane& lane : lanes) // every lane has its share: the rest, in order
-		if (take(lane))
+	// Every lane has its share: the rest, the least full lane first.
+	std::vector<const Lane*> rest;
+	for (const Lane& lane : lanes)
+		if (lane.usable > 0)
+			rest.push_back(&lane);
+	std::stable_sort(rest.begin(), rest.end(), [](const Lane* a, const Lane* b) {
+		return static_cast<int64_t>(a->shells) * b->usable < static_cast<int64_t>(b->shells) * a->usable;
+	});
+	for (const Lane* lane : rest)
+		if (take(*lane))
 			return true;
 	return false;
 }
@@ -2765,6 +2782,7 @@ struct PopModVendorSettings {
 	int callout_max_sec = -1;
 	int respect_limit = -1;    ///< population_vendor_limit: 0 = spawn even when the population is full
 	int price_pct = -1;        ///< population_vendor_price: every listed price × this / 100
+	int lane_fill_pct = -1;    ///< population_vendor_lanefill: a lane's share with Fill: Lanes, over LaneFillPct
 };
 static std::vector<PopModVendorSettings> g_pop_mod_vendor_settings;
 /// Breaks ties when a total is smaller than the number of blocks, so which
@@ -2825,6 +2843,22 @@ void population_engine_set_mod_vendor_price(const char* prefix, int pct) {
 	PopModVendorSettings& e = pop_mod_vendor_settings_for_prefix(prefix);
 	e.price_pct = pct > 0 ? std::min(pct, 100000) : -1;
 	ShowInfo("Population engine: mod vendors '%s*': prices at %d%%.\n", e.prefix.c_str(), pct > 0 ? e.price_pct : 100);
+}
+
+void population_engine_set_mod_vendor_lane_fill(const char* prefix, int pct) {
+	PopModVendorSettings& e = pop_mod_vendor_settings_for_prefix(prefix);
+	e.lane_fill_pct = pct > 0 ? std::min(pct, 100) : -1;
+	if (pct > 0)
+		ShowInfo("Population engine: mod vendors '%s*': lanes fill to %d%%.\n", e.prefix.c_str(), e.lane_fill_pct);
+	else
+		ShowInfo("Population engine: mod vendors '%s*': lanes fill as their YAML says.\n", e.prefix.c_str());
+}
+
+/// The lane share a mod set for the vendors a spawn id (or VendorKey) belongs
+/// to, in percent; -1 = not set, the block's LaneFillPct applies.
+static int pop_mod_vendor_lane_fill_pct(const std::string& key) {
+	const PopModVendorSettings* st = pop_mod_vendor_settings_for_key(key);
+	return st ? st->lane_fill_pct : -1;
 }
 
 /// RAGNAROKMAC: a price percentage for one item that a mod sets in

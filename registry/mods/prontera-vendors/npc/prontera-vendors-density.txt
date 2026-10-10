@@ -1,0 +1,17 @@
+//===== Ragnarok Offline: prontera-vendors =================================
+//= Hands "Stall density" to the population engine: how full a lane gets
+//= before stalls open in the next one, for the sell stalls and the buying
+//= stores alike. Lower leaves gaps between stalls and spreads them over
+//= more lanes; once every lane has its share, the rest go to the emptiest.
+//=
+//= Its own file because an app build without population_vendor_lanefill
+//= rejects the whole file it finds the command in; here that costs only
+//= this setting, and the lanes fill to the 70-80 % in
+//= db/population_vendors.yml (LaneFillPct) as before.
+//===========================================================================
+-	script	ProntVendorsDensity	-1,{
+	end;
+OnInit:
+	population_vendor_lanefill "prontera-vendors/", callfunc("F_ModSetting", "prontera-vendors", "stall_density", 80);
+	end;
+}

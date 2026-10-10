@@ -223,6 +223,10 @@ void population_engine_set_mod_vendor_limit(const char* prefix, int respect);
 /// RAGNAROKMAC: those vendors' price level in percent (100 = as listed);
 /// script: population_vendor_price.
 void population_engine_set_mod_vendor_price(const char* prefix, int pct);
+/// RAGNAROKMAC: the share of a lane's usable cells those vendors take before
+/// the next lane opens (Fill: Lanes), in percent, over the YAML's LaneFillPct;
+/// 0 or less goes back to the YAML. Script: population_vendor_lanefill.
+void population_engine_set_mod_vendor_lane_fill(const char* prefix, int pct);
 /// RAGNAROKMAC: @vendorinfo [theme|market] -- inspect mod vendor stalls in game.
 void population_engine_vendorinfo(map_session_data* sd, const char* arg);
 

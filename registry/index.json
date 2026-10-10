@@ -707,7 +707,7 @@
     },
     {
       "name": "prontera-vendors",
-      "version": "1.5.0",
+      "version": "1.6.0",
       "author": "BlaXun",
       "description": "A living player market on Prontera's main road. Fake players run real vending stalls on the inner sidewalks (cards, weapons and armor by class, refined gear, potions, gems, pet eggs, loot from every dungeon and more) and real buying stores on the outer sidewalks that buy your loot: ores, quest turn-ins, junk drops and the loot of every dungeon and leveling field. Prices follow a real server's market (kRO), stalls undercut each other and change as their owners come and go, and everything is tunable in Settings. Needs the population engine switched on.",
       "homepage": "",
@@ -731,11 +731,11 @@
       "files": [
         {
           "path": "CHANGELOG.md",
-          "sha256": "1f9bb090bcc943adfdbc5eac1931b4299123a1f5d520fb73aedc9bab3d175c11"
+          "sha256": "f45f1786b003feda52a1050e28f48cba2f9e4a0eb64e928abcdb602e4a8b0fdc"
         },
         {
           "path": "README.md",
-          "sha256": "be4742bc1f7619b65aec47a5b02cce6c205fc62544da64593c7549b69bef6ebf"
+          "sha256": "ff464e35e2456ab84e41404d4569c80edbf152d63f1fc092a734eb309db64b0a"
         },
         {
           "path": "db/population_vendor_pop.yml",
@@ -759,11 +759,15 @@
         },
         {
           "path": "mod.json",
-          "sha256": "999847e5ea92858ad50474b71e1319f11e81a900e88c8e6b28902bd99287907c"
+          "sha256": "f704669bd2a20031d2e8075a28378fe4f49a6dce1762d9d673718f4c73aa5172"
         },
         {
           "path": "npc/prontera-vendors-customers.txt",
           "sha256": "b8a87d0ddddc8e2dfc33ae5ccfc40c6e66d54e8994c361e2c2f324b0a9a57b84"
+        },
+        {
+          "path": "npc/prontera-vendors-density.txt",
+          "sha256": "dd5a82d290248d387a9741e905f866a05f5011273c758dae7004a82ca878391b"
         },
         {
           "path": "npc/prontera-vendors-market-data.txt",
@@ -771,7 +775,7 @@
         },
         {
           "path": "npc/prontera-vendors-market.txt",
-          "sha256": "0c0d8486e9f5ac8f3831c7d9f91fc102bdf419f43f347857e2121c0461294e64"
+          "sha256": "4e08cb648891b6125c0d06ca11ddb0bb9fbe413c5f47505d9b7d5da6c41a361a"
         },
         {
           "path": "npc/prontera-vendors-newer.txt",
@@ -783,7 +787,7 @@
         },
         {
           "path": "npc/prontera-vendors-supply.txt",
-          "sha256": "cc8b7aa56dd25b349d6f1bd99f95ccc66da1dfd22832e9a36ec5c01f9dc212c1"
+          "sha256": "75887d2014bed34659b248279647f18215114f17e3f3eb0fdf8beacabd93f851"
         },
         {
           "path": "npc/prontera-vendors.txt",
@@ -791,27 +795,27 @@
         },
         {
           "path": "pre-re/db/population_vendor_pop.yml",
-          "sha256": "c76df9746abc9d5d3d272177d066c20859e87a3c2e4d37195817da85746a5fa9"
+          "sha256": "2dafb45521a3356f023aa594bec61d80a3f59b0210116e2af1e0d9a88149a9a4"
         },
         {
           "path": "pre-re/db/population_vendor_prices/prontera-vendors.csv",
-          "sha256": "2824002dd05b0490c442d7e374523655a23f7adf7a64507c3d9a3b94f7f00e03"
+          "sha256": "3e0ed540c23aa579fd054124d7d381420bd030b4b978752fe0e050cae6b655dd"
         },
         {
           "path": "pre-re/db/population_vendors.yml",
-          "sha256": "541de8d95ccb18512692697eba8d930bcaa6fb3872678e15edb0b404c8b462e0"
+          "sha256": "eb02374aafd901219ad1a5ef34f2e07f1f9df15fb10b5ea5be5ed2b4a21589fe"
         },
         {
           "path": "pre-re/npc/prontera-vendors-market-data.txt",
-          "sha256": "98d3029519bdd9aef672f620e29741c4ddaa22453eebda6fc863e849ecc712d0"
+          "sha256": "ac88f96ac421c79df8be3ad5023d7f6417eacae258711268fe5e0b2b36de83e3"
         },
         {
           "path": "pre-re/npc/prontera-vendors-supply-data.txt",
-          "sha256": "19d5ab8320c19678947041cdc80ec97f2a45fd41e42a1d0c044bc8dec0fa182f"
+          "sha256": "357aefa0eb1320830692b0ff593e7016410c1a2a1c9f8547027015f775a260dd"
         },
         {
           "path": "settings/index.html",
-          "sha256": "57a64aee05e3c82db27fdbce0f448c48414fb21f60ec885d9cd53a4dc38e447f"
+          "sha256": "85dfb34d5e848f9c1fd3e6632c253040fe674d499ffeefc51a786d94b9305947"
         }
       ]
     },

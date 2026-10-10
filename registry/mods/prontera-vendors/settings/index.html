@@ -60,24 +60,29 @@ const GROUPS = [
     note: 'Fake players vending on the inner sidewalks and the rows east of the fountain.' },
   { title: 'Buy stalls', keys: ['buy_shops', 'buy_stalls'],
     note: 'Fake players with buying stores on the outer sidewalks and the rows west of the fountain.' },
-  { title: 'The street', keys: ['rotation_minutes', 'respect_limit'] },
+  { title: 'The street', keys: ['rotation_minutes', 'stall_density', 'respect_limit'] },
   { title: 'Shouts', keys: ['callouts', 'callout_seconds'] },
   { title: 'Customers at your stalls', keys: ['stall_customers', 'stall_customers_pace'],
     note: 'Customers for the vending stalls you open yourself, online or on @autotrade.' },
   { title: 'Sellers at your buying stores', keys: ['store_sellers', 'store_sellers_pace'],
     note: 'Players bringing loot to the buying stores you open yourself.' },
   { title: 'While the server is off', keys: ['customers_downtime'] },
-  { title: 'Dynamic market', keys: ['dynamic_market', 'market_strength', 'market_recovery_hours', 'market_news'],
+  { title: 'Dynamic market', keys: ['dynamic_market', 'market_strength', 'market_recovery_hours', 'market_news', 'market_news_announce'],
     note: 'Prices react to trades and news, and drift back to the price list over time. The market board at Prontera (131, 218) shows the movers.' },
-  { title: 'Hunted supply', keys: ['supply_parties', 'supply_halflife_days'],
-    note: 'What only monsters drop reaches the stalls when simulated parties find it, and leaves the market again over time. Parties 0 switches it off. The stalls follow it from app 1.5.4.' },
+  { title: 'Hunted supply', keys: ['hunted_supply', 'supply_parties', 'supply_halflife_days', 'supply_start_filled', 'supply_mvp_per_day'],
+    note: 'What only monsters drop reaches the stalls when simulated hunters find it, and leaves the market again over time. The stalls follow it from app 1.5.4.' },
 ];
 // Which switch a setting depends on: shown dimmed while that switch is off.
 const NEEDS = {
   vendors: 'sell_shops', price_pct: 'sell_shops', buy_stalls: 'buy_shops',
   callout_seconds: 'callouts', stall_customers_pace: 'stall_customers', store_sellers_pace: 'store_sellers',
   market_strength: 'dynamic_market', market_recovery_hours: 'dynamic_market', market_news: 'dynamic_market',
+  market_news_announce: 'dynamic_market',
+  supply_parties: 'hunted_supply', supply_halflife_days: 'hunted_supply', supply_start_filled: 'hunted_supply',
+  supply_mvp_per_day: 'hunted_supply',
 };
+// Number settings that get a slider beside the box: key -> step.
+const SLIDERS = { stall_density: 5 };
 // Customers a day at 100 % pace, a fair price, in Prontera (the generator's
 // BuyersPerDay / SellersPerDay at DEMAND_SCALE 3). Other maps run at 75 %.
 const RATES = {
@@ -155,10 +160,10 @@ function control(s) {
     num.value = values[s.key];
     const parts = [num];
     let range = null;
-    if (RATES[s.key]) {
+    if (RATES[s.key] || SLIDERS[s.key]) {
       range = document.createElement('input');
       range.type = 'range';
-      range.min = s.min ?? 1; range.max = Math.min(s.max ?? 1000, 1000); range.step = 10;
+      range.min = s.min ?? 1; range.max = Math.min(s.max ?? 1000, 1000); range.step = SLIDERS[s.key] || 10;
       range.value = values[s.key];
       range.oninput = () => { num.value = range.value; values[s.key] = Number(range.value); changed(); };
       parts.unshift(range);
@@ -178,7 +183,7 @@ function control(s) {
       values[s.key] = v; num.value = v; if (range) range.value = v;
       changed();
     };
-    const pct = /pct|pace|strength/.test(s.key) ? '%' : /minutes/.test(s.key) ? 'min' : /hours/.test(s.key) ? 'h' : /seconds/.test(s.key) ? 's' : '';
+    const pct = /pct|pace|strength|density/.test(s.key) ? '%' : /minutes/.test(s.key) ? 'min' : /hours/.test(s.key) ? 'h' : /seconds/.test(s.key) ? 's' : '';
     if (pct) { const u = document.createElement('span'); u.textContent = pct; parts.push(u); }
     wrap.append(...parts);
     return { wrap, set: v => { num.value = v; if (range) range.value = v; } };

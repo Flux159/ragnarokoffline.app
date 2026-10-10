@@ -32,12 +32,15 @@ browse and trade exactly as you would with a player.
 
 Stalls fill one lane at a time, in the order above, each opening near a
 stall already there (sometimes leaving a cell free), the way players crowd
-into a street that is already busy. Once a lane holds 70–80 % of the stalls
-it has room for, the next stall goes to the following lane, so a busy lane
-keeps a few natural gaps; when every lane has its share, the rest fill in
-the same order. No stall stands within 3 cells of an NPC,
-the same rule a player's own shop follows. On an app build older than the
-one with lane filling, stalls spread at random over all their lanes instead.
+into a street that is already busy. Once a lane holds its share of the
+stalls it has room for (**Stall density**, 80 % by default), the next stall
+goes to the following lane, so a busy lane keeps a few natural gaps; a lower
+density leaves wider gaps and spreads the stalls over more lanes. When every
+lane has its share, the rest go to whichever lane is least full. No stall
+stands within 3 cells of an NPC, the same rule a player's own shop follows.
+On an app build without the density setting (1.5.6 and older) each lane
+fills to 70–80 %; on one older than lane filling, stalls spread at random
+over all their lanes instead.
 
 The engine's own Prontera vendors keep spawning exactly as they would
 without the mod; these are extra.
@@ -56,6 +59,7 @@ defaults. On an app without settings pages they show in the Mods tab.
 | Buy shops | on | Off removes every buying store. |
 | Buy stalls | 30 | The most buying stores that stand on their lanes (0–100), in the evening; fewer at other hours. |
 | Minutes before a stall changes | 120 | How long a vendor stays before packing up. Each varies by up to half either way, and stalls are checked once a minute, so short values run long (2 means roughly 1–5 minutes). 0 keeps them until the server restarts. |
+| Stall density (%) | 80 | How full a lane gets before stalls open in the next one (20–100). Lower leaves gaps and uses more lanes. Needs an app newer than 1.5.6. |
 | Price level (%) | 100 | Every price × this / 100, for sell stalls and buyers alike. Nothing goes below what an NPC pays. |
 | Vendors respect the population limit | on | Off: stalls spawn even when the fake-player limit is reached (they still count toward it). |
 | Vendors shout their wares | on | Stalls call out a real item and price now and then ("S> Elunium 13K", "B> Oridecon 9500"). |
@@ -68,9 +72,13 @@ defaults. On an app without settings pages they show in the Mods tab.
 | Dynamic market | off | Prices react to trades and news, then drift back (see below). |
 | Market strength (%) | 100 | How hard a trade moves a price. |
 | Price recovery (hours) | 72 | After this long, half of a move has faded. |
-| Market news | 2 | 0: none. 1: about once a week an event moves a group of items for a few days, shown on the board. 2: the same, and the server announces its start and end. |
-| Hunted supply: parties | 0 | 0: off. Otherwise how many parties hunt on an average hour (see below); 20 is a good start. |
+| Market news | on | About once a week an event moves a group of items for a few days, shown on the board. |
+| Announce market news | on | The server announces each event's start and end, and War of Emperium's moves. Off: the board only. |
+| Hunted supply | off | What only monsters drop sells only once simulated hunters have found it (see below). |
+| Hunting parties | 20 | How much they hunt on an average hour, in full parties' worth. |
 | How long loot stays (days) | 5 | Half-life of what reached the market; what players use up 0.5x, equipment 3x, cards and MvP loot 5x. |
+| Start with a filled market | off | Off: a new market starts empty and fills as the hunters go. On: it starts where it would settle. |
+| MvP kills (per MvP a day) | 1 | The most times a day each MvP dies; 0 for none. |
 
 Settings take effect when the server starts.
 
@@ -271,7 +279,8 @@ back to the price list:
   gemstones, Ygg items, boxes and albums, dragon parts...).
 - **War of Emperium**: when WoE starts, potions, gemstones and bottles (the
   War of Emperium season's items) go up 10–20 % at once and drift back like
-  any move. At **Market news** 2 the server announces its start and end.
+  any move. With **Announce market news** on the server announces its start
+  and end.
 - **Market news** (optional) moves a group for a few days about once a week:
   War of Emperium season, refining fever, a hat-making craze, a card craze, an
   Alchemist Guild order, gambling night, a pet fair, a monster raid on
@@ -280,10 +289,10 @@ back to the price list:
   spore harvest, a Glast Heim purge, a dragon hunt, a merchant clearance,
   smith overstock, a collector selling off his cards, an ore strike in
   Mjolnir, a herb bloom (down); a festival (food up, junk down); and monsters
-  migrating between dungeons (one's loot down, another's up): 31 in all. At
-  **Market news** 2 (the default) the server announces each one as it starts
-  and again when it ends ("[Prontera Market] Monsters raid Prontera's
-  gates..."); at 1 only the board shows it.
+  migrating between dungeons (one's loot down, another's up): 31 in all. With
+  **Announce market news** on (the default) the server announces each one as
+  it starts and again when it ends ("[Prontera Market] Monsters raid
+  Prontera's gates..."); off, only the board shows it.
 - **Prices drift back**: after **Price recovery** hours (72 by default) half
   of any move has faded. Time the server is off counts too. Prices stay
   between half and twice the price list.
@@ -307,14 +316,14 @@ generated into `npc/prontera-vendors-market-data.txt` by the build script
 
 ## A hunted supply
 
-**Hunted supply** (off while its parties are 0, the default) ties what the sell stalls hold to what the
+**Hunted supply** (off by default) ties what the sell stalls hold to what the
 world's hunters find. Without it every stall rolls its stock from its theme
 as if the supply never ran out; with it, an item that only monsters drop is
 on the street only while someone has found one and nobody has bought it yet.
 
 - **Hunters roam the world, in groups as on a real server.** Solo players
   (60 %, about 100 kills an hour), duos and trios (25 %, about 225) and full
-  parties (15 %, about 400). **Hunted supply: parties** counts full parties'
+  parties (15 %, about 400). **Hunting parties** counts full parties'
   worth of hunting (300 kills an hour each), so 20 means about 34 groups on
   an average hour: fewer at night, more in the evening and at weekends.
   Each group hunts a field or dungeon near its level for 1 to 4 hours, then
@@ -330,8 +339,8 @@ on the street only while someone has found one and nobody has bought it yet.
   rates (`item_rate_*`), so a 10x server gets a 10x market.
 - **MvPs** die a few times a day at most: when one is up, its chance an hour
   falls with its level (Baphomet 15 %, Thanatos far less), and it never dies
-  more than once a day or faster than it respawns. Its loot and
-  rewards roll like any drop.
+  more than **MvP kills** times a day (once by default) or faster than it
+  respawns. Its loot and rewards roll like any drop.
 - **Stock leaves again.** Every hour some of each item is bought by "other
   players": after **How long loot stays** days half of it is gone. What
   players use up (ores, elemental stones, herbs, alchemy materials,
@@ -372,7 +381,8 @@ it once it has settled. A rare card settles below one copy: it shows up now
 and then, and is gone again. A new market starts empty and fills as the
 parties hunt: loot reaches about half its settled level in one half-life
 (5 days by default), cards and equipment take five and three times as long.
-`@supply reset filled` puts it at the settled level at once.
+**Start with a filled market** puts a new market at the settled level at
+once, and so does `@supply reset filled`.
 
 **Needs:** app 1.5.2 or later for the mod store (on an older build only this
 part is left out), and the build whose population engine reads
@@ -390,13 +400,6 @@ prices and news go back to the price list with it (`@market reset` does that
 part alone). The game restarts, so every stall opens fresh. The first start
 with the hunted supply on does the same once, since it can't tell a reset
 from a first time.
-
-The app allows a mod 20 settings, so for now a switch of its own, the choice
-to start empty and the MvP cap per day are not in Settings: the parties
-setting at 0 is the switch, a new market starts empty (`@supply reset
-filled` fills it), and each MvP dies at most once a day. The script still
-reads them (`hunted_supply`, `supply_start_filled`, `supply_mvp_per_day`),
-so they come back by declaring them in `mod.json` again.
 
 How it works: `npc/prontera-vendors-supply.txt` runs it once a minute and
 once an hour, keeps the ledger in the mod store (`docs/MOD_STORE.md`) and
@@ -467,8 +470,25 @@ vendors.
 
 A pre-renewal server gets its own set from `pre-re/db/` (`"prerenewalFolder"`
 in mod.json lays it over `db/`): the same themes where the items exist,
-without the renewal-only ones (costumes, shadow gear, Doram), with its own
-price list.
+without the renewal-only ones (costumes, shadow gear, Crimson weapons,
+Doram), with its own price list.
+
+Its stalls and buyers list only what a pre-renewal server hands out.
+rAthena's pre-renewal item database also holds what came with renewal and
+later (third-job gear such as the Mechanic's devices, runes, spell books and
+poison herbs, Bradium and Carnium, cash-shop and event items, slotted
+variants nothing drops), and nothing in pre-renewal gives those to a player.
+The build script keeps an item only if it has a source there:
+
+- a monster that is out there drops it (a spawn, a script's spawn, a dead
+  branch's summon, a slave, a castle's treasure chest);
+- an NPC sells it or a script gives it (quests, exchanges, socket enchants);
+- players make it (forging, brewing, cooking, arrow crafting), or it belongs
+  to a pet;
+- a box that is itself obtainable holds it.
+
+About 2,600 of the 4,550 tradeable items in the pre-renewal database pass.
+The renewal set is not filtered.
 
 ## How it's built
 
@@ -530,7 +550,8 @@ registry/mods/prontera-vendors/
 │   ├── prontera-vendors-market-data.txt  its groups, news and item volumes (generated)
 │   ├── prontera-vendors-supply.txt     the hunted supply and @supply
 │   ├── prontera-vendors-supply-data.txt  its maps, yields and MvPs (generated)
-│   └── prontera-vendors-newer.txt   the settings that need app 1.4.5
+│   ├── prontera-vendors-newer.txt   the settings that need app 1.4.5
+│   └── prontera-vendors-density.txt the stall density, for an app newer than 1.5.6
 ├── db/
 │   ├── population_vendors.yml       markets + themes (generated)
 │   ├── population_vendor_pop.yml    one vendor profile per theme (generated)

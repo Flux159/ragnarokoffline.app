@@ -1,3 +1,24 @@
+## 1.6.0
+
+### After updating: two settings to check once
+Two settings changed their shape in this version, and the app can't carry the old values over. Look at both in Settings → Mods → prontera-vendors after the update:
+
+- **The hunted supply switches off.** In 1.5.0 it had no switch of its own: it ran whenever its parties setting was above 0. It now has a switch, **Hunted supply**, and a new switch starts off. So a server that had the supply running finds it off after the update, and the stalls stock as they do without it. Switch **Hunted supply** on and restart the server. Nothing is lost: your **Hunting parties** number stays as you set it, and the market keeps the stock it had.
+- **Market news goes back to its default.** In 1.5.0 it was a number (0 off, 1 board only, 2 announced). It is now two switches, **Market news** and **Announce market news**, and a stored number doesn't fit a switch, so both start at their default: on. If you had chosen 2, nothing changes for you. If you had chosen 1, switch **Announce market news** off. If you had chosen 0, switch **Market news** off; switch **Announce market news** off as well if you don't want War of Emperium's price moves announced either.
+
+This happens once. Whatever you set now is kept from here on.
+
+### Street
+- New: **Stall density** (80 % by default). How full a lane gets before stalls open in the next one: lower leaves gaps between stalls and spreads them over more lanes, 100 packs them shoulder to shoulder. Stalls that don't fit at the chosen density go to the emptiest lanes. Needs an app newer than 1.5.6; older ones fill each lane to 70–80 % as before.
+
+### Pre-renewal
+- Pre-renewal stalls and buyers no longer list renewal items. rAthena's pre-renewal item database also holds what came later (the Mechanic's devices, runes, spell books, poison herbs, Bradium and Carnium, cash-shop and event items), and the stalls sold whatever was in it. Now an item is listed only if a pre-renewal server hands it out: a monster drops it, an NPC sells it or gives it for a quest, players make it, or a box holds it. 77 of the 1,658 listed items left the street, and the Crimson weapons stall with them. Renewal is unchanged.
+
+### Settings
+- **Hunted supply** has its own switch again, and **Hunting parties** (20 by default) only says how much they hunt. It is off after the update (see above).
+- **Start with a filled market** (off by default) and **MvP kills (per MvP a day)** (1 by default) are settings again.
+- **Market news** is a switch again, and **Announce market news** (on by default) says whether the server announces events and War of Emperium's moves or leaves them to the board. Both are on after the update (see above).
+
 ## 1.5.0
 
 ### Hunted supply (new, off by default)

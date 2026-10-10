@@ -9,14 +9,16 @@
 //=   on how much of the item changes hands on a normal day ($@pv_vol, from
 //=   prontera-vendors-market-data.txt).
 //= - A move spills over to the item's group, by the group's share.
-//= - Market news, now and then, moves a group for a few days. At "Market
-//=   news" 2 (the default) the server also announces when one starts and
-//=   when it ends; at 1 only the board shows it; 0 has no news.
+//= - Market news, now and then, moves a group for a few days ("Market
+//=   news"). With "Announce market news" on (the default) the server also
+//=   announces when one starts and when it ends; off, only the board shows
+//=   it.
 //= - Every ten minutes each move fades with the recovery half-life; the time
 //=   the server was off is faded in one step at start.
 //= - War of Emperium: when WoE starts (agitcheck, agitcheck2, agitcheck3),
 //=   its supplies (the woe_season news' potions, gems and bottles) move up
-//=   10-20 % once and fade like any move; announced at "Market news" 2.
+//=   10-20 % once and fade like any move; announced with "Announce market
+//=   news" on.
 //= - With the hunted supply on, its scarcity factor ($@pvs_pct, from
 //=   prontera-vendors-supply.txt) is multiplied in as well.
 //=
@@ -35,8 +37,10 @@ OnInit:
 	.on = callfunc("F_ModSetting", .mod$, "dynamic_market", 0);
 	.strength = callfunc("F_ModSetting", .mod$, "market_strength", 100);
 	.halflife = callfunc("F_ModSetting", .mod$, "market_recovery_hours", 72) * 3600;
-	// 0 no news, 1 news on the board, 2 the board and a server announcement.
-	.news = callfunc("F_ModSetting", .mod$, "market_news", 2);
+	// The news events, and whether the server announces them (and WoE's
+	// moves) or leaves them to the board.
+	.news = callfunc("F_ModSetting", .mod$, "market_news", 1);
+	.announce = callfunc("F_ModSetting", .mod$, "market_news_announce", 1);
 	.ready = 0;
 	.passes = 0;
 	$@pv_board_on = .on;
@@ -112,7 +116,7 @@ S_Pass:
 		callsub S_Woe;
 	} else if (!.@woe && $pv_woe) {
 		$pv_woe = 0;
-		if (.news >= 2)
+		if (.announce)
 			announce "[Prontera Market] The War of Emperium is over; potions and gems settle.", bc_all;
 	}
 	// News: about once a week, at most two at once, none again within four weeks.
@@ -215,7 +219,7 @@ S_Woe:
 				callsub S_Move, $@pv_fxitem[$@pv_fxstart[.@f] + .@j], rand(100000, 200000);
 		}
 	}
-	if (.news >= 2)
+	if (.announce)
 		announce "[Prontera Market] The War of Emperium has begun: guilds buy up potions and gems.", bc_all;
 	return;
 
@@ -268,7 +272,7 @@ S_StartNews:
 	$pv_nw_c1[.@k] = .@c1;
 	$pv_nw_told[.@k] = 0;
 	setd "$pv_nwl_" + $@pv_evkey$[.@e], .@now;
-	if (.news >= 2)
+	if (.announce)
 		announce "[Prontera Market] " + $@pv_evtext$[.@e], bc_all;
 	return 1;
 
@@ -307,7 +311,7 @@ S_Publish:
 		// ran out while the server was off isn't announced late.
 		if (.@now >= $pv_nw_end[.@keep] && !$pv_nw_told[.@keep]) {
 			$pv_nw_told[.@keep] = 1;
-			if (.news >= 2 && .@e >= 0 && .@now - $pv_nw_end[.@keep] < 3600)
+			if (.announce && .@e >= 0 && .@now - $pv_nw_end[.@keep] < 3600)
 				announce "[Prontera Market] " + $@pv_evend$[.@e], bc_all;
 		}
 		.@n = 0;
@@ -481,7 +485,7 @@ OnAtMarket:
 			dispbottom "  last moved " + ((gettimetick(2) - $pv_mk_t[.@s - 1]) / 60) + " min ago; half of any move fades in " + (.halflife / 3600) + " h.";
 		end;
 	}
-	dispbottom "Market: on, strength " + .strength + "%, half-life " + (.halflife / 3600) + " h, news " + (.news >= 2 ? "on, announced" : .news ? "on, board only" : "off") + ", " + $pv_mk_n + " item(s) moved, " + $pv_nw_n + " news.";
+	dispbottom "Market: on, strength " + .strength + "%, half-life " + (.halflife / 3600) + " h, news " + (.news ? "on" : "off") + ", announcements " + (.announce ? "on" : "off") + ", " + $pv_mk_n + " item(s) moved, " + $pv_nw_n + " news.";
 	for (.@i = 0; .@i < getarraysize($@pv_pub) && .@i < 15; .@i++) {
 		.@id = $@pv_pub[.@i];
 		.@pct = $@pop_item_pct[.@id];

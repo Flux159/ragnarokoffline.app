@@ -226,6 +226,186 @@ for _mid in MVP_IDS:
         if _e and _e.get("Type") == "Card":
             MVP_CARDS.add(_e["Id"])
 
+# What a pre-renewal server can actually give a player. rAthena's pre-renewal
+# item database also holds what came with renewal and later (third-job gear,
+# runes and spell books, cash-shop and event items, slotted variants nothing
+# drops), with nothing in pre-renewal that hands them out; a stall selling
+# those would put renewal items into a pre-renewal world. So the pre-renewal
+# set lists only what has a source there. Renewal lists as it always did.
+SCRIPT_GIVES = re.compile(r"\b(getitem[23]?|getitembound[23]?|getnameditem|makeitem[23]?|callfunc|callsub)\b")
+SCRIPT_SPAWNS = re.compile(r"\b(areamonster|monster|summon)\b")
+
+
+def era_scripts():
+    """The NPC script files this era's server loads: npc/<era>/scripts_main.conf
+    and what it imports (so nothing from npc/custom or a switched-off event)."""
+    seen, out = set(), []
+
+    def conf(path):
+        if path in seen or not os.path.exists(path):
+            return
+        seen.add(path)
+        for line in open(path, encoding="utf-8", errors="replace"):
+            m = re.match(r"(npc|import)\s*:\s*(\S+)", line.split("//")[0].strip())
+            if not m:
+                continue
+            target = os.path.join(RA, m.group(2))
+            if m.group(1) == "import":
+                conf(target)
+            elif os.path.exists(target):
+                out.append(target)
+
+    conf(os.path.join(RA, "npc", ERA, "scripts_main.conf"))
+    return out
+
+
+def era_obtainable():
+    """Ids of the items this era's server hands out somewhere:
+    - a monster that is out there drops them: one with a spawn line, one a
+      script spawns, a dead branch's summons, their slaves and what they turn
+      into, and the castles' treasure chests;
+    - an NPC sells them (for zeny, items or points) or a script gives them:
+      quest rewards, exchanges, socket enchants;
+    - players make them (produce_db, or arrow crafting from something
+      obtainable), or they are a pet's egg, taming item, food or accessory;
+    - something obtainable holds them: a box's item group, or an item whose
+      own script gives them."""
+    got = set()
+    live = set()
+
+    def tokens(text):
+        return re.findall(r"[A-Za-z_0-9']+", text)
+
+    def give(tok, numbers=True):
+        if tok.isdigit():
+            if numbers and int(tok) in ITEMS_BY_ID:
+                got.add(int(tok))
+        elif len(tok) > 3:
+            e = item(tok)
+            if e:
+                got.add(e["Id"])
+
+    castles = False
+    for path in era_scripts():
+        castles = castles or os.sep + "guild" in path
+        for line in open(path, encoding="utf-8", errors="replace"):
+            if line.lstrip().startswith("//"):
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) >= 4 and parts[1].startswith(("monster", "boss_monster")):
+                mid = mob_ref(parts[3])
+                if mid in MOBS:
+                    live.add(mid)
+                continue
+            if len(parts) >= 4 and parts[1] in ("shop", "marketshop", "itemshop", "pointshop"):
+                for tok in parts[3].split(",")[1:]:
+                    give(tok.split(":")[0].strip())
+                continue
+            code = line.split("//")[0]
+            if os.sep + "mobs" + os.sep in path:
+                # A spawn script that rolls one of a run of monsters (the
+                # Bio Lab's MVPs): rand(1646,1651).
+                for lo, hi in re.findall(r"\brand\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)", code):
+                    if int(lo) in MOBS and int(hi) in MOBS and 0 <= int(hi) - int(lo) < 50:
+                        live.update(i for i in range(int(lo), int(hi) + 1) if i in MOBS)
+            if SCRIPT_SPAWNS.search(code):
+                for tok in tokens(code):
+                    mid = int(tok) if tok.isdigit() else MOBS_BY_AEGIS.get(tok.upper())
+                    if mid in MOBS and (not tok.isdigit() or mid > 1000):
+                        live.add(mid)
+            if SCRIPT_GIVES.search(code) or "npcshop" in code:
+                for tok in tokens(code):
+                    give(tok)
+            elif "setarray" in code:
+                # A reward list: ids outside the monsters' range, or names.
+                # In a spawn file it is the monsters a script picks from.
+                for tok in tokens(code):
+                    give(tok, numbers=not (tok.isdigit() and 1000 < int(tok) < 4000))
+                    if os.sep + "mobs" + os.sep in path and tok.isdigit() and int(tok) in MOBS:
+                        live.add(int(tok))
+    if castles:
+        live.update(i for i, m in MOBS.items() if m["AegisName"].startswith("TREASURE_BOX"))
+    summons = yaml.load(open(os.path.join(RA, "db", ERA, "mob_summon.yml"), encoding="utf-8"), Loader=Loader).get("Body") or []
+    for g in summons:
+        for s in g.get("Summon") or []:
+            mid = MOBS_BY_AEGIS.get(str(s["Mob"]).upper())
+            if mid:
+                live.add(mid)
+    skills = [l.strip().split(",") for l in open(os.path.join(RA, "db", ERA, "mob_skill_db.txt"), encoding="utf-8", errors="replace")
+              if l[:1].isdigit()]
+    grew = True
+    while grew:
+        grew = False
+        for p in skills:
+            if len(p) > 16 and int(p[0]) in live and re.search(r"SUMMON|METAMORPHOSIS|TRANSFORMATION", p[1]):
+                for v in p[12:17]:
+                    if v.isdigit() and int(v) in MOBS and int(v) not in live:
+                        live.add(int(v))
+                        grew = True
+    for mid in live:
+        for d in (MOBS[mid].get("Drops") or []) + (MOBS[mid].get("MvpDrops") or []):
+            e = item(d["Item"])
+            if e:
+                got.add(e["Id"])
+    produce = os.path.join(RA, "db", ERA, "produce_db.txt")
+    if os.path.exists(produce):
+        for line in open(produce, encoding="utf-8", errors="replace"):
+            parts = line.split("//")[0].strip().split(",")
+            if len(parts) > 1 and parts[1].strip().isdigit() and int(parts[1]) in ITEMS_BY_ID:
+                got.add(int(parts[1]))
+    pets = yaml.load(open(os.path.join(RA, "db", ERA, "pet_db.yml"), encoding="utf-8"), Loader=Loader).get("Body") or []
+    for p in pets:
+        if MOBS_BY_AEGIS.get(str(p.get("Mob", "")).upper()) in live:
+            for k in ("EggItem", "TameItem", "EquipItem", "FoodItem"):
+                e = item(str(p.get(k) or ""))
+                if e:
+                    got.add(e["Id"])
+    # What an obtainable item leads to: the group its script opens (a box),
+    # what its script gives outright, and the arrows crafted from it.
+    opens, gives = {}, {}
+    for e in ITEMS_BY_ID.values():
+        script = str(e.get("Script") or "")
+        for g in re.findall(r"\bIG_([A-Za-z_0-9]+)", script):
+            opens.setdefault(g.upper(), set()).add(e["Id"])
+        for tok in re.findall(r"\bgetitem[23]?\s*\(?\s*\"?([A-Za-z_0-9']+)", script):
+            t = ITEMS_BY_ID.get(int(tok)) if tok.isdigit() else item(tok)
+            if t:
+                gives.setdefault(e["Id"], set()).add(t["Id"])
+    groups = yaml.load(open(os.path.join(RA, "db", ERA, "item_group_db.yml"), encoding="utf-8"), Loader=Loader).get("Body") or []
+    arrows = []
+    for path in (os.path.join(RA, "db", "create_arrow_db.yml"), os.path.join(RA, "db", ERA, "create_arrow_db.yml")):
+        if os.path.exists(path):
+            arrows += yaml.load(open(path, encoding="utf-8"), Loader=Loader).get("Body") or []
+    grew = True
+    while grew:
+        before = len(got)
+        for g in groups:
+            if opens.get(str(g["Group"]).upper(), set()) & got:
+                for sub in g.get("SubGroups") or []:
+                    for row in sub.get("List") or []:
+                        e = item(str(row["Item"]))
+                        if e:
+                            got.add(e["Id"])
+        for src in [i for i in gives if i in got]:
+            got.update(gives[src])
+        for a in arrows:
+            src = item(str(a.get("Source") or ""))
+            if src and src["Id"] in got:
+                for row in a.get("Make") or []:
+                    e = item(str(row["Item"]))
+                    if e:
+                        got.add(e["Id"])
+        grew = len(got) > before
+    return got
+
+
+OBTAINABLE = era_obtainable() if ERA == "pre-re" else None
+
+
+def obtainable(e):
+    return OBTAINABLE is None or e["Id"] in OBTAINABLE
+
+
 # ---------------------------------------------------------------------------
 # Prices
 # ---------------------------------------------------------------------------
@@ -696,7 +876,7 @@ THEMES += [
     dict(key="card_albums", job="HighMerchant", pick=[1, 2], weight=1,
          titles=["S> OCA MCA", "OCA / MCA", "card albums", "S>OCA", "try your luck: OCA"],
          items=["Old_Card_Album", "Magic_Card_Album"]),
-    dict(key="crimson_weapons", job="Whitesmith", pick=[3, 6], weight=1,
+    dict(key="crimson_weapons", job="Whitesmith", pick=[3, 6], weight=1, era="re",
          titles=["Crimson weapons", "S> crimson", "crimson katar/mace/dagger", "{name}'s Crimson Arsenal", "S> +7 crimson"],
          rule=lambda e: e.get("Type") == "Weapon" and e["Name"].startswith("Crimson ") and not e["AegisName"].endswith("_LT"),
          extra=[dict(item=w, refine=r) for w in ("Scarlet_Katar", "Scarlet_Mace", "Scarlet_Dagger", "Scarlet_Saber",
@@ -715,6 +895,9 @@ THEMES += [
          titles=["slims", "S> slim whites", "condensed pots", "{name}'s Slims", "slim potions cheap"],
          items=["Red_Slim_Potion", "Yellow_Slim_Potion", "White_Slim_Potion"]),
 ]
+# A theme marked era="re" is renewal's alone: pre-renewal has the Crimson
+# Bolt and none of the weapons its signs promise.
+THEMES = [t for t in THEMES if t.get("era", ERA) == ERA]
 
 # Class shops: gear that a class (family) can wear and few others can,
 # the kind of stall that reads "for Wizards" or "Knight gear".
@@ -1740,13 +1923,13 @@ def theme_candidates(theme):
         candidates = mvp_items()
     elif "place" in theme:
         # A place buyer's loot, already chosen and weighted: all of it.
-        return [e for e in theme["place"] if tradeable(e)]
+        return [e for e in theme["place"] if tradeable(e) and obtainable(e)]
     elif "levels" in theme:
         candidates = level_items(*theme["levels"],
                                  max_droppers=PLACE_MAX_DROPPERS if theme.get("buyfilter") else LOOT_MAX_DROPPERS)
         if theme.get("buyfilter"):
             candidates = [e for e in candidates if buyable(e)]
-    candidates = [e for e in candidates if tradeable(e)]
+    candidates = [e for e in candidates if tradeable(e) and obtainable(e)]
     cached = [e for e in candidates if str(e["Id"]) in CACHE]
     rest = sorted((e for e in candidates if str(e["Id"]) not in CACHE), key=lambda e: e["Id"])
     return cached + rest[:max(0, CANDIDATE_CAP - len(cached))]
@@ -1788,6 +1971,8 @@ def resolve(theme, refresh, rng):
                 continue
             if not tradeable(e):
                 continue
+            if not obtainable(e) or not all(item(c) and obtainable(item(c)) for c in spec.get("cards") or []):
+                continue  # nothing in this era hands it out
             p = spec.get("price")
             if p is None:
                 p = price(e, refresh)

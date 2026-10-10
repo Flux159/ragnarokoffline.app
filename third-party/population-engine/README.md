@@ -403,7 +403,8 @@ engine's vendors spawn exactly as upstream's do.
   players open shops next to a busy street; the next area gets shells once
   the earlier ones have their share. `LaneFillPct: [70, 80]` sets that share
   of a lane's usable cells, rolled per lane (default 100: full), which leaves
-  natural gaps; once every lane has its share the rest fill in order.
+  natural gaps; once every lane has its share the rest go to the least full
+  lane.
   `Fill: Random` (the default) spreads them over all areas.
   A shell in `Areas` keeps `min_npc_vendchat_distance` (3 cells) from any
   NPC, as a player's own shop must, so an NPC another mod puts there is not
@@ -459,6 +460,8 @@ engine's vendors spawn exactly as upstream's do.
   (minutes), `population_vendor_callouts` (on/off and pace),
   `population_vendor_limit` (whether they wait for room under the population
   limit) and `population_vendor_price` (price level in percent).
+  `population_vendor_lanefill` (patch 0034) sets a `Fill: Lanes` block's
+  lane share in percent, over its `LaneFillPct`.
 - `{item}` and `{price}` in a chat line name a real item from the speaking
   shell's own stall. The shipped `vendor_call` lines use them.
 - Both vendor databases import `db/import/`, with empty stubs in

@@ -405,21 +405,6 @@ Body:
     Script: |
       setcart;
 
-  - Profile: prontera-vendors/sell/crimson_weapons_vendor
-    PlacementBound: true
-    Jobs:
-      Whitesmith: para_merchant
-    NameProfile: default
-    Hair: [0, 42]
-    HairColor: [0, 131]
-    ClothesColor: [0, 699]
-    Flags:
-      - mortal
-    TownBehavior: vendor
-    VendorKey: prontera-vendors/sell/crimson_weapons
-    Script: |
-      setcart;
-
   - Profile: prontera-vendors/sell/hunters_haul_vendor
     PlacementBound: true
     Jobs:

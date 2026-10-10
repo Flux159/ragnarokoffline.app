@@ -134,7 +134,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 1573,Ancient Magic,23000,27000,ragnastats,8,0
 4387,Ancient Mimic Card,920000,1080000,kro,2,3
 4248,Ancient Mummy Card,102500,120000,ragnastats,4,3
-12735,Ancient Rune,3650,4300,kro,36,3
+12735,Ancient Rune,3650,4300,kro,12,3
 1053,Ancient Tooth,9200,10500,ragnastats,51,18
 4249,Ancient Worm Card,1104000,1296000,kro,2,3
 4043,Andre Card,271000,318500,kro,5,3
@@ -172,7 +172,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 7106,Antelope Horn,570,770,ragnastats,51,18
 7107,Antelope Skin,9200,10500,kro,36,18
 6128,Antidote,32000,37500,ragnastats,12,3
-6322,Antler Helmet,680,920,npc,36,3
+6322,Antler Helmet,680,920,npc,12,3
 2284,Antlers,184000,216000,kro,4,0
 4243,Antonio Card,1150000,1350000,kro,2,3
 5136,Antonio's Santa Hat,118500,139500,ragnastats,4,0
@@ -185,7 +185,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 6279,Apple Bomb Guidebook,0,0,,12,3
 531,Apple Juice,1350,1600,kro,36,36
 2285,Apple of Archer,184000,216000,kro,4,0
-6108,Apple Pudding,805,1050,ragnastats,12,3
+6108,Apple Pudding,805,1050,ragnastats,36,3
 4443,Aqua Elemental Card,1311000,1539000,kro,2,3
 720,Aquamarine,4600,5400,kro,51,3
 5513,Aquarius Crown,1797500,2110000,ragnastats,2,0
@@ -224,7 +224,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 13612,Arrest Handcuffs Box,0,0,,12,0
 1750,Arrow,1,2,ragnastats,12,0
 1766,Arrow of Counter Evil,34,47,npc,12,0
-12575,Arrow Of Elf Cntr,50500,59000,ragnastats,54,3
+12575,Arrow Of Elf Cntr,50500,59000,ragnastats,18,3
 1767,Arrow of Shadow,25,35,ragnastats,12,0
 1755,Arrow of Wind,13,19,ragnastats,12,0
 12321,Arunafeltz Desert Sandwich,0,0,,12,0
@@ -366,7 +366,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 1551,Bible,49500,58000,npc,11,0
 14522,Big Bun,0,0,,12,0
 13548,Big Bun Box,0,0,,12,0
-6104,Big Cell,920,1050,ragnastats,12,3
+6104,Big Cell,920,1050,ragnastats,36,3
 2244,Big Ribbon,598000,702000,kro,4,0
 5348,Big Ribbon,598000,702000,kro,4,0
 4074,Bigfoot Card,82500,97000,kro,6,3
@@ -429,7 +429,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 6252,Blood Of Wolf,40000,47500,kro,18,3
 1271,Blood Tears,92000,108500,ragnastats,4,0
 2655,Bloodied Shackle Ball,41000,48500,npc,11,0
-6211,Bloodsuck Plant Seed,3200,3750,kro,12,3
+6211,Bloodsuck Plant Seed,3200,3750,kro,36,3
 1363,Bloody Axe,46000,54000,kro,11,0
 12103,Bloody Branch,920000,1080000,kro,16,3
 4327,Bloody Butterfly Card,1242000,1458000,kro,2,3
@@ -487,7 +487,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 5040,Blush,92000,108000,kro,7,0
 5800,Blush of Groom,0,0,,8,0
 12563,BM75,0,0,,12,0
-6212,Bomb Mushroom Spore,5050,5900,kro,36,3
+6212,Bomb Mushroom Spore,5050,5900,kro,12,3
 2279,Bomb Wick,4550,5350,ragnastats,8,0
 12043,Bomber Steak,2750,3200,kro,12,3
 14553,Bomber Steak,1800,2150,kro,12,0
@@ -527,7 +527,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 2671,Bow Thimble,8250,9700,npc,8,0
 2727,Bowman Scarf,285500,335500,estimate,4,0
 7948,Box,0,0,,12,0
-12031,Box of Drowsiness,37500,44000,ragnastats,36,3
+12031,Box of Drowsiness,37500,44000,ragnastats,12,3
 12029,Box of Gloom,36000,42500,ragnastats,12,3
 12034,Box of Panting,7650,8950,ragnastats,12,3
 12030,Box of Resentment,42000,49500,ragnastats,12,3
@@ -548,7 +548,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 5600,Brazil Twin Ribbon,0,0,,8,0
 5477,Brazilian Flag Hat,0,0,,8,0
 580,Bread,87,115,ragnastats,12,6
-7087,Breath of Spirit,1,2,npc,36,3
+7087,Breath of Spirit,1,2,npc,12,3
 4390,Breeze Card,1242000,1458000,kro,2,3
 5169,Bride Mask,24500,29000,npc,8,0
 5436,Bride's Corolla,685000,804000,ragnastats,4,0
@@ -660,7 +660,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 4063,Caramel Card,753500,884500,ragnastats,4,3
 4288,Carat Card,439500,516000,estimate,4,3
 1484,Cardo,527000,618500,ragnastats,4,0
-6223,Carnium,2750,3200,kro,36,3
+6223,Carnium,2750,3200,kro,12,3
 5145,Carnival Joker Jester,0,0,,8,0
 515,Carrot,12,18,kro,51,36
 534,Carrot Juice,4600,5400,kro,36,36
@@ -676,7 +676,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 4289,Caterpillar Card,650000,763500,ragnastats,4,3
 5446,Catfoot Hairpin,2103000,2468500,ragnastats,2,0
 591,Caviar Pancake,9650,11000,ragnastats,12,3
-4368,Cecil Damon Card,1012000,1188000,kro,2,3
+4368,Cecil Damon Card,1012000,1188000,kro,11,3
 2617,Celebrant's Mitten,70000,82500,ragnastats,8,0
 7581,Celebration Document,0,0,,12,0
 2631,Celebration Ring,0,0,,8,0
@@ -822,7 +822,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 2746,Cold Heart,543500,638000,ragnastats,4,0
 6253,Cold Ice,9100,10500,kro,18,3
 12257,Cold Medicine,1050,1250,estimate,12,0
-7837,Cold Moonlight,1,2,npc,12,3
+7837,Cold Moonlight,1,2,npc,36,3
 12119,Coldproof Potion,6300,7450,kro,54,3
 1228,Combat Knife,3679500,4319500,kro,3,0
 1822,Combo Battle Glove,46000,54000,kro,8,0
@@ -853,7 +853,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 12130,Cookie Bag,35000,41500,ragnastats,12,3
 4293,Cookie Card,920000,1080000,kro,2,3
 5260,Cookie Hat,0,0,,8,0
-7457,Cooking Oil,320,435,kro,12,3
+7457,Cooking Oil,320,435,kro,36,3
 6250,Cooking Skewer,0,0,,12,3
 6262,Cool Gravy,0,0,,12,3
 12260,Cool Summer Outfit,1,2,npc,12,3
@@ -1041,7 +1041,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 4726,DEX+7,0,0,,6,0
 4727,DEX+8,0,0,,6,0
 4728,DEX+9,0,0,,6,0
-4182,Diabolic Card,414000,486000,kro,4,3
+4182,Diabolic Card,414000,486000,kro,22,3
 9036,Diabolic Egg,46000000,54000000,kro,4,0
 2375,Diabolus Armor,415000,487000,estimate,4,0
 2433,Diabolus Boots,115000,135000,kro,4,0
@@ -1062,7 +1062,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 1212,Dirk,0,0,,8,0
 4181,Disguise Card,1840000,2160000,kro,2,3
 12720,Disheart,8500,10000,ragnastats,12,3
-682,Distilled Fighting Spirit,1,2,npc,36,3
+682,Distilled Fighting Spirit,1,2,npc,12,3
 2205,Diver Goggles,2850,3400,npc,8,0
 2366,Divine Cloth,115000,135000,ragnastats,4,0
 2001,Divine Cross,82500,97000,kro,8,0
@@ -1111,7 +1111,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 4137,Drake Card,276000000,324000000,kro,2,0
 5211,Dress Hat,0,0,,8,0
 7887,Dried Fruit Box,0,0,,12,0
-12293,Dried Yggdrasilberry,425,575,npc,36,3
+12293,Dried Yggdrasilberry,425,575,npc,12,3
 13157,Drifter,66000,77500,npc,8,0
 7092,Drifting Air,1,2,npc,12,3
 1270,Drill Katar,1839500,2159500,kro,2,0
@@ -1207,7 +1207,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 4070,Eggyra Card,113500,133500,ragnastats,4,3
 4346,Egnigem Cenia Card,184000,216000,kro,4,3
 7200,Elastic Band,34000,39500,kro,51,18
-7939,Elder Branch,5700,6650,kro,54,3
+7939,Elder Branch,5700,6650,kro,18,3
 4251,Elder Card,568000,667000,estimate,22,3
 1040,Elder Pixie's Moustache,6100,7200,ragnastats,51,36
 4052,Elder Willow Card,92000,108000,kro,5,3
@@ -1295,7 +1295,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 1174,Executioner,0,0,,8,0
 1179,Executioner,0,0,,8,0
 13505,Executioner Box,0,0,,12,0
-4250,Executioner Card,322000,378000,kro,4,3
+4250,Executioner Card,322000,378000,kro,22,3
 7017,Executioner's Mitten,14500,17000,ragnastats,12,3
 1233,Exorciser,224500,263500,ragnastats,4,0
 2665,Exorcising Ring,0,0,,8,0
@@ -1391,7 +1391,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 5424,Fanta Orange Can Hat,0,0,,8,0
 11709,Fanta Zero Lemon,0,0,,12,0
 5522,Fanta Zero Lemon Hat,0,0,,8,0
-12129,Fantastic Cooking Kit,101000,118500,ragnastats,22,0
+12129,Fantastic Cooking Kit,101000,118500,ragnastats,7,0
 5202,Fantastic Pumpkin-Head,0,0,,8,0
 5276,Fantastic Wig,46000,54000,ragnastats,8,0
 10024,Fashion Glasses,2205000,2588500,ragnastats,4,0
@@ -1435,7 +1435,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 6512,Fire Amulet,75,100,ragnastats,12,3
 1752,Fire Arrow,2,4,ragnastats,12,0
 12008,Fire Arrow Quiver,15000,18000,ragnastats,54,3
-7451,Fire Dragon Scale,92000,108000,kro,7,0
+7451,Fire Dragon Scale,92000,108000,kro,22,0
 1133,Fireblend,46000,54000,kro,11,0
 12018,Firecracker,8500,10000,ragnastats,27,18
 4160,Firelock Soldier Card,1748000,2052000,kro,3,3
@@ -1524,7 +1524,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 7310,Free Ticket for Peco Ride,2550,3000,ragnastats,12,0
 7061,Free Ticket for the Cart Service,0,0,,27,0
 4319,Freezer Card,460000,540000,kro,4,3
-7574,Freezing Snow Powder,1,2,npc,36,3
+7574,Freezing Snow Powder,1,2,npc,12,3
 13207,Freezing Sphere,425,575,ragnastats,12,0
 12147,Freezing Sphere Pack,1,3,npc,12,3
 579,Fresh Fish,210,285,ragnastats,36,36
@@ -1774,7 +1774,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 506,Green Potion,34,47,npc,27,3
 5193,Green Ribbon,610,825,npc,8,0
 5681,Green Ribbon,0,0,,8,0
-12065,Green Salad,20000,23500,ragnastats,12,3
+12065,Green Salad,20000,23500,ragnastats,36,3
 14579,Green Salad,20000,23500,sibling,12,0
 4355,Gremlin Card,91500,107500,kro,6,3
 5021,Grief for Greed,542500,637000,ragnastats,4,0
@@ -1801,7 +1801,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 1907,Guitar,38500,45500,npc,8,0
 1908,Guitar,38500,45500,npc,8,0
 7743,Gulaman,8650,10000,estimate,12,0
-4164,Gullinbursti Card,920000,1080000,kro,2,3
+4164,Gullinbursti Card,920000,1080000,kro,11,3
 1911,Gumoongoh,44500,52000,npc,8,0
 1912,Gumoongoh,86000,101000,ragnastats,8,0
 11049,Gun Book Basic,0,0,,12,0
@@ -1848,7 +1848,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 13266,Hard Black Lump,4900,5800,ragnastats,12,0
 6306,Hard Bloodstain,0,0,,12,0
 7163,Hard Feeler,9200,10500,kro,36,18
-6022,Hard Skin,750,1000,npc,36,18
+6022,Hard Skin,750,1000,npc,12,18
 1561,Hardcover Book,69000,81000,ragnastats,8,0
 7400,Hari,0,0,,12,0
 1909,Harp,57000,66500,kro,8,0
@@ -1908,7 +1908,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 683,Herb of Incantation,1,2,npc,12,3
 7252,Herbal Medicine,0,0,,12,0
 4232,Hermit Plant Card,1830000,2148000,ragnastats,2,3
-7833,Hero's Remains,1,2,npc,36,3
+7833,Hero's Remains,1,2,npc,12,3
 968,Heroic Emblem,46000,54000,kro,27,0
 7825,Heroic Stone,0,0,,12,0
 13844,Heroic Stone Box,0,0,,12,0
@@ -1957,7 +1957,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 12048,Honey Herbal Tea,2750,3200,kro,12,3
 14556,Honey Herbal Tea,1800,2150,kro,12,0
 593,Honey Pancake,3200,3750,ragnastats,12,3
-12123,Honey Pastry,20000,23500,ragnastats,36,3
+12123,Honey Pastry,20000,23500,ragnastats,12,3
 7121,Honey Pot,9650,11000,kro,51,18
 5828,Honor Gold Ring,0,0,,8,0
 2501,Hood,920,1050,kro,8,0
@@ -1991,7 +1991,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 4115,Hunter Fly Card,1380000,1620000,kro,3,3
 9008,Hunter Fly Egg,1518000,1782000,kro,4,0
 6177,Hunter Fly Exchange Ticket,0,0,,12,0
-12576,Hunting Arrow Cntr,3000,3550,ragnastats,54,3
+12576,Hunting Arrow Cntr,3000,3550,ragnastats,18,3
 7977,Hunting Medal Badge,0,0,,12,0
 1422,Hunting Spear,23000,27000,ragnastats,11,0
 1377,Hurricane's Fury,266500,313000,estimate,7,0
@@ -2007,7 +2007,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 13573,Hwergelmir's Tonic 50 Box,0,0,,12,0
 13839,Hwergelmir's Tonic Box,0,0,,12,0
 4035,Hydra Card,276000,324000,kro,5,3
-4384,Hydrolancer Card,276000,324000,kro,22,3
+4384,Hydrolancer Card,276000,324000,kro,4,3
 4321,Hylozoist Card,3220000,3780000,kro,2,3
 1621,Hypnotist's Staff,46000,54000,kro,8,0
 1622,Hypnotist's Staff,46000,54000,kro,8,0
@@ -2129,7 +2129,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 5002,Jewel Crown,184000,216000,kro,7,0
 7582,Jewel of Destruction,6500,7650,estimate,12,0
 1142,Jeweled Sword,147000,172500,kro,4,0
-12106,Jewelry Box,3847500,4516500,ragnastats,4,3
+12106,Jewelry Box,3847500,4516500,ragnastats,11,3
 4265,Jing Guai Card,297500,349500,ragnastats,4,3
 13007,Jitte,15500,18000,sibling,8,0
 13008,Jitte,15500,18000,ragnastats,8,0
@@ -2245,7 +2245,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 5185,Laurel Wreath,41000,48500,ragnastats,8,0
 4350,Laurell Weinder Card,102000,120000,kro,4,3
 7096,Lava,8700,10000,kro,36,18
-4184,Lava Golem Card,129000,152000,ragnastats,22,3
+4184,Lava Golem Card,129000,152000,ragnastats,4,3
 5084,Lazy Smokie,69000,81000,ragnastats,8,0
 12408,Leaf Cat Ball,1,2,npc,12,0
 4195,Leaf Cat Card,1978000,2322000,kro,2,3
@@ -2498,7 +2498,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 1505,Mace,18000,21500,kro,8,0
 1506,Mace,138000,162000,kro,4,0
 5006,Machoman's Glasses,1380000,1620000,kro,2,0
-4395,Maero of Thanatos Card,174000,204500,kro,4,3
+4395,Maero of Thanatos Card,174000,204500,kro,22,3
 11037,Mage Book Basic,0,0,,12,0
 11039,Mage Book Misc,0,0,,12,0
 11038,Mage Book Practice,0,0,,12,0
@@ -2513,7 +2513,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 7761,Magic Gourd Bottle,0,0,,12,0
 14266,Magic Magic Powder Box,0,0,,12,0
 14272,Magic Magic Powder Box,0,0,,12,0
-12723,Magic Mushroom,8250,9700,kro,12,3
+12723,Magic Mushroom,8250,9700,kro,36,3
 7045,Magic Paint,0,0,,12,0
 7917,Magic Potion,0,0,,12,0
 5561,Magic Rabbit Hat,32660000,38340000,kro,2,0
@@ -2561,7 +2561,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 6285,Manual: How To Make High Quality Potion,109000,128000,ragnastats,7,3
 11019,Manuk Selling Item,0,0,,12,0
 7526,Manuscript Paper,0,0,,12,0
-4202,Mao Guai Card,1658000,1946500,ragnastats,2,3
+4202,Mao Guai Card,1658000,1946500,ragnastats,11,3
 4105,Marc Card,1840000,2160000,kro,3,3
 4112,Marduk Card,910500,1069000,kro,4,3
 4364,Margaretha Sorin Card,27600000,32400000,kro,2,3
@@ -2588,7 +2588,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 522,Mastela Fruit,7350,8600,kro,54,18
 12050,Mastela Fruit Wine,5800,6850,kro,12,3
 14576,Mastela Fruit Wine,5800,6850,sibling,12,0
-4197,Mastering Card,110000,129500,kro,4,3
+4197,Mastering Card,110000,129500,kro,22,3
 4361,MasterSmith Card,215960000,253518000,estimate,2,0
 7035,Matchstick,85,115,npc,51,18
 4760,MATK+1%,0,0,,6,0
@@ -2641,13 +2641,13 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 13538,Meteor Storm Scroll Box,0,0,,12,0
 4231,Mi Gao Card,15500,18000,ragnastats,6,3
 1613,Mighty Staff,288500,339000,ragnastats,4,0
-519,Milk,21,29,npc,27,36
+519,Milk,21,29,npc,51,36
 4205,Mimic Card,920000,1080000,kro,2,3
 5031,Mine Hat,0,0,,8,0
 4339,Mineral Card,184000,216000,kro,4,3
 7827,Mineral Evals,0,0,,12,0
 4204,Mini Demon Card,1104000,1296000,kro,2,3
-612,Mini Furnace,5050,5900,ragnastats,51,3
+612,Mini Furnace,5050,5900,ragnastats,27,3
 2260,Mini Glasses,230000,270000,kro,4,0
 14263,Mini Heart Magic Powder Box,0,0,,12,0
 2259,Mini Propeller,40000,47000,ragnastats,8,0
@@ -2769,7 +2769,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 4108,Myst Card,63000,74000,kro,6,3
 4206,Myst Case Card,1380000,1620000,kro,2,3
 1138,Mysteltainn,184000,216000,ragnastats,4,0
-4207,Mysteltainn Card,1380000,1620000,kro,2,3
+4207,Mysteltainn Card,1380000,1620000,kro,11,3
 12290,Mysterious Can Magic Powder,0,0,,12,3
 12376,Mysterious Can2,0,0,,12,3
 6220,Mysterious Dyestuff,1,2,npc,12,0
@@ -2794,14 +2794,14 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 7261,Mystic Orb,0,0,,12,0
 7330,Mystic Orb,0,0,,12,0
 5117,Mystic Rose,1719000,2018000,ragnastats,2,0
-12736,Mystic Rune,22500,26000,kro,36,3
+12736,Mystic Rune,22500,26000,kro,12,3
 12749,Mystic Scroll,0,0,,12,0
 6111,Mystic Stone,920,1050,npc,12,3
 12544,Mystic Tree Branch,0,0,,12,0
 14274,Mystical Amplification Scroll 10 Box,0,0,,12,0
 14275,Mystical Amplification Scroll 30 Box,0,0,,12,0
 14276,Mystical Amplification Scroll 50 Box,0,0,,12,0
-12246,Mystical Card Album,1800000,2250000,set,16,3
+12246,Mystical Card Album,1800000,2250000,set,5,3
 5177,Mythical Lion Mask,24500,29000,npc,8,0
 1130,Nagan,92000,108000,ragnastats,4,0
 2736,Navel Ring,0,0,,8,0
@@ -2964,7 +2964,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 5684,Ornate Crown,0,0,,8,0
 4144,Osiris Card,202400000,237600000,kro,2,0
 751,Osiris Doll,230000,270000,kro,31,3
-12125,Outdoor Cooking Kit,840,1100,ragnastats,12,6
+12125,Outdoor Cooking Kit,840,1100,ragnastats,36,6
 4238,Owl Baron Card,874000,1026000,kro,4,3
 4237,Owl Duke Card,827500,971500,kro,22,3
 5004,Oxygen Mask,685000,804000,ragnastats,4,0
@@ -2993,7 +2993,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 7056,Payment Statement for Kafra Employee,1,2,npc,12,3
 12249,Payment Statement for Kafra Employee,0,0,,12,0
 13842,Payment Statement for Kafra Employee Box,0,0,,12,0
-1089,Payon Solution,28500,33500,ragnastats,51,3
+1089,Payon Solution,28500,33500,ragnastats,27,3
 12407,PCBang Coupon Box,0,0,,12,0
 12091,Peach Cake,155000,182000,ragnastats,7,3
 6021,Peaked Hat,2800,3250,ragnastats,36,18
@@ -3024,7 +3024,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 13529,Pet Egg Scroll Box 15,0,0,,12,0
 13530,Pet Egg Scroll Box 16,0,0,,12,0
 13708,Pet Egg Scroll E,0,0,,12,0
-537,Pet Food,235,320,ragnastats,51,6
+537,Pet Food,235,320,ragnastats,27,6
 643,Pet Incubator,2250,2650,ragnastats,12,3
 10027,Pet Soul Ring,0,0,,12,0
 12434,Petite Tail Noodles,126500,148500,kro,32,3
@@ -3034,7 +3034,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 5810,Ph.D Hat V,0,0,,8,0
 4148,Pharaoh Card,915400000,1074600000,kro,2,0
 4077,Phen Card,460000,540000,kro,5,3
-4329,Phendark Card,179500,210500,ragnastats,22,3
+4329,Phendark Card,179500,210500,ragnastats,4,3
 7290,Phlogopite,9300,10500,ragnastats,36,6
 5271,Phoenix Crown,0,0,,8,0
 1010,Phracon,9200,10500,kro,51,6
@@ -3105,7 +3105,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 7932,Poison Herb Nerium,1,2,npc,12,3
 7933,Poison Herb Rantana,4900,5800,ragnastats,12,3
 7936,Poison Herb Scoporia,4350,5100,ragnastats,12,3
-7935,Poison Herb Seratum,92000,108000,kro,22,3
+7935,Poison Herb Seratum,92000,108000,kro,7,3
 7931,Poison Kit,49500,58000,ragnastats,12,3
 1239,Poison Knife,184000,216000,kro,4,0
 13016,Poison Knife,184000,216000,kro,4,0
@@ -3160,7 +3160,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 12127,Professional Cooking Kit,15500,18500,ragnastats,12,3
 7179,Proof of Donation,0,0,,12,0
 6304,Proof Of Sapha's Honor,0,0,,12,0
-11513,Protect Neck Candy,480,650,ragnastats,36,3
+11513,Protect Neck Candy,480,650,ragnastats,12,3
 535,Pumpkin,2,4,ragnastats,27,36
 7225,Pumpkin Lantern,6300,7400,ragnastats,36,18
 7609,Pumpkin Mojo,1,2,npc,12,0
@@ -3261,7 +3261,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 4383,Red Novus Card,96000,112500,ragnastats,4,3
 501,Red Potion,12,18,ragnastats,27,0
 12024,Red Pouch,0,0,,12,0
-587,Red Prickly Fruit,1700,2000,ragnastats,12,18
+587,Red Prickly Fruit,1700,2000,ragnastats,36,18
 11522,Red Raffle Sap,1250,1500,ragnastats,12,3
 5083,Red Ribbon,4140000,4860000,kro,2,0
 5195,Red Ribbon,610,825,npc,8,0
@@ -3404,7 +3404,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 564,Rice Ball,595,805,ragnastats,12,18
 7272,Rice Ball Doll,425,575,npc,12,0
 5575,Rice Ball Hat,0,0,,8,0
-550,Rice Cake,1650,1950,ragnastats,12,36
+550,Rice Cake,1650,1950,ragnastats,36,36
 6183,Rice Cake Exchange Ticket,0,0,,12,0
 12378,Rice Cake Soup,0,0,,12,0
 556,Rice Cake Stick,3550,4150,ragnastats,12,0
@@ -3459,7 +3459,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 7293,Rose Quartz,361000,424000,ragnastats,7,3
 4192,Rotar Zairo Card,1378500,1618500,ragnastats,2,3
 930,Rotten Bandage,1350,1600,kro,51,36
-624,Rotten Fish,34000,40000,ragnastats,36,3
+624,Rotten Fish,34000,40000,ragnastats,12,3
 7564,Rotten Meat,595,805,kro,36,18
 739,Rouge,18500,22000,ragnastats,36,6
 757,Rough Elunium,3450,4100,kro,76,18
@@ -3638,7 +3638,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 1094,Short Daenggie,3550,4200,ragnastats,36,18
 7196,Shoulder Protector,580,790,ragnastats,51,18
 5510,Shower Cap,0,0,,8,0
-567,Shrimp,295,400,ragnastats,36,6
+567,Shrimp,295,400,ragnastats,12,6
 13250,Shuriken,3,5,ragnastats,12,0
 5535,Side Cap,0,0,,8,0
 4117,Sidewinder Card,3219500,3779500,kro,3,3
@@ -3711,7 +3711,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 7111,Slick Paper,705,955,ragnastats,51,18
 7195,Slingshot,510,690,kro,36,18
 6188,Slotting Advertisement,17,24,npc,12,0
-12017,Slow Potion,46000,54000,kro,36,3
+12017,Slow Potion,46000,54000,kro,12,3
 12353,Small Bottle,20000,23500,ragnastats,36,3
 6319,Small Bradium,52500,61500,ragnastats,12,0
 18503,Small Devil Horns,0,0,,8,0
@@ -3757,7 +3757,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 13510,Solar Sword Box,0,0,,12,0
 4059,Soldier Andre Card,0,0,,6,3
 4086,Soldier Skeleton Card,1380000,1620000,kro,3,3
-7190,Solid Husk,655,885,ragnastats,36,18
+7190,Solid Husk,655,885,ragnastats,12,18
 7507,Solid Iron Piece,9000,10500,ragnastats,36,18
 7164,Solid Peach,2200,2600,ragnastats,36,18
 943,Solid Shell,765,1000,kro,51,36
@@ -3835,7 +3835,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 7243,Spirit of Cooperation,0,0,,12,0
 7238,Spirit of Coordination,0,0,,12,0
 7247,Spirit of Determination,0,0,,12,0
-7083,Spirit of Fish,1,2,npc,36,3
+7083,Spirit of Fish,1,2,npc,12,3
 7245,Spirit of Friendship,0,0,,12,0
 7250,Spirit of Glory,0,0,,12,0
 7234,Spirit of Guild,1,2,npc,12,0
@@ -3902,7 +3902,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 14578,Steamed Bat Wing in Pumpkin,14500,17000,sibling,12,0
 12051,Steamed Crab Nippers,6000,7050,ragnastats,27,3
 14557,Steamed Crab Nippers,6000,7050,sibling,12,0
-12090,Steamed Desert Scorpions,32000,37500,ragnastats,12,0
+12090,Steamed Desert Scorpions,32000,37500,ragnastats,36,0
 12251,Steamed Desert Scorpions,32000,37500,sibling,12,0
 13837,Steamed Desert Scorpions Box,0,0,,12,0
 14237,Steamed Desert Scorpions Box(20),0,0,,12,0
@@ -3931,7 +3931,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 938,Sticky Mucus,340,460,kro,76,72
 7565,Sticky Poison,1250,1500,kro,36,18
 918,Sticky Webfoot,920,1050,kro,54,36
-7008,Stiff Horn,81000,95000,ragnastats,36,18
+7008,Stiff Horn,81000,95000,ragnastats,12,18
 1216,Stiletto,16000,18500,npc,8,0
 1217,Stiletto,16000,18500,npc,11,0
 1218,Stiletto,0,0,,8,0
@@ -3942,7 +3942,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 7529,Stolen Sandal,0,0,,12,0
 7049,Stone,5450,6400,ragnastats,51,36
 1756,Stone Arrow,14,20,ragnastats,12,0
-12011,Stone Arrow Quiver,18000,21000,ragnastats,12,3
+12011,Stone Arrow Quiver,18000,21000,ragnastats,36,3
 2114,Stone Buckler,27500,32000,kro,11,0
 7067,Stone Fragment,5350,6300,ragnastats,36,18
 953,Stone Heart,125,170,ragnastats,51,36
@@ -4049,7 +4049,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 1101,Sword,76,100,npc,8,0
 1102,Sword,76,100,npc,8,0
 1103,Sword,0,0,,8,0
-4427,Sword Guardian Card,253000,297000,kro,4,3
+4427,Sword Guardian Card,253000,297000,kro,22,3
 1516,Sword Mace,41000,48500,npc,8,0
 1517,Sword Mace,41000,48500,npc,8,0
 1518,Sword Mace,0,0,,8,0
@@ -4082,7 +4082,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 12105,Taming Gift Set,1265000,1485000,ragnastats,4,3
 4304,Tamruan Card,92000,108000,kro,4,3
 7221,Tangled Chains,4250,5000,ragnastats,36,18
-12395,Tantan Noodle,437000,513000,kro,7,3
+12395,Tantan Noodle,437000,513000,kro,22,3
 4302,Tao Gunka Card,121832000,143020000,estimate,2,0
 4028,Tarou Card,46000,54000,kro,6,3
 7301,Tassel,1350,1600,kro,51,18
@@ -4270,7 +4270,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 1263,Unholy Touch,18000,21500,ragnastats,11,0
 2257,Unicorn Horn,46000,54000,kro,8,0
 6308,Unidentified Relic,0,0,,12,0
-658,Union of Tribe,1,3,npc,36,36
+658,Union of Tribe,1,3,npc,12,36
 12591,Universal Catalog Bronze,0,0,,12,0
 12581,Universal Catalog Gold,0,0,,12,0
 16677,Universal Catalog Gold 10 Box,0,0,,12,0
@@ -4288,7 +4288,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 1090,Unknown Test Tube,0,0,,12,0
 7725,Unlucky Emerald,0,0,,12,0
 619,Unripe Apple,85500,100000,kro,51,3
-12292,Unripe Fruit,425,575,npc,36,3
+12292,Unripe Fruit,425,575,npc,12,3
 14595,Unsealed Magic Spell,0,0,,12,0
 7970,Unwritten Letter1,0,0,,12,0
 7971,Unwritten Letter2,0,0,,12,0
@@ -4297,7 +4297,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 7319,Used Iron Plate,2750,3200,kro,51,36
 7146,Vacation Ticket,0,0,,12,0
 4049,Vadon Card,644000,756000,kro,4,3
-4183,Vagabond Wolf Card,533500,626000,kro,22,3
+4183,Vagabond Wolf Card,533500,626000,kro,4,3
 12742,Valentine Gift Box,0,0,,12,0
 12743,Valentine Gift Box,0,0,,12,0
 14548,Valentine's Day Firecracker,0,0,,12,0
@@ -4408,7 +4408,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 538,Well-baked Cookie,3050,3600,ragnastats,51,18
 628,Well-Dried Bone,184000,216000,kro,7,3
 2248,Western Grace,460000,540000,kro,4,0
-7076,Wheel of the Unknown,1,2,npc,36,3
+7076,Wheel of the Unknown,1,2,npc,12,3
 1952,Whip,9900,11500,npc,8,0
 1953,Whip,9900,11500,npc,8,0
 1960,Whip,31000,36500,npc,22,0
@@ -4426,7 +4426,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 7568,White Mask,3450,4050,ragnastats,36,36
 18612,White Musang Hat,0,0,,8,0
 504,White Potion,295,400,ragnastats,40,0
-6247,White Powder,605,815,ragnastats,36,3
+6247,White Powder,605,815,ragnastats,12,3
 11524,White Raffle Sap,1900,2250,ragnastats,12,3
 5197,White Ribbon,610,825,npc,8,0
 5411,White Snake Hat,0,0,,8,0
@@ -4563,7 +4563,7 @@ Id,Name,Min,Max,Source,BuyersPerDay,SellersPerDay
 4281,Zipper Bear Card,138000,162000,kro,4,3
 729,Zircon,5500,6450,ragnastats,36,6
 4038,Zombie Card,73500,86000,kro,6,3
-4274,Zombie Master Card,670000,786500,ragnastats,22,3
+4274,Zombie Master Card,670000,786500,ragnastats,4,3
 4275,Zombie Prisoner Card,828000,972000,kro,4,3
 4435,Zombie Slaughter Card,82500,97000,kro,6,3
 2263,Zorro Masque,92000,108000,kro,4,0
