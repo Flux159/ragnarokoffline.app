@@ -1,0 +1,60 @@
+From 0000000000000000000000000000000000000034
+Subject: [PATCH] OnPCDieEvent runs for a recruited companion
+
+Patch 0001 keeps every population PC out of rAthena's player script events, three times over
+for OnPCDieEvent: at the call in status_damage(), inside npc_script_event(), and in
+npc_event_sub(). A script that counts the deaths in a fight therefore never saw a companion die.
+
+npc_script_event() now asks population_shell_runs_script_event() (our own header,
+population_engine/runtime/population_shell_events.hpp), which lets OnPCDieEvent through for a
+recruited companion and nothing else, and runs the label itself for a shell: npc_event_sub()
+keeps turning every shell away, so OnTouch and the rest stay out. The call in status_damage()
+goes back to the stock line, since the one gate decides. Ambient shells and every other event
+are unchanged.
+
+diff --git a/src/map/npc.cpp b/src/map/npc.cpp
+--- a/src/map/npc.cpp
++++ b/src/map/npc.cpp
+@@ -35,6 +35,7 @@
+ #include "navi.hpp"
+ #include "pc.hpp"
+ #include "pet.hpp"
++#include "population_engine/runtime/population_shell_events.hpp" // RAGNAROKMAC
+ #include "script.hpp" // script_config
+ 
+ using namespace rathena;
+@@ -5940,12 +5941,20 @@ int32 npc_parsesrcfile(const char* filep
+ size_t npc_script_event( map_session_data& sd, enum npce_event type ){
+ 	if (type == NPCE_MAX)
+ 		return 0;
+-	if (IS_POPULATION_ENGINE_ACCOUNT_ID(sd.status.account_id))
++	const bool shell = IS_POPULATION_ENGINE_ACCOUNT_ID(sd.status.account_id);
++	if (shell && !population_shell_runs_script_event(sd, type))
+ 		return 0;
+ 
+ 	std::vector<struct script_event_s>& vector = script_event[type];
+ 
+ 	for( struct script_event_s& evt : vector ){
++		// npc_event_sub() turns every shell away; an event let through runs at once, as it
++		// does for a player with no dialog open.
++		if (shell) {
++			if (!evt.event->nd->is_invisible)
++				run_script(evt.event->nd->u.scr.script, evt.event->pos, sd.id, evt.event->nd->id);
++			continue;
++		}
+ 		npc_event_sub( &sd, evt.event, evt.event_name );
+ 	}
+ 
+diff --git a/src/map/status.cpp b/src/map/status.cpp
+--- a/src/map/status.cpp
++++ b/src/map/status.cpp
+@@ -1800,8 +1800,7 @@ int32 status_damage(block_list *src,bloc
+ 				npc_event(sd, bg->die_event.c_str(), 0);
+ 		}
+ 
+-		if (!IS_POPULATION_ENGINE_ACCOUNT_ID(sd->status.account_id))
+-			npc_script_event( *sd, NPCE_DIE );
++		npc_script_event( *sd, NPCE_DIE );
+ 	}
+ 
+ 	return (int32)(hp+sp+ap);

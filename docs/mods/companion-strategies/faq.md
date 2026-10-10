@@ -111,8 +111,12 @@ Check, in this order:
    turn. A positioning rule or a `Hold` above yours can take every turn.
 3. **Does its selector find anyone?** `Target: { Ally: attacked }` finds nobody
    while nobody is hit; selectors only look within the spell's range.
-4. **Can it cast?** It must know the skill. The trace says "not cast (not enough
-   SP)", "(out of range)", "(refused)".
+4. **Can it cast?** It must know the skill, and its owner must not have unticked
+   it. The trace says why a cast was not made: "not cast (out of range: 8 > 3)",
+   "(not enough SP: needs 40, has 12)", "(a catalyst is missing: 1 Blue_Gemstone)",
+   "(the cell is taken: Raydric stands on it)", "(on cooldown, 12.4 s left)". The
+   [reference](reference.md#finding-out-what-it-is-doing) lists them with what to
+   do about each.
 5. **Is the server reporting the rule at start?** A misspelled key, skill or
    status skips the rule (see below).
 
@@ -192,8 +196,11 @@ selectors never pick a bystander.
 
 Most bosses teleport when hit by someone they can't fight back against (from out
 of their reach). The [no-rude-attack rules](cookbook.md#dont-make-a-boss-teleport)
-make companions step to where the boss could reach them first. When it happens
-anyway, `encounter_ended` with `Reason: vanished` fires.
+make companions step to where the boss could reach them first. They apply only
+where the boss would really answer: out of its reach, with a teleport for the
+state it is in. When it happens anyway, `encounter_ended` with `Reason: vanished`
+fires; add `Boss: true` so the rule is not set off by ordinary monsters of a plan
+with `Encounter: true`.
 
 ### The server says something about my table at start
 
@@ -212,10 +219,14 @@ made it.
 
 ### Can it use items, potions, or switch gear?
 
-Not yet. Companions have no inventory of their own; it will come later.
-Catalysts (`Consume: true`) are accepted but not paid until then. The roadmap's
-[Not done yet](../../COMPANION_STRATEGY_ROADMAP.md#not-done-yet) describes how
-inventories, catalysts, item use and gear switching would work.
+Items, yes; gear, not yet. With **Settings → Population → Companion inventory**
+on, a companion owns its bag. A `UseItem` rule uses what is in it (a potion, a
+cure, an elemental converter, a Fly Wing), and a skill's catalyst or trap is
+taken from it when the skill is cast. With the setting off, the bag holds only
+what the engine hands a companion and catalysts are not charged. A plan cannot
+yet name gear to wear for a fight; the roadmap's
+[Switching gear](../../COMPANION_STRATEGY_ROADMAP.md#switching-gear-to-the-situation)
+says what is open.
 
 ### Do regular AI characters use plans too?
 

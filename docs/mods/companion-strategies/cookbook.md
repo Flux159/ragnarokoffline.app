@@ -10,6 +10,8 @@ not yet. Adjust names, priorities and numbers to your plan. The
 **Healing and support**
 - [Heal whoever is being hit](#heal-whoever-is-being-hit)
 - [Keep buffs up on the party](#keep-buffs-up-on-the-party)
+- [Buff the party, not the player](#buff-the-party-not-the-player)
+- [Protect everyone but the tank](#protect-everyone-but-the-tank)
 - [Wall a member before a stun lands](#wall-a-member-before-a-stun-lands)
 - [Walk to the fallen and revive](#walk-to-the-fallen-and-revive)
 - [Cure petrification](#cure-petrification)
@@ -21,6 +23,9 @@ not yet. Adjust names, priorities and numbers to your plan. The
 - [Leave hostile ground](#leave-hostile-ground)
 - [Sit down to regenerate between fights](#sit-down-to-regenerate-between-fights)
 - [Don't make a boss teleport](#dont-make-a-boss-teleport)
+- [Stand inside a Land Protector, not on its rim](#stand-inside-a-land-protector-not-on-its-rim)
+- [Step out from behind a wall](#step-out-from-behind-a-wall)
+- [An Ice Wall between you and what is coming](#an-ice-wall-between-you-and-what-is-coming)
 
 **Damage**
 - [A bolt by element at what is on the party](#a-bolt-by-element-at-what-is-on-the-party)
@@ -28,12 +33,22 @@ not yet. Adjust names, priorities and numbers to your plan. The
 - [Go for the boss, but take slaves off the healer](#go-for-the-boss-but-take-slaves-off-the-healer)
 - [Two of a kind: split the targets](#two-of-a-kind-split-the-targets)
 - [Turn heals on the undead](#turn-heals-on-the-undead)
+- [Interrupt only the casts that matter](#interrupt-only-the-casts-that-matter)
+- [A Fire Wall in its path](#a-fire-wall-in-its-path)
+- [A trap in front of it, not under it](#a-trap-in-front-of-it-not-under-it)
+- [An area spell where the pack will be](#an-area-spell-where-the-pack-will-be)
+- [Two builds of one class](#two-builds-of-one-class)
 
 **Boss mechanics**
 - [Phases on the boss's HP](#phases-on-the-bosss-hp)
 - [Change tactic when a phase drags on](#change-tactic-when-a-phase-drags-on)
 - [React to a cast](#react-to-a-cast)
 - [Fall back when the healer is down](#fall-back-when-the-healer-is-down)
+- [That boss, not its miniboss slaves](#that-boss-not-its-miniboss-slaves)
+- [Regroup when a boss teleports, not after every kill](#regroup-when-a-boss-teleports-not-after-every-kill)
+
+**Items**
+- [Drink, cure and endow from the bag](#drink-cure-and-endow-from-the-bag)
 
 **Talking**
 - [Ask another companion for something](#ask-another-companion-for-something)
@@ -78,6 +93,30 @@ help (undead armor) is passed over automatically.
 `Expiring` renews the buff before it lapses rather than after. Needed whenever
 the plan ends in `Hold`: `Hold` ends the turn before the engine's own buffing
 would come round.
+
+## Buff the party, not the player
+
+`NotOwner` leaves the owner out: for a player who buffs differently, or who
+cannot be buffed at all.
+
+```yaml
+- Name: bless_the_party
+  Priority: 45
+  Cast: AL_BLESSING
+  Target: { Ally: missing, Status: SC_BLESSING, NotOwner: true, Expiring: 3000 }
+```
+
+## Protect everyone but the tank
+
+A `Role` list is any of them. The owner has no role, so it is left out too:
+
+```yaml
+- Name: wall_the_squishy
+  Priority: 90
+  Cast: MG_SAFETYWALL
+  Target: { Ally: attacked, Role: [attacker, support] }
+  Cooldown: 4000
+```
 
 ## Wall a member before a stun lands
 
@@ -240,7 +279,10 @@ loads cleanly but hasn't been played yet.
 
 ## Don't make a boss teleport
 
-Most bosses teleport when hit by someone they can't fight back against:
+Most bosses teleport when hit by someone they can't fight back against. `Reach:
+false` holds only where rAthena would really answer the hit: the monster is out
+of reach and has a `rudeattacked` skill for the state it is in. A boss busy with
+the tank, or one with no such skill, does not hold anyone back:
 
 ```yaml
 - Name: no_rude_attack
@@ -254,6 +296,57 @@ Most bosses teleport when hit by someone they can't fight back against:
   Reach: false
   Hold: true                           # nowhere: don't hit it at all
 ```
+
+## Stand inside a Land Protector, not on its rim
+
+A Meteor Storm that lands beside a Land Protector still hits whoever stands on
+its edge. `Depth` asks for a cell that many cells inside:
+
+```yaml
+- Name: into_the_lp
+  Priority: 84
+  MoveTo: { Field: SA_LANDPROTECTOR, Owner: party, Within: 12, Depth: 3 }
+```
+
+Three deep is the middle 5x5 of a level 5 Land Protector. A smaller field gives
+its deepest cells.
+
+## Step out from behind a wall
+
+A cast needs a clear line. A caster with a tree or a corner between it and its
+target has every cast refused, and with a last `Hold` rule it stands there. Put
+this above the casts:
+
+```yaml
+- Name: into_the_clear
+  Priority: 61
+  MoveTo: { Sight: target, Within: 8, Range: 8 }   # Range: the spell's reach
+```
+
+It steps to the nearest cell from which its current target is in the clear, and
+passes once it stands on one. For a healer, give it the member: `Target: { Ally:
+attacked }`.
+
+## An Ice Wall between you and what is coming
+
+A ground spell lands at its target's feet: an Ice Wall aimed at a monster goes
+up on the monster, not in its way. `Aim` puts it on the line between the two:
+
+```yaml
+- Name: wall_it_off
+  Priority: 78
+  Cast: WZ_ICEWALL
+  Target: { Enemy: attacking, Who: self }       # what is coming for me
+  Aim: { Cells: 3 }                             # three cells from me, toward it
+  Field: { Skill: WZ_ICEWALL, Owner: self, Range: 5, Below: 1 }   # none standing yet
+  Cooldown: 3000
+```
+
+With the monster three cells off or closer there is no cell between the two that
+far out, and the rule does not cast. The `Field` condition keeps it to one wall
+at a time. Ice Wall blocks shots as
+well as steps: follow it with a spell that needs no line (Storm Gust, Heaven's
+Drive on a cell), or [step to a clear line](#step-out-from-behind-a-wall).
 
 ## A bolt by element at what is on the party
 
@@ -344,6 +437,82 @@ In a plan for `Mobs: [{ Race: Undead }, { Element: Undead }]`:
 Sanctuary is never placed where a living (not undead, not demon) monster would
 stand in it and be healed.
 
+## Interrupt only the casts that matter
+
+`Skill` narrows `Enemy: casting` to the casts worth a Double Strafe, for as long
+as the cast lasts (an `On: casts` event fires once):
+
+```yaml
+- Name: interrupt_thunder
+  Priority: 70
+  Cast: AC_DOUBLE
+  Target: { Enemy: casting, Skill: [WZ_JUPITEL, MG_THUNDERSTORM] }
+```
+
+## A Fire Wall in its path
+
+By the time a cast is done, a walking monster is no longer where it was. `Lead`
+aims where its walk will have brought it, by its speed and the companion's cast
+time:
+
+```yaml
+- Name: firewall_ahead
+  Priority: 66
+  Cast: MG_FIREWALL
+  Target: { Enemy: attacking, Who: self }
+  Aim: { Cells: 2, From: target, Lead: true }   # two cells in front of where it will be
+  Cooldown: 2500
+```
+
+A monster that stands still is where it is, and `Lead` changes nothing.
+
+## A trap in front of it, not under it
+
+A trap cannot be laid on a cell a monster stands on (the trace: `the cell is
+taken: Dark Lord stands on it`). Lay it where the monster is about to step:
+
+```yaml
+- Name: snare_its_path
+  Priority: 72
+  Cast: HT_ANKLESNARE
+  Target: { Enemy: boss, Mob: DARK_LORD, Range: 9 }
+  Aim: { Cells: 2, From: target, Lead: true }
+  Cooldown: 6000
+```
+
+Ankle Snare needs two free cells round it: `Cells: 2` from the target, no less.
+
+## An area spell where the pack will be
+
+Storm Gust takes its time. Against monsters walking in, cast it where they will
+be when it lands:
+
+```yaml
+- Name: gust_the_pack
+  Priority: 50
+  Count: { Around: target, Range: 4, AtLeast: 3 }
+  Cast: WZ_STORMGUST
+  Target: { Enemy: nearest }
+  Aim: { Lead: true }
+```
+
+## Two builds of one class
+
+Every companion has its class's whole skill tree, so the owner's skill
+selection (the companion window, or `@companion skills <name> toggle <skill>`)
+is what tells builds apart. An unticked skill counts as one the companion lacks:
+
+```yaml
+- Job: Monk
+  Build: asura
+  Requires: { Lacks: [MO_CHAINCOMBO] }     # Chain Combo unticked
+  Rules: [...]
+- Job: Monk
+  Build: combo
+  Requires: { Skills: [MO_CHAINCOMBO] }
+  Rules: [...]
+```
+
 ## Phases on the boss's HP
 
 ```yaml
@@ -421,6 +590,60 @@ the window longer than the companion's own longest cast.
             - { Name: to_owner, Priority: 102, Retreat: owner }
             - { Name: stand, Priority: 101, Hold: true }
 ```
+
+## That boss, not its miniboss slaves
+
+`{ Enemy: boss }` is any boss-class monster, and Dark Lord's Dark Illusions are
+boss-class too, of the same race, element and size. `Mob` names the one:
+
+```yaml
+- Name: off_the_boss
+  Priority: 74
+  Target: { Enemy: boss, Mob: DARK_LORD, Range: 14 }
+  KeepDistance: 4
+- Name: pneuma_when_it_is_not_on_me
+  Priority: 72
+  Count: { Enemy: any, Mob: DARK_LORD, Range: 3, Below: 1 }
+  Cast: AL_PNEUMA
+  Target: self
+```
+
+## Regroup when a boss teleports, not after every kill
+
+A monster plan with `Encounter: true` makes every kill the end of an encounter.
+`Boss: true` keeps a rule for bosses:
+
+```yaml
+- Name: boss_gone_regroup
+  Priority: 95
+  On: { Event: encounter_ended, Reason: vanished, Boss: true }
+  Retreat: owner
+```
+
+## Drink, cure and endow from the bag
+
+`UseItem` uses an item the companion carries (Settings → Population → Companion
+inventory, and the bag filled by trade). A companion without the item does not
+have the rule. Say when, or it uses the next one as soon as it may:
+
+```yaml
+- Name: awakening
+  Priority: 60
+  When: not_self_aspdpotion1
+  UseItem: Awakening_Potion
+- Name: cure_poison
+  Priority: 95
+  When: self_poison
+  UseItem: [Panacea, Green_Potion]         # the first one it carries
+- Name: wind_against_water
+  Priority: 58
+  Enemy: { Element: Water }
+  When: not_self_enchantarms
+  UseItem: Elemental_Wind
+```
+
+A trap is an item too, but a skill's own cost: Ankle Snare takes its trap from
+the bag when it is cast, with no `UseItem`.
 
 ## Ask another companion for something
 

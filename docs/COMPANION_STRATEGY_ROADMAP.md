@@ -14,7 +14,7 @@ how it would work, what it would add, and where to start.
 | 1 | Holding position wins over following | built, played (Phreeoni) |
 | 2 | Leaving hostile ground (`Leave:`) | built, not yet played |
 | 3 | Choosing who to help or fight (selectors, `SetTarget`) | built, played (Phreeoni) |
-| 4 | Items and gear | [inventories](#inventories-the-foundation) and catalysts built; using items and switching gear **not done** |
+| 4 | Items and gear | [inventories](#inventories-the-foundation), catalysts and [using items](#using-items) (`UseItem`) built; [switching gear](#switching-gear-to-the-situation) **not done** |
 | 5 | [Time and memory](#5-time-and-memory) | step 1 (time in strategy and fight, renewing before a status lapses) built, not yet played; step 2 (flags and counters) **not done** |
 | 6 | Companions coordinating | signals and claims built, not yet played; role plans built and played; [roles that change in a fight](#6-coordination-roles-that-change-in-a-fight-and-claims) **not done** |
 | 7 | Boss mechanics (MVP survey, A to F) | built; phases, reacting to a summon and revealing a hidden boss played |
@@ -200,37 +200,29 @@ pay a second time. Rules can react to running low with `item_below`.
 
 ### Using items
 
-**What is missing.** Beyond the engine's own HP and SP potions (above), shells
-use no items, and a plan can't ask for one. The aim is the whole range of
-usable items:
-- healing and SP potions, chosen by the plan rather than the engine;
-- Berserk and Awakening potions for attack speed, before a boss;
-- Green Herbs and Panacea against poison and other ailments;
-- elemental converters and scrolls that endow a weapon;
-- Yggdrasil Leaf to revive someone else, Yggdrasil Berry to heal fully;
-- Fly Wing and Butterfly Wing.
+**Built**: the rule action `UseItem: <item>` (or a list, the first one in the
+bag), described in the [reference](mods/companion-strategies/reference.md#rules).
+It calls rAthena's item use, `pc_useitem`, the path the engine's potion drinking
+uses. A rule exists only for a companion that carries the item. An item that
+casts a skill (a converter, a Fly Wing) only arms that skill for a client to
+cast; a shell has no client, so the module casts it, on the companion or on the
+rule's `Target`.
 
-**Why not now.** The bag exists now, but the owner has no window to stock it
-knowingly; a plan that names items is easier to use once it does.
+Played on the test server with an Assassin Cross carrying five of each: an
+Awakening Potion while it lacks the status, a Green Potion when poisoned, a wind
+converter against a Water monster, a Fly Wing on a party-chat word. Each took
+one from the bag and had its effect.
 
-**How it would work.** A new rule action, `UseItem: <item>` (or a list, the first
-one in the bag) with `Target:` (`self`, an ally selector, a dead ally for a
-Yggdrasil Leaf). It calls rAthena's item use, `pc_useitem`, the same path the
-engine's potion drinking already uses successfully. For an item that targets
-someone, the server completes the target step a client would send. Item use
-waits out its own delay, the way casts wait out theirs. The conditions exist:
-HP and SP (`When:`), statuses (`self_poison`, `not_self_aspdpotion`), the bag
-(`item_below`, `Requires: { Items }`).
-
-Examples:
-- below 30 % HP with no healer alive, drink a White Potion;
-- poisoned, eat a Green Herb;
-- entering a boss's plan, drink a Berserk Potion;
-- the boss is undead, endow with Holy Water;
-- a party member lies dead with no Priest near, use a Yggdrasil Leaf.
-
-When the engine's potion drinking becomes a setting, a plan can take it over
-entirely.
+**Still missing.**
+- Items aimed at someone else are written but not played: a Yggdrasil Leaf on
+  `Target: { Ally: dead }` goes through the same cast step.
+- A Fly Wing moves the companion, and following brings it back once its owner
+  is out of sight. It is of use only where a companion may be apart from its
+  owner.
+- Rules run on a companion's combat turns, so an ailment is cured in a fight,
+  not while walking behind its owner.
+- The engine's potion drinking is still its own; a setting would let a plan
+  take it over entirely.
 
 **What it adds.** Survival without a healer, revives without a Priest, and
 consumables as part of boss plans (a Yggdrasil Berry at Phreeoni's Power Up).
@@ -345,7 +337,22 @@ an event).
 
 **Where to start.** The worn-gear code in `population_engine.cpp`
 (`gear_detail`, the gear-return patches `0007` and `0025`); a new action in the
-strategy module.
+strategy module, beside `UseItem`.
+
+**Asked for, and put off (2026-10).** Found while writing boss plans: a plan
+names gear a member should wear for a fight (a Raydric garment against Dark
+Lord, an Alice shield, fire armour against Meteor Storm), and the companion puts
+it on when the encounter starts. The boss tests gave a member an armour element
+by script instead. The test to pass: a plan for Dark Lord that says "Raydric
+garment", and the companion wears one while Dark Lord is within 14 cells. To
+settle before writing it:
+- what a gear rule does with Companion inventory off, when there is no bag to
+  take the piece from;
+- what puts the earlier piece back when the encounter ends (`encounter_ended`,
+  or leaving the strategy);
+- how a swapped piece sits with the given-gear mask and the `gear_detail`
+  snapshot, so a recall does not bring the companion back in its boss gear, and
+  a piece the owner gave is still handed back as the owner's.
 
 ## 5. Time and memory
 

@@ -187,12 +187,12 @@ Body:
           # rather than under Mob: Boss, whose plan has stopped applying by then.
           - Name: boss_gone_say
             Priority: 96
-            On: { Event: encounter_ended, Reason: vanished }
+            On: { Event: encounter_ended, Reason: vanished, Boss: true }
             Say: "It teleported, back to you, {owner}."
             OnePerParty: true
           - Name: boss_gone_regroup
             Priority: 95
-            On: { Event: encounter_ended, Reason: vanished }
+            On: { Event: encounter_ended, Reason: vanished, Boss: true }
             Retreat: owner
           # A tank provokes what is hitting someone else, the healer first, and keeps it.
           - Name: peel

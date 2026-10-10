@@ -65,7 +65,7 @@ enum class From : uint8 { Anyone, Owner, Leader };
 enum class At : uint8 { Party, Self, Owner, Anyone };
 /// Who cast it (casts' By:) or whose ground units count (Field's Owner:).
 enum class Who : uint8 { Self, Party, Monster, Enemy, Anyone };
-enum class Move : uint8 { None, EventCell, EventUnit, Field, Reachable };
+enum class Move : uint8 { None, EventCell, EventUnit, Field, Reachable, Sight };
 enum class Retreat : uint8 { None, Away, Owner };
 
 /// Requires: what a companion must (and must not) have for a rule or a build to exist for it.
@@ -89,7 +89,10 @@ struct Selector {
 	Member who = Member::Party;  ///< Enemy attacking/target_of: whose attacker or whose target
 	bool not_self = false;       ///< leave the companion itself out
 	Member prefer = Member::Any; ///< Enemy attacking: monsters on this member first
-	int8 role = -1;              ///< Ally: only members with this role
+	uint8 roles = 0;             ///< Ally: only members with one of these roles (a bit per PopulationRoleType; 0 = any)
+	bool not_owner = false;      ///< Ally: leave the owner out (buff the party, not the player it follows)
+	std::vector<uint16> skills;  ///< Enemy casting: only these casts (empty = any)
+	std::vector<uint32> mobs;    ///< Enemy: only these monsters, by mob id (empty = any)
 	std::vector<int32> jobs;     ///< Ally: only these jobs (each with its family and base class)
 	int16 status = -1;           ///< Ally missing: lacking this status
 	int32 expiring_ms = 0;       ///< Ally missing: or having it with less than this left (0: only lacking)
@@ -120,6 +123,7 @@ struct Rule {
 	std::string ev_signal;       ///< signal: its name, lower-case
 	uint32 ev_mob = 0;           ///< encounter_ended: only this monster (0 = any)
 	uint8 ev_reason = 0;         ///< encounter_ended / target_lost: 0 any, 1 died, 2 vanished
+	int8 ev_boss = -1;           ///< encounter_ended / target_lost: 1 only a boss, 0 only an ordinary monster
 	bool ev_signal_self = false; ///< signal: also hear its own (From: anyone)
 	uint32 within_ms = 3000;
 
@@ -184,7 +188,21 @@ struct Rule {
 	uint16 move_skill = 0;
 	Who move_owner = Who::Anyone;
 	int16 move_within = 8;
+	int16 move_depth = 0;        ///< MoveTo Field: that many cells inside the field's edge (0 = any cell of it)
+	int16 move_range = 9;        ///< MoveTo Sight: a cell at most this far from the target
 	bool consume = false;        ///< take the skill's ItemCost from the inventory, as a player pays it
+	// Aim: where a ground Cast lands, when not at the target's feet. aim_cells cells from the
+	// companion (or from the target) along the line between the two; aim_lead takes the target
+	// to be where its walk will have brought it when the cast lands.
+	bool aim = false;
+	int16 aim_cells = 0;
+	bool aim_from_target = false;
+	bool aim_lead = false;
+	/// UseItem: an item from the companion's own bag, used as a player uses it (its script, its
+	/// delay, one taken). A list uses the first one it carries. The rule exists only for a
+	/// companion that carries one of them. use_item is the first of the list.
+	t_itemid use_item = 0;
+	std::vector<t_itemid> use_items;
 
 	uint32 cooldown_ms = 0;
 	bool one_per_party = false;
@@ -575,7 +593,7 @@ bool StrategyDatabase::parse_event(const ryml::NodeRef &node, Rule &rule)
 	};
 	std::string name;
 	if (node.is_map()) {
-		this->warn_unknown_keys(node, { "Event", "By", "Name", "Mob", "Reason", "Value", "Item", "Slot", "Skill", "Status", "At", "Match",
+		this->warn_unknown_keys(node, { "Event", "By", "Name", "Mob", "Reason", "Boss", "Value", "Item", "Slot", "Skill", "Status", "At", "Match",
 			"From", "Within" }, "On");
 		if (!this->asString(node, "Event", name))
 			return false;
@@ -615,6 +633,16 @@ bool StrategyDatabase::parse_event(const ryml::NodeRef &node, Rule &rule)
 			this->invalidWarning(node["Reason"], "Reason is died, vanished or any.\n");
 			return false;
 		}
+	}
+	if (this->nodeExists(node, "Boss")) {
+		bool boss = false;
+		if (rule.event != Event::EncounterEnded && rule.event != Event::TargetLost) {
+			this->invalidWarning(node["Boss"], "Boss belongs to encounter_ended and target_lost.\n");
+			return false;
+		}
+		if (!this->asBool(node, "Boss", boss))
+			return false;
+		rule.ev_boss = boss ? 1 : 0;
 	}
 	if (this->nodeExists(node, "Name")) {
 		this->asString(node, "Name", rule.ev_signal);
@@ -776,8 +804,8 @@ bool StrategyDatabase::parse_requires(const ryml::NodeRef &node, Requirements &r
 /// On an Enemy: attacking or target_of selector, Job is the member's: "what is hitting a Priest".
 bool StrategyDatabase::parse_selector(const ryml::NodeRef &node, Selector &sel)
 {
-	this->warn_unknown_keys(node, { "Enemy", "Ally", "Who", "NotSelf", "Prefer", "Role", "Job", "Status", "Range", "Boss",
-		"Race", "Element", "Expiring" }, "Target");
+	this->warn_unknown_keys(node, { "Enemy", "Ally", "Who", "NotSelf", "NotOwner", "Prefer", "Role", "Job", "Status",
+		"Skill", "Mob", "Range", "Boss", "Race", "Element", "Expiring" }, "Target");
 	std::string pick;
 	if (this->nodeExists(node, "Enemy")) {
 		static const std::map<std::string, Selector::Pick> picks = {
@@ -831,12 +859,57 @@ bool StrategyDatabase::parse_selector(const ryml::NodeRef &node, Selector &sel)
 		this->asBool(node, "NotSelf", sel.not_self);
 	if (this->nodeExists(node, "Boss"))
 		this->asBool(node, "Boss", sel.boss_only);
+	// A list takes any of them, as Requires' Role does: [attacker, support] is "anyone but the tank".
 	if (this->nodeExists(node, "Role")) {
-		std::string role;
-		this->asString(node, "Role", role);
-		if ((sel.role = role_of(role)) == -2) {
-			this->invalidWarning(node["Role"], "Role must be tank, support, attacker or none; the rule is skipped.\n");
+		if (sel.kind != Selector::Kind::Ally) {
+			this->invalidWarning(node["Role"], "Role narrows an Ally selector (an Enemy one has Who and Prefer); the rule is skipped.\n");
 			return false;
+		}
+		for (const std::string &name : scalars(node["Role"])) {
+			const int8 role = role_of(name);
+			if (role == -2) {
+				this->invalidWarning(node["Role"], "Role is tank, support, attacker or none, or a list of them ('%s'); the rule is skipped.\n", name.c_str());
+				return false;
+			}
+			sel.roles |= static_cast<uint8>(1u << role);
+		}
+	}
+	if (this->nodeExists(node, "NotOwner")) {
+		if (sel.kind != Selector::Kind::Ally) {
+			this->invalidWarning(node["NotOwner"], "NotOwner belongs to an Ally selector; the rule is skipped.\n");
+			return false;
+		}
+		this->asBool(node, "NotOwner", sel.not_owner);
+	}
+	// Mob: the monster an Enemy selector means, as an entry names it -- one or a list. Boss, Race
+	// and Element cannot tell a boss from its miniboss slaves (Dark Lord's Dark Illusions).
+	if (this->nodeExists(node, "Mob")) {
+		if (sel.kind != Selector::Kind::Enemy) {
+			this->invalidWarning(node["Mob"], "Mob narrows an Enemy selector; the rule is skipped.\n");
+			return false;
+		}
+		for (const std::string &name : scalars(node["Mob"])) {
+			const uint32 id = mob_of(name);
+			if (id == 0) {
+				this->invalidWarning(node["Mob"], "Unknown monster '%s'; the rule is skipped.\n", name.c_str());
+				return false;
+			}
+			sel.mobs.push_back(id);
+		}
+	}
+	// Skill: which casts an Enemy: casting selector means -- one skill or a list.
+	if (this->nodeExists(node, "Skill")) {
+		if (sel.kind != Selector::Kind::Enemy || sel.pick != Selector::Pick::Casting) {
+			this->invalidWarning(node["Skill"], "Skill belongs to Enemy: casting; the rule is skipped.\n");
+			return false;
+		}
+		for (const std::string &name : scalars(node["Skill"])) {
+			const uint16 id = skill_of(name);
+			if (id == 0) {
+				this->invalidWarning(node["Skill"], "Unknown skill '%s'; the rule is skipped.\n", name.c_str());
+				return false;
+			}
+			sel.skills.push_back(id);
 		}
 	}
 	if (this->nodeExists(node, "Job")) {
@@ -905,7 +978,7 @@ RulePtr StrategyDatabase::parse_rule(const ryml::NodeRef &node, bool &remove)
 		return nullptr;
 	}
 	this->warn_unknown_keys(node, { "Name", "Priority", "Remove", "Requires", "On", "When", "Charges", "Field",
-		"Enemy", "Count", "Reach", "Absent", "Present", "Cast", "Level", "Target", "Consume", "Say", "Channel", "Retreat", "Distance", "Hold", "Sit", "KeepDistance", "Kite", "MoveTo", "Leave", "Switch", "Signal", "SetTarget", "Cooldown", "Claim", "InStrategy", "InFight",
+		"Enemy", "Count", "Reach", "Absent", "Present", "Cast", "Level", "Target", "Aim", "Consume", "UseItem", "Say", "Channel", "Retreat", "Distance", "Hold", "Sit", "KeepDistance", "Kite", "MoveTo", "Leave", "Switch", "Signal", "SetTarget", "Cooldown", "Claim", "InStrategy", "InFight",
 		"OnePerParty" }, "a rule");
 
 	auto rule = std::make_shared<Rule>();
@@ -1003,7 +1076,7 @@ RulePtr StrategyDatabase::parse_rule(const ryml::NodeRef &node, bool &remove)
 
 	if (this->nodeExists(node, "Count")) {
 		const ryml::NodeRef c = node["Count"];
-		this->warn_unknown_keys(c, { "Enemy", "Who", "NotSelf", "Boss", "Race", "Element", "Around", "Range", "Below", "AtLeast" },
+		this->warn_unknown_keys(c, { "Enemy", "Who", "NotSelf", "Boss", "Race", "Element", "Skill", "Mob", "Around", "Range", "Below", "AtLeast" },
 			"Count");
 		static const std::map<std::string, Selector::Pick> picks = {
 			{ "any", Selector::Pick::Nearest }, { "attacking", Selector::Pick::Attacking },
@@ -1044,6 +1117,30 @@ RulePtr StrategyDatabase::parse_rule(const ryml::NodeRef &node, bool &remove)
 				return nullptr;
 			}
 			(race ? rule->count_sel.race : rule->count_sel.element) = static_cast<int8>(v);
+		}
+		if (this->nodeExists(c, "Mob")) {
+			for (const std::string &name : scalars(c["Mob"])) {
+				const uint32 id = mob_of(name);
+				if (id == 0) {
+					this->invalidWarning(c["Mob"], "Unknown monster '%s'; the rule is skipped.\n", name.c_str());
+					return nullptr;
+				}
+				rule->count_sel.mobs.push_back(id);
+			}
+		}
+		if (this->nodeExists(c, "Skill")) {
+			if (rule->count_sel.pick != Selector::Pick::Casting) {
+				this->invalidWarning(c["Skill"], "Skill belongs to Enemy: casting; the rule is skipped.\n");
+				return nullptr;
+			}
+			for (const std::string &name : scalars(c["Skill"])) {
+				const uint16 id = skill_of(name);
+				if (id == 0) {
+					this->invalidWarning(c["Skill"], "Unknown skill '%s'; the rule is skipped.\n", name.c_str());
+					return nullptr;
+				}
+				rule->count_sel.skills.push_back(id);
+			}
 		}
 		if (this->nodeExists(c, "Around")) {
 			std::string around;
@@ -1226,9 +1323,24 @@ RulePtr StrategyDatabase::parse_rule(const ryml::NodeRef &node, bool &remove)
 	if (this->nodeExists(node, "MoveTo")) {
 		const ryml::NodeRef m = node["MoveTo"];
 		if (m.is_map()) {
-			this->warn_unknown_keys(m, { "Field", "Owner", "Within" }, "MoveTo");
+			this->warn_unknown_keys(m, { "Field", "Owner", "Within", "Depth", "Sight", "Range" }, "MoveTo");
 			std::string skill;
-			if (!this->asString(m, "Field", skill) || (rule->move_skill = skill_of(skill)) == 0) {
+			if (this->nodeExists(m, "Sight")) {
+				// { Sight: target, Within, Range }: to the nearest cell with a clear line to the rule's target.
+				std::string of;
+				this->asString(m, "Sight", of);
+				if (lower(of) != "target" || this->nodeExists(m, "Field")) {
+					this->invalidWarning(m, "MoveTo's Sight is target, and takes Within and Range; the rule is skipped.\n");
+					return nullptr;
+				}
+				if (this->nodeExists(m, "Within"))
+					this->asInt16(m, "Within", rule->move_within);
+				rule->move_within = static_cast<int16>(cap_value(static_cast<int>(rule->move_within), 1, AREA_SIZE));
+				if (this->nodeExists(m, "Range"))
+					this->asInt16(m, "Range", rule->move_range);
+				rule->move_range = static_cast<int16>(cap_value(static_cast<int>(rule->move_range), 1, AREA_SIZE));
+				rule->move = Move::Sight;
+			} else if (!this->asString(m, "Field", skill) || (rule->move_skill = skill_of(skill)) == 0) {
 				this->invalidWarning(m, "MoveTo needs a known Field skill; the rule is skipped.\n");
 				return nullptr;
 			}
@@ -1243,7 +1355,11 @@ RulePtr StrategyDatabase::parse_rule(const ryml::NodeRef &node, bool &remove)
 			if (this->nodeExists(m, "Within"))
 				this->asInt16(m, "Within", rule->move_within);
 			rule->move_within = static_cast<int16>(cap_value(static_cast<int>(rule->move_within), 1, AREA_SIZE));
-			rule->move = Move::Field;
+			if (this->nodeExists(m, "Depth"))
+				this->asInt16(m, "Depth", rule->move_depth);
+			rule->move_depth = static_cast<int16>(cap_value(static_cast<int>(rule->move_depth), 0, 7));
+			if (rule->move != Move::Sight)
+				rule->move = Move::Field;
 		} else if (lower(scalar(m)) == "event_cell") {
 			rule->move = Move::EventCell;
 		} else if (lower(scalar(m)) == "event") {
@@ -1251,7 +1367,7 @@ RulePtr StrategyDatabase::parse_rule(const ryml::NodeRef &node, bool &remove)
 		} else if (lower(scalar(m)) == "reachable") {
 			rule->move = Move::Reachable;
 		} else {
-			this->invalidWarning(m, "MoveTo is event, event_cell, reachable or { Field: <skill> }; the rule is skipped.\n");
+			this->invalidWarning(m, "MoveTo is event, event_cell, reachable, { Field: <skill> } or { Sight: target }; the rule is skipped.\n");
 			return nullptr;
 		}
 	}
@@ -1292,6 +1408,54 @@ RulePtr StrategyDatabase::parse_rule(const ryml::NodeRef &node, bool &remove)
 			return nullptr;
 		}
 	}
+	if (this->nodeExists(node, "Aim")) {
+		// Aim: { Cells: 3, From: self | target, Lead: true } -- a ground Cast's cell.
+		const ryml::NodeRef a = node["Aim"];
+		if (!a.is_map()) {
+			this->invalidWarning(a, "Aim is a map: { Cells, From, Lead }; the rule is skipped.\n");
+			return nullptr;
+		}
+		this->warn_unknown_keys(a, { "Cells", "From", "Lead" }, "Aim");
+		if (rule->cast_skill == 0 || !(skill_get_inf(rule->cast_skill) & INF_GROUND_SKILL)) {
+			this->invalidWarning(a, "Aim belongs to a Cast of a ground skill; the rule is skipped.\n");
+			return nullptr;
+		}
+		if (this->nodeExists(a, "Cells"))
+			this->asInt16(a, "Cells", rule->aim_cells);
+		rule->aim_cells = static_cast<int16>(cap_value(static_cast<int>(rule->aim_cells), 0, AREA_SIZE));
+		if (this->nodeExists(a, "From")) {
+			std::string from;
+			this->asString(a, "From", from);
+			from = lower(from);
+			if (from == "target") rule->aim_from_target = true;
+			else if (from != "self") {
+				this->invalidWarning(a["From"], "Aim's From is self (default) or target; the rule is skipped.\n");
+				return nullptr;
+			}
+		}
+		if (this->nodeExists(a, "Lead"))
+			this->asBool(a, "Lead", rule->aim_lead);
+		if (rule->aim_cells == 0 && !rule->aim_lead) {
+			this->invalidWarning(a, "Aim needs Cells, Lead, or both; the rule is skipped.\n");
+			return nullptr;
+		}
+		rule->aim = true;
+	}
+	if (this->nodeExists(node, "UseItem")) {
+		for (const std::string &item : scalars(node["UseItem"])) {
+			const t_itemid id = item_of(item);
+			if (id == 0) {
+				this->invalidWarning(node["UseItem"], "Unknown item '%s'; the rule is skipped.\n", item.c_str());
+				return nullptr;
+			}
+			rule->use_items.push_back(id);
+		}
+		if (rule->use_items.empty()) {
+			this->invalidWarning(node["UseItem"], "UseItem needs an item or a list of them; the rule is skipped.\n");
+			return nullptr;
+		}
+		rule->use_item = rule->use_items.front();
+	}
 	if (this->nodeExists(node, "Switch"))
 		this->asString(node, "Switch", rule->switch_to);
 	if (this->nodeExists(node, "Signal")) {
@@ -1328,13 +1492,13 @@ RulePtr StrategyDatabase::parse_rule(const ryml::NodeRef &node, bool &remove)
 	}
 
 	const int moves = (rule->cast_skill != 0) + (rule->retreat != Retreat::None) + rule->hold + rule->sit
-		+ (rule->keep_distance > 0) + (rule->move != Move::None) + rule->leave + rule->kite;
+		+ (rule->keep_distance > 0) + (rule->move != Move::None) + rule->leave + rule->kite + (rule->use_item != 0);
 	if (moves == 0 && rule->say.empty() && rule->switch_to.empty() && rule->signal.empty() && !rule->set_target) {
-		this->invalidWarning(node, "A rule needs Cast, Retreat, KeepDistance, Kite, MoveTo, Leave, Hold, Sit, Say, Switch, Signal or SetTarget; the rule is skipped.\n");
+		this->invalidWarning(node, "A rule needs Cast, UseItem, Retreat, KeepDistance, Kite, MoveTo, Leave, Hold, Sit, Say, Switch, Signal or SetTarget; the rule is skipped.\n");
 		return nullptr;
 	}
 	if (moves > 1) {
-		this->invalidWarning(node, "A rule takes only one of Cast, Retreat, KeepDistance, Kite, MoveTo, Leave, Hold and Sit; the rule is skipped.\n");
+		this->invalidWarning(node, "A rule takes only one of Cast, UseItem, Retreat, KeepDistance, Kite, MoveTo, Leave, Hold and Sit; the rule is skipped.\n");
 		return nullptr;
 	}
 	if (rule->move == Move::EventCell && rule->event != Event::Casts) {
@@ -1349,6 +1513,9 @@ RulePtr StrategyDatabase::parse_rule(const ryml::NodeRef &node, bool &remove)
 		this->invalidWarning(node, "Target event/source needs an On: event; the rule is skipped.\n");
 		return nullptr;
 	}
+	// An item used on every turn its condition holds would empty the bag before the effect shows.
+	if (rule->use_item != 0 && rule->cooldown_ms == 0)
+		rule->cooldown_ms = 1000;
 	// A line said on every turn its condition holds would flood the chat; a signal sent every
 	// turn would set every listener off again and again.
 	if (!rule->say.empty() && rule->event == Event::None && rule->cooldown_ms == 0)
@@ -1807,12 +1974,14 @@ struct Occurrence {
 	uint32 mob_id;
 	int32 instance;
 	bool died;                  ///< died, or still alive but gone (teleported, out of sight, another map)
+	bool boss;                  ///< it was boss-class (read while it was still there)
 };
 
 struct ShellState {
 	uint32 char_id = 0;
 	// For encounter_ended / target_lost: what the last turn saw.
 	std::vector<std::pair<uint32, int32>> last_encounters; ///< (mob id, instance)
+	std::unordered_set<int32> last_bosses; ///< the boss-class ones among last_encounters and last_target
 	int32 last_target = 0;
 	uint32 last_target_mob = 0;
 	t_tick last_seen = 0;
@@ -2371,6 +2540,8 @@ static void poll_event(Turn &t, const Rule &rule, RuleState &rs)
 				continue;
 			if ((rule.ev_reason == 1 && !o.died) || (rule.ev_reason == 2 && o.died))
 				continue;
+			if (rule.ev_boss >= 0 && o.boss != (rule.ev_boss == 1))
+				continue;
 			char what[64];
 			safesnprintf(what, sizeof(what), "%s (%s)", rule.event == Event::EncounterEnded ? "encounter_ended" : "target_lost",
 				o.died ? "died" : "vanished");
@@ -2441,16 +2612,31 @@ static int32 mob_scan_cb(block_list *bl, va_list ap)
 	return 0;
 }
 
-/// Whether a monster could fight back against a companion standing at (x, y). rAthena teleports a
-/// boss on `rudeattacked` when its target hits it and it can neither hit back from where it
-/// stands nor walk to it within its chase range (mob.cpp, the "rude attacked check"); an immobile
-/// monster (Ankle Snare, Spider Web) cannot walk at all. This asks the same question.
+/// Whether rAthena counts a monster as held where it stands, for its "rude attacked check"
+/// (mob.cpp, mob_ai_sub_hard): it cannot move now, and that is one of the holds the check names
+/// rather than the pause every attack and cast brings (unit_can_move is false through those too:
+/// read alone, a boss in the middle of a fight looked unreachable on most turns). A monster that
+/// never walks (Amon Ra) is not held by that either: rAthena goes on to ask for a path.
+static bool mob_held(mob_data *md)
+{
+	if (status_has_mode(&md->status, MD_CANMOVE) && unit_can_move(md))
+		return false;
+	if (DIFF_TICK(gettick(), md->ud.canmove_tick) <= 0)
+		return false;
+	return (battle_config.mob_ai & 0x2) != 0 || md->sc.getSCE(SC_SPIDERWEB) != nullptr || md->sc.getSCE(SC_BITE) != nullptr
+		|| md->sc.getSCE(SC_VACUUM_EXTREME) != nullptr || md->sc.getSCE(SC_THORNSTRAP) != nullptr
+		|| md->sc.getSCE(SC__MANHOLE) != nullptr || md->walktoxy_fail_count > 0;
+}
+
+/// Whether a monster could fight back against a companion standing at (x, y): it can hit from
+/// where it stands, or it is not held and there is a path within its chase range. The question
+/// rAthena's rude attacked check asks, the same way.
 static bool mob_reaches_cell(mob_data *md, int16 x, int16 y)
 {
 	const int d = std::max(std::abs(md->x - x), std::abs(md->y - y));
 	if (d <= md->status.rhw.range)
 		return true;
-	if (!status_has_mode(&md->status, MD_CANMOVE) || !unit_can_move(md))
+	if (mob_held(md))
 		return false;
 	return d <= md->db->range3 && unit_can_reach_pos(md, x, y, 0);
 }
@@ -2459,9 +2645,32 @@ static bool mob_reaches(mob_data *md, map_session_data *sd)
 {
 	if (battle_check_range(md, sd, md->status.rhw.range))
 		return true;
-	if (!status_has_mode(&md->status, MD_CANMOVE) || !unit_can_move(md))
+	if (mob_held(md))
 		return false;
 	return unit_can_reach_bl(md, sd, md->db->range3, 0, nullptr, nullptr);
+}
+
+/// Whether a monster has an answer to being hit by `sd` from where it cannot fight back: a
+/// `rudeattacked` skill for the state it will be in when rAthena weighs the hit (mobskill_use's
+/// own test). rAthena does nothing else on a rude attack, so without one there is nothing to
+/// avoid. A monster busy with someone else stays in the state it is in: Dark Lord teleports for
+/// it only while idle or walking, never while it fights the tank. One that is after the
+/// companion itself (or after nobody) gives up a target it cannot reach and is idle by then.
+static bool mob_answers_rude(const mob_data *md, const map_session_data *sd)
+{
+	if (md->db == nullptr || md->state.skillstate == MSS_DEAD)
+		return false;
+	const bool drops_target = md->target_id == 0 || md->target_id == sd->id;
+	for (const auto &ms : md->db->skill) {
+		if (ms == nullptr || ms->cond1 != MSC_RUDEATTACKED)
+			continue;
+		if (ms->state == md->state.skillstate || ms->state == MSS_ANY
+				|| (ms->state == MSS_ANYTARGET && md->target_id != 0 && md->state.skillstate != MSS_LOOT))
+			return true;
+		if (drops_target && (ms->state == MSS_IDLE || ms->state == MSS_WALK))
+			return true;
+	}
+	return false;
 }
 
 /// MaxAttackers: how many of the party are on this monster ahead of the companion. The owner
@@ -2499,6 +2708,8 @@ static bool enemy_matches(Turn &t, const Selector &sel, const mob_data *md, int 
 	rank = 0;
 	if (sel.boss_only && status_get_class_(md) != CLASS_BOSS)
 		return false;
+	if (!sel.mobs.empty() && std::find(sel.mobs.begin(), sel.mobs.end(), md->mob_id) == sel.mobs.end())
+		return false;
 	block_list *bl = const_cast<mob_data *>(md);
 	if (sel.race >= 0 && status_get_race(bl) != sel.race)
 		return false;
@@ -2518,7 +2729,9 @@ static bool enemy_matches(Turn &t, const Selector &sel, const mob_data *md, int 
 	case Selector::Pick::LowestHp: rank = hp_pct(md); return true;
 	case Selector::Pick::Boss:     return status_get_class_(md) == CLASS_BOSS;
 	case Selector::Pick::Slaves:   return md->master_id != 0;
-	case Selector::Pick::Casting:  return md->ud.skilltimer != INVALID_TIMER;
+	case Selector::Pick::Casting:
+		return md->ud.skilltimer != INVALID_TIMER && (sel.skills.empty()
+			|| std::find(sel.skills.begin(), sel.skills.end(), md->ud.skill_id) != sel.skills.end());
 	// Hiding, Cloaking, Chase Walk -- and a Hode's burrow, which is Hiding too.
 	case Selector::Pick::Hidden:   return (md->sc.option & (OPTION_HIDE | OPTION_CLOAK | OPTION_CHASEWALK)) != 0;
 	default:                       return true;
@@ -2558,6 +2771,8 @@ static block_list *select_enemy(Turn &t, const Selector &sel, int range)
 					id = ud->target > 0 ? ud->target : (ud->skilltimer != INVALID_TIMER ? ud->skilltarget : 0);
 			}
 			mob_data *md = id != 0 ? map_id2md(id) : nullptr;
+			if (md != nullptr && !sel.mobs.empty() && std::find(sel.mobs.begin(), sel.mobs.end(), md->mob_id) == sel.mobs.end())
+				continue;
 			if (md != nullptr && md->m == sd->m && !status_isdead(*md) && check_distance_bl(sd, md, range)) {
 				if (t.claim != nullptr && claimed_by_other(sd, *t.claim, md->id, t.tick, &t.claim_holder)) {
 					t.claim_passed = md->id;
@@ -2625,11 +2840,17 @@ static block_list *select_ally(Turn &t, const Selector &sel, int range, uint16 s
 		// Ally: dead picks the fallen, nearest first; every other pick, the living.
 		if (pc_isdead(m) != (sel.pick == Selector::Pick::Dead) || !check_distance_bl(sd, m, range))
 			continue;
-		if (sel.role >= 0 && (!population_engine_is_population_pc(m->id) || m->pop.role != sel.role))
+		if (sel.not_owner && m == t.owner)
+			continue;
+		if (sel.roles != 0 && (!population_engine_is_population_pc(m->id)
+				|| (sel.roles & (1u << static_cast<uint8>(m->pop.role))) == 0))
 			continue;
 		if (!sel.jobs.empty() && std::none_of(sel.jobs.begin(), sel.jobs.end(), [&](int32 j) { return job_matches(m, j); }))
 			continue;
 		if (skill != 0 && pop_ally_skill_refused(sd, m, skill))
+			continue;
+		// A cast at a member nobody can see (Hiding, Cloaking, a GM's @hide) is refused every time.
+		if (skill != 0 && m != sd && (m->sc.option & (OPTION_HIDE | OPTION_CLOAK | OPTION_CHASEWALK | OPTION_INVISIBLE)) != 0)
 			continue;
 		if (t.claim != nullptr && claimed_by_other(sd, *t.claim, m->id, t.tick, &t.claim_holder)) {
 			t.claim_passed = m->id;
@@ -2765,8 +2986,230 @@ static uint16 best_against(const map_session_data *sd, const Rule &rule, block_l
 	return best;
 }
 
+// --- Why a cast was not made, for the trace ---------------------------------
+// A plan's author can only act on a refusal that says what it was: step closer (out of range),
+// aim elsewhere (the cell is taken), wait (a cooldown), stock the bag (a catalyst), or drop the
+// rule. Each reason is worked out only once the cast has been refused.
+
+static std::string g_cast_why;
+
+static const char *why(const char *fmt, ...)
+{
+	char buf[160];
+	va_list ap;
+	va_start(ap, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, ap);
+	va_end(ap);
+	g_cast_why = buf;
+	return g_cast_why.c_str();
+}
+
+/// What the skill costs that the companion does not have (skill_get_requirement, which already
+/// leaves out what a shell is excused from); nullptr when it has all of it.
+static const char *why_requirement(map_session_data *sd, uint16 id, uint16 lv)
+{
+	const s_skill_condition req = skill_get_requirement(sd, id, lv);
+	if (req.sp > 0 && static_cast<uint32>(req.sp) > sd->battle_status.sp)
+		return why("not enough SP: needs %d, has %u", req.sp, sd->battle_status.sp);
+	if (req.hp > 0 && static_cast<uint32>(req.hp) >= sd->battle_status.hp)
+		return why("not enough HP: needs more than %d, has %u", req.hp, sd->battle_status.hp);
+	if (req.zeny > 0 && sd->status.zeny < req.zeny)
+		return why("not enough zeny: needs %d", req.zeny);
+	if (req.spiritball > 0 && sd->spiritball < req.spiritball)
+		return why("not enough spirit spheres: needs %d, has %d", req.spiritball, static_cast<int>(sd->spiritball));
+	if (req.weapon != 0 && !pc_check_weapontype(sd, req.weapon))
+		return why("the wrong weapon for it");
+	if (req.ammo != 0) {
+		const int16 idx = sd->equip_index[EQI_AMMO];
+		if (idx < 0 || sd->inventory_data[idx] == nullptr || !(req.ammo & (1 << sd->inventory_data[idx]->subtype)))
+			return why("no ammunition of the kind it needs");
+		if (sd->inventory.u.items_inventory[idx].amount < req.ammo_qty)
+			return why("not enough ammunition: needs %d, has %d", req.ammo_qty,
+				static_cast<int>(sd->inventory.u.items_inventory[idx].amount));
+	}
+	for (int i = 0; i < MAX_SKILL_ITEM_REQUIRE; ++i) {
+		if (req.itemid[i] == 0)
+			continue;
+		const int16 idx = pc_search_inventory(sd, req.itemid[i]);
+		if (idx < 0 || sd->inventory.u.items_inventory[idx].amount < req.amount[i])
+			return why("a catalyst is missing: %d %s", std::max(1, req.amount[i]), itemdb_name(req.itemid[i]));
+	}
+	return nullptr;
+}
+
+/// Why pop_skill_state_ok (the combat file) said no: its checks, in its order.
+static const char *why_state(map_session_data *sd, uint16 id, uint16 lv)
+{
+	const std::shared_ptr<s_skill_db> skill = skill_db.find(id);
+	if (skill == nullptr)
+		return why("no such skill");
+	const int l = cap_value(static_cast<int>(lv), 1, MAX_SKILL_LEVEL);
+	if (skill->require.spiritball[l - 1] > 0 && sd->spiritball < skill->require.spiritball[l - 1])
+		return why("not enough spirit spheres: needs %d, has %d", skill->require.spiritball[l - 1], static_cast<int>(sd->spiritball));
+	if (skill->require.ap[l - 1] > 0 && sd->battle_status.ap < static_cast<uint32>(skill->require.ap[l - 1]))
+		return why("not enough AP: needs %d, has %u", skill->require.ap[l - 1], sd->battle_status.ap);
+	if (!status_check_skilluse(sd, nullptr, id, 0))
+		return why("its own state forbids it (silenced, stunned, hidden, or a status that stops skills)");
+	if (!population_shell_inventory_can_pay_skill(sd, id, lv)) {
+		const char *what = why_requirement(sd, id, lv);
+		return what != nullptr ? what : why("a catalyst is missing");
+	}
+	static const std::map<int32, const char *> states = {
+		{ ST_HIDDEN, "hidden" }, { ST_RIDING, "riding" }, { ST_FALCON, "with a falcon" }, { ST_CART, "with a cart" },
+		{ ST_SHIELD, "holding a shield" }, { ST_RECOVER_WEIGHT_RATE, "under its weight limit" },
+		{ ST_WATER, "standing in water" }, { ST_RIDINGDRAGON, "riding a dragon" }, { ST_WUG, "with a warg" },
+		{ ST_RIDINGWUG, "riding a warg" }, { ST_MADO, "in a Madogear" }, { ST_ELEMENTALSPIRIT, "with an elemental spirit" },
+		{ ST_ELEMENTALSPIRIT2, "with an elemental spirit" }, { ST_PECO, "riding" }, { ST_SUNSTANCE, "in the Sun stance" },
+		{ ST_MOONSTANCE, "in the Lunar stance" }, { ST_STARSTANCE, "in the Star stance" },
+		{ ST_UNIVERSESTANCE, "in the Universe stance" },
+	};
+	const auto it = states.find(skill->require.state);
+	return it != states.end() ? why("it must be %s", it->second) : why("its state does not allow it");
+}
+
+struct CellScan {
+	const block_list *self;
+	const block_list *found;
+};
+
+static int32 cell_scan_cb(block_list *bl, va_list ap)
+{
+	CellScan *scan = va_arg(ap, CellScan *);
+	if (bl->prev != nullptr && !status_isdead(*bl) && scan->found == nullptr)
+		scan->found = bl;
+	return 0;
+}
+
+/// Why a ground skill cannot be placed at (x, y): rAthena's skill_pos_maxcount_check, which it
+/// runs only when the cast ENDS -- by then the cast is made and its catalyst taken, with nothing
+/// placed and nothing said. A trap aimed at a monster's own cell failed that way every time.
+/// nullptr when the cell is free.
+static const char *why_cell(map_session_data *sd, uint16 id, uint16 lv, int16 x, int16 y)
+{
+	if (skill_pos_maxcount_check(sd, x, y, id, lv, BL_PC, false))
+		return nullptr;
+	const std::shared_ptr<s_skill_db> skill = skill_db.find(id);
+	if (skill != nullptr && skill->unit_flag[UF_NOFOOTSET] && (battle_config.skill_nofootset & BL_PC)) {
+		const int r = std::max(0, skill_get_unit_range(id, lv))
+			+ std::max(0, static_cast<int>(skill->unit_layout_type[cap_value(static_cast<int>(lv), 1, MAX_SKILL_LEVEL) - 1]));
+		CellScan scan{ sd, nullptr };
+		map_foreachinallarea(cell_scan_cb, sd->m, x - r, y - r, x + r, y + r, BL_CHAR, &scan);
+		if (scan.found != nullptr)
+			return why("the cell is taken: %s stands %s", status_get_name(*scan.found), r > 0 ? "too near it" : "on it");
+	}
+	return why("the cell is taken (another trap or field is there, or it has as many as it may place)");
+}
+
+/// Why unit_skilluse_id / unit_skilluse_pos returned 0: their own checks, in their order, as far
+/// as they can be asked again without casting.
+static const char *why_unit_refused(map_session_data *sd, block_list *target, uint16 id, uint16 lv, bool ground,
+	int16 x, int16 y)
+{
+	if (sd->ud.state.blockedskill)
+		return why("its skills are blocked");
+	if (target != sd && battle_config.ksprotection && mob_ksprotected(sd, target))
+		return why("%s is another player's monster", status_get_name(*target));
+	if (const char *cost = why_requirement(sd, id, lv); cost != nullptr)
+		return cost;
+	const int range = skill_get_range2(sd, id, lv, true);
+	if (ground && (x != sd->x || y != sd->y)) {
+		// The cell a ground skill is aimed at, which Aim can put away from the target.
+		block_list cell;
+		cell.type = BL_NUL;
+		cell.m = sd->m;
+		cell.x = x;
+		cell.y = y;
+		const int d = std::max(std::abs(sd->x - x), std::abs(sd->y - y));
+		if (unit_is_walking(sd))
+			return why("it was still walking (%d cells off, range %d)", d, range);
+		if (!battle_check_range(sd, &cell, range))
+			return d > range ? why("out of range: %d > %d", d, range) : why("no clear line to the cell");
+	} else if (!ground && target != sd) {
+		const int d = distance_bl(sd, target);
+		if (!battle_check_range(sd, target, range))
+			return d > range ? why("out of range: %d > %d", d, range) : why("no clear line to the target");
+	}
+	return why("rAthena refused it (the skill's own check when a cast begins)");
+}
+
+/// Where a walking unit will be `ms` from now: along the path it is on, at its speed (a
+/// diagonal step costs 1.4). A unit standing still, or at the end of its path, is where it is.
+/// Returns how many cells ahead that is.
+static int cell_after(block_list *bl, int32 ms, int16 &x, int16 &y)
+{
+	x = bl->x;
+	y = bl->y;
+	const unit_data *ud = unit_bl2ud(bl);
+	if (ud == nullptr || ud->walktimer == INVALID_TIMER || ms <= 0)
+		return 0;
+	const int speed = std::max(1, static_cast<int>(status_get_speed(bl)));
+	int steps = 0;
+	for (int i = ud->walkpath.path_pos; i < ud->walkpath.path_len; ++i) {
+		const int dir = ud->walkpath.path[i];
+		const int cost = (dir & 1) ? speed * 14 / 10 : speed;
+		if (ms < cost)
+			break;
+		ms -= cost;
+		x += dirx[dir];
+		y += diry[dir];
+		++steps;
+	}
+	return steps;
+}
+
+/// What the trace adds to an aimed cast: the cell, and how it was come by.
+static std::string g_cast_note;
+
+/// Aim: the cell a ground cast lands on. From the companion (or the target), aim_cells along
+/// the line between the two; with Lead the target counts as where it will be when the cast
+/// lands. A cell nobody can stand on is pulled back toward where the count began. A reason
+/// when there is no such cell.
+static const char *aim_cell(map_session_data *sd, const Rule &rule, block_list *target, uint16 id, uint16 lv,
+	int16 &x, int16 &y)
+{
+	int16 tx = target->x, ty = target->y;
+	const int led = rule.aim_lead ? cell_after(target, skill_castfix(sd, id, lv), tx, ty) : 0;
+	x = tx;
+	y = ty;
+	char note[96] = "";
+	if (rule.aim_cells > 0) {
+		const int dx = tx - sd->x, dy = ty - sd->y;
+		const int dist = std::max(std::abs(dx), std::abs(dy));
+		if (dist == 0)
+			return why("nowhere to aim: %s stands on its cell", status_get_name(*target));
+		// k cells from the companion along the line; counted from the target, dist - cells.
+		// Too close for the cell asked for: there is no such cell between the two.
+		if (dist <= rule.aim_cells)
+			return why("too close to aim %d cells %s: %s is %d away", static_cast<int>(rule.aim_cells),
+				rule.aim_from_target ? "in front of it" : "toward it", status_get_name(*target), dist);
+		int k = rule.aim_from_target ? dist - rule.aim_cells : rule.aim_cells;
+		const int step = rule.aim_from_target ? 1 : -1; // back toward where the count began
+		bool found = false;
+		for (; k >= 1 && k <= dist; k += step) {
+			x = static_cast<int16>(sd->x + (dx * k + (dx >= 0 ? dist / 2 : -(dist / 2))) / dist);
+			y = static_cast<int16>(sd->y + (dy * k + (dy >= 0 ? dist / 2 : -(dist / 2))) / dist);
+			if (map_getcell(sd->m, x, y, CELL_CHKPASS)) {
+				found = true;
+				break;
+			}
+		}
+		if (!found)
+			return why("no free cell to aim at %d cells %s", static_cast<int>(rule.aim_cells),
+				rule.aim_from_target ? "in front of it" : "toward it");
+		safesnprintf(note, sizeof(note), ", %d cells from itself, %d from %s", k, dist - k, led > 0 ? "where it will be" : "it");
+	}
+	char buf[160];
+	if (led > 0)
+		safesnprintf(buf, sizeof(buf), " at (%d,%d)%s, led %d cells", x, y, note, led);
+	else
+		safesnprintf(buf, sizeof(buf), " at (%d,%d)%s%s", x, y, note, rule.aim_lead ? ", not led (it stands still)" : "");
+	g_cast_note = buf;
+	return nullptr;
+}
+
 static const char *cast(Turn &t, const Rule &rule, block_list *target, uint16 id)
 {
+	g_cast_note.clear();
 	map_session_data *sd = t.sd;
 	const uint16 known = pc_checkskill(sd, id);
 	const uint16 lv = rule.cast_lv > 0 ? std::min<uint16>(rule.cast_lv, known) : known;
@@ -2783,26 +3226,56 @@ static const char *cast(Turn &t, const Rule &rule, block_list *target, uint16 id
 		return nullptr; // busy casting: not a failure worth reporting
 	if (!combo_step && (DIFF_TICK(t.tick, sd->ud.canact_tick) < 0 || DIFF_TICK(t.tick, sd->pop.skill_cd) < 0))
 		return nullptr;
-	if (skill_isNotOk(id, *sd) || !pop_skill_weapon_ok(sd, id) || !pop_skill_state_ok(sd, id, lv))
-		return "cannot use it now";
+	if (skill_isNotOk(id, *sd)) {
+		const auto cd = sd->scd.find(id);
+		const TimerData *td = cd != sd->scd.end() ? get_timer(cd->second) : nullptr;
+		if (td != nullptr)
+			return why("on cooldown, %.1f s left", std::max<int64>(0, DIFF_TICK(td->tick, t.tick)) / 1000.0);
+		return why("not allowed here or now (the map, a mount, or its global skill delay)");
+	}
+	if (!pop_skill_weapon_ok(sd, id))
+		return why("the wrong weapon for it");
+	if (!pop_skill_state_ok(sd, id, lv))
+		return why_state(sd, id, lv);
 	if (skill_get_sp(id, lv) > static_cast<int32>(sd->battle_status.sp))
-		return "not enough SP";
-	if (target != sd && !check_distance_bl(sd, target, skill_get_range2(sd, id, lv, true)))
-		return "out of range";
-	if (!status_check_skilluse(sd, target, id, 0))
-		return "refused";
+		return why("not enough SP: needs %d, has %u", skill_get_sp(id, lv), sd->battle_status.sp);
+	// Where a ground skill lands: the target's feet, or the cell Aim works out.
+	int16 ax = target->x, ay = target->y;
+	const bool aimed = rule.aim && (inf & INF_GROUND_SKILL) != 0 && target != sd;
+	if (aimed) {
+		if (const char *no_cell = aim_cell(sd, rule, target, id, lv, ax, ay); no_cell != nullptr)
+			return no_cell;
+	}
+	if (const int range = skill_get_range2(sd, id, lv, true); aimed) {
+		if (const int d = std::max(std::abs(sd->x - ax), std::abs(sd->y - ay)); d > range)
+			return why("out of range: the cell is %d > %d", d, range);
+	} else if (target != sd && !check_distance_bl(sd, target, range)) {
+		return why("out of range: %d > %d", distance_bl(sd, target), range);
+	}
+	if (!status_check_skilluse(sd, target, id, 0)) {
+		if (target->type != BL_PC && status_isdead(*target))
+			return why("%s is dead", status_get_name(*target));
+		const status_change *tsc = status_get_sc(target);
+		if (tsc != nullptr && (tsc->option & (OPTION_HIDE | OPTION_CLOAK | OPTION_CHASEWALK | OPTION_INVISIBLE)) != 0)
+			return why("%s is hidden", status_get_name(*target));
+		return why("%s cannot be cast at now (its state: rAthena's status_check_skilluse)", status_get_name(*target));
+	}
+	if (inf & INF_GROUND_SKILL) {
+		if (const char *taken = why_cell(sd, id, lv, ax, ay); taken != nullptr)
+			return taken;
+	}
 	// Sanctuary heals the monsters standing in it unless they are undead or demons (the combat file).
-	if ((inf & INF_GROUND_SKILL) && pop_ground_heal_helps_enemy(sd, id, target->x, target->y))
+	if ((inf & INF_GROUND_SKILL) && pop_ground_heal_helps_enemy(sd, id, ax, ay))
 		return "it would heal a monster";
 	const std::vector<std::pair<t_itemid, int32>> cost = rule.consume && kPayCatalysts
 		? item_cost(id, lv) : std::vector<std::pair<t_itemid, int32>>();
 	if (!can_pay(sd, cost))
-		return "no catalyst";
+		return why("a catalyst is missing");
 	const bool ok = (inf & INF_GROUND_SKILL)
-		? unit_skilluse_pos(sd, target->x, target->y, id, lv) != 0
+		? unit_skilluse_pos(sd, ax, ay, id, lv) != 0
 		: unit_skilluse_id(sd, target->id, id, lv) != 0;
 	if (!ok)
-		return "refused";
+		return why_unit_refused(sd, target, id, lv, (inf & INF_GROUND_SKILL) != 0, ax, ay);
 	// Paid when the cast starts, not when it lands: an interrupted cast still costs the stone.
 	pay(sd, cost);
 	// rAthena paces the next action itself: the cast timer (skilltimer) and the after-cast delay
@@ -2920,7 +3393,48 @@ static const char *keep_away(Turn &t, const Rule &rule, const RuleState &rs, blo
 }
 
 /// MoveTo: far_enough (the rule passes) when already there; "" when it set off; else why not.
-static const char *move_to(Turn &t, const Rule &rule, const RuleState &rs, block_list *about, bool &there)
+/// MoveTo's Depth: of a field's cells, keep those at least `move_depth` cells inside its edge
+/// (every cell that near is the field's too), so what lands beside the field does not reach.
+/// A field too small for that keeps its deepest cells: the middle of a 3x3 is as far in as it goes.
+static void keep_deep_cells(map_session_data *sd, const Rule &rule, std::vector<std::pair<int16, int16>> &cells)
+{
+	// The field can run on past Within: look that much further for what counts as inside.
+	std::vector<std::pair<int16, int16>> all;
+	field_units(sd, rule.move_skill, rule.move_owner,
+		static_cast<int16>(std::min<int>(rule.move_within + 2 * rule.move_depth, 2 * AREA_SIZE)), &all);
+	const std::set<std::pair<int16, int16>> field(all.begin(), all.end());
+	auto depth = [&](const std::pair<int16, int16> &c) {
+		int d = 0;
+		for (; d < rule.move_depth; ++d) {
+			const int r = d + 1;
+			for (int dx = -r; dx <= r; ++dx)
+				for (int dy = -r; dy <= r; ++dy)
+					if (std::max(std::abs(dx), std::abs(dy)) == r
+							&& field.count({ static_cast<int16>(c.first + dx), static_cast<int16>(c.second + dy) }) == 0)
+						return d;
+		}
+		return d;
+	};
+	int best = 0;
+	std::vector<std::pair<int, std::pair<int16, int16>>> ranked;
+	for (const auto &c : cells) {
+		ranked.emplace_back(depth(c), c);
+		best = std::max(best, ranked.back().first);
+	}
+	cells.clear();
+	for (const auto &r : ranked)
+		if (r.first >= best)
+			cells.push_back(r.second);
+}
+
+/// Whether a shot from (x, y) reaches `to` unhindered: rAthena's own test for a cast or an arrow
+/// (battle_check_range's path_search_long over walls).
+static bool clear_line(const map_session_data *sd, int16 x, int16 y, const block_list *to)
+{
+	return path_search_long(nullptr, sd->m, x, y, to->x, to->y, CELL_CHKWALL);
+}
+
+static const char *move_to(Turn &t, const Rule &rule, const RuleState &rs, block_list *about, block_list *target, bool &there)
 {
 	map_session_data *sd = t.sd;
 	there = false;
@@ -2966,6 +3480,49 @@ static const char *move_to(Turn &t, const Rule &rule, const RuleState &rs, block
 		}
 		return "no reachable cell nearby";
 	}
+	if (rule.move == Move::Sight) {
+		// To the nearest cell from which the rule's target is in the clear: a caster behind a
+		// tree or a corner had every cast refused and stood there. Nearest first, so it steps
+		// round the obstacle rather than across the field, and never further from the target
+		// than Range, so the step does not take it out of its spell's reach.
+		block_list *to = target != nullptr ? target : about;
+		if (to == nullptr || to == sd)
+			return nullptr;
+		// In the clear and within Range: there. In the clear but further off (a first step that
+		// only rounded the corner) is not yet where a cast can be made from.
+		if (clear_line(sd, sd->x, sd->y, to) && distance_bl(sd, to) <= rule.move_range) {
+			there = true;
+			return "";
+		}
+		if (unit_is_walking(sd))
+			return "";
+		const map_data *mapd = map_getmapdata(sd->m);
+		if (mapd == nullptr)
+			return "no map";
+		std::vector<std::tuple<int, int, int16, int16>> spots; // (steps from here, cells from the target, x, y)
+		const int w = rule.move_within;
+		for (int dx = -w; dx <= w; ++dx) {
+			for (int dy = -w; dy <= w; ++dy) {
+				const int x = sd->x + dx, y = sd->y + dy;
+				if ((dx == 0 && dy == 0) || x < 0 || y < 0 || x >= mapd->xs || y >= mapd->ys
+						|| !map_getcell(sd->m, x, y, CELL_CHKPASS))
+					continue;
+				const int far = std::max(std::abs(to->x - x), std::abs(to->y - y));
+				if (far > rule.move_range || far < 1 || !clear_line(sd, static_cast<int16>(x), static_cast<int16>(y), to))
+					continue;
+				spots.emplace_back(std::max(std::abs(dx), std::abs(dy)), far, static_cast<int16>(x), static_cast<int16>(y));
+			}
+		}
+		if (spots.empty())
+			return "no cell nearby has a clear line to it";
+		std::sort(spots.begin(), spots.end());
+		if (!population_shell_can_emit_movement(sd, MovementOwner::Combat, "strategy:move_to"))
+			return nullptr;
+		for (size_t i = 0; i < spots.size() && i < 24; ++i)
+			if (unit_walktoxy(sd, std::get<2>(spots[i]), std::get<3>(spots[i]), 4))
+				return "";
+		return "no path to a cell with a clear line";
+	}
 	std::vector<std::pair<int16, int16>> cells;
 	if (rule.move == Move::EventUnit) {
 		// To whoever the event is about (the companion that signalled, the member who spoke).
@@ -2990,6 +3547,8 @@ static const char *move_to(Turn &t, const Rule &rule, const RuleState &rs, block
 		field_units(sd, rule.move_skill, rule.move_owner, rule.move_within, &cells);
 		if (cells.empty())
 			return nullptr; // no such field right now: nothing to do, not a failure to report
+		if (rule.move_depth > 0)
+			keep_deep_cells(sd, rule, cells);
 	}
 	if (std::any_of(cells.begin(), cells.end(), [&](const auto &c) { return c.first == sd->x && c.second == sd->y; })) {
 		there = true;
@@ -3137,16 +3696,27 @@ static bool requires_ok(const map_session_data *sd, const Requirements &req)
 		return false;
 	if (req.roles != 0 && (req.roles & (1u << static_cast<uint8>(sd->pop.role))) == 0)
 		return false;
+	// A skill its owner unticked in the companion's skill selection counts as one it lacks:
+	// every companion has its whole tree, so the selection is what tells two builds apart.
 	for (const uint16 id : req.skills)
-		if (pc_checkskill(sd, id) == 0)
+		if (pc_checkskill(sd, id) == 0 || !population_shell_skill_selected(sd, id))
 			return false;
 	for (const uint16 id : req.lacks)
-		if (pc_checkskill(sd, id) > 0)
+		if (pc_checkskill(sd, id) > 0 && population_shell_skill_selected(sd, id))
 			return false;
 	for (const t_itemid id : req.items)
 		if (pc_search_inventory(sd, id) < 0)
 			return false;
 	return true;
+}
+
+/// UseItem: the first item of the rule's list that is in the bag; 0 with none of them.
+static t_itemid carried_item(const map_session_data *sd, const Rule &rule)
+{
+	for (const t_itemid id : rule.use_items)
+		if (pc_search_inventory(const_cast<map_session_data *>(sd), id) >= 0)
+			return id;
+	return 0;
 }
 
 /// Whether a rule may cast this skill at all: the companion has it, and its owner has not
@@ -3167,6 +3737,9 @@ static bool requires_ok(const map_session_data *sd, const Rule &rule)
 	} else if (rule.cast_skill != 0 && !may_cast(sd, rule.cast_skill)) {
 		return false;
 	}
+	// UseItem: only what it carries. Without Companion inventory that is what the engine hands it.
+	if (rule.use_item != 0 && carried_item(sd, rule) == 0)
+		return false;
 	return requires_ok(sd, rule.req);
 }
 
@@ -3236,6 +3809,53 @@ static void rise(Turn &t)
 		skill_sit(sd, false);
 		clif_standing(*sd);
 	}
+}
+
+/// UseItem: one of `nameid` from the bag, the player's own path (pc_useitem: the item's delay, its
+/// job and level limits, its script, one taken). False when rAthena refuses it.
+static bool use_item(Turn &t, t_itemid nameid, block_list *target)
+{
+	map_session_data *sd = t.sd;
+	const int16 idx = pc_search_inventory(sd, nameid);
+	// Not into a cast under way: an item's own cast would lose the item it is paid with.
+	if (idx < 0 || pc_isdead(sd) || sd->ud.skilltimer != INVALID_TIMER)
+		return false;
+	const int32 had = sd->inventory.u.items_inventory[idx].amount;
+	if (!pc_useitem(sd, idx))
+		return false;
+	// An item that casts a skill (a converter, a Fly Wing, a scroll) only arms it: the client
+	// answers with the cast, and rAthena takes the item when that cast goes through. A shell has
+	// no client, so the cast is made here: on itself, or for a skill that needs one, on the
+	// rule's target (a helping skill never on a monster, a harming one never on the party).
+	if (sd->skillitem != 0) {
+		const uint16 id = sd->skillitem, lv = sd->skillitemlv;
+		const int32 inf = skill_get_inf(id);
+		block_list *at = sd;
+		if (!(inf & INF_SELF_SKILL) && target != nullptr && (target->type == BL_MOB) != ((inf & INF_SUPPORT_SKILL) != 0))
+			at = target;
+		const bool harms = (inf & (INF_ATTACK_SKILL | INF_GROUND_SKILL)) != 0 && !(inf & INF_SELF_SKILL);
+		const bool ok = !(harms && at == sd && (inf & INF_ATTACK_SKILL))
+			&& ((inf & INF_GROUND_SKILL) ? unit_skilluse_pos(sd, at->x, at->y, id, lv) : unit_skilluse_id(sd, at->id, id, lv)) != 0;
+		if (!ok) {
+			sd->skillitem = sd->skillitemlv = 0; // disarmed: nothing was cast, nothing is taken
+			return false;
+		}
+	}
+	// The use animation for everyone around, which clif_useitemack sends only to a session.
+	if (!session_isActive(sd->fd)) {
+		PACKET_ZC_USE_ITEM_ACK p = {};
+		p.packetType = useItemAckType;
+		p.index = idx + 2;
+#if PACKETVER >= 3
+		const t_itemid view = itemdb_viewid(nameid);
+		p.itemId = static_cast<decltype(p.itemId)>(view > 0 ? view : nameid);
+		p.AID = sd->id;
+#endif
+		p.amount = had - 1;
+		p.result = true;
+		clif_send(&p, sizeof(p), sd, AREA_WOS);
+	}
+	return true;
 }
 
 static Outcome run_rule(Turn &t, const Rule &rule, const Plan &plan, PlanState &ps, bool do_skills, bool attack_only)
@@ -3344,7 +3964,9 @@ static Outcome run_rule(Turn &t, const Rule &rule, const Plan &plan, PlanState &
 	}
 	if (rule.reach >= 0) {
 		mob_data *md = about != nullptr && about->type == BL_MOB ? reinterpret_cast<mob_data *>(about) : nullptr;
-		if (md == nullptr || mob_reaches(md, sd) != (rule.reach == 1))
+		// Reach: false is "hitting it from here would be answered": out of its reach, and it has a
+		// rudeattacked skill for the state it is in. Reach: true is only the first half.
+		if (md == nullptr || (rule.reach == 1 ? !mob_reaches(md, sd) : (mob_reaches(md, sd) || !mob_answers_rude(md, sd))))
 			return Outcome::Skipped;
 	}
 
@@ -3403,9 +4025,24 @@ static Outcome run_rule(Turn &t, const Rule &rule, const Plan &plan, PlanState &
 			trace(sd, *t.st, t.tick, "rule %s: %s not cast (%s)", name, skill_get_desc(skill), why);
 			return Outcome::Skipped;
 		}
-		trace(sd, *t.st, t.tick, "rule %s: %s on %s (SP %u/%u)", name, skill_get_desc(skill),
+		trace(sd, *t.st, t.tick, "rule %s: %s on %s%s (SP %u/%u)", name, skill_get_desc(skill),
 			target != nullptr ? status_get_name(*target) : target_id != 0 ? "a target now gone" : "self",
-			sd->battle_status.sp, sd->battle_status.max_sp);
+			g_cast_note.c_str(), sd->battle_status.sp, sd->battle_status.max_sp);
+		acted = true;
+	} else if (rule.use_item != 0) {
+		const int32 enemy_id = t.enemy != nullptr ? t.enemy->id : 0;
+		const int32 target_id = target != nullptr ? target->id : 0;
+		const t_itemid nameid = carried_item(sd, rule);
+		const bool used = nameid != 0 && use_item(t, nameid, target);
+		// An item's script can do anything a skill can (a Fly Wing moves the companion).
+		target = target_id != 0 ? map_id2bl(target_id) : nullptr;
+		t.enemy = enemy_id != 0 ? same_map_bl(sd, enemy_id) : nullptr;
+		if (!used) {
+			trace(sd, *t.st, t.tick, "rule %s: %s not used (its delay, its job or level limit, the companion's state, or no target for what it casts)",
+				name, nameid != 0 ? itemdb_name(nameid) : "the item");
+			return Outcome::Skipped;
+		}
+		trace(sd, *t.st, t.tick, "rule %s: used %s", name, itemdb_name(nameid));
 		acted = true;
 	} else if (rule.retreat != Retreat::None) {
 		const char *why = retreat(t, rule, rs);
@@ -3430,8 +4067,8 @@ static Outcome run_rule(Turn &t, const Rule &rule, const Plan &plan, PlanState &
 		acted = true;
 	} else if (rule.move != Move::None) {
 		bool there = false;
-		const char *why = move_to(t, rule, rs, about, there);
-		if (there && rule.move != Move::Reachable)
+		const char *why = move_to(t, rule, rs, about, target, there);
+		if (there && rule.move != Move::Reachable && rule.move != Move::Sight)
 			hold_position(t); // standing where the rule wants it: following must not walk it off
 		if (there || why == nullptr)
 			return Outcome::Skipped;
@@ -3440,7 +4077,8 @@ static Outcome run_rule(Turn &t, const Rule &rule, const Plan &plan, PlanState &
 			return Outcome::Skipped;
 		}
 		trace(sd, *t.st, t.tick, "rule %s: moving to %s", name, rule.move == Move::EventCell ? "the cast's cell"
-			: rule.move == Move::EventUnit ? "them" : rule.move == Move::Reachable ? "where it can reach" : skill_get_desc(rule.move_skill));
+			: rule.move == Move::EventUnit ? "them" : rule.move == Move::Reachable ? "where it can reach"
+			: rule.move == Move::Sight ? "a clear line" : skill_get_desc(rule.move_skill));
 		acted = true;
 	} else if (rule.kite) {
 		bool safe = false;
@@ -3487,7 +4125,7 @@ static Outcome run_rule(Turn &t, const Rule &rule, const Plan &plan, PlanState &
 		acted = true;
 	}
 
-	if (acted && rule.cast_skill == 0)
+	if (acted && rule.cast_skill == 0 && rule.use_item == 0)
 		hold_position(t); // Retreat, KeepDistance, MoveTo, Leave, Hold, Sit
 	if (rule.set_target && target != nullptr && target->type == BL_MOB && !t.target_set) {
 		t.target_set = true;
@@ -3701,7 +4339,7 @@ static void track_fight(Turn &t, const std::vector<PlanRef> &plans)
 			now.emplace_back(kind, p.instance);
 	}
 	auto record = [&](Event kind, uint32 mob, int32 instance, bool died) {
-		st.occurrences.push_back({ ++g_occurrence_seq, t.tick, kind, mob, instance, died });
+		st.occurrences.push_back({ ++g_occurrence_seq, t.tick, kind, mob, instance, died, st.last_bosses.count(instance) != 0 });
 		while (!st.occurrences.empty()
 				&& (st.occurrences.size() > 16 || DIFF_TICK(t.tick, st.occurrences.front().tick) > 10000))
 			st.occurrences.pop_front();
@@ -3726,6 +4364,15 @@ static void track_fight(Turn &t, const std::vector<PlanRef> &plans)
 	st.last_target = sd->pop.target_id;
 	const mob_data *md = st.last_target != 0 ? map_id2md(st.last_target) : nullptr;
 	st.last_target_mob = md != nullptr ? md->mob_id : 0;
+	// Boss or not is asked once the monster is gone, and a dead one cannot be asked: note it now.
+	st.last_bosses.clear();
+	if (md != nullptr && md->status.class_ == CLASS_BOSS)
+		st.last_bosses.insert(md->id);
+	for (const auto &e : st.last_encounters) {
+		const mob_data *em = map_id2md(e.second);
+		if (em != nullptr && em->status.class_ == CLASS_BOSS)
+			st.last_bosses.insert(em->id);
+	}
 }
 
 } // namespace pop_strategy

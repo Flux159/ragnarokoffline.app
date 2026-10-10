@@ -47,6 +47,8 @@ each one does. New to it? Start with the [guide](guide.md). For party play see
 | `Count` | monsters nearby | `Leave` | off hostile ground |
 | `Present` / `Absent` | a selector finds someone / nobody | `Hold` | stand still |
 | `Reach` | the monster could fight back here | `Sit` | sit down, regenerating faster |
+| | | `UseItem` | an item from its own bag |
+| | | `Aim` (with a ground `Cast`) | the cell it lands on |
 | `Enemy` | the monster's element, race, size, boss | **Also, with or without an action:** | |
 | `Cooldown` | not fired for so long | `Say` (+ `Channel`) | speak |
 | `OnePerParty` | no other companion just did it | `Switch` | change strategy |
@@ -235,7 +237,7 @@ A rule applies when all of the following hold:
 
 | Key | The rule applies only... |
 |---|---|
-| `Requires: { Skills, Lacks, Items, BaseLevel, Role }` | to a companion that has (and lacks) these. `Role` is the party role set in chat (`tank`, `support`, `attacker`, `none`), or a list of them for any of those. A `Cast` rule also requires the skill itself, so a rule for a skill the companion doesn't have does not exist for it. Neither does one for a skill its owner unticked in the companion's skill selection: that choice stands over any plan. (Shells get their job's whole skill tree at spawn, so "has the skill" mostly means "the class has it".) |
+| `Requires: { Skills, Lacks, Items, BaseLevel, Role }` | to a companion that has (and lacks) these. `Role` is the party role set in chat (`tank`, `support`, `attacker`, `none`), or a list of them for any of those. A `Cast` rule also requires the skill itself, so a rule for a skill the companion doesn't have does not exist for it. Neither does one for a skill its owner unticked in the companion's skill selection: that choice stands over any plan. `Skills` and `Lacks` read that selection too: an unticked skill counts as one the companion lacks. Every companion has its whole tree, so the selection is how two builds of one class are told apart: `Requires: { Lacks: [MO_CHAINCOMBO] }` is the Champion whose owner unticked Chain Combo. A `UseItem` rule likewise exists only for a companion that carries the item. (Shells get their job's whole skill tree at spawn, so "has the skill" mostly means "the class has it".) |
 | `On:` | within `Within` ms (default 3000) of an event, and once per event. See [Events](#events). |
 | `When:` | while a condition holds: `enemy_hp_pct_lt30`, `self_spheres_ge1`, `not_enemy_aeterna`, `[a, b]` for AND, `{ OR: [a, b] }`. See [`When:` conditions](#when-conditions). |
 | `Charges: { Status, Below \| AtLeast, Value }` | while a status's counter is in range. Cicada Skin Shed keeps its blocks left in its second value (the default), so `{ Status: SC_UTSUSEMI, Below: 2 }` is "1 or 0 left". No status counts as 0. |
@@ -243,7 +245,7 @@ A rule applies when all of the following hold:
 | `Count: { Enemy, Who, Around, Range, Below \| AtLeast }` | while that many monsters stand within `Range` cells (default 5) of the companion, or with `Around: target` of the rule's target. `Enemy`: `any` (default), `attacking` (with `Who`, `NotSelf`), `boss`, `slaves`, `casting`. "Three slaves around the boss": `{ Enemy: slaves, Around: target, AtLeast: 3 }` with `Target: { Enemy: boss }`. |
 | `Present: { Ally \| Enemy: ..., ... }` | while a selector finds **someone**: `Present: { Ally: dead, Range: 9 }` is "someone lies dead within Resurrection's reach". |
 | `Absent: { Ally \| Enemy: ..., ... }` | while a [selector](#choosing-who-selectors) finds **nobody**: `Absent: { Ally: nearest, Job: Priest }` is "no living Priest within sight", the moment to fall back. |
-| `Reach: false` / `true` | while the monster the rule is about could not (or could) fight back against the companion where it stands. rAthena teleports a boss hit by someone it can neither hit back from where it stands nor walk to within its chase range; a monster held in place (Ankle Snare, Spider Web) cannot walk at all. `Reach` asks the same question. |
+| `Reach: false` / `true` | `Reach: true`: while the monster the rule is about could fight back against the companion where it stands: it can hit from there, or walk to it within its chase range. `Reach: false`: while it could not, **and has an answer to that**. rAthena answers a hit from out of reach with the monster's `rudeattacked` skill and nothing else (for most bosses, Teleport), and only in the state the skill is listed for. So `Reach: false` does not hold a caster back from a monster that has no such skill, nor from one that is busy with someone else in a state its skill is not for: Dark Lord teleports for it while idle or walking, never while it fights the tank. A monster counts as unable to walk as rAthena counts it: held by Spider Web and the like, not paused by its own attack or cast, and not merely because it never walks (Amon Ra is asked for a path like any other). |
 | `Enemy: { Element, Race, Size, Boss }` | while the monster the rule is about (its selector's, or the current target) is one of those: `Element: [Holy, Ghost]`, `Race: Demon`, `Size: Large`, `Boss: true`. Names as rAthena writes them without `ELE_` / `RC_`. For a boss that changes element. |
 | `Cooldown:` | when it has not fired in that many ms. "Every 30 s" is `Cooldown: 30000`. |
 | `InStrategy: { Below \| AtLeast }` | while the plan's active strategy has been active for that long (ms): `InStrategy: { AtLeast: 60000 }` is "this phase has dragged on for a minute". |
@@ -256,12 +258,15 @@ And then does one thing:
 | Action | |
 |---|---|
 | `Cast:` skill or `[list]`, `Level:`, `Target:` | `enemy` (default), `self`, `owner`, `event` (who the event was about), `source` (the monster that caused it), `ally_lowest_hp`, `dead_ally`, or a [selector](#choosing-who-selectors). Ground skills land at the target's feet. Refused where the normal rotation would refuse it: SP, range, weapon, state. A list casts the one the target is weakest to by rAthena's element table, among those the companion knows and has the SP for; ties go to list order, and one the target would resist entirely (or be healed by) is never cast. `Cast: [MG_COLDBOLT, MG_FIREBOLT, MG_LIGHTNINGBOLT]` is a bolt by element. |
-| `Consume: true` (with `Cast`) | Marks a cast that should pay its catalyst (a Flame Stone, a Blue Gemstone) as a player does. **Not paid yet:** companions have no inventory of their own, so for now the cast goes ahead as if the catalyst were paid, as the engine does for every companion. Once inventories exist, the same rule checks the inventory before casting and pays when the cast starts; tables written today need no change. |
+| `Aim: { Cells, From, Lead }` (with a ground `Cast`) | Where a ground skill lands, when not at the target's feet. `Cells: n` is the cell `n` cells from the companion on the straight line to the target; `From: target` counts from the target, toward the companion. `Lead: true` takes the target to be where its walk will have brought it when the cast lands (its path, its speed, the companion's cast time for the skill), so a spell with a cast time meets a monster that is walking; one standing still is where it is. Together: `Aim: { Cells: 2, From: target, Lead: true }` is two cells in front of where it will be. The cell lies strictly between the two: with the target no further off than `Cells`, the rule does not cast (`too close to aim 3 cells toward it`). A cell nobody can stand on is pulled back toward where the count began; with none, the trace says `no free cell to aim at`. Range, and "the cell is taken", are asked of the aimed cell. The trace shows it: `Ice Wall on Raydric at (63,71), 3 cells from itself, 4 from it`. What it is for: an Ice Wall between a Wizard and what is coming for it, not on top of it; a Fire Wall in a monster's path; a trap or a Quagmire ahead of a monster, since a trap cannot go on the cell it stands on; Storm Gust or Meteor Storm where a walking pack will be once the cast is done. |
+| `Consume: true` (with `Cast`) | Marks a cast that pays its catalyst (a Flame Stone, a Blue Gemstone) as a player does. With **Companion inventory** on, every cast of a companion pays from its own bag through rAthena, marked or not, and a cast it cannot pay for is passed over. With it off, the cast goes ahead as if the catalyst were paid, as the engine does for every shell. |
+| `UseItem:` item or `[list]`, `Target:` | Uses one of an item the companion carries, as a player does: the item's own delay, its job and level limits, its script, and one taken from the bag. A list uses the first one in the bag (`UseItem: [White_Potion, Yellow_Potion]`). A companion that carries none of them does not have the rule, so the same table serves a stocked companion and an empty one. An item that casts a skill (an elemental converter, a Fly Wing, a scroll) casts it on the companion, or on the rule's `Target` when the skill needs one. Without a `Cooldown` the rule waits 1 s between uses; say when with a condition, or it uses the item again as soon as it may (`When: not_self_aspdpotion1` for an Awakening Potion, `When: self_poison` for a Green Potion, `When: not_self_enchantarms` with `Enemy: { Element: Water }` for a wind converter). With **Companion inventory** off the bag holds only what the engine hands a companion, so these rules mostly have nothing to use. A Fly Wing moves the companion, and following brings it back to its owner as soon as the owner is out of sight. |
 | `Retreat: away` / `owner`, `Distance:` | Steps that many cells away from the monster (or from an event's `source`), or walks back to the owner. |
 | `MoveTo: event` | Walks next to whoever the event is about: the companion that sent a `signal`, the member who spoke in party chat. Already beside them: the rule passes. |
 | `MoveTo: reachable` | Walks to the nearest cell (within 8) from which the monster could fight back, so hitting it from there does not make it teleport. Already on one: the rule passes. |
 | `MoveTo: event_cell` | Walks to where an `On: casts` spell will land, while it is still being cast: onto a party Land Protector before it is down. |
-| `MoveTo: { Field, Owner, Within }` | Walks onto the nearest cell of that ground field within `Within` cells (default 8). Already standing on one: the rule passes. |
+| `MoveTo: { Field, Owner, Within, Depth }` | Walks onto the nearest cell of that ground field within `Within` cells (default 8). Already standing on one: the rule passes. `Depth: n` asks for a cell at least `n` cells inside the field's edge, so that what lands beside the field does not reach: a Meteor Storm that falls outside a Land Protector still hits whoever stands on its rim. `MoveTo: { Field: SA_LANDPROTECTOR, Owner: party, Depth: 3 }` is the middle 5x5 of a level 5 Land Protector. A field too small for that gives its deepest cells. |
+| `MoveTo: { Sight: target, Within, Range }` | Walks to the nearest cell (within `Within`, default 8) from which the rule's target is in the clear and at most `Range` cells away (default 9): a caster or archer behind a tree, a wall or a corner steps round it and does not stand there with every cast refused (`no clear line to the target`). In the clear and within `Range`: the rule passes, and the cast below it runs. The target is the rule's own: the companion's current target by default, or an `Ally` selector's pick (a healer whose Heal is blocked). An `Enemy` selector does not pick a monster behind a wall in the first place, so leave the target at its default for monsters. Set `Range` to the reach of the spell the companion will cast. |
 | `Leave: { Field, Owner, Within }` | Standing on a ground unit placed by `Owner` (default `enemy`: anyone outside the party, monsters included): walks to the nearest free cell within `Within` (default 8). `Field` narrows it to one skill; without it, any unit counts. Not standing on one: the rule passes. `Leave: true` is the same with every default. |
 | `Kite: { Away, Within, Gap }` | Runs from the monster that is on the companion (else its target), staying within `Within` cells (default 7) of an anchor, the rule's target (else the owner), but no closer than `Gap` (default 3), so it never leads the monster onto the anchor. Each step takes the reachable cell furthest from the monster in that ring; a monster that keeps chasing is led round the anchor. At least `Away` cells (default 4) from the monster and inside the ring: the rule passes. For a damage dealer that has the boss's attention and needs the healer's heals. |
 | `KeepDistance: { Min, Max }` | A band: closer than `Min`, step out; further than `Max`, come back in (to stay within a spell's range). Within it, the rule passes. Measured from the rule's selector pick when it has one: `Target: { Ally: attacked }` keeps a healer within reach of whoever is hit, `Target: { Enemy: boss }` keeps it out of the boss's. |
@@ -277,7 +282,7 @@ A companion that cannot move (petrified, frozen, stunned: whatever rAthena's
 `unit_can_move` refuses) skips every movement rule; it does not walk away while
 turned to stone.
 
-`Cast`, `Retreat`, `KeepDistance`, `MoveTo`, `Leave`, `Hold` and `Sit` end the companion's turn; only one
+`Cast`, `UseItem`, `Retreat`, `KeepDistance`, `MoveTo`, `Leave`, `Hold` and `Sit` end the companion's turn; only one
 of them is allowed per rule. `Say`, `Switch` and `Signal` do not end it and can
 come with any of them, after it has succeeded. When no rule acts, the companion takes its
 ordinary turn: heals, buffs and the skill rotation (minus anything `Ban` or
@@ -433,9 +438,9 @@ whose selector finds nobody does not apply.
 |---|---|
 | `{ Enemy: attacking, Who, NotSelf, Prefer, Job }` | a monster attacking `Who` (`party` by default; `owner`, `self`, `tank`, `support`, `attacker`, `any`). `NotSelf: true` leaves out the ones attacking the companion itself; `Prefer` puts those on one member first; `Job` keeps to those attacking a member of that job (`Job: Priest`: whatever is on the healer, Duty or not). |
 | `{ Enemy: target_of, Who, Job }` | the monster `Who` is fighting (`owner` by default): assisting. |
-| `{ Enemy: nearest \| lowest_hp \| boss \| slaves \| casting \| hidden }` | the nearest, the most hurt, a boss, a summoned slave, one that is casting, one that is hidden (Hiding, Cloaking, a Hode's burrow). `Boss: true` on any Enemy selector or `Count` keeps to bosses; `Race` and `Element` to that race or element (the element it has now). |
+| `{ Enemy: nearest \| lowest_hp \| boss \| slaves \| casting \| hidden, Skill }` | the nearest, the most hurt, a boss, a summoned slave, one that is casting, one that is hidden (Hiding, Cloaking, a Hode's burrow). `Skill` (one or a list) narrows `casting` to those casts: `{ Enemy: casting, Skill: [WZ_JUPITEL, MG_THUNDERSTORM] }` interrupts what matters and leaves a Lex Aeterna alone, for as long as the cast lasts. `Count: { Enemy: casting, Skill }` takes it too. `Boss: true` on any Enemy selector or `Count` keeps to bosses; `Race` and `Element` to that race or element (the element it has now); `Mob` to that monster, named as an entry names it (AegisName or id, or a list). `{ Enemy: boss, Mob: DARK_LORD }` is Dark Lord and not its Dark Illusions, which are boss-class too and of the same race, element and size; `Count: { Enemy: any, Mob: DARK_LORD, Range: 3, Below: 1 }` is "Dark Lord is not within 3 cells". |
 | `{ Ally: dead }` | the nearest fallen party member. |
-| `{ Ally: lowest_hp \| nearest \| missing \| having \| attacked, Role, Job, Status, NotSelf, Expiring }` | a party member (the companion included unless `NotSelf`): the most hurt below 100 %, the nearest, the nearest lacking `Status`, the nearest with it (Status Recovery on the petrified), or the one the monsters in sight are on (a boss counts three times); only those with that `Role` or `Job` (a [family](#jobs-and-families), or a list). `Expiring: ms` widens `missing` to members whose status has less than that left, so a buff is renewed before it lapses; a status without a timer never expires. |
+| `{ Ally: lowest_hp \| nearest \| missing \| having \| attacked, Role, Job, Status, NotSelf, NotOwner, Expiring }` | a party member (the companion included unless `NotSelf`, its owner unless `NotOwner`): the most hurt below 100 %, the nearest, the nearest lacking `Status`, the nearest with it (Status Recovery on the petrified), or the one the monsters in sight are on (a boss counts three times); only those with that `Role` (one, or a list for any of them: `Role: [attacker, support]` is everyone but the tank) or `Job` (a [family](#jobs-and-families), or a list). The owner has no role, so a `Role` leaves it out. A `Cast` passes over a member nobody can see (Hiding, Cloaking), on whom it would be refused every time. `Expiring: ms` widens `missing` to members whose status has less than that left, so a buff is renewed before it lapses; a status without a timer never expires. |
 
 With an `Enemy` selector, `When`'s `enemy_*` tokens ask about the chosen monster,
 so `not_enemy_provoke` means "that one is not provoked yet". With an `Ally`
@@ -560,15 +565,15 @@ forth cannot hang it).
 | `On:` | Fires once when... | `event` is |
 |---|---|---|
 | `casts` `{ By, Skill, At }` | someone starts casting (that skill). `By`: `monster` (default), `party` (the companion included), `self`, `enemy`, `anyone`. `At`: who it is aimed at, `party` (default for monsters and enemies), `self`, `owner`, `anyone` (default otherwise). Ground spells count as aimed at whoever stands within 3 cells. A cast at the caster itself (a summon, Power Up, a heal) passes the default `At`. `monster_casts` is `casts` with `By: monster`. | who it is cast at; `source` is the caster; `MoveTo: event_cell` is where it lands |
-| `encounter_ended` `{ Mob, Reason }` | an encounter monster (or the boss a `Mob: Boss` plan was for) that was near is not any more. `Reason: died` (dead or removed), `vanished` (alive but teleported, out of sight or on another map), or `any`. Its own plan has stopped applying by then, so put the rule under `Mob: All`. | the monster |
-| `target_lost` `{ Reason }` | the companion's target is gone the same ways. Switching to another target does not count. | the monster |
+| `encounter_ended` `{ Mob, Reason, Boss }` | an encounter monster (or the boss a `Mob: Boss` plan was for) that was near is not any more. `Reason: died` (dead or removed), `vanished` (alive but teleported, out of sight or on another map), or `any`. `Boss: true` only for a boss-class monster, `false` only for an ordinary one: a monster plan with `Encounter: true` makes every kill an encounter's end, and "the boss teleported, regroup" is not meant for those. Its own plan has stopped applying by then, so put the rule under `Mob: All`. | the monster |
+| `target_lost` `{ Reason, Boss }` | the companion's target is gone the same ways. Switching to another target does not count. | the monster |
 | `signal` `{ Name, From }` | another companion of the party sends `Signal: Name`. `From: anyone` also hears its own. | who sent it |
 | `party_chat` `{ Match, From }` | a party member's line contains `Match` (any case). `From: anyone` (default), `owner` or `leader`. | who said it |
 | `party_member_died` | a party member on the map dies. | who died |
 | `hp_below` / `owner_hp_below` `{ Value }` | the companion's, or its owner's, HP drops below `Value` %. | the companion / the owner |
 | `weight_above` `{ Value }` | its weight goes over `Value` %. | the companion |
 | `equip_broken` `{ Slot }` | something it wears breaks. `Slot`: `weapon`, `shield`, `armor`, `garment`, `shoes`, `head_top/mid/low`, `accessory_left/right`, `any`. | the companion |
-| `item_below` `{ Item, Value }` | it carries fewer than `Value` of an item. Companions have no inventory of their own yet, so this is useful only later. | the companion |
+| `item_below` `{ Item, Value }` | it carries fewer than `Value` of an item (with Companion inventory on, its own bag). | the companion |
 | `status_gained` `{ Status }` | it gets a status. | the companion |
 
 Only skills with a cast time can be seen coming: an instant skill has landed
@@ -804,8 +809,30 @@ In party chat, the owner types the companion's name and `trace`:
     Seraphina trace
 
 The companion then reports to its owner each rule it acts on, each event it
-notices, each strategy change, and why a matching rule's cast failed (out of
-range, not enough SP, no catalyst). The same line again does not repeat for 3 s.
+notices, each strategy change, and why a matching rule's cast was not made. The
+same line again does not repeat for 3 s.
+
+A refusal says what it was, with the numbers where there are any, because what
+to do about it depends on which:
+
+| The trace says | What to do |
+|---|---|
+| `out of range: 8 > 3` | bring the companion closer (`KeepDistance: { Max }`), or aim at something nearer |
+| `no clear line to the target` | a wall is between them: `MoveTo: { Sight: target }` above the cast |
+| `the cell is taken: Raydric stands on it` | a trap or field cannot go under a monster or beside a member: `Aim` it at a cell in front of the monster |
+| `the cell is taken (another trap or field is there, ...)` | it is already placed, or the skill has as many as it may place |
+| `not enough SP: needs 40, has 12` | keep SP back (`When: self_sp_ge40`) |
+| `a catalyst is missing: 1 Blue_Gemstone` | stock the bag (Companion inventory) |
+| `on cooldown, 12.4 s left` | give the rule that `Cooldown`, or a second skill to fall back on |
+| `the wrong weapon for it`, `it must be riding`, `not enough spirit spheres: needs 5, has 2` | a `Requires` or a `When` that asks first |
+| `its own state forbids it (silenced, ...)` | nothing to cast with: cure it, or hold |
+| `Hela is hidden`, `Poring is dead` | the target cannot be cast at |
+| `rAthena refused it (the skill's own check when a cast begins)` | a rule of that one skill; its entry in rAthena's skill code says which |
+
+A trap or a field is checked for its cell before the cast: rAthena itself only
+checks when the cast ends, when the catalyst is already spent and nothing is
+placed. A companion still in its after-cast delay, or casting, is not reported:
+that is every cast's ordinary wait.
 Typing it again turns it off.
 
 The server checks the table when it starts. An unknown monster, job, skill, item
@@ -815,11 +842,9 @@ The rest still loads.
 
 ## What it cannot do yet
 
-- **Anything with items.** Shells and companions have no inventory of their own
-  yet; it will be added later. Until then they use no items, switch no gear, and
-  pay no catalysts (`Consume` is accepted and waits for that).
-  `Requires: { Items }`, `item_below` and `weight_above` load and work, but only
-  see what the engine hands a companion.
+- **Switch gear.** A plan cannot name gear for a fight (a shield against a
+  boss, armour of an element). Using items is built (`UseItem`), and catalysts
+  are paid from the bag with Companion inventory on.
 [Not done yet](../../COMPANION_STRATEGY_ROADMAP.md#not-done-yet) in the roadmap
 describes each of these: why it waits, how it would work, what it would add.
 
