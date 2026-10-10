@@ -696,7 +696,7 @@ async function assetsStart() {
 	const server = findTool('robrowser-remoteclient');
 	if (!server) throw new Error('the asset server binary is missing from this build');
 	const client = getClientPaths();
-	const sources = ['data_grf', 'rdata_grf', 'official_grf', 'bgm_dir'].map(key => {
+	const sources = ['data_grf', 'rdata_grf', 'official_grf', 'bgm_dir', 'fallback_grf'].map(key => {
 		const filename = client[key] || '';
 		try {
 			const stat = fs.statSync(filename);
@@ -784,6 +784,8 @@ async function assetsStop() { if (sharing) await sharing.stop(); return assetSer
 const DEFAULT_CLIENT = {
 	mode: 'host', join_host: '', lan: false,
 	data_grf: '', rdata_grf: '', official_grf: '', bgm_dir: '',
+	// Another client's GRF, read last: it only fills in what these lack.
+	fallback_grf: '',
 	// vm_ram_mib is deliberately absent: its default depends on the machine,
 	// so it is computed in getClientPaths() when the file does not name one.
 	// Anything written there -- by the slider in Settings -- wins permanently.
@@ -940,6 +942,7 @@ async function linkClientOwned(paths) {
 		['rdata_grf', paths.rdata_grf, 'rdata.grf', true],
 		['official_grf', paths.official_grf, 'official_data.grf', true],
 		['bgm_dir', paths.bgm_dir, 'the BGM folder', true],
+		['fallback_grf', paths.fallback_grf, 'the fallback GRF', true],
 	];
 	for (const [, p, label, optional] of ASSETS) {
 		if (!p) continue;
@@ -970,11 +973,11 @@ async function linkClientOwned(paths) {
 			throw new Error(`cannot read ${p}: ${e.message}\n\n${hint}`);
 		}
 	}
-	// Positional: an empty string keeps rdata's slot so official and bgm still
-	// land in theirs.
-	const args = ['link-assets', paths.data_grf, paths.rdata_grf || ''];
-	if (paths.official_grf || paths.bgm_dir) args.push(paths.official_grf || '');
-	if (paths.bgm_dir) args.push(paths.bgm_dir);
+	// Positional: an empty string keeps a slot so the ones after it still land
+	// in theirs. Trailing empty slots are dropped.
+	const args = ['link-assets', paths.data_grf, paths.rdata_grf || '',
+		paths.official_grf || '', paths.bgm_dir || '', paths.fallback_grf || ''];
+	while (args.length > 3 && !args[args.length - 1]) args.pop();
 	// Which client these GRFs are (kRO, iRO...), before link-assets: mods can
 	// be for one client, and their per-client folders are part of the overlay.
 	try { require('./client-detect').detectAndSave(stateDir(), paths, appLog); } catch (e) { appLog(`client: detection failed: ${e.message}`); }
@@ -2586,10 +2589,16 @@ const handlers = {
 		// Paths only: a client folder name is not a secret, and knowing whether
 		// the GRFs were found is most of triage.
 		const c = getClientPaths();
+		const detected = require('./client-detect').describe(stateDir());
 		add('client', Object.entries(c)
 			.map(([k, v]) => `${k.padEnd(14)}${v === '' ? '(unset)' : v}`)
 			// Which client the GRFs are: a mod written for kRO's data breaks iRO.
-			.concat(`${'detected'.padEnd(14)}${require('./client-detect').describe(stateDir()).text}`).join('\n'));
+			.concat(`${'detected'.padEnd(14)}${detected.text}`)
+			// A second client's files mixed in explain a lot of odd reports.
+			.concat(c.fallback_grf ? [`${'fallback is'.padEnd(14)}${detected.fallback || 'not detected yet'}`] : []).join('\n'));
+		// The archives in the order the asset server reads them: the first that
+		// has a file wins.
+		add('asset archives (DATA.INI)', readIfExists(path.join(stateDir(), 'asset-config/DATA.INI')).trim() || '(none yet)');
 		add('settings', JSON.stringify(getSettings(), null, 2));
 		add('Cloudflare sharing', JSON.stringify({
 			state: sharing?.state || 'stopped',
@@ -3063,6 +3072,9 @@ const handlers = {
 		if (next.rdata_grf && !fs.existsSync(next.rdata_grf)) {
 			throw new Error('rdata.grf is not a file');
 		}
+		if (next.fallback_grf && !fs.existsSync(next.fallback_grf)) {
+			throw new Error('the fallback GRF is not a file');
+		}
 		if (Object.hasOwn(paths, 'lan')) {
 			next.hosting_scope = paths.lan ? 'lan' : 'local';
 			require('./settings-store').write(path.join(stateDir(), 'settings.json'),
@@ -3070,6 +3082,26 @@ const handlers = {
 		}
 		fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
 		return linkClient(next);
+	},
+	// Settings' advanced Fallback GRF: another client's archive, read after the
+	// player's own. Off unless chosen there; '' clears it. The asset server is
+	// brought back on the new list when it was running.
+	set_fallback_grf: async ({ path: file }) => {
+		const prev = getClientPaths();
+		if (prev.mode === 'join') throw new Error('a joining player plays with the host’s files');
+		if (!clientComplete(prev)) throw new Error('choose your client first');
+		const chosen = typeof file === 'string' ? file.trim() : '';
+		if (chosen && !fs.statSync(chosen, { throwIfNoEntry: false })?.isFile()) throw new Error('the fallback GRF is not a file');
+		if (chosen && path.resolve(chosen) === path.resolve(prev.data_grf)) throw new Error('that is your own data.grf');
+		const next = { ...prev, fallback_grf: chosen };
+		fs.writeFileSync(clientConfigPath(), JSON.stringify(next, null, 2));
+		const hadAssets = assetServer.running;
+		try {
+			await linkClient(next);
+		} finally {
+			if (hadAssets) await assetsStart();
+		}
+		return require('./client-detect').describe(stateDir());
 	},
 
 	// Host mode, LAN toggle, and the string a host gives out. Kept separate
@@ -3768,6 +3800,7 @@ const HEADLESS_PAGE_HANDLERS = new Set([
 	'install_registry_mod', 'install_skin', 'list_mods', 'list_registry_mods', 'mod_data_reset', 'mod_host_list', 'mod_host_set',
 	'open_data_folder', 'open_mods_folder', 'packetvers', 'registry_image', 'registry_release', 'remove_mod',
 	'report_issue', 'save_settings', 'secure_services', 'set_app_preference', 'mod_favorites_set', 'set_client_paths',
+	'set_fallback_grf',
 	'set_mod_enabled', 'set_mod_settings', 'set_mode', 'set_vm_ram_mib', 'sharing_status', 'sharing_token_help',
 	'sign_in_status', 'stack_down', 'stack_repair', 'stack_status', 'stack_up', 'start_stack', 'tools_list',
 	'accounts', 'save_diagnostics', 'sharing_connect', 'sharing_start', 'sharing_forget', 'sharing_stop',

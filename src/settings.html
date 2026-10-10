@@ -512,6 +512,7 @@
     <div class="row"><span class="name">Game assets</span><span class="state" id="s-client">—</span></div>
     <div class="row"><span class="name">Client folders</span><span class="state" id="s-client-folders">—</span></div>
     <div class="row"><span class="name">Client</span><span class="state" id="s-client-kind">—</span></div>
+    <div class="row" id="r-client-fallback" hidden><span class="name">Fallback client</span><span class="state" id="s-client-fallback">—</span></div>
     <div class="row actions" style="padding-top:10px">
       <button id="change-client" class="ghost">Change asset locations…</button>
     </div>
@@ -521,6 +522,19 @@
        data.grf.</p>
     <p class="note"><b>Client</b> is which game's files these are (kRO, iRO and so on), read from
        data.grf. A mod made for another client's files is not applied, and says so in the Mods tab.</p>
+    <details id="fallback-options"><summary>Advanced: fallback GRF</summary>
+      <!-- One line: .note.bad keeps line breaks (pre-wrap). -->
+      <p class="note bad">Only if you know what you are doing. Files then come from two different clients, which can cause problems that are hard to track down, and makes getting help harder. If you report a problem, say that a fallback GRF is set (Copy diagnostics includes it).</p>
+      <p class="note">Another client's data.grf, read after your own: it is used only for files your client
+         does not have, such as sprites of items or monsters your client is too old or too different for.
+         Item names, descriptions and other tables still come from your own client.</p>
+      <div class="row"><span class="name">Fallback GRF</span><span class="state" id="s-fallback">not set</span></div>
+      <div class="row actions" style="justify-content: flex-start">
+        <button id="fallback-pick" class="ghost">Choose…</button>
+        <button id="fallback-clear" class="ghost" hidden>Remove</button>
+      </div>
+      <p class="note" id="fallback-note"></p>
+    </details>
   </div>
   </div>
 
@@ -1590,6 +1604,19 @@ async function refresh() {
     .filter(Boolean);
   paint($('s-client'), !!client.data_grf,
         client.data_grf ? parts.join(' + ') : 'not configured');
+  const kind = client.data_grf ? await invoke('client_detected').catch(() => null) : null;
+  // The fallback is another client's, so it gets its own line saying which one
+  // and how old. Names only: a full path can be long (it is in the tooltip).
+  const fallbackSet = !!client.fallback_grf && client.mode !== 'join';
+  $('r-client-fallback').hidden = !fallbackSet;
+  paint($('s-client-fallback'), !!(kind && kind.fallback), (kind && kind.fallback) || 'not detected yet');
+  $('s-client-fallback').title = client.fallback_grf || '';
+  $('s-fallback').textContent = fallbackSet ? named(client.fallback_grf) : 'not set';
+  $('s-fallback').title = client.fallback_grf || '';
+  $('fallback-clear').hidden = !client.fallback_grf;
+  $('fallback-pick').disabled = !client.data_grf || client.mode === 'join';
+  // Open when one is set, so it is never hidden from someone using it.
+  if (client.fallback_grf) $('fallback-options').open = true;
   // BGM is chosen; System and AI are taken from beside data.grf. All three are
   // optional, so a missing one is named rather than painted as a failure.
   const folders = client.data_grf
@@ -1599,7 +1626,6 @@ async function refresh() {
   paint($('s-client-folders'), !!client.data_grf,
         client.data_grf ? found.map(([name, dir]) => (dir ? name : `no ${name}`)).join(' · ') : '—');
   $('s-client-folders').title = found.filter(([, dir]) => dir).map(([, dir]) => dir).join('\n');
-  const kind = client.data_grf ? await invoke('client_detected').catch(() => null) : null;
   paint($('s-client-kind'), !!(kind && kind.client), kind ? kind.text : '—');
 
   const assets = await invoke('assets_ready');
@@ -1629,6 +1655,28 @@ $('stop').onclick = async () => {
 $('play').onclick = () => invoke('open_game').catch(e => log('error: ' + e));
 
 $('change-client').onclick = () => invoke('open_setup').catch(e => log('error: ' + e));
+
+// The fallback GRF: relinks and brings the asset server back, which takes a
+// moment; an open game picks the files up when it is opened again.
+async function setFallback(file) {
+  const pick = $('fallback-pick'), clear = $('fallback-clear');
+  pick.disabled = clear.disabled = true;
+  setNote('fallback-note', file ? 'Adding the fallback GRF…' : 'Removing the fallback GRF…');
+  try {
+    await invoke('set_fallback_grf', { path: file });
+    setNote('fallback-note', (file ? 'Fallback GRF set.' : 'Fallback GRF removed.') + ' Reopen the game window to use it.', 'good');
+  } catch (e) {
+    setNote('fallback-note', String(e), 'bad');
+  }
+  clear.disabled = false;
+  refresh();
+}
+$('fallback-pick').onclick = async () => {
+  const file = await openDialog({ multiple: false, directory: false,
+                                  filters: [{ name: 'GRF archive', extensions: ['grf'] }] });
+  if (typeof file === 'string') await setFallback(file);
+};
+$('fallback-clear').onclick = () => setFallback('');
 
 $('repair').onclick = async () => {
   if (!confirm('Restart the server from scratch?\n\nThis stops the virtual machine, clears the game servers and starts them again. Your characters are not affected.')) return;

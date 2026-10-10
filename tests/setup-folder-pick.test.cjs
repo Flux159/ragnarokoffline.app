@@ -34,6 +34,13 @@ test('a folder with no game files changes nothing', () => {
 	assert.deepStrictEqual(paths, before);
 });
 
+// The fallback GRF is another client's, so a new client folder keeps it.
+test('a folder leaves the fallback GRF alone', () => {
+	const paths = { data_grf: '/kro/data.grf', rdata_grf: '', official_grf: '', bgm_dir: '', fallback_grf: '/iro/data.grf' };
+	takeFolder(paths, { data_grf: '/bro/data.grf', rdata_grf: '', official_grf: '', bgm_dir: '' });
+	assert.equal(paths.fallback_grf, '/iro/data.grf');
+});
+
 test('the folder button goes through takeFolder', () => {
 	assert.match(html, /const n = takeFolder\(paths, found\);/);
 });

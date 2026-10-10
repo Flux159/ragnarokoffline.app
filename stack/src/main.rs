@@ -59,7 +59,7 @@ const USAGE: &str = "usage: ragnarok-stack host-check|capture-crashes|hosting-ch
                      \x20      sql [--write] [--file <path>] [<statement>]\n\
                      \x20      accounts (private JSON request on stdin)\n\
                      \x20      cp (JSON request on stdin: characters|character|reset-position|delete-character)\n\
-                     \x20      link-assets <data.grf> [rdata.grf] [official_data.grf] [bgm-dir]";
+                     \x20      link-assets <data.grf> [rdata.grf] [official_data.grf] [bgm-dir] [fallback.grf]";
 
 /// The runtime tree, which is the directory containing bin/ and scripts/.
 ///
