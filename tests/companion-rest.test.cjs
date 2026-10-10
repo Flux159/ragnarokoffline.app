@@ -70,7 +70,7 @@ test('it never sits where a player could not', () => {
 
 test('the follow leaves a resting companion down, and stands it before it moves', () => {
 	const follow = body('static bool pop_companion_follow_owner(');
-	assert.match(follow, /pc_issit\(sd\) && !\(\(sd->pop\.resting \|\| population_strategy_keeps_seated\(sd\)\) && !unit_is_walking\(owner\)\)/,
+	assert.match(follow, /pc_issit\(sd\) && !\(\(sd->pop\.resting \|\| population_strategy_keeps_seated\(sd\)\)\s*&& \(!unit_is_walking\(owner\)( \|\| population_companion_roams\(sd\))?\)\)/,
 		'the follow stood every companion up on every tick, which would undo the rest (and a Sit rule) at once');
 	assert.match(follow, /warp_near_owner = \[&\]\(\) -> bool \{\s*pop_shell_stand\(sd\);/,
 		'a sitting shell cannot be placed and walk on; stand it before a warp');
@@ -112,8 +112,8 @@ test('the Battle tab opens on the saved thresholds, not its defaults', () => {
 	// The tab is rebuilt on every redraw, and it set its boxes to 75/35/30/95 each time, so a
 	// change seemed forgotten the next time the window opened (and after any roster push).
 	const list = body('void population_engine_companion_list_raw(');
-	assert.match(list, /heal_at, emergency_at, rest_below, rest_until FROM `cp_companion_persistence`/);
-	assert.match(list, /"@CP\|%s\|%s\|%d\|%d\|%d\|%d\|%s\|%d\|%d\|%d\|%d\|%d\|%d\|%d"/,
+	assert.match(list, /heal_at, emergency_at, rest_below, rest_until(, roam)? FROM `cp_companion_persistence`/);
+	assert.match(list, /"@CP\|%s\|%s\|%d\|%d\|%d\|%d\|%s\|%d\|%d\|%d\|%d\|%d\|%d\|%d(\|%d\|%d)?"/,
 		'appended after rebirth, so every earlier field keeps its position');
 	assert.match(list, /rest_below = sd->pop\.companion_rest_below;/, 'a summoned companion\'s live values win');
 	for (const setter of ['int population_engine_companion_set_rest_thresholds(', 'int population_engine_companion_set_heal_thresholds('])

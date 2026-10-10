@@ -157,6 +157,8 @@ listed above.
 | `third-party/population-engine/files/db/population_gear_sets.yml` | Configurable equipment sets |
 | `third-party/population-engine/files/db/population_chat.yml` | Ambient chat categories and messages |
 | `third-party/population-engine/files/src/map/population_engine/strategy/` | Companion strategies: `db/population_strategy.yml` (per-monster, per-job and per-build rules, strategies as a state machine, events, `<name> trace`). Self-contained; the engine calls it from thirteen marked places (see below). Reference: [docs/mods/companion-strategies/](mods/companion-strategies/README.md) |
+| `third-party/population-engine/files/src/map/population_engine/runtime/population_companion_roam.{hpp,cpp}` | Roaming (a companion walks its owner's map on its own) and the "I'm down" notice; see below |
+| `third-party/population-engine/patches/0034-companion-roam-command.patch` | `@companion roam [<name>] on\|off`, which the Companions window sends |
 | `third-party/population-engine/files/db/population_strategy.yml` | Companion strategies table; ships empty, mods add to it through `db/import/` |
 
 The Population Engine is vendored as its own files plus patches against pinned
@@ -187,6 +189,33 @@ reaches it from these lines, each marked `RAGNAROKMAC (companion strategies)`:
 
 Re-vendoring upstream means re-applying exactly these. Every entry point returns
 at once when no rules are loaded or the shell is not a recruited companion.
+
+### Roaming: where the engine calls in
+
+`runtime/population_companion_roam.{hpp,cpp}` holds the feature: the roam flag
+(`sd->pop.companion_roam`, column `roam`, v14), the roaming companion's target and
+walk, `@companion roam`, and the death notice with the window's `dead` field. The
+`.cpp` is included at the end of `population_engine.cpp`, like
+`population_shell_control.cpp`, so it uses the engine's own helpers, and it reads
+and writes its column itself rather than through the engine's save and recall
+statements. `population_companion_roams()` is false while
+`population_engine_companion_roam` is off (Settings → Population → Companion
+roaming, off by default), so every hook, marked `RAGNAROKMAC (roam)`, returns at
+once for a companion that does not roam:
+
+| File | Where | Why |
+|---|---|---|
+| `population_engine.cpp` | `pop_companion_follow_owner`: the sitting check, the leash, and a return before the in-sight warp | the whole map is its own; a map change still brings it along |
+| `population_engine.cpp` | `pop_shell_rest`: the owner walking | a roamer's rest is not cut short by its owner moving elsewhere |
+| `population_engine.cpp` | companion loop: life watch, `population_companion_roam_target(...)` around `pop_companion_combat_target`, the stop-walking and the formation step | its own fight near itself, its walk kept, no formation |
+| `population_engine.cpp` | `population_engine_on_shell_death`, companion branch | "I'm down!" in party chat and the window refreshed |
+| `population_engine.cpp` | party-chat `recall` | recalled companions follow again |
+| `population_engine.cpp` | `population_engine_recall_companions`, after the query | the flag restored from the rows (a nested query would clobber the recall's result set) |
+| `population_engine.cpp` | `population_engine_companion_list_raw` and the recruit `INSERT` | the `roam` and `dead` fields; a re-recruited row starts following |
+| `population_engine_combat.cpp` | `population_shell_combat_process_tick`, the no-target return for companions | a roamer walks on: forward roam, then the random step, the field shells' own |
+
+The unity build means `make` does not see a change to the included `.cpp`:
+touch `population_engine.cpp` after editing it, or the server keeps the old code.
 
 ### Companion strategies: lessons from the playtests
 

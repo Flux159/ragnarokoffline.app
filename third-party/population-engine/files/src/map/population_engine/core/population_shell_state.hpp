@@ -288,6 +288,13 @@ struct s_population {
 	bool companion_formation_active = false; ///< True while walking to the shell's assigned idle formation cell.
 	int16_t companion_formation_x = 0; ///< Current formation walk destination.
 	int16_t companion_formation_y = 0; ///< Current formation walk destination.
+	/// RAGNAROKMAC (roam): the companion walks its owner's map on its own, as an ambient shell does,
+	/// instead of following. It still changes maps with its owner. Set from the Companions window
+	/// (@companion roam) and persisted with the row (v14).
+	bool companion_roam = false;
+	/// RAGNAROKMAC (roam): the companion was dead at the last companion tick, so the first tick
+	/// that finds it alive again tells its owner's Companions window. rAthena has no revive hook.
+	bool companion_was_dead = false;
 
 	// --- RAGNAROKMAC (shell looting, population_shell_loot.cpp) ---
 	bool ambient_quota = false; ///< Only ordinary autosummon shells may reserve a selling return.

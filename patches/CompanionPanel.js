@@ -351,7 +351,8 @@ function parseRosterLine(text) {
 				m.liveLevel !== _roster[i].liveLevel || m.hom !== _roster[i].hom ||
 				m.duty !== _roster[i].duty ||
 				m.healAt !== _roster[i].healAt || m.emergencyAt !== _roster[i].emergencyAt ||
-				m.restBelow !== _roster[i].restBelow || m.restUntil !== _roster[i].restUntil);
+				m.restBelow !== _roster[i].restBelow || m.restUntil !== _roster[i].restUntil ||
+				m.canRoam !== _roster[i].canRoam || m.roam !== _roster[i].roam || m.dead !== _roster[i].dead);
 		_roster = fresh;
 		_pending = [];
 		const age = _rosterRequestedAt ? Math.round((Date.now() - _rosterRequestedAt) / 1000) : 0;
@@ -409,7 +410,13 @@ function parseRosterLine(text) {
 		healAt: _field(parts, 11),
 		emergencyAt: _field(parts, 12),
 		restBelow: _field(parts, 13),
-		restUntil: _field(parts, 14)
+		restUntil: _field(parts, 14),
+		// Roaming (walks the map on its own) and down (a summoned companion that is dead),
+		// appended after the thresholds. The server sends -1 for roaming while Settings ->
+		// Population -> Companion roaming is off, and an older server nothing: no control then.
+		canRoam: parts[15] === '0' || parts[15] === '1',
+		roam: parts[15] === '1',
+		dead: parts[16] === '1'
 	});
 	// The server has answered for this companion; its duty is the one to show.
 	if (parts.length > 9) {
@@ -498,8 +505,10 @@ function _drawParty() {
 
 		const nm = document.createElement('div');
 		nm.className = 'nm';
-		nm.textContent = (m.favorite ? '★ ' : '') + m.name;
-		nm.title = m.name;
+		nm.textContent = (m.dead ? '✝ ' : '') + (m.favorite ? '★ ' : '') + m.name;
+		nm.title = m.dead
+			? `${m.name} is down. Revive it with Resurrection or a Yggdrasil Leaf.`
+			: m.name;
 
 		const cls = document.createElement('div');
 		cls.className = 'cls';
@@ -581,10 +590,28 @@ function _drawParty() {
 			m.hom ? `Put ${m.name}'s homunculus away` : `Bring ${m.name}'s homunculus back`
 		);
 
+		// Roam: this companion walks the map on its own instead of following. Like the pet
+		// switch, the label is the state the server holds and the click asks for the other.
+		const roam = !m.canRoam ? null : _button(
+			m.roam ? 'Roaming' : 'Following',
+			m.roam ? 'b on' : 'b',
+			() => {
+				talk(`@companion roam ${m.name} ${m.roam ? 'off' : 'on'}`, false);
+			},
+			m.roam ? `${m.name} walks the map on its own. Click to have it follow you`
+				: `${m.name} follows you. Click to let it roam the map on its own`
+		);
+
 		// The row's call shape is pinned by tests/companion-panel-row and -skill-picker, and this
 		// control is conditional, so build the row as usual and slot the button in beside Duty
 		// and Skills rather than rebuilding the child list on every added control.
 		const row = _row(id, lv, badge, duty, skills, summon, fav, trash);
+		if (m.dead) {
+			row.classList.add('dead');
+		}
+		if (roam) {
+			row.insertBefore(roam, summon);
+		}
 		if (pet) {
 			row.insertBefore(pet, summon);
 		}
@@ -694,6 +721,22 @@ function _drawBattle() {
 		grid.append(_button(label, 'b wide', () => talk(cmd, true), tip));
 	});
 	page.append(grid);
+
+	// Movement: follow you, or walk the map on their own as field players do. Per companion
+	// on the Party tab; these set every one of them. Only while the server allows roaming
+	// (Settings -> Population -> Companion roaming), which the roster says.
+	if (_roster.some(m => m.canRoam)) {
+		const hm = document.createElement('h4');
+		hm.textContent = 'Movement (whole party)';
+		page.append(hm);
+		const moves = document.createElement('div');
+		moves.className = 'grid';
+		moves.append(
+			_button('Follow', 'b wide', () => talk('@companion roam off', false), 'Stay with you'),
+			_button('Roam', 'b wide', () => talk('@companion roam on', false), 'Walk the map on their own')
+		);
+		page.append(moves);
+	}
 
 	const h2 = document.createElement('h4');
 	h2.textContent = 'Orders';

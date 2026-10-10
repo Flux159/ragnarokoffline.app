@@ -115,13 +115,13 @@ test('applicability is asked of the class tree, so a benched companion can be an
 });
 
 test('the roster carries the switch as a tri-state', () => {
-	assert.match(engine, /SELECT name, job_id, active, favorite, base_level, hom_enabled(, duty, job_level(, heal_at, emergency_at, rest_below, rest_until)?)? FROM `cp_companion_persistence`/,
+	assert.match(engine, /SELECT name, job_id, active, favorite, base_level, hom_enabled(, duty, job_level(, heal_at, emergency_at, rest_below, rest_until(, roam)?)?)? FROM `cp_companion_persistence`/,
 		'the raw list must read the columns it reports (tolerates later APPENDED fields)');
 	assert.match(engine, /int hom = -1;/,
 		'-1 means this job cannot have a pet, so the panel draws no control at all');
 	assert.match(engine, /hom = \(hom_enabled == 0\) \? 0 : 1;/,
 		'NULL (never chosen) must read as on, matching the attach');
-	assert.match(engine, /"@CP\|%s\|%s\|%d\|%d\|%d\|%d\|%s\|%d(\|%d){0,6}"/,
+	assert.match(engine, /"@CP\|%s\|%s\|%d\|%d\|%d\|%d\|%s\|%d(\|%d){0,8}"/,
 		'the line carries the pet switch and the fields appended after it');
 	// The panel decides on the class the shell is RUNNING: a companion that just advanced would
 	// otherwise be judged on the persisted job_id.

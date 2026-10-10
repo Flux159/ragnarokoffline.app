@@ -955,6 +955,12 @@
     </label>
     <p class="note" id="companion-inventory-note"></p>
     <label style="margin-top:6px">
+      <span>Companion roaming</span>
+      <input type="checkbox" id="population_companion_roam" style="accent-color: var(--accent); flex: none" />
+      <span class="val" style="width:auto; color: var(--dim)">companions may roam the map on their own</span>
+    </label>
+    <p class="note" id="companion-roam-note"></p>
+    <label style="margin-top:6px">
       <span>Server memory</span>
       <input type="range" id="vm_ram_mib" min="2048" max="16384" step="1024">
       <span class="val" id="v-vm_ram_mib"></span>
@@ -1809,6 +1815,12 @@ function refreshPopulation() {
   $('companion-fee').hidden = !hired;
   $('population_skill_weapon_check').disabled = !on;
   $('population_companion_inventory').disabled = !on;
+  $('population_companion_roam').disabled = !on;
+  $('companion-roam-note').textContent = $('population_companion_roam').checked
+    ? 'On: the Companions window offers Roam, per companion on the Party tab and for all of '
+      + 'them on the Battle tab. A roaming companion walks the map and fights by its stance, '
+      + 'comes along when you change maps, and comes back to you with Recall.'
+    : '';
   $('companion-inventory-note').textContent = $('population_companion_inventory').checked
     ? 'On: nothing refills a companion. Trade it potions, arrows or bullets, and the '
       + 'gemstones and other items its skills cost; an archer or gunslinger with no '
@@ -1900,6 +1912,7 @@ for (const area of POPULATION_AREAS) $(`population_${area}_pct`).addEventListene
 $('population_companion_hire').addEventListener('change', refreshPopulation);
 $('population_skill_weapon_check').addEventListener('change', refreshPopulation);
 $('population_companion_inventory').addEventListener('change', refreshPopulation);
+$('population_companion_roam').addEventListener('change', refreshPopulation);
 // Every loot slider, besides the on/off box: disabled together, saved together.
 const LOOT_FIELDS = ['population_loot_common_pickup_pct', 'population_loot_rare_pct',
   'population_loot_rare_pickup_pct', 'population_loot_forget_pct', 'population_loot_hp_abort_pct',
@@ -1922,6 +1935,7 @@ $('save-population').onclick = async () => {
   settings.population_companion_fee_item_amount = Number($('population_companion_fee_item_amount').value) || 0;
   settings.population_skill_weapon_check = $('population_skill_weapon_check').checked;
   settings.population_companion_inventory = $('population_companion_inventory').checked;
+  settings.population_companion_roam = $('population_companion_roam').checked;
   settings.population_loot_enable = $('population_loot_enable').checked;
   for (const id of LOOT_FIELDS) settings[id] = Number($(id).value);
   // Machine-level, so it lives in client.json beside the client paths and the
@@ -3626,6 +3640,7 @@ invoke('get_settings').then(s => {
   $('population_companion_limit').value = s.population_companion_limit ?? 4;
   $('population_skill_weapon_check').checked = s.population_skill_weapon_check === true;
   $('population_companion_inventory').checked = s.population_companion_inventory === true;
+  $('population_companion_roam').checked = s.population_companion_roam === true;
   $('population_loot_enable').checked = s.population_loot_enable === true;
   // A save from before the loot settings has no keys: the defaults.
   $('population_loot_common_pickup_pct').value = s.population_loot_common_pickup_pct ?? 70;

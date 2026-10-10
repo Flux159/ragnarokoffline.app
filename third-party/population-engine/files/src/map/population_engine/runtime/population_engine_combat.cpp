@@ -44,6 +44,7 @@
 #include "../../status.hpp"
 #include "../../unit.hpp"
 #include "../strategy/population_strategy.hpp" // RAGNAROKMAC (companion strategies)
+#include "population_companion_roam.hpp" // RAGNAROKMAC (roam)
 
 using namespace rathena;
 
@@ -2162,8 +2163,10 @@ static void population_shell_combat_process_tick(map_session_data *sd, t_tick cu
 
 	// Owner-follow controls movement for hired companions. With no party-approved
 	// target they remain calm here while support/heal logic above still runs.
-	if (hired_companion && tid == 0)
+	if (hired_companion && tid == 0) {
+		population_companion_roam_step(sd, current_tick); // RAGNAROKMAC (roam): unless it roams
 		return;
+	}
 
 	// Async A* path follower removed — movement is now driven directly by
 	// unit_walktoxy / unit_walktobl which use rAthena's built-in BFS path search.

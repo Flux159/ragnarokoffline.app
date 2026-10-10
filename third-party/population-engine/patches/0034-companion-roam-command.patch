@@ -1,0 +1,82 @@
+From 0000000000000000000000000000000000000034
+Subject: [PATCH] @companion roam: companions walk the map on their own
+
+Settings -> Population -> Companion roaming turns on
+population_engine_companion_roam (off by default). With it on, "@companion roam
+[<name>] on|off" sets whether a companion roams its owner's map like a field
+shell, instead of following; with no name it sets all of them. The setting is
+stored with the companion row (v14). The Companions window's Battle tab and
+Party tab send this command. It is left out of the usage line, and while the
+setting is off it is an unknown subcommand, so nothing in game mentions roaming.
+The logic is in population_engine/runtime/population_companion_roam.cpp.
+
+Also starts `param` empty, so a subcommand typed without arguments reads ""
+instead of whatever the stack held.
+
+diff --git a/src/custom/atcommand.inc b/src/custom/atcommand.inc
+index c23d38a0e..95e047aa4 100644
+--- a/src/custom/atcommand.inc
++++ b/src/custom/atcommand.inc
+@@ -285,7 +285,7 @@
+ 	// "skills <name> toggle <id>", "gear <name> weapon shield"). A NAME_LENGTH buffer cut those
+ 	// off after the name, so the trailing word was silently dropped. Names are still bounded to
+ 	// NAME_LENGTH where they are looked up.
+-	char cmd[32], param[128];
++	char cmd[32], param[128] = "";
+ 	if (!message || !*message || sscanf(message, "%31s %127[^\n]", cmd, param) < 1) {
+ 		clif_displaymessage(fd, "Usage: @companion list | favorite <name> | unfavorite <name> | summon <name> | remove <name> | gear <name> [slots] | homunculus <name> [on|off] | rebirth <name> novice|trans");
+ 		return -1;
+@@ -742,6 +742,27 @@
+ 		clif_displaymessage(fd, msg);
+ 		return 0;
+ 	}
++	// RAGNAROKMAC (roam): "@companion roam [<name>] on|off" - a companion walks the map on its
++	// own instead of following; no name sets all of them. The Companions window sends this.
++	// Unlisted, and unknown while the server does not allow roaming (Settings -> Population).
++	if (strcmpi(cmd, "roam") == 0 && battle_config.population_engine_companion_roam) {
++		char *last = strrchr(param, ' ');
++		const char *tok = last != nullptr ? last + 1 : param;
++		const bool on = strcmpi(tok, "on") == 0, off = strcmpi(tok, "off") == 0;
++		if (!on && !off) {
++			clif_displaymessage(fd, "Usage: @companion roam [<name>] on|off");
++			return -1;
++		}
++		if (last != nullptr)
++			*last = '\0';
++		else
++			param[0] = '\0';
++		char reply[160];
++		reply[0] = '\0';
++		population_engine_companion_set_roam(sd->status.account_id, param, on, reply, sizeof(reply));
++		clif_displaymessage(fd, reply[0] ? reply : "Could not set roaming.");
++		return 0;
++	}
+ 	// RAGNAROKMAC (homunculus, phase 3c): the companion row's pet switch.
+ 	// The engine attaches this pet by itself at spawn, so this is not a summon - it is
+ 	// the switch the row shows. The state is the TRAILING token so a name may contain
+diff --git a/src/custom/battle_config_init.inc b/src/custom/battle_config_init.inc
+index e18f75e68..5668f1385 100644
+--- a/src/custom/battle_config_init.inc
++++ b/src/custom/battle_config_init.inc
+@@ -67,6 +67,7 @@
+ { "population_engine_companion_hire_item_amount",&battle_config.population_engine_companion_hire_item_amount,0,0,30000,},
+ { "population_engine_skill_weapon_check",&battle_config.population_engine_skill_weapon_check,0,0,1,},
+ { "population_engine_companion_inventory",&battle_config.population_engine_companion_inventory,0,0,1,},
++{ "population_engine_companion_roam",&battle_config.population_engine_companion_roam,0,0,1,},
+ { "population_engine_loot_enable",&battle_config.population_engine_loot_enable,0,0,1,},
+ { "population_engine_loot_rare_rate",&battle_config.population_engine_loot_rare_rate,100,0,10000,},
+ { "population_engine_loot_rare_pickup_pct",&battle_config.population_engine_loot_rare_pickup_pct,95,0,100,},
+diff --git a/src/custom/battle_config_struct.inc b/src/custom/battle_config_struct.inc
+index 73abaa49c..0b06c6379 100644
+--- a/src/custom/battle_config_struct.inc
++++ b/src/custom/battle_config_struct.inc
+@@ -136,6 +136,9 @@
+ /// skills cost their items and ammunition, and the bag is saved with it; 0 = a free supply, as
+ /// for every other population PC (as before).
+ int32 population_engine_companion_inventory;
++/// Roaming: 1 = a player may set a companion to roam the map on its own instead of following
++/// (Companions window, @companion roam); 0 = every companion follows (as before).
++int32 population_engine_companion_roam;
+ /// Looting: 1 = ambient shells pick up the drops of their own kills; 0 = they
+ /// leave them on the ground (as before). Recruited companions are unaffected.
+ int32 population_engine_loot_enable;

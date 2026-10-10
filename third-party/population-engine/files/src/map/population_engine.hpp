@@ -117,6 +117,8 @@ void population_engine_companion_trade_snapshot(map_session_data *shell);
 int population_engine_companion_return_gear(map_session_data *owner, map_session_data *shell, uint32_t slot_mask = 0);
 int population_engine_companion_set_rest_thresholds(uint32_t owner_account, int16_t below, int16_t until);
 int population_engine_companion_set_heal_thresholds(uint32_t owner_account, int16_t heal_at, int16_t emergency_at);
+/// RAGNAROKMAC (roam): one companion (`name`) or all of them (empty) roam or follow; runtime/population_companion_roam.cpp.
+int population_engine_companion_set_roam(uint32_t owner_account, const char *name, bool roam, char *out_msg, size_t out_msg_len);
 /// Skill selector: replace one saved companion's skill choice.
 ///
 /// @param owner_account  owner whose saved list to search

@@ -194,6 +194,11 @@
 #CompanionPanel .row .badge.support { background: #d7e2ee; border-color: #7f95ad; }
 #CompanionPanel .row .badge.attacker { background: #eedcd7; border-color: #ad867f; }
 
+/* A companion that is down: its corpse waits where it fell. */
+#CompanionPanel .row.dead .nm { color: #9b2f22; }
+#CompanionPanel .row.dead .lv,
+#CompanionPanel .row.dead .cls { color: #a99c80; }
+
 /* ── controls ─────────────────────────────────────────────────────────── */
 
 #CompanionPanel button {

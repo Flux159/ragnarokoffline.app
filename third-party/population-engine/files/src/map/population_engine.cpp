@@ -11,6 +11,7 @@
 #include "population_engine/runtime/population_engine_combat.hpp"
 #include "population_engine/runtime/population_shell_ammo.hpp"
 #include "population_engine/runtime/population_shell_inventory.hpp" // RAGNAROKMAC
+#include "population_engine/runtime/population_companion_roam.hpp" // RAGNAROKMAC (roam)
 #include "population_engine/runtime/population_shell_loot.hpp"
 #include "population_engine/runtime/population_shell_selling.hpp"
 #include "population_engine/runtime/population_shell_runtime.hpp"
@@ -2219,7 +2220,8 @@ static bool pop_companion_follow_owner(map_session_data *sd, map_session_data *o
 	// RAGNAROKMAC (companion strategies): so does one a Sit rule sat down. Standing it here sat
 	// it again on the same tick's strategy turn: it bobbed up and down, and the sitting skills
 	// (Gangster's Paradise, the Taekwon ones) toggled with it.
-	if (pc_issit(sd) && !((sd->pop.resting || population_strategy_keeps_seated(sd)) && !unit_is_walking(owner)))
+	if (pc_issit(sd) && !((sd->pop.resting || population_strategy_keeps_seated(sd))
+		&& (!unit_is_walking(owner) || population_companion_roams(sd)))) // RAGNAROKMAC (roam)
 		pop_shell_stand(sd);
 	if (sd->pop.companion_formation_active &&
 		(unit_is_walking(owner) || sd->pop.target_id != 0)) {
@@ -2299,6 +2301,8 @@ static bool pop_companion_follow_owner(map_session_data *sd, map_session_data *o
 	// the owner's sight; the warps below still apply.
 	if (population_strategy_holds_position(sd, now))
 		leash = AREA_SIZE + 2;
+	if (population_companion_roams(sd)) // RAGNAROKMAC (roam): the whole map; only a map change brings it back
+		leash = INT16_MAX;
 
 	if (now < sd->pop.companion_follow_next)
 		return sd->m == owner->m && check_distance_bl(sd, owner, leash);
@@ -2311,6 +2315,8 @@ static bool pop_companion_follow_owner(map_session_data *sd, map_session_data *o
 		return false;
 	}
 
+	if (population_companion_roams(sd)) // RAGNAROKMAC (roam)
+		return true;
 	const int owner_distance = distance_bl(sd, owner);
 	if (owner_distance > AREA_SIZE + 2) {
 		warp_near_owner();
@@ -2457,7 +2463,7 @@ static bool pop_shell_rest(map_session_data *sd, map_session_data *owner, uint32
 	if (owner != nullptr)
 		needed = needed
 			|| pc_isdead(owner)
-			|| unit_is_walking(owner)
+			|| (unit_is_walking(owner) && !population_companion_roams(sd)) // RAGNAROKMAC (roam)
 			|| (pc_checkskill(sd, AL_HEAL) > 0
 				&& pct(owner->battle_status.hp, owner->battle_status.max_hp) < sd->pop.companion_heal_at)
 			|| pop_companion_party_threat(sd) != 0;
@@ -5068,6 +5074,7 @@ TIMER_FUNC(population_engine_global_combat_timer)
 		map_session_data *owner = pop_companion_owner(sd);
 		if (!owner)
 			continue;
+		population_companion_watch_life(sd); // RAGNAROKMAC (roam): its row shows it alive again
 		// Same-map companion corpses are deliberately inert but remain registered
 		// so party Resurrection and Yggdrasil Leaf can target the original actor.
 		if (pc_isdead(sd))
@@ -5096,7 +5103,9 @@ TIMER_FUNC(population_engine_global_combat_timer)
 		// refresh the tracker here as well. Its internal interval keeps this cheap.
 		population_shell_update_mob_tracker(sd);
 		// RAGNAROKMAC (companion strategies): Targeting: Priority and Ignore have the last word.
-		const uint32 desired_target = population_strategy_target(sd, owner, pop_companion_combat_target(sd, owner, now));
+		// RAGNAROKMAC (roam): a roaming companion's own fight, before the strategies'.
+		const uint32 desired_target = population_strategy_target(sd, owner,
+			population_companion_roam_target(sd, pop_companion_combat_target(sd, owner, now)));
 		if (static_cast<uint32>(sd->pop.target_id) != desired_target)
 			population_shell_target_change(sd, static_cast<int>(desired_target));
 		if (desired_target != 0 && sd->pop.companion_formation_active) {
@@ -5114,14 +5123,16 @@ TIMER_FUNC(population_engine_global_combat_timer)
 			// the companion (a mounted Lord Knight), the more often it caught up and stuttered.
 			// RAGNAROKMAC (companion strategies): nor a walk a rule started (MoveTo, Leave, ...).
 			if (unit_is_walking(sd) && !sd->pop.companion_formation_active &&
-				sd->ud.target_to != owner->id && !population_strategy_holds_position(sd, now))
+				sd->ud.target_to != owner->id && !population_strategy_holds_position(sd, now)
+				&& !population_companion_roams(sd)) // RAGNAROKMAC (roam): nor its own walk
 				unit_stop_walking(sd, USW_FIXPOS);
 		}
 		if (pop_shell_rest(sd, owner, desired_target, now))
 			continue;
 		if (sd->state.population_combat)
 			population_engine_combat_per_tick(sd, true);
-		if (desired_target == 0 && !population_strategy_holds_position(sd, now)) // RAGNAROKMAC (companion strategies)
+		if (desired_target == 0 && !population_strategy_holds_position(sd, now) // RAGNAROKMAC (companion strategies)
+			&& !population_companion_roams(sd)) // RAGNAROKMAC (roam)
 			pop_companion_update_formation(sd, owner);
 	}
 	map_foreachpc(pop_combat_tick_per_real_pc, &ctx);
@@ -5261,6 +5272,7 @@ void population_engine_on_shell_death(map_session_data *sd)
 			unit_stop_walking(sd, USW_FIXPOS);
 		ShowInfo("Population engine: companion %s died and remains available for resurrection.\n",
 			sd->status.name);
+		population_companion_on_down(sd); // RAGNAROKMAC (roam)
 		return;
 	}
 	// Ambient Mortal shells retain their original five-second respawn delay.
@@ -7267,6 +7279,7 @@ static void population_engine_persist_companion_sql(
 		" emergency_at=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), emergency_at, 35),"
 		" rest_below=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), rest_below, 30),"
 		" rest_until=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), rest_until, 95),"
+		" roam=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), roam, 0)," // RAGNAROKMAC (roam)
 		" given_mask=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), given_mask, 0),"
 		" gear_detail=IF(owner_account_id=VALUES(owner_account_id) AND owner_char_id IN (0, VALUES(owner_char_id)), gear_detail, NULL),"
 		" owner_account_id=VALUES(owner_account_id), owner_char_id=VALUES(owner_char_id),"
@@ -8461,7 +8474,7 @@ void population_engine_companion_list_raw(uint32_t owner_account, int fd)
 	if (mmysql_handle == nullptr) return;
 	char q[400];
 	snprintf(q, sizeof(q),
-		"SELECT name, job_id, active, favorite, base_level, hom_enabled, duty, job_level, heal_at, emergency_at, rest_below, rest_until FROM `cp_companion_persistence`"
+		"SELECT name, job_id, active, favorite, base_level, hom_enabled, duty, job_level, heal_at, emergency_at, rest_below, rest_until, roam FROM `cp_companion_persistence`"
 		" WHERE owner_account_id=%u AND owner_char_id=%u ORDER BY favorite DESC, name ASC",
 		owner_account, pop_online_char(owner_account));
 	if (Sql_Query(mmysql_handle, q) != SQL_SUCCESS) {
@@ -8492,6 +8505,10 @@ void population_engine_companion_list_raw(uint32_t owner_account, int fd)
 		Sql_GetData(mmysql_handle, 9, &data, nullptr); int emergency_at = data != nullptr ? atoi(data) : 35;
 		Sql_GetData(mmysql_handle, 10, &data, nullptr); int rest_below = data != nullptr ? atoi(data) : 30;
 		Sql_GetData(mmysql_handle, 11, &data, nullptr); int rest_until = data != nullptr ? atoi(data) : 95;
+		// RAGNAROKMAC (roam): whether it roams (-1 while the server does not allow roaming, so the
+		// window draws no control), and whether the summoned one is dead.
+		Sql_GetData(mmysql_handle, 12, &data, nullptr); int roam = data != nullptr ? atoi(data) : 0;
+		int dead = 0;
 		// and a name is player-chosen, so scrub before sending.
 		for (char *c = namebuf; *c != '\0'; ++c) {
 			if (*c == '|' || *c == '\n' || *c == '\r')
@@ -8529,6 +8546,8 @@ void population_engine_companion_list_raw(uint32_t owner_account, int fd)
 			emergency_at = sd->pop.companion_emergency_at;
 			rest_below = sd->pop.companion_rest_below;
 			rest_until = sd->pop.companion_rest_until;
+			roam = sd->pop.companion_roam ? 1 : 0; // RAGNAROKMAC (roam)
+			dead = pc_isdead(sd) ? 1 : 0;
 			live_jl = sd->status.job_level;
 			break;
 		}
@@ -8557,15 +8576,17 @@ void population_engine_companion_list_raw(uint32_t owner_account, int fd)
 				rebirth = 0;
 		}
 
+		if (!battle_config.population_engine_companion_roam) // RAGNAROKMAC (roam)
+			roam = -1;
 		char msg[NAME_LENGTH + 160];
 		// The duty travels so the panel can show it (kept only in the panel's memory, its
 		// badge went blank on every restart or reload although the server still had it), and
 		// rebirth readiness after it so both appended fields keep their positions.
 		// The thresholds come last, so every field before them keeps its position.
-		snprintf(msg, sizeof(msg), "@CP|%s|%s|%d|%d|%d|%d|%s|%d|%d|%d|%d|%d|%d|%d",
+		snprintf(msg, sizeof(msg), "@CP|%s|%s|%d|%d|%d|%d|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d",
 			namebuf, job_name(job_id), base_lv, active, fav, live_lv,
 			live_job != nullptr ? live_job : "", hom, duty, rebirth,
-			heal_at, emergency_at, rest_below, rest_until);
+			heal_at, emergency_at, rest_below, rest_until, roam, dead);
 		clif_displaymessage(fd, msg);
 		count++;
 	}
@@ -9020,6 +9041,7 @@ int population_engine_recall_companions(map_session_data *owner, uint32_t only_i
 	}
 	if (recalled > 0) {
 		ShowInfo("Population engine: recalled %d companion(s) for owner %u\n", recalled, owner->status.account_id);
+		population_companion_roam_restore(owner); // RAGNAROKMAC (roam)
 		// Roster changed: refresh any open panel without making it poll.
 		population_engine_push_companion_list(owner);
 		// RAGNAROKMAC: re-sync the party list after a recall, from the map's own
@@ -10084,6 +10106,7 @@ void population_engine_on_party_chat(map_session_data *from_sd, const char *mess
 			if (!pop_is_companion(bot) || bot->status.party_id != from_sd->status.party_id)
 				continue;
 			if (pc_isdead(bot)) continue;
+			population_companion_roam_recalled(bot); // RAGNAROKMAC (roam): it follows again
 			if (bot->m == from_sd->m && distance_bl(bot, from_sd) <= 3) continue;
 			int16_t tx = from_sd->x, ty = from_sd->y;
 			map_search_freecell(from_sd, from_sd->m, &tx, &ty, 2, 2, 0);
@@ -10221,6 +10244,7 @@ void population_engine_on_global_chat_mention(map_session_data* from_sd, const c
 // RAGNAROKMAC: shell control API for mods' NPC scripts (see the file).
 #include "population_engine/runtime/population_shell_control.cpp"
 #include "population_engine/runtime/population_shell_selling.cpp"
+#include "population_engine/runtime/population_companion_roam.cpp" // RAGNAROKMAC (roam)
 
 void do_final_population_engine() {
 	// Stop first so shells are released while all DB shared_ptrs are still valid.

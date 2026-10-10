@@ -593,6 +593,19 @@ patch 0033), a recruited companion is taken off all three, in
 Ambient shells keep the free supply, and so do companions while the setting is
 off. A bag saved while it was on stays in the row, untouched, until it is on again.
 
+### Companions can roam
+
+With `population_engine_companion_roam` on (Settings → Population → Companion
+roaming, off by default, registered by patch 0034), an owner can set a companion
+to roam in the Companions window (`@companion roam [<name>] on|off`, unknown while
+the setting is off). A roaming
+companion walks its owner's map as a field shell does and fights near itself,
+by its stance; it still changes maps with its owner and stays in the party. When
+any companion dies it says "I'm down!" in party chat with its position, and the
+window marks it. The code is `runtime/population_companion_roam.cpp`, reached
+from lines marked `RAGNAROKMAC (roam)`; [COMPANION_DEVELOPMENT.md](../../docs/COMPANION_DEVELOPMENT.md)
+lists them. Nothing changes for a companion that follows.
+
 ## Measured cost
 
 Alpine/musl, arm64, packetver 20221005, map server only, 4 GiB guest:

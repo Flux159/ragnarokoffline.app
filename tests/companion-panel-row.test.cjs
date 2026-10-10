@@ -25,7 +25,7 @@ test('the saved list renders the job class on the row, not just a tooltip', () =
 	const i = js.indexOf('const id = document.createElement');
 	assert.ok(i > 0, 'the row identity column must be built');
 	const row = js.slice(i, i + 1200);
-	assert.match(row, /nm\.textContent = \(m\.favorite \? '★ ' : ''\) \+ m\.name/,
+	assert.match(row, /nm\.textContent = (\(m\.dead \? '✝ ' : ''\) \+ )?\(m\.favorite \? '★ ' : ''\) \+ m\.name/,
 		'the first line stays the (favourite-marked) name');
 	assert.match(row, /cls\.textContent/,
 		'the second line must be the class - a title attribute alone is invisible');

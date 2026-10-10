@@ -126,7 +126,7 @@ test('the roster carries rebirth readiness, computed like the homunculus field',
 		'-1 must mean "this class cannot be reborn"');
 	assert.match(engine, /else if \(tree_class >= 7 && tree_class <= 20\)\s*\n\s*rebirth = 0;/,
 		'0 must mean "a 2nd class that is not ready yet"');
-	assert.match(engine, /"@CP\|%s\|%s\|%d\|%d\|%d\|%d\|%s\|%d(\|%d){1,6}"/,
+	assert.match(engine, /"@CP\|%s\|%s\|%d\|%d\|%d\|%d\|%s\|%d(\|%d){1,8}"/,
 		'the line carries the pet switch and the fields appended after it');
 });
 

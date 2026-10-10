@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS `cp_companion_persistence` (
   `rest_below`       TINYINT       NOT NULL DEFAULT 30, -- sits down between fights below this SP% or HP%, 0 = never (v12)
   `rest_until`       TINYINT       NOT NULL DEFAULT 95, -- stands again once both are back to this % (v12)
   `inventory_detail` TEXT          NULL DEFAULT NULL,   -- the rest of the bag: every unworn stack and the worn ammo, in full (v13); NULL = saved before inventories, recalled with what the spawn gives
+  `roam`             TINYINT       NOT NULL DEFAULT 0,  -- 1 = walks the owner's map on its own instead of following (v14)
   `map_id`           SMALLINT      NOT NULL DEFAULT 0, -- mapindex id of owner at recruit (recall target)
   `active`           TINYINT       NOT NULL DEFAULT 1, -- 1 = recalled on login; 0 = released (Goal 3 sets this)
   `favorite`         TINYINT       NOT NULL DEFAULT 0, -- 1 = owner favorited (friend list sort)

@@ -81,6 +81,16 @@ function companionInventory(s) {
 }
 
 /**
+ * Whether a player may set a companion to roam its owner's map on its own, as
+ * the fake players in the fields do, instead of following (1). Each companion
+ * is still switched one by one in the Companions window. Off (0, as before),
+ * every companion follows and the window offers no Roam control.
+ */
+function companionRoam(s) {
+	return s.population_companion_roam === true ? 1 : 0;
+}
+
+/**
  * How ambient shells deal with the drops of their own kills. Off by default:
  * every drop stays on the ground until it expires, as before. On, a shell
  * decides once per drop whether it means to take it: a rare drop (any card,
@@ -137,6 +147,7 @@ function lines(settings) {
 		`population_engine_companion_hire_item_amount: ${companionFee(settings).amount}\n` +
 		`population_engine_skill_weapon_check: ${skillWeaponCheck(settings)}\n` +
 		`population_engine_companion_inventory: ${companionInventory(settings)}\n` +
+		`population_engine_companion_roam: ${companionRoam(settings)}\n` +
 		// Written even while the engine is off, so the choices stick.
 		`population_engine_loot_enable: ${loot.enable}\n` +
 		`population_engine_loot_rare_rate: ${Math.round(loot.rarePct * 100)}\n` +
@@ -154,4 +165,4 @@ function lines(settings) {
 	);
 }
 
-module.exports = { lines, companionLimit, areaShare, companionHire, companionFee, skillWeaponCheck, companionInventory, shellLoot, LOOT_DEFAULTS, HIRE_MODES, AREAS, COMPANION_LIMIT_MIN, COMPANION_LIMIT_MAX };
+module.exports = { lines, companionLimit, areaShare, companionHire, companionFee, skillWeaponCheck, companionInventory, companionRoam, shellLoot, LOOT_DEFAULTS, HIRE_MODES, AREAS, COMPANION_LIMIT_MIN, COMPANION_LIMIT_MAX };

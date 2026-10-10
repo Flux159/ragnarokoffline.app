@@ -1097,6 +1097,10 @@ const SETTINGS_DEFAULTS = {
 	// is saved with it. Off keeps the historic free supply of potions, arrows
 	// and gemstones.
 	population_companion_inventory: false,
+	// Whether a player may set a companion to roam the map on its own, from the
+	// Companions window, instead of following. Off: every companion follows, and
+	// the window offers no Roam control.
+	population_companion_roam: false,
 	// Whether ambient shells pick up the drops of their own kills, the way a
 	// player would, and how (see population-conf.js shellLoot). Off keeps the
 	// historic behaviour: every drop stays on the ground until it expires.
