@@ -80,6 +80,8 @@ test('sharing becomes ready only after guarded HTTP and WSS proof; secrets stay 
   assert.match(f.instance.invitation(), /^https:\/\/play.example.com\/#invite=/);
   assert.equal(f.instance.gateway.sessions.size, 0, 'probe session is removed');
   const launch = f.launched(); assert.ok(!launch.args.join(' ').includes(saved.secret));
+  assert.deepEqual(launch.args.slice(launch.args.indexOf('--protocol'), launch.args.indexOf('--protocol') + 2), ['--protocol', 'http2']);
+  assert.ok(launch.args.indexOf('--protocol') < launch.args.indexOf('run'), 'a tunnel flag goes before run');
   assert.equal(JSON.parse(launch.options.env.TUNNEL_CRED_CONTENTS).TunnelSecret, saved.secret);
   assert.ok(!fs.readFileSync(path.join(f.instance.directory, 'tunnel.json'), 'utf8').replace(/\r\n/g, '\n').includes(saved.secret));
   await f.instance.stop(); assert.equal(f.instance.status().state, 'stopped'); assert.ok(f.child().signalCode);

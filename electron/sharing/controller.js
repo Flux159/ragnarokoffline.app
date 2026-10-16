@@ -119,8 +119,14 @@ class SharingController {
       const env = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR,
         TUNNEL_CRED_CONTENTS: credentials };
       for (const key of Object.keys(env)) if (env[key] === undefined) delete env[key];
-      const args = saved ? ['tunnel', '--config', configPath, '--no-autoupdate', '--loglevel', 'error', 'run', saved.tunnelId]
-        : ['tunnel', '--config', configPath, '--no-autoupdate', '--url', 'http://127.0.0.1:' + port, '--metrics', '127.0.0.1:0'];
+      // HTTP/2 over TCP, not cloudflared's default QUIC over UDP. On a home
+      // connection QUIC kept tearing connections down every few minutes, and a
+      // friend's game socket on one of them went dead without either end
+      // closing it: the client showed "disconnected" while the host still
+      // held the session.
+      const transport = ['--protocol', 'http2'];
+      const args = saved ? ['tunnel', '--config', configPath, '--no-autoupdate', '--loglevel', 'error', ...transport, 'run', saved.tunnelId]
+        : ['tunnel', '--config', configPath, '--no-autoupdate', ...transport, '--url', 'http://127.0.0.1:' + port, '--metrics', '127.0.0.1:0'];
       this.child = this.launch(executable, args, { env, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
       const child = this.child;
       // Keep cloudflared's own diagnostics. A named tunnel discarded them
