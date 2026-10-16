@@ -85,7 +85,8 @@ because our pin predates it; the equipment and character-select canvas resets;
 character select no longer stalling on a missing or unreadable Lua file, with
 progress logged while it waits; component roots filling their host; the quest
 lists actually showing; hat and robe sprite names kept as EUC-KR bytes; drops
-onto the equipment window and the cart; item-compare and stat-tooltip colour
+onto the equipment window, and onto the cart until upstream's own fix came
+in with the 2026-10-15 merge; item-compare and stat-tooltip colour
 codes; the `msgstringtablel.txt` fallback; the walk fast-forward clock; the skill
 tree lineage; and a dead player keeping the GID that resurrection needs.
 
