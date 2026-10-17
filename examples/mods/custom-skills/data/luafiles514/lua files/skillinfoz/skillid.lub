@@ -1,0 +1,15 @@
+-- The names of this mod's skills, as the client's skillid.lub names the
+-- stock ones. Only the mod's new skills: the client knows the rest.
+--
+-- This file, skillinfolist.lub, skilldescript.lub and skilltreeview.lub
+-- here are added to the client's own tables of the same names (the app
+-- keeps them aside under the mod's name), so they hold only this mod's rows.
+SKID = {
+	GCR_CONTACT_POISON = 3100,
+	GCR_EXECUTIONER = 3101,
+	GCR_SHADOW_INSTINCT = 3102,
+	GCR_VENOM_BURST = 3103,
+	GCR_TOXIC_CLOUD = 3104,
+	GCR_SHADOW_PACT = 3105,
+	GCR_SHADOW_DANCE = 3106,
+}

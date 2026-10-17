@@ -1,0 +1,9 @@
+# What the decoy looks like: a Marine Sphere, a sea mine. The server sends
+# that monster's id, so the client needs nothing new.
+Header:
+  Type: MOB_AVAIL_DB
+  Version: 1
+
+Body:
+  - Mob: SCX_DECOY
+    Sprite: MARINE_SPHERE

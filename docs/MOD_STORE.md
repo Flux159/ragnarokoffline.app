@@ -97,6 +97,10 @@ The functions are `get`, `set`, `inc`, `delete`, `exists`, `keys`, `count`,
 A mod's scripts and its Lua share one store, so a script can set something a
 hook reads, and the other way round.
 
+A Lua [status](MODDING.md#statusname-----buffs-and-debuffs) with
+`persist = true` is kept in its mod's char store under `_statuses` while the
+player is away, and counts toward that store's limit. Leave that path to it.
+
 ## From the mod's client UI
 
 A client plugin reads with `api.store.get(scope, path)`. It resolves with a

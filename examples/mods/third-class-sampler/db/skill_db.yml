@@ -1,0 +1,136 @@
+# The stock skills the sampler gives new jobs to, and its two ground skills.
+#
+# An entry for a stock skill changes only the fields it names. Most changes
+# here are a new target type: an active that becomes a passive (Passive), or
+# a skill reworked with replace = true in lua/ that now targets something
+# else. Status: None keeps a replaced skill from starting its stock status;
+# Type: None keeps one that now targets the caster from dealing damage around
+# it, which the generic class would do for a Self skill with a splash area.
+Header:
+  Type: SKILL_DB
+  Version: 4
+
+Body:
+  # Guillotine Cross: two passives.
+  - Id: 2035
+    Name: GC_HALLUCINATIONWALK
+    TargetType: Passive
+    Status: None
+  - Id: 2023
+    Name: GC_DARKILLUSION
+    TargetType: Passive
+
+  # Shadow Chaser: Reproduce is used on a monster; Triangle Shot is a buff.
+  # (Feint Bomb keeps its entry: its hooks stop its stock effect.)
+  - Id: 2285
+    Name: SC_REPRODUCE
+    TargetType: Support
+    Range: 9
+    Status: None
+  - Id: 2288
+    Name: SC_TRIANGLESHOT
+    TargetType: Self
+    Type: None
+    Range: 0
+
+  # Arch Bishop: Sacrament becomes a passive.
+  - Id: 2515
+    Name: AB_SECRAMENT
+    TargetType: Passive
+    Type: None
+    Status: None
+
+  # Royal Guard: the three buffs start the mod's statuses instead of their own.
+  - Id: 2318
+    Name: LG_PRESTIGE
+    Status: None
+    Cooldown: 120000
+  - Id: 2325
+    Name: LG_INSPIRATION
+    Status: None
+  - Id: 2321
+    Name: LG_RAYOFGENESIS
+    Type: None
+
+  # Sura: two passives. Knuckle Arrow keeps its type: Snap deals its damage.
+  - Id: 2346
+    Name: SR_GENTLETOUCH_ENERGYGAIN
+    TargetType: Passive
+    Status: None
+  - Id: 2336
+    Name: SR_KNUCKLEARROW
+    TargetType: Passive
+
+  # Mechanic: Axe Training's cleave is a weapon hit of the passive itself,
+  # which c:attack needs a Type and a HitCount for.
+  - Id: 2276
+    Name: NC_TRAININGAXE
+    Type: Weapon
+    Hit: Single
+    HitCount: 1
+
+  # Warlock: Reading Spellbook is used on yourself; Release on a target, and
+  # deals nothing of its own.
+  - Id: 2231
+    Name: WL_READING_SB
+    TargetType: Self
+  - Id: 2230
+    Name: WL_RELEASE
+    TargetType: Support
+    Type: None
+    Range: 9
+
+  # Sorcerer, Rune Knight, Ranger: buffs that start the mod's statuses.
+  - Id: 2445
+    Name: SO_SPELLFIST
+    Status: None
+  - Id: 2013
+    Name: RK_REFRESH
+    Status: None
+  - Id: 2015
+    Name: RK_STONEHARDSKIN
+    Status: None
+  - Id: 2234
+    Name: RA_FEARBREEZE
+    Status: None
+  - Id: 2237
+    Name: RA_DETONATOR
+    TargetType: Self
+
+  # Minstrel and Wanderer: Reverberation is placed on the ground.
+  - Id: 2414
+    Name: WM_REVERBERATION
+    TargetType: Ground
+    Type: None
+
+  # The mod's own ground skills, placed by c:place_unit and never learned.
+  # Ids 3100-4999 are free in both eras; the client needs no row for them.
+  # A Dummyskill unit hits whoever enters it, and then every Interval, with
+  # the skill's Type: Holy Field is magic damage each second. Interval -1
+  # makes Resonance a unit that never acts, there only to be stood in.
+  - Id: 3290
+    Name: RGX_HOLY_FIELD
+    Description: Holy Field
+    MaxLevel: 10
+    Type: Magic
+    TargetType: Ground
+    Element: Holy
+    Hit: Single
+    HitCount: 1
+    Duration1: 4000
+    Unit:
+      Id: Dummyskill
+      Layout: 0
+      Interval: 1000
+      Target: Enemy
+  - Id: 3291
+    Name: MWX_RESONANCE
+    Description: Resonance
+    MaxLevel: 5
+    TargetType: Ground
+    Duration1: 10000
+    Unit:
+      Id: Dummyskill
+      Layout: 2
+      Interval: -1
+      Target: Enemy

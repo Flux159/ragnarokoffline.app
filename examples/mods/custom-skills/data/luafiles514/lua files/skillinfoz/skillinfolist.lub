@@ -1,0 +1,111 @@
+-- What the skill window knows about a skill: its icon, name, levels, SP and
+-- range, and what it needs. One row per skill this mod adds or changes; a
+-- row replaces the client's whole row for that skill.
+--
+-- The first value names the icon: the client draws <it>.bmp from the item
+-- folder of its interface textures. A stock skill's name borrows that
+-- skill's icon, so a mod needs no image of its own.
+SKILL_INFO_LIST = {
+	[SKID.GCR_CONTACT_POISON] = {
+		"GC_RESEARCHNEWPOISON";
+		SkillName = "Contact Poison",
+		MaxLv = 5,
+		SpAmount = { 0, 0, 0, 0, 0 },
+		bSeperateLv = false,
+		AttackRange = { 1, 1, 1, 1, 1 },
+		_NeedSkillList = {
+			{ SKID.GC_RESEARCHNEWPOISON, 3 },
+		},
+	},
+	[SKID.GCR_EXECUTIONER] = {
+		"GC_CROSSRIPPERSLASHER";
+		SkillName = "Executioner",
+		MaxLv = 5,
+		SpAmount = { 0, 0, 0, 0, 0 },
+		bSeperateLv = false,
+		AttackRange = { 1, 1, 1, 1, 1 },
+		_NeedSkillList = {
+			{ SKID.GC_CROSSIMPACT, 1 },
+		},
+	},
+	[SKID.GCR_SHADOW_INSTINCT] = {
+		"GC_HALLUCINATIONWALK";
+		SkillName = "Shadow Instinct",
+		MaxLv = 5,
+		SpAmount = { 0, 0, 0, 0, 0 },
+		bSeperateLv = false,
+		AttackRange = { 1, 1, 1, 1, 1 },
+		_NeedSkillList = {
+			{ SKID.GC_CLOAKINGEXCEED, 1 },
+		},
+	},
+	[SKID.GCR_VENOM_BURST] = {
+		"GC_VENOMPRESSURE";
+		SkillName = "Venom Burst",
+		MaxLv = 5,
+		SpAmount = { 22, 24, 26, 28, 30 },
+		bSeperateLv = true,
+		AttackRange = { 1, 1, 1, 1, 1 },
+		_NeedSkillList = {
+			{ SKID.GCR_CONTACT_POISON, 1 },
+		},
+	},
+	[SKID.GCR_TOXIC_CLOUD] = {
+		"GC_POISONSMOKE";
+		SkillName = "Toxic Cloud",
+		MaxLv = 5,
+		SpAmount = { 40, 40, 40, 40, 40 },
+		bSeperateLv = true,
+		AttackRange = { 9, 9, 9, 9, 9 },
+		_NeedSkillList = {
+			{ SKID.GCR_VENOM_BURST, 3 },
+		},
+	},
+	[SKID.GCR_SHADOW_PACT] = {
+		"GC_PHANTOMMENACE";
+		SkillName = "Shadow Pact",
+		MaxLv = 3,
+		SpAmount = { 0, 0, 0 },
+		bSeperateLv = false,
+		AttackRange = { 1, 1, 1 },
+		_NeedSkillList = {
+			{ SKID.GCR_SHADOW_INSTINCT, 3 },
+		},
+	},
+	[SKID.GCR_SHADOW_DANCE] = {
+		"GC_ROLLINGCUTTER";
+		SkillName = "Shadow Dance",
+		MaxLv = 5,
+		SpAmount = { 30, 30, 30, 30, 30 },
+		bSeperateLv = true,
+		AttackRange = { 1, 1, 1, 1, 1 },
+		_NeedSkillList = {
+			{ SKID.GCR_SHADOW_INSTINCT, 1 },
+		},
+	},
+
+	-- Two stock skills whose requirements db/skill_tree.yml changed: the
+	-- window shows what a skill needs from here, so their rows say it too.
+	[SKID.GC_PHANTOMMENACE] = {
+		"GC_PHANTOMMENACE";
+		SkillName = "Phantom Menace",
+		MaxLv = 1,
+		SpAmount = { 30 },
+		bSeperateLv = false,
+		AttackRange = { 1 },
+		_NeedSkillList = {
+			{ SKID.GC_CLOAKINGEXCEED, 5 },
+		},
+	},
+	[SKID.GC_DARKCROW] = {
+		"GC_DARKCROW";
+		SkillName = "Dark Claw",
+		MaxLv = 5,
+		SpAmount = { 22, 34, 46, 58, 70 },
+		bSeperateLv = true,
+		AttackRange = { 1, 1, 1, 1, 1 },
+		_NeedSkillList = {
+			{ SKID.GC_CROSSIMPACT, 3 },
+		},
+	},
+}

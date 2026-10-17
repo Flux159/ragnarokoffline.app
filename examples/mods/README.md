@@ -33,6 +33,8 @@ noticing: a `data/`-only mod has no empty `npc/` folder for symmetry.
 | [shell-gz](shell-gz) | `npc/` | AI characters near you say "gz" when you level, and a GM test bench for directing them from a script. |
 | [blaze-shield-lua](blaze-shield-lua) | `lua/` | A skill that behaves differently on hit — drain cards and Hylozoist Card on Blaze Shield — with no change to the server. |
 | [skill-tuning](skill-tuning) | `db/` `lua/` | Changing stock skills: cast time, delay, duration, area and cost in the table; damage, accuracy and element in Lua; one file per era, parts behind settings, and what is still out of reach. |
+| [custom-skills](custom-skills) | `db/` `lua/` `npc/` `data/` | A class rework: seven new skills for the Guillotine Cross (passives, a strike, a spin, a poison cloud), two stock skills taken away with their points given back, a stacking debuff and a buff of the mod's own, a combo window, and the skill window to match. Renewal. |
+| [third-class-sampler](third-class-sampler) | `db/` `lua/` | Reworking all the third classes on the skill IDs they already have: passives with caps and stacks, a shield, a decoy, a stored spell, an echoing field, crafting under a shared cap, the one skill usable in Berserk. Renewal; not with custom-skills. |
 | [pregame-stage](pregame-stage) | `client/` | Login, character select and creation drawn by the mod: a painted scene, a portrait slot list and the character on a stage. |
 | [host-local-ai](host-local-ai) | `client/` `host/` | A host route: the host's local AI model, asked from a window in game by the host and invited friends. Unit-tested, not yet run in game. |
 
@@ -59,7 +61,9 @@ cp -R examples/mods/* ~/Library/"Application Support"/"Ragnarok Offline"/state/m
 ```
 
 Two of them depend on `custom-map` — `island-ferry` and `start-in-your-town` —
-because there is no island without it. `island-population` does not work at all
+because there is no island without it. Two leave each other out:
+`custom-skills` and `third-class-sampler` both rework the Guillotine Cross, so
+install one of them. `island-population` does not work at all
 and says so; it is here because a half-example that names the wall is worth
 more than a gap.
 

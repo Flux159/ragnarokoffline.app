@@ -216,23 +216,31 @@ propose it on an issue first.
   Monk can't attack or walk.
 - **What a status does.** How much STR Blessing gives, how fast Increase AGI
   makes you, how much Provoke lowers DEF. `Duration1`/`Duration2` change how
-  long it lasts, not what it does.
+  long it lasts, not what it does. A mod can decide a server status's
+  duration as it starts, or refuse it, and add statuses of its own:
+  [New skills, passives and statuses](../../docs/mods/CUSTOM_SKILLS.md).
 - **Healing.** How much Heal or Sanctuary restores. `ratio` is for damage.
-- **Which skill leads into which**, and the spirit sphere checks between Monk
-  combos.
+- **Which stock skill leads into which**, and the spirit sphere checks
+  between Monk combos. A combo of a mod's own is in reach: a status for the
+  window, and `can_cast` to require it, as in
+  [custom-skills](../custom-skills).
 - **The damage formula around the ratio.** How DEF, MDEF, size or element
   apply. Those are the same for every skill, and `ratio` can only scale what
   comes before them.
 - **Other on-hit effects.** On a hit, a hook can apply a status, heal, drain,
-  cast a skill or polymorph. It can't push the target back, move it, or change
-  that hit's damage after the fact.
+  cast a skill or polymorph. It can't push the target back or move it. The
+  final damage of a hit can be changed, from a learned skill's or a status's
+  `damage_dealt` and `damage_taken`.
 - **A skill's cast time or delay depending on the caster.** `db/` numbers
-  are the same for everyone, and no Lua hook runs before a cast.
+  are the same for everyone. `can_cast` and `cost` run before a use, but only
+  refuse it or change what it costs, and `c:cut_delay` shortens a delay only
+  after the fact.
 
 Two related changes *are* in reach without a server change. Which skills
 monsters use, and how often, is `db/mob_skill_db.txt`. Which skills a job
 can learn, and what each needs first, is `db/skill_tree.yml`. A mod can ship
-both, the same way as `skill_db.yml`.
+both, the same way as `skill_db.yml`. Skills of a mod's own, passive or used,
+are in reach too: [custom-skills](../custom-skills) adds seven.
 
 ## Trying it
 

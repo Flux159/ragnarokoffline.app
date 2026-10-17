@@ -1,0 +1,36 @@
+//===== Custom Skills: skill points for the skills taken away ==========
+//= db/skill_tree.yml takes Dark Illusion and Hallucination Walk away from
+//= the Guillotine Cross. A character who had learned them would lose the
+//= points: the server forgets a skill that is no longer in the job's tree,
+//= and the character's next save drops it from the database for good.
+//=
+//= Until that save, the database still has the old rows. When a character
+//= logs in, this reads them and gives the points back, once.
+//=
+//= For your own mod, list the ids of the skills it takes away.
+//====================================================================
+
+-	script	custom_skills_refund	-1,{
+OnPCLoginEvent:
+	if (custom_skills_refunded)
+		end;
+	// 2023 GC_DARKILLUSION, 2035 GC_HALLUCINATIONWALK. Flag 0: learned with
+	// skill points, not lent by a card or a script.
+	.@n = query_sql("SELECT `id`, `lv` FROM `skill` WHERE `char_id` = " + getcharid(0) + " AND `id` IN (2023, 2035) AND `flag` = 0", .@id, .@lv);
+	for (.@i = 0; .@i < .@n; .@i++) {
+		// A character whose job still has the skill keeps it, and is owed
+		// nothing.
+		if (getskilllv(.@id[.@i]) > 0)
+			continue;
+		.@points += .@lv[.@i];
+		// The server holds the old level until the character logs out, and
+		// a skill reset would give the points back a second time: clear it.
+		skill .@id[.@i], 0, 0;
+	}
+	if (.@points > 0) {
+		SkillPoint += .@points;
+		dispbottom "Custom Skills: " + .@points + " skill point(s) back from skills this server took away.";
+	}
+	custom_skills_refunded = 1;
+	end;
+}

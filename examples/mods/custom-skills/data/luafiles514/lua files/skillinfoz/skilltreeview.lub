@@ -1,0 +1,43 @@
+-- Where the skill window puts each skill: a slot number per job, counted
+-- from the top left, 7 to a row. A skill already on a slot this file takes
+-- moves to the first free one. The transcendent (_H) and baby (_B) jobs each
+-- have a window of their own, so each is listed: the server teaches them the
+-- same skills (db/skill_tree.yml).
+SKILL_TREEVIEW_FOR_JOB = {
+	[JOBID.JT_GUILLOTINE_CROSS] = {
+		[6] = SKID.GCR_CONTACT_POISON,
+		[7] = SKID.GCR_VENOM_BURST,       -- Dark Illusion's place
+		[16] = SKID.GCR_EXECUTIONER,
+		[20] = SKID.GCR_SHADOW_PACT,
+		[22] = SKID.GCR_SHADOW_INSTINCT,  -- Hallucination Walk's place
+		[27] = SKID.GCR_TOXIC_CLOUD,
+		[29] = SKID.GCR_SHADOW_DANCE,
+	},
+	[JOBID.JT_GUILLOTINE_CROSS_H] = {
+		[6] = SKID.GCR_CONTACT_POISON,
+		[7] = SKID.GCR_VENOM_BURST,
+		[16] = SKID.GCR_EXECUTIONER,
+		[20] = SKID.GCR_SHADOW_PACT,
+		[22] = SKID.GCR_SHADOW_INSTINCT,
+		[27] = SKID.GCR_TOXIC_CLOUD,
+		[29] = SKID.GCR_SHADOW_DANCE,
+	},
+	[JOBID.JT_GUILLOTINE_CROSS_B] = {
+		[6] = SKID.GCR_CONTACT_POISON,
+		[7] = SKID.GCR_VENOM_BURST,
+		[16] = SKID.GCR_EXECUTIONER,
+		[20] = SKID.GCR_SHADOW_PACT,
+		[22] = SKID.GCR_SHADOW_INSTINCT,
+		[27] = SKID.GCR_TOXIC_CLOUD,
+		[29] = SKID.GCR_SHADOW_DANCE,
+	},
+}
+
+-- Not the client's own: the skills db/skill_tree.yml takes away, left out
+-- of these jobs' windows. A job whose window shows one of these jobs' tabs
+-- leaves them out too: the Shadow Cross's shows the Guillotine Cross's.
+SKILL_TREEVIEW_HIDE = {
+	[JOBID.JT_GUILLOTINE_CROSS] = { SKID.GC_DARKILLUSION, SKID.GC_HALLUCINATIONWALK },
+	[JOBID.JT_GUILLOTINE_CROSS_H] = { SKID.GC_DARKILLUSION, SKID.GC_HALLUCINATIONWALK },
+	[JOBID.JT_GUILLOTINE_CROSS_B] = { SKID.GC_DARKILLUSION, SKID.GC_HALLUCINATIONWALK },
+}

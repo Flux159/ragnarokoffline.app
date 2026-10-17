@@ -1,0 +1,11 @@
+# Berserk stops every skill in the server (its NoCast state). The sampler lets
+# a Rune Knight use Wind Cutter in it: NoCast comes off here, and
+# lua/rune_knight.lua refuses every other skill while Berserk lasts.
+Header:
+  Type: STATUS_DB
+  Version: 4
+
+Body:
+  - Status: Berserk
+    States:
+      NoCast: false

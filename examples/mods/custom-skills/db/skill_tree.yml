@@ -1,0 +1,77 @@
+# Who learns what: two skills taken away from the Guillotine Cross, two
+# requirements moved, and the seven new skills added.
+#
+# Guillotine_Cross_T (the transcendent one), Baby_Guillotine_Cross and
+# Shadow_Cross inherit Guillotine_Cross, so everything here applies to them too.
+Header:
+  Type: SKILL_TREE_DB
+  Version: 1
+
+Body:
+  - Job: Guillotine_Cross
+    Tree:
+      # Taken away: MaxLevel 0 removes a skill from the job and from every job
+      # that inherits it.
+      #
+      # A character who had already learned one loses it, and the points it
+      # cost: the server forgets a skill that is no longer in the tree, and
+      # the character's next save drops it for good. npc/refund.txt gives
+      # the points back the first time the character logs in.
+      - Name: GC_DARKILLUSION
+        MaxLevel: 0
+      - Name: GC_HALLUCINATIONWALK
+        MaxLevel: 0
+
+      # Phantom Menace and Dark Claw needed Dark Illusion 5. A requirement
+      # with Level 0 takes it away; anything else listed is added or changed,
+      # and the skill's other requirements stay as they were. MaxLevel is
+      # required on every entry, so it is repeated at the stock value.
+      - Name: GC_PHANTOMMENACE
+        MaxLevel: 1
+        Requires:
+          - Name: GC_DARKILLUSION
+            Level: 0
+      - Name: GC_DARKCROW
+        MaxLevel: 5
+        Requires:
+          - Name: GC_DARKILLUSION
+            Level: 0
+          - Name: GC_CROSSIMPACT
+            Level: 3
+
+      # New.
+      - Name: GCR_CONTACT_POISON
+        MaxLevel: 5
+        Requires:
+          - Name: GC_RESEARCHNEWPOISON
+            Level: 3
+      - Name: GCR_EXECUTIONER
+        MaxLevel: 5
+        Requires:
+          - Name: GC_CROSSIMPACT
+            Level: 1
+      - Name: GCR_SHADOW_INSTINCT
+        MaxLevel: 5
+        Requires:
+          - Name: GC_CLOAKINGEXCEED
+            Level: 1
+      - Name: GCR_VENOM_BURST
+        MaxLevel: 5
+        Requires:
+          - Name: GCR_CONTACT_POISON
+            Level: 1
+      - Name: GCR_TOXIC_CLOUD
+        MaxLevel: 5
+        Requires:
+          - Name: GCR_VENOM_BURST
+            Level: 3
+      - Name: GCR_SHADOW_PACT
+        MaxLevel: 3
+        Requires:
+          - Name: GCR_SHADOW_INSTINCT
+            Level: 3
+      - Name: GCR_SHADOW_DANCE
+        MaxLevel: 5
+        Requires:
+          - Name: GCR_SHADOW_INSTINCT
+            Level: 1

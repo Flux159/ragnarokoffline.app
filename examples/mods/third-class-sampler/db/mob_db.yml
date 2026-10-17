@@ -1,0 +1,20 @@
+# Feint Bomb's decoy (lua/shadow_chaser.lua): it neither moves nor attacks,
+# and monsters turn on it. In this app's block of ids for custom monsters.
+Header:
+  Type: MOB_DB
+  Version: 5
+
+Body:
+  - Id: 25300
+    AegisName: SCX_DECOY
+    Name: Decoy
+    Level: 1
+    Hp: 2000
+    Defense: 40
+    MagicDefense: 40
+    Size: Small
+    Race: Formless
+    Element: Neutral
+    ElementLevel: 1
+    WalkSpeed: 1000
+    Ai: 06

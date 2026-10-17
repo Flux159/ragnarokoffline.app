@@ -12,11 +12,10 @@ and misc damage passes through. One `item(...)` hook, in
   hook is all it takes to make the effect physical-only.
 - **Gating by damage amount.** The hook only fires on hits over 10
   damage. A `0`-damage grazing hit does not fire the bleeding effect.
-- **Delivering damage with a status instead of a direct call.** The
-  item framework exposes `c:drain()`, `c:heal()`, `c:status()` and
-  `c:polymorph()`. There is no `c:damage(n)` on purpose -- running
-  the damage pipeline from inside a hook invites loops. `SC_BLEEDING`
-  for 3 seconds delivers percent-based damage without that risk.
+- **Delivering damage with a status instead of a direct call.**
+  `SC_BLEEDING` for 3 seconds delivers percent-based damage over time.
+  `c:hurt(n)` would take a flat amount of HP at once; it works outside
+  the damage pipeline, so it sets off no hook and cannot loop.
 
 ## Pair with `arcane-ward` and `mirage-cloak`
 

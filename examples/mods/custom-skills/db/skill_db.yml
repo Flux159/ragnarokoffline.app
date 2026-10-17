@@ -1,0 +1,117 @@
+# The skills this mod adds. Each is a skill in its own right: an id, a name
+# (the AegisName every other file uses), its levels and what it costs.
+#
+# Ids: rAthena's own skills stop at 3045 and start again at 5001 (renewal),
+# so 3100-4999 is free in both eras. This mod takes 3100-3106.
+#
+# What a skill *does* is its Lua (lua/), on top of what this table says:
+# - a skill with no TargetType is a passive: it is learned, never used, and
+#   its Lua hooks (bonus, on_attack, ...) run for whoever has learned it;
+# - a skill a player uses gets `custom = true` in its Lua, which hands it the
+#   server's generic behaviour for its TargetType -- an Attack skill hits its
+#   target, a Self skill with a SplashArea hits around the caster, a Ground
+#   skill places its Unit -- and its damage is its `ratio`.
+#
+# Which jobs learn them is db/skill_tree.yml. What the client shows (name,
+# icon, description, place in the skill window) is data/luafiles514/.
+Header:
+  Type: SKILL_DB
+  Version: 4
+
+Body:
+  # Passive. Normal attacks that land may poison: Toxin (lua/statuses.lua).
+  - Id: 3100
+    Name: GCR_CONTACT_POISON
+    Description: Contact Poison
+    MaxLevel: 5
+
+  # Passive. More damage to wounded targets; a kill gives back SP and time.
+  - Id: 3101
+    Name: GCR_EXECUTIONER
+    Description: Executioner
+    MaxLevel: 5
+
+  # Passive. Perfect Dodge, and Momentum for every perfect dodge.
+  - Id: 3102
+    Name: GCR_SHADOW_INSTINCT
+    Description: Shadow Instinct
+    MaxLevel: 5
+
+  # A weapon attack on one target. Its damage is its ratio hook: it uses up
+  # the caster's Toxin on the target.
+  - Id: 3103
+    Name: GCR_VENOM_BURST
+    Description: Venom Burst
+    MaxLevel: 5
+    Type: Weapon
+    TargetType: Attack
+    Range: 1
+    Hit: Single
+    HitCount: 1
+    Element: Weapon
+    AfterCastActDelay: 1000
+    Cooldown: 2000
+    Requires:
+      SpCost:
+        - Level: 1
+          Amount: 22
+        - Level: 2
+          Amount: 24
+        - Level: 3
+          Amount: 26
+        - Level: 4
+          Amount: 28
+        - Level: 5
+          Amount: 30
+
+  # A ground skill: a 5x5 cloud (its Unit) that hits every enemy in it each
+  # second for 6 seconds. Dummyskill is the server's plain unit: each Interval
+  # it deals the skill's damage, with nothing else built in.
+  - Id: 3104
+    Name: GCR_TOXIC_CLOUD
+    Description: Toxic Cloud
+    MaxLevel: 5
+    Type: Weapon
+    TargetType: Ground
+    Range: 9
+    Hit: Single
+    HitCount: 1
+    Element: Poison
+    ActiveInstance: 1
+    CastTime: 500
+    AfterCastActDelay: 1000
+    Cooldown: 8000
+    Duration1: 6000
+    Requires:
+      SpCost: 40
+    Unit:
+      Id: Dummyskill
+      Layout: 2
+      Interval: 1000
+      Target: Enemy
+
+  # Passive. The party close by fights better beside the Guillotine Cross.
+  - Id: 3105
+    Name: GCR_SHADOW_PACT
+    Description: Shadow Pact
+    MaxLevel: 3
+
+  # Self: a spin that hits every enemy within 2 cells of the caster (its
+  # SplashArea). Splash damage, like Magnum Break's, passes over enemies
+  # that are hiding.
+  - Id: 3106
+    Name: GCR_SHADOW_DANCE
+    Description: Shadow Dance
+    MaxLevel: 5
+    Type: Weapon
+    TargetType: Self
+    DamageFlags:
+      Splash: true
+    Hit: Single
+    HitCount: 1
+    Element: Weapon
+    SplashArea: 2
+    AfterCastActDelay: 1000
+    Cooldown: 5000
+    Requires:
+      SpCost: 30

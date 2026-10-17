@@ -1,0 +1,7 @@
+{
+  "name": "custom-skills",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "A Guillotine Cross rework from a mod folder: two skills taken away with their skill points given back, seven new ones (passives, a strike, a spin and a poison cloud), a stacking poison, a combo window from Sonic Blow into Cross Impact, and the skill window to match. A worked example of new skills, passives and statuses.",
+  "requires": { "app": ">=1.6.4", "era": "renewal" }
+}

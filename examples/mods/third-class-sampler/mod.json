@@ -1,0 +1,7 @@
+{
+  "name": "third-class-sampler",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "Twenty-odd skills from a third-class redesign, one class at a time, on the skill IDs the classes already have: passives with caps and stacks, a shield, a decoy, a spell that is stored and released, a field that echoes, crafting under a shared cap, and more. A worked example of the Lua hooks, queries and actions for reworking whole classes.",
+  "requires": { "app": ">=1.6.4", "era": "renewal" }
+}

@@ -11,8 +11,9 @@
 //! There are two shapes:
 //!
 //! - **List tables** ([`ListTable`]): one file per mod, a config key holding the
-//!   list. Items, quests and signboards. A new one is a `ListTable` and an entry in
-//!   [`LISTS`]; nothing else here or in `link` changes.
+//!   list. Items, quests, signboards and the four skill tables. A new one is a
+//!   `ListTable` and an entry in [`LISTS`]; nothing else here or in `link`
+//!   changes.
 //! - **View tables** ([`ViewTables`]): the sprite tables behind a look, which
 //!   the client loads as id/name *pairs*, so they are collected and paired.
 
@@ -108,8 +109,66 @@ pub const SIGNBOARDS: ListTable = ListTable {
     order: Order::ModOrder,
 };
 
+/// Where the client reads its skill tables from.
+const SKILL_DIR: &str = "data/luafiles514/lua files/skillinfoz";
+
+/// `customSkillId`: the names of a mod's new skills (`skillid.lub`), which
+/// the other three skill tables use.
+///
+/// The four skill tables -- with [`SKILL_INFO`], [`SKILL_DESCRIPTIONS`] and
+/// [`SKILL_TREE_VIEWS`] -- are each one table for every skill in the game, so
+/// a mod shipping its own to add a skill used to take every stock skill's row
+/// with it. The client reads every mod's names first and then the other
+/// three, each in mod order and over its own by skill id: a later mod wins,
+/// as in db/.
+pub const SKILL_IDS: ListTable = ListTable {
+    layer: Layer::Data,
+    matches: is_skill_id_table,
+    stem: "skillid",
+    ext: "lub",
+    dir: SKILL_DIR,
+    config_key: "customSkillId",
+    order: Order::ModOrder,
+};
+
+/// `customSkillInfoList`: what the skill window knows of a skill
+/// (`skillinfolist.lub`): its icon, name, levels, SP, range and what it needs.
+pub const SKILL_INFO: ListTable = ListTable {
+    layer: Layer::Data,
+    matches: is_skill_info_table,
+    stem: "skillinfolist",
+    ext: "lub",
+    dir: SKILL_DIR,
+    config_key: "customSkillInfoList",
+    order: Order::ModOrder,
+};
+
+/// `customSkillDescript`: a skill's description (`skilldescript.lub`).
+pub const SKILL_DESCRIPTIONS: ListTable = ListTable {
+    layer: Layer::Data,
+    matches: is_skill_description_table,
+    stem: "skilldescript",
+    ext: "lub",
+    dir: SKILL_DIR,
+    config_key: "customSkillDescript",
+    order: Order::ModOrder,
+};
+
+/// `customSkillTreeView`: where a job's skill window puts a skill
+/// (`skilltreeview.lub`), and which skills it leaves out.
+pub const SKILL_TREE_VIEWS: ListTable = ListTable {
+    layer: Layer::Data,
+    matches: is_skill_tree_view_table,
+    stem: "skilltreeview",
+    ext: "lub",
+    dir: SKILL_DIR,
+    config_key: "customSkillTreeView",
+    order: Order::ModOrder,
+};
+
 /// Every list table, in the order their config entries are written.
-const LISTS: &[&ListTable] = &[&ITEMS, &QUESTS, &SIGNBOARDS];
+const LISTS: &[&ListTable] =
+    &[&ITEMS, &QUESTS, &SIGNBOARDS, &SKILL_IDS, &SKILL_INFO, &SKILL_DESCRIPTIONS, &SKILL_TREE_VIEWS];
 
 /// The list table a file under a mod's `data/` is, by its path there.
 fn data_table(rel: &str) -> Option<&'static ListTable> {
@@ -137,7 +196,14 @@ impl ModTables {
 
     pub fn extend(&mut self, other: ModTables) {
         for (key, files) in other.lists {
-            self.lists.entry(key).or_default().extend(files);
+            let list = self.lists.entry(key).or_default();
+            // A mod's era or client folder replaces its own folder's copy of a
+            // table under the same name: list that file once.
+            for file in files {
+                if !list.contains(&file) {
+                    list.push(file);
+                }
+            }
         }
         self.views.extend(other.views);
         self.custom_maps.extend(other.custom_maps);
@@ -255,6 +321,17 @@ fn misplaced(root: &Path, mod_name: &str) -> Vec<String> {
         out.push(format!(
             "mods: {mod_name} has {found}, but the client reads signboard tables only from {}/ -- move it there",
             SIGNBOARDS.dir
+        ));
+    }
+    // The same for the skill tables, which are read only from skillinfoz/.
+    let skills = files_under(&root.join("System"), "System", is_skill_table_name).into_iter().chain(
+        files_under(&root.join("data"), "data", is_skill_table_name)
+            .into_iter()
+            .filter(|found| data_table(&found["data/".len()..]).is_none()),
+    );
+    for found in skills {
+        out.push(format!(
+            "mods: {mod_name} has {found}, but the client reads skill tables only from {SKILL_DIR}/ -- move it there"
         ));
     }
     out
@@ -488,6 +565,43 @@ fn is_signboard_table(rel: &str) -> bool {
 fn is_signboard_name(name: &str) -> bool {
     let lower = name.to_lowercase();
     lower == "signboardlist.lub" || lower == "signboardlist.lua"
+}
+
+/// The client's names for its four skill tables, without the extension.
+const SKILL_STEMS: [&str; 4] = ["skillid", "skillinfolist", "skilldescript", "skilltreeview"];
+
+/// `luafiles514/lua files/skillinfoz/<stem>.lub` under `data/`, in any case,
+/// or as `.lua`.
+fn is_skill_table(rel: &str, stem: &str) -> bool {
+    let read_from = SKILL_DIR.strip_prefix("data/").unwrap_or(SKILL_DIR);
+    rel.rsplit_once('/').is_some_and(|(dir, name)| {
+        let name = name.to_lowercase();
+        dir.to_lowercase() == read_from && name.strip_prefix(stem).is_some_and(|ext| ext == ".lub" || ext == ".lua")
+    })
+}
+
+fn is_skill_id_table(rel: &str) -> bool {
+    is_skill_table(rel, "skillid")
+}
+
+fn is_skill_info_table(rel: &str) -> bool {
+    is_skill_table(rel, "skillinfolist")
+}
+
+fn is_skill_description_table(rel: &str) -> bool {
+    is_skill_table(rel, "skilldescript")
+}
+
+fn is_skill_tree_view_table(rel: &str) -> bool {
+    is_skill_table(rel, "skilltreeview")
+}
+
+/// A file named like one of the skill tables, wherever it is.
+fn is_skill_table_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    SKILL_STEMS
+        .iter()
+        .any(|stem| lower.strip_prefix(stem).is_some_and(|ext| ext == ".lub" || ext == ".lua"))
 }
 
 /// `itemInfo.lua`, `itemInfo_C.lua`, `iteminfo.lub` -- any name the client's
@@ -937,5 +1051,94 @@ mod tests {
     #[test]
     fn no_tables_means_no_config_entries() {
         assert!(ModTables::default().config_entries(Path::new("/nonexistent")).is_empty());
+    }
+
+    /// Each of the four skill tables is recognised by its own name, in any
+    /// case, and only in skillinfoz/, where the client reads it.
+    #[test]
+    fn a_skill_table_is_recognised_only_where_the_client_reads_it() {
+        let key = |rel: &str| data_table(rel).map(|t| t.config_key);
+        assert_eq!(key("luafiles514/lua files/skillinfoz/skillid.lub"), Some("customSkillId"));
+        assert_eq!(key("LuaFiles514/Lua Files/SkillInfoz/SkillInfoList.lua"), Some("customSkillInfoList"));
+        assert_eq!(key("luafiles514/lua files/skillinfoz/skilldescript.lub"), Some("customSkillDescript"));
+        assert_eq!(key("luafiles514/lua files/skillinfoz/skilltreeview.lub"), Some("customSkillTreeView"));
+        assert_eq!(key("luafiles514/lua files/skillinfoz/skillid_f.lub"), None);
+        assert_eq!(key("luafiles514/lua files/skillinfoz/jobinheritlist.lub"), None);
+        assert_eq!(key("luafiles514/lua files/skillid.lub"), None);
+    }
+
+    /// A mod's skill tables are kept aside rather than laid over the client's,
+    /// which they would replace whole, and are listed per table in mod order.
+    #[test]
+    fn skill_tables_are_kept_aside_and_listed_in_mod_order() {
+        let tmp = tmp("skills");
+        let web = tmp.join("web");
+        let skills = web.join("data/luafiles514/lua files/skillinfoz");
+        write(&skills.join("skillid.lub"), "STOCK");
+        let mut all = ModTables::default();
+        for m in ["a", "b"] {
+            let src = tmp.join(m).join("data/luafiles514/lua files/skillinfoz");
+            for stem in SKILL_STEMS {
+                write(&src.join(format!("{stem}.lub")), &format!("{m} {stem}"));
+            }
+            all.extend(copy_data_layer(&tmp.join(m).join("data"), &web, m).unwrap());
+        }
+        assert_eq!(fs::read_to_string(skills.join("skillid.lub")).unwrap(), "STOCK");
+        assert_eq!(fs::read_to_string(skills.join("skilltreeview-b.lub")).unwrap(), "b skilltreeview");
+        assert!(!skills.join("skillinfolist.lub").exists());
+        let entry = |key: &str, stem: &str| {
+            format!(
+                "\t{key}: ['data/luafiles514/lua files/skillinfoz/{stem}-a.lub', \
+                 'data/luafiles514/lua files/skillinfoz/{stem}-b.lub'],\n"
+            )
+        };
+        assert_eq!(
+            all.config_entries(&web),
+            vec![
+                entry("customSkillId", "skillid"),
+                entry("customSkillInfoList", "skillinfolist"),
+                entry("customSkillDescript", "skilldescript"),
+                entry("customSkillTreeView", "skilltreeview"),
+            ]
+        );
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// A mod's era folder replaces the table its own folder has: the client
+    /// reads the era's copy, once.
+    #[test]
+    fn an_era_folder_table_replaces_the_mod_s_own_and_is_listed_once() {
+        let tmp = tmp("skills-era");
+        let web = tmp.join("web");
+        let mut all = ModTables::default();
+        for root in ["mod", "mod/renewal"] {
+            write(&tmp.join(root).join("data/luafiles514/lua files/skillinfoz/skillid.lub"), root);
+            all.extend(copy_data_layer(&tmp.join(root).join("data"), &web, "m").unwrap());
+        }
+        let skills = web.join("data/luafiles514/lua files/skillinfoz");
+        assert_eq!(fs::read_to_string(skills.join("skillid-m.lub")).unwrap(), "mod/renewal");
+        assert_eq!(all.list(&SKILL_IDS), ["skillid-m.lub"]);
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// A skill table the client never reads -- in System/, or anywhere under
+    /// data/ but skillinfoz/ -- is reported; the ones in the right place are not.
+    #[test]
+    fn a_misplaced_skill_table_is_reported() {
+        let tmp = tmp("misplaced-skills");
+        write(&tmp.join("System/skillinfolist.lub"), "x");
+        write(&tmp.join("data/luafiles514/lua files/SkillId.lub"), "x");
+        write(&tmp.join("data/luafiles514/lua files/skillinfoz/skillid.lub"), "x");
+        write(&tmp.join("data/luafiles514/lua files/skillinfoz/skilltreeview.lua"), "x");
+        assert_eq!(
+            misplaced(&tmp, "m"),
+            [
+                "mods: m has System/skillinfolist.lub, but the client reads skill tables only from \
+                 data/luafiles514/lua files/skillinfoz/ -- move it there",
+                "mods: m has data/luafiles514/lua files/SkillId.lub, but the client reads skill tables only from \
+                 data/luafiles514/lua files/skillinfoz/ -- move it there",
+            ]
+        );
+        let _ = fs::remove_dir_all(&tmp);
     }
 }
