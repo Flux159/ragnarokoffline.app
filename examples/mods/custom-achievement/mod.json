@@ -1,0 +1,7 @@
+{
+  "name": "custom-achievement",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "Two achievements of the mod's own in the achievement window: one the server counts by itself, one an NPC script completes.",
+  "requires": { "app": ">=1.6.4", "era": "any" }
+}

@@ -1,0 +1,8 @@
+// The achievement rAthena has no trigger for: reading this board completes it.
+prontera,146,187,4	script	Old Notice Board#achievement	2_BULLETIN_BOARD,{
+	mes "[Old Notice Board]";
+	mes "The ink has faded. Nobody has read this in years.";
+	if (!achievementexists(900002))
+		achievementcomplete 900002;
+	close;
+}

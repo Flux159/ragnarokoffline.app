@@ -599,6 +599,7 @@ each: a monster, a headgear with its own look, and a card that casts a spell.
 | Monsters | **25000–31998** | rAthena accepts 1001–3998 and 20021–31998 and keeps 3999–20020 for player clones. Its own monsters reach about 22700 and grow with each update. |
 | Items | **50000–99999** | Item ids are 32-bit. Stock items sit below 32409 and from 100000 up, so this block is empty. |
 | Headgear/garment looks (`View:`) | **5000+** | Stock view ids stop at 2822. |
+| Achievements | **900000+** | Stock achievements run from 110000 to 240020 in both eras. See [Custom achievements](mods/CUSTOM_ACHIEVEMENTS.md). |
 
 Pick a number in the middle rather than the first one, since other authors
 start at the start too. If two enabled mods define the same id, Settings →
@@ -1938,6 +1939,41 @@ lists them in the client's `customQuestInfo`, which loads **after** the base,
 in mod order, the last definition of a quest winning.
 [Custom quests](mods/CUSTOM_QUESTS.md) covers the whole quest: the server's
 side, the fields this table takes, and choosing an id no one else uses.
+
+**Achievement tables are added too.** A `System/achievement_list.lub` holding
+only your achievements lists them in the achievement window, and every stock
+achievement keeps its text:
+
+```lua
+-- my-mod/System/achievement_list.lub
+achievement_tbl = {
+	[900001] = {
+		UI_Type = 0,
+		group = "BATTLE",
+		major = 3,
+		minor = 1,
+		title = "Poring Patrol",
+		content = {
+			summary = "Teach the Porings some manners.",
+			details = "Defeat 10 Porings anywhere in the world."
+		},
+		resource = { [1] = { text = "Defeat 10 Porings" } },
+		reward = { item = 501 },
+		score = 10
+	},
+}
+```
+
+What completes the achievement, its reward and its score are in your mod's
+`db/achievement_db.yml`; this file is only what the window shows. Write the
+text in ASCII. The app copies each table aside as `achievement_list-<mod>.lub`
+and lists them in the client's `customAchievementInfo`, which loads **after**
+the base, in mod order, the last definition of an achievement winning. This
+needs app 1.6.4 or later: an older one lets the file replace the client's
+whole table, so say `"requires": { "app": ">=1.6.4" }`.
+[Custom achievements](mods/CUSTOM_ACHIEVEMENTS.md) covers the whole
+achievement: the server's side, the window's tabs, ids and titles. See
+[`examples/mods/custom-achievement`](../examples/mods/custom-achievement).
 
 Everything else in `System/` still replaces the client's copy, so start from the
 translation's version and add to it.

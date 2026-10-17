@@ -2491,11 +2491,13 @@ const CLASHES_FILE: &str = ".clashes.tsv";
 /// kinds of trouble with a mod's tables reach Settings by the same road.
 /// The id namespaces two mods can collide in: every item table is one
 /// namespace (rAthena reads item_db.yml and the item_db_*.yml files into the
-/// same table), and monsters are another.
+/// same table), and monsters and achievements are one each.
 fn id_namespace(file: &str) -> Option<&'static str> {
     let lower = file.to_lowercase();
     if lower == "mob_db.yml" {
         Some("monster")
+    } else if lower == "achievement_db.yml" {
+        Some("achievement")
     } else if lower.starts_with("item_db") && lower.ends_with(".yml") {
         Some("item")
     } else {
@@ -2512,7 +2514,7 @@ fn table_ids(body: &str) -> Vec<u64> {
         .collect()
 }
 
-/// Two enabled mods that define the same monster or item id.
+/// Two enabled mods that define the same monster, item or achievement id.
 ///
 /// Their tables are combined (see copy_tree_owned), and rAthena applies the
 /// entries in mod order, so the later mod's fields win over the earlier's for
@@ -2549,7 +2551,11 @@ fn id_collisions(mods: &[(&str, &Path)]) -> Vec<(String, String)> {
         .map(|((earlier, later, ns), ids)| {
             let shown: Vec<String> = ids.iter().take(5).map(u64::to_string).collect();
             let more = if ids.len() > 5 { format!(" and {} more", ids.len() - 5) } else { String::new() };
-            let (noun, plural) = if ns == "item" { ("item", "items") } else { ("monster", "monsters") };
+            let (noun, plural) = match ns {
+                "item" => ("item", "items"),
+                "achievement" => ("achievement", "achievements"),
+                _ => ("monster", "monsters"),
+            };
             let what = if ids.len() == 1 { format!("{noun} {}", shown[0]) } else { format!("{plural} {}{more}", shown.join(", ")) };
             (
                 earlier.clone(),
@@ -3643,6 +3649,16 @@ mod tests {
         // Items are one namespace across item_db.yml and item_db_*.yml.
         fs::write(a.join("db/item_db.yml"), "Body:\n  - Id: 50001\n").unwrap();
         fs::write(c.join("db/item_db_etc.yml"), "Body:\n  - Id: 50001\n  - Id: 50002\n").unwrap();
+        // Achievements are a namespace of their own: 50001 there is no item.
+        let achievements = |ids: &[u64]| {
+            let mut s = String::from("Header:\n  Type: ACHIEVEMENT_DB\n  Version: 2\n\nBody:\n");
+            for id in ids {
+                s.push_str(&format!("  - Id: {id}\n    Group: None\n    Name: A{id}\n    Dependents:\n      900000: true\n"));
+            }
+            s
+        };
+        fs::write(b.join("db/achievement_db.yml"), achievements(&[900001, 50001])).unwrap();
+        fs::write(c.join("db/achievement_db.yml"), achievements(&[900001, 900002])).unwrap();
 
         let found = id_collisions(&[("a", a.as_path()), ("b", b.as_path()), ("c", c.as_path())]);
         assert_eq!(
@@ -3655,6 +3671,10 @@ mod tests {
                 (
                     "a".to_string(),
                     "c also defines item 50001, so c's version is the one in effect. If they are different items, one of the two mods needs other ids.".to_string()
+                ),
+                (
+                    "b".to_string(),
+                    "c also defines achievement 900001, so c's version is the one in effect. If they are different achievements, one of the two mods needs other ids.".to_string()
                 ),
             ]
         );

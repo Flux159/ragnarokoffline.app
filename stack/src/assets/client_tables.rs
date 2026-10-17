@@ -11,8 +11,9 @@
 //! There are two shapes:
 //!
 //! - **List tables** ([`ListTable`]): one file per mod, a config key holding the
-//!   list. Items, quests and signboards. A new one is a `ListTable` and an entry in
-//!   [`LISTS`]; nothing else here or in `link` changes.
+//!   list. Items, quests, achievements and signboards. A new one is a
+//!   `ListTable` and an entry in [`LISTS`]; nothing else here or in `link`
+//!   changes.
 //! - **View tables** ([`ViewTables`]): the sprite tables behind a look, which
 //!   the client loads as id/name *pairs*, so they are collected and paired.
 
@@ -92,6 +93,21 @@ pub const QUESTS: ListTable = ListTable {
     order: Order::ModOrder,
 };
 
+/// `customAchievementInfo`: what the achievement window says about each
+/// achievement -- its tab, title, goals and the reward it shows
+/// (`achievement_list*`, #594). Loaded after the base, an achievement at a time
+/// by id. Without it a mod's achievements counted on the server and never
+/// appeared, and a mod shipping the table took every stock achievement's text.
+pub const ACHIEVEMENTS: ListTable = ListTable {
+    layer: Layer::System,
+    matches: is_achievement_table,
+    stem: "achievement_list",
+    ext: "lub",
+    dir: "System",
+    config_key: "customAchievementInfo",
+    order: Order::ModOrder,
+};
+
 /// `customSignBoardList`: the icons and signs drawn over NPCs
 /// (`data/luafiles514/lua files/SignBoardList.lub`). One table for the whole
 /// game, so a mod shipping its own to put an icon over its NPC used to take
@@ -109,7 +125,7 @@ pub const SIGNBOARDS: ListTable = ListTable {
 };
 
 /// Every list table, in the order their config entries are written.
-const LISTS: &[&ListTable] = &[&ITEMS, &QUESTS, &SIGNBOARDS];
+const LISTS: &[&ListTable] = &[&ITEMS, &QUESTS, &ACHIEVEMENTS, &SIGNBOARDS];
 
 /// The list table a file under a mod's `data/` is, by its path there.
 fn data_table(rel: &str) -> Option<&'static ListTable> {
@@ -477,6 +493,13 @@ fn is_quest_table(name: &str) -> bool {
     lower.starts_with("ongoingquestinfolist") && (lower.ends_with(".lua") || lower.ends_with(".lub"))
 }
 
+/// `achievement_list.lub`, `Achievement_List.lua` -- the achievement table under
+/// any name that starts like the client's own, in any case.
+fn is_achievement_table(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.starts_with("achievement_list") && (lower.ends_with(".lua") || lower.ends_with(".lub"))
+}
+
 /// `luafiles514/lua files/SignBoardList.lub` under `data/`, in any case, or as
 /// `.lua`. The translation's `signboardlist_f.lub` is a different file.
 fn is_signboard_table(rel: &str) -> bool {
@@ -700,6 +723,49 @@ mod tests {
         assert_eq!(fs::read_to_string(merged.join("OngoingQuestInfoList.lub")).unwrap(), "BASE");
         assert_eq!(fs::read_to_string(merged.join("OngoingQuestInfoList-story.lub")).unwrap(), "MOD QUESTS");
         assert_eq!(fs::read_to_string(merged.join("OngoingQuestInfoList-story.2.lub")).unwrap(), "MORE QUESTS");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// A mod's achievement table sits beside the base instead of replacing
+    /// it, so adding one achievement keeps every stock one's text (#594). A
+    /// `.lua` source is listed as `.lub`, which the client runs all the same.
+    #[test]
+    fn an_achievement_table_is_kept_aside_rather_than_replacing_the_base() {
+        let tmp = tmp("achievement");
+        let (src, merged) = (tmp.join("mod/System"), tmp.join("merged"));
+        fs::create_dir_all(&merged).unwrap();
+        write(&merged.join("achievement_list.lub"), "BASE");
+        write(&src.join("achievement_list.lub"), "MOD ACHIEVEMENTS");
+        write(&src.join("achievement_list_more.lua"), "MORE ACHIEVEMENTS");
+        assert!(is_achievement_table("Achievement_List.LUB"));
+        let tables = copy_system_layer(&src, &merged, "deeds").unwrap();
+        assert!(tables.list(&ITEMS).is_empty() && tables.list(&QUESTS).is_empty());
+        assert_eq!(tables.list(&ACHIEVEMENTS), ["achievement_list-deeds.lub", "achievement_list-deeds.2.lub"]);
+        assert_eq!(fs::read_to_string(merged.join("achievement_list.lub")).unwrap(), "BASE");
+        assert_eq!(fs::read_to_string(merged.join("achievement_list-deeds.lub")).unwrap(), "MOD ACHIEVEMENTS");
+        assert_eq!(fs::read_to_string(merged.join("achievement_list-deeds.2.lub")).unwrap(), "MORE ACHIEVEMENTS");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// Achievement tables load after the base and the last definition of an
+    /// achievement wins, so they are listed in mod order -- and a table only
+    /// named like one elsewhere in the tree is not added.
+    #[test]
+    fn achievement_tables_are_listed_in_mod_order() {
+        let tmp = tmp("achievement-order");
+        let mut all = ModTables::default();
+        for m in ["a", "b"] {
+            let src = tmp.join(m).join("System");
+            write(&src.join("achievement_list.lub"), m);
+            all.extend(copy_system_layer(&src, &tmp.join("merged"), m).unwrap());
+        }
+        assert_eq!(
+            all.config_entries(&tmp.join("web")),
+            vec!["\tcustomAchievementInfo: ['System/achievement_list-a.lub', 'System/achievement_list-b.lub'],\n".to_string()]
+        );
+        assert!(!is_achievement_table("achievements.lub"), "the translation's name for it, not the client's");
+        assert!(!is_achievement_table("achievement_list.txt"));
+        assert!(data_table("luafiles514/lua files/achievement_list.lub").is_none());
         let _ = fs::remove_dir_all(&tmp);
     }
 

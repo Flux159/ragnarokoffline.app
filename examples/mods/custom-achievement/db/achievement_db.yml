@@ -1,0 +1,25 @@
+# The server's side of this mod's two achievements: that they exist, what
+# completes them, the reward and the score. What the achievement window says
+# about them is in System/achievement_list.lub.
+Header:
+  Type: ACHIEVEMENT_DB
+  Version: 2
+
+Body:
+  # Counted by the server itself: kills of a Mob target, in the Battle group.
+  - Id: 900001
+    Group: Battle
+    Name: Poring Patrol
+    Targets:
+      - Id: 0
+        Mob: PORING
+        Count: 10
+    Rewards:
+      Item: Red_Potion
+      Amount: 5
+    Score: 10
+  # Nothing in rAthena counts this one (Group: None, the default):
+  # npc/old-notice-board.txt completes it.
+  - Id: 900002
+    Name: Old News
+    Score: 5

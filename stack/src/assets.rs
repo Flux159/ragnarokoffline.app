@@ -467,9 +467,10 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
     // (v3: the signboard table's name; v4: the client's item table staged
     // behind the English one; v5: the Compatibility layers stacked by packet
     // version; v6: the translation's hat effect table left out; v7: native
-    // itemInfo filename aliases; v8: the English quest table sent once), so a
+    // itemInfo filename aliases; v8: the English quest table sent once; v9: a
+    // mod's achievement table kept aside instead of over the base), so a
     // client holding the old staging drops it.
-    fnv(&mut fingerprint, b"owned-assets-v8");
+    fnv(&mut fingerprint, b"owned-assets-v9");
     fnv(&mut fingerprint, text.as_str().as_bytes());
     // Config.local.js carries it, and that file is an ordinary HTTP request
     // the shell only re-fetches when this fingerprint moves. Left out at the
@@ -1228,6 +1229,33 @@ mod tests {
         fs::remove_dir_all(cfg.state.parent().unwrap()).unwrap();
     }
 
+    /// A mod's achievement table is added to the English one rather than
+    /// served in its place: the stock achievements keep their text, and the
+    /// client is told to load the mod's after it (#594).
+    #[test]
+    fn a_mod_s_achievements_are_added_to_the_english_table() {
+        let cfg = fixture_config("mod-achievements");
+        let client = cfg.state.parent().unwrap().join("client");
+        write(&client.join("data.grf"), "archive");
+        write(&client.join("System/achievement_list.lub"), "Korean achievements");
+        let en = cfg.root.join("vendor/ROenglishRE/Translation");
+        write(&en.join("Renewal/data/table.txt"), "renewal table");
+        write(&en.join("Renewal/SystemEN/LuaFiles514/itemInfo.lua"), "English items");
+        write(&en.join("Renewal/SystemEN/OngoingQuests.lub"), "English quests");
+        write(&en.join("Renewal/SystemEN/achievements.lub"), "English achievements");
+        write(&cfg.root.join("config/Config.local.js"), "window.ROConfigLocal = {\nrenewal: true,\n};\n");
+        write(&cfg.root.join("config/index.html"), "game entry");
+        write(&cfg.state.join("mods/deeds/System/achievement_list.lub"), "Deeds achievements");
+        crate::mods::set_enabled(&cfg.state, "deeds", true).unwrap();
+        link(&cfg, &[client.join("data.grf").to_str().unwrap().to_string()]).unwrap();
+        let read = |p: &str| fs::read_to_string(cfg.state.join("assets").join(p)).unwrap();
+        assert_eq!(read("System/achievement_list.lub"), "English achievements");
+        assert_eq!(read("System/achievement_list-deeds.lub"), "Deeds achievements");
+        let config = read("Config.local.js");
+        assert!(config.contains("\tcustomAchievementInfo: ['System/achievement_list-deeds.lub'],\n"), "{config}");
+        fs::remove_dir_all(cfg.state.parent().unwrap()).unwrap();
+    }
+
     /// The Compatibility layers stack up to the chosen packet version, oldest
     /// first and in the running era's folder, taking only what
     /// TRANSLATION_LAYERS names; TRANSLATION_EXTRAS still has the last word.
@@ -1684,8 +1712,9 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
-    /// A mod's item and quest tables travel from its System/ folder into the
-    /// client config: the whole path, with the base item table named after it.
+    /// A mod's item, quest and achievement tables travel from its System/
+    /// folder into the client config: the whole path, with the base item table
+    /// named after it.
     #[test]
     fn a_mod_s_tables_reach_the_client_config() {
         let cfg = fixture_config("mod-tables");
@@ -1695,12 +1724,14 @@ mod tests {
         let src = cfg.state.join("mods/story/System");
         write(&src.join("itemInfo.lua"), "MOD ITEMS");
         write(&src.join("OngoingQuestInfoList.lub"), "MOD QUESTS");
+        write(&src.join("achievement_list.lub"), "MOD ACHIEVEMENTS");
         fs::write(cfg.root.join("config/Config.local.js"), "window.ROConfigLocal = {\n\tskipIntro: true\n};\n").unwrap();
         let tables = copy_system_layer(&src, &web.join("System"), "story").unwrap();
         write_client_config(&cfg, &web, &[], &tables, GameText::English, crate::packetver::default()).unwrap();
         let body = fs::read_to_string(web.join("Config.local.js")).unwrap();
         assert!(body.contains("\tcustomItemInfo: ['System/itemInfo-story.lua', 'System/itemInfo.lua'],\n"), "{body}");
         assert!(body.contains("\tcustomQuestInfo: ['System/OngoingQuestInfoList-story.lub'],\n"), "{body}");
+        assert!(body.contains("\tcustomAchievementInfo: ['System/achievement_list-story.lub'],\n"), "{body}");
         assert!(body.trim_end().ends_with("};"), "{body}");
         fs::remove_dir_all(cfg.state.parent().unwrap()).unwrap();
     }

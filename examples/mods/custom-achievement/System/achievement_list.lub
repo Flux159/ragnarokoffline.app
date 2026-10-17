@@ -1,0 +1,34 @@
+-- What the achievement window shows for this mod's two achievements, and
+-- only those: the app loads this after the client's own table, so every stock
+-- achievement keeps its text. Plain ASCII; the client does not read this file
+-- as UTF-8.
+achievement_tbl = {
+	[900001] = {
+		UI_Type = 0,
+		group = "BATTLE",
+		major = 3,
+		minor = 1,
+		title = "Poring Patrol",
+		content = {
+			summary = "Teach the Porings some manners.",
+			details = "Defeat 10 Porings anywhere in the world."
+		},
+		resource = { [1] = { text = "Defeat 10 Porings" } },
+		reward = { item = 501 },
+		score = 10
+	},
+	[900002] = {
+		UI_Type = 0,
+		group = "ADVENTURE",
+		major = 2,
+		minor = 0,
+		title = "Old News",
+		content = {
+			summary = "Somebody should read that notice board.",
+			details = "Read the old notice board in Prontera."
+		},
+		resource = { [1] = { text = "Read the old notice board" } },
+		reward = {},
+		score = 5
+	},
+}

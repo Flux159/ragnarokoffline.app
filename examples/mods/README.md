@@ -25,6 +25,7 @@ noticing: a `data/`-only mod has no empty `npc/` folder for symmetry.
 | [tougher-monsters](tougher-monsters) | `db/` `npc/` | Both ways to change what you fight, and how `Drops:` differs from every other field. |
 | [quest-npc](quest-npc) | `npc/` | A menu, a branch, a character variable that survives a relog, and a reward. |
 | [custom-item](custom-item) | `db/` `System/` `npc/` | An item in no client: stats, a name, and an NPC who gives you one. Ten lines of `System/`, not five megabytes. |
+| [custom-achievement](custom-achievement) | `db/` `System/` `npc/` | Two achievements in the game's own window, beside the stock ones: one the server counts by itself, one a script completes. Not yet run in game. |
 | [custom-map](custom-map) | `data/` `npc/` | A map that is in nobody's GRF, with monsters and an NPC on it. |
 | [island-ferry](island-ferry) | `npc/` | A warp square and an NPC that takes you to it. Needs `custom-map`. |
 | [island-population](island-population) | `db/` | **Blocked.** Why AI population cannot be configured for a modded map yet. |
