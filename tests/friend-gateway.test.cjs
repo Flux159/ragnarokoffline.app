@@ -4,10 +4,30 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const crypto = require('node:crypto');
 const { once } = require('node:events');
-const { FriendGateway, Frames } = require('../electron/sharing/gateway');
+const { FriendGateway, Frames, cachePolicy, ifNoneMatch } = require('../electron/sharing/gateway');
 async function fixture(t, options = {}) {
-  const observed = [];
-  const upstream = http.createServer((req, res) => { observed.push({ url: req.url, headers: req.headers }); res.setHeader('cache-control', 'public,max-age=99999'); res.end('asset'); });
+  const observed = [], connections = [];
+  // Headers as robrowser-remoteclient sends them (src/http.rs, src/routes.rs).
+  const upstream = http.createServer((req, res) => {
+    observed.push({ url: req.url, headers: req.headers });
+    const path = req.url.split('?')[0];
+    if (path === '/' || path === '/index.html' || path === '/Config.local.js' || path === '/overlay.id') { res.setHeader('cache-control', 'no-store'); return res.end('generated'); }
+    if (path === '/Online.js') {
+      const etag = 'W/"4-18f"', modified = 'Tue, 07 Oct 2025 10:00:00 GMT';
+      res.setHeader('cache-control', 'public, max-age=0'); res.setHeader('etag', etag); res.setHeader('last-modified', modified);
+      if (String(req.headers['if-none-match'] || '').split(',').map(s => s.trim()).includes(etag) || req.headers['if-modified-since'] === modified) { res.statusCode = 304; return res.end(); }
+      return res.end('code');
+    }
+    if (/\.(spr|act|bmp)$/.test(path)) {
+      const etag = '"5d41402abc4b2a76"';
+      res.setHeader('cache-control', 'public, max-age=86400, immutable'); res.setHeader('etag', etag); res.setHeader('vary', 'Accept-Encoding');
+      if (String(req.headers['if-none-match'] || '').split(',').map(s => s.trim()).includes(etag)) { res.statusCode = 304; return res.end(); }
+      res.setHeader('last-modified', new Date().toUTCString()); return res.end('asset');
+    }
+    if (path === '/moved') { res.statusCode = 302; res.setHeader('location', 'https://evil.example/'); return res.end(); }
+    res.setHeader('cache-control', 'no-cache, no-store, must-revalidate'); res.setHeader('etag', '"x"'); res.end('other');
+  });
+  upstream.on('connection', socket => connections.push(socket));
   upstream.on('upgrade', (req, socket) => {
     const accept = crypto.createHash('sha1').update(req.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
@@ -29,7 +49,7 @@ async function fixture(t, options = {}) {
     const req = http.request({ host: '127.0.0.1', port, path: url, headers: { host: 'play.example.com', origin, cookie, connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-version': '13', 'sec-websocket-key': crypto.randomBytes(16).toString('base64') } });
     req.on('upgrade', (_, socket) => resolve(socket)); req.on('response', res => { res.resume(); reject(Error(String(res.statusCode))); }); req.on('error', reject); req.end();
   });
-  return { gateway, port, observed, request, exchange, login, socket, registrations: () => registrations };
+  return { gateway, port, observed, connections, request, exchange, login, socket, registrations: () => registrations };
 }
 test('all game assets, search, batches and WS require an invitation, including loopback/forged forwarded peers', async t => {
   const f = await fixture(t);
@@ -46,7 +66,8 @@ test('exchange cookies are secure, private, bounded; proxy strips credentials/ca
   assert.equal(auth.status, 200); assert.match(auth.headers['set-cookie'][0], /Secure; HttpOnly; SameSite=Strict/);
   const cookie = auth.headers['set-cookie'][0].split(';')[0];
   const response = await f.request('/data/a.spr', { headers: { cookie, authorization: 'Bearer private-sentinel', 'x-forwarded-host': 'forged' } });
-  assert.equal(response.status, 200); assert.equal(response.text, 'asset'); assert.match(response.headers['cache-control'], /no-store/);
+  assert.equal(response.status, 200); assert.equal(response.text, 'asset'); assert.equal(response.headers['cache-control'], 'private, no-cache');
+  assert.equal(response.headers['cdn-cache-control'], 'no-store'); assert.equal(response.headers['cloudflare-cdn-cache-control'], 'no-store');
   assert.equal(f.observed[0].headers.cookie, undefined); assert.equal(f.observed[0].headers.authorization, undefined);
   for (const url of ['/logs/a', '/%6cogs/a', '/%252e%252e/key', '/data/../.private', '/resources/a', '/data.grf', '/api/cache-stats', '/api/missing-files']) assert.equal((await f.request(url, { headers: { cookie } })).status, 404, url);
   assert.equal((await f.request('/data/a.spr', { headers: { cookie, host: 'wrong.example.com' } })).status, 421);
@@ -203,4 +224,68 @@ test('without a modHost every /_friend/mod/ path is a 404, and a throwing one is
   const r = await broken.request('/_friend/mod/echo/x', { headers: { cookie: cookie2 } });
   assert.equal(r.status, 502);
   assert.doesNotMatch(r.text, /secret detail/);
+});
+test('cache policy: upstream caching becomes private revalidation; no-store and unknown stay no-store', () => {
+  assert.equal(cachePolicy('public, max-age=86400, immutable'), 'private, no-cache');
+  assert.equal(cachePolicy('public, max-age=0'), 'private, no-cache');
+  assert.equal(cachePolicy('no-cache'), 'private, no-cache');
+  assert.equal(cachePolicy('no-store'), 'private, no-store');
+  assert.equal(cachePolicy('no-cache, no-store, must-revalidate'), 'private, no-store');
+  assert.equal(cachePolicy('public'), 'private, no-store');
+  assert.equal(cachePolicy(undefined), 'private, no-store');
+  assert.equal(ifNoneMatch('W/"5d41402abc4b2a76"'), 'W/"5d41402abc4b2a76", "5d41402abc4b2a76"');
+  assert.equal(ifNoneMatch('"a", W/"b"'), '"a", W/"b", "b"');
+  assert.equal(ifNoneMatch('*'), '*');
+  assert.equal(ifNoneMatch('junk\r\nx: y'), null);
+});
+test('assets pass validators and 304s through, privately; generated pages stay no-store', async t => {
+  const f = await fixture(t), cookie = await f.login();
+  const strict = r => {
+    assert.equal(r.headers['cdn-cache-control'], 'no-store'); assert.equal(r.headers['cloudflare-cdn-cache-control'], 'no-store');
+    assert.equal(r.headers['x-content-type-options'], 'nosniff'); assert.equal(r.headers['referrer-policy'], 'no-referrer'); assert.equal(r.headers['x-frame-options'], 'DENY');
+    assert.doesNotMatch(r.headers['cache-control'], /public|max-age|immutable/);
+  };
+  const cold = await f.request('/data/sprite/a.spr', { headers: { cookie } });
+  assert.equal(cold.status, 200); assert.equal(cold.text, 'asset'); strict(cold);
+  assert.equal(cold.headers['cache-control'], 'private, no-cache'); assert.equal(cold.headers.etag, '"5d41402abc4b2a76"'); assert.equal(cold.headers.vary, 'Accept-Encoding');
+  // The second load: the browser revalidates and gets an empty 304, including
+  // when Cloudflare handed it a weakened copy of the ETag.
+  for (const tag of [cold.headers.etag, 'W/' + cold.headers.etag]) {
+    const warm = await f.request('/data/sprite/a.spr', { headers: { cookie, 'if-none-match': tag } });
+    assert.equal(warm.status, 304, tag); assert.equal(warm.text, ''); strict(warm);
+    assert.equal(warm.headers['cache-control'], 'private, no-cache'); assert.equal(warm.headers.etag, cold.headers.etag);
+    assert.match(f.observed.at(-1).headers['if-none-match'], /(^|, )"5d41402abc4b2a76"/);
+  }
+  const code = await f.request('/Online.js', { headers: { cookie } });
+  assert.equal(code.headers['cache-control'], 'private, no-cache'); assert.equal(code.headers.etag, 'W/"4-18f"'); assert.ok(code.headers['last-modified']);
+  assert.equal((await f.request('/Online.js', { headers: { cookie, 'if-none-match': code.headers.etag } })).status, 304);
+  assert.equal((await f.request('/Online.js', { headers: { cookie, 'if-modified-since': code.headers['last-modified'] } })).status, 304);
+  assert.equal(f.observed.at(-1).headers['if-modified-since'], code.headers['last-modified']);
+  for (const url of ['/', '/index.html', '/Config.local.js', '/overlay.id', '/data/a.json']) {
+    const r = await f.request(url, { headers: { cookie, 'if-none-match': '"x"' } });
+    assert.equal(r.status, 200, url); assert.equal(r.headers['cache-control'], 'private, no-store', url); assert.equal(r.headers.etag, undefined, url); strict(r);
+  }
+  // Still no other redirect, and still nothing without a session.
+  assert.equal((await f.request('/moved', { headers: { cookie } })).status, 502);
+  const before = f.observed.length;
+  const anonymous = await f.request('/data/sprite/a.spr', { headers: { 'if-none-match': cold.headers.etag } });
+  assert.equal(anonymous.status, 401); assert.equal(anonymous.headers['cache-control'], 'private, no-store'); assert.equal(f.observed.length, before);
+});
+test('validators are not sent with a POST, and cookies and other headers still are not forwarded', async t => {
+  const f = await fixture(t), cookie = await f.login();
+  await f.request('/data/sprite/a.spr', { headers: { cookie, 'if-none-match': '"5d41402abc4b2a76"', 'if-modified-since': 'not a date', range: 'bytes=0-1', 'if-match': '"y"' } });
+  const sent = f.observed.at(-1).headers;
+  assert.equal(sent['if-modified-since'], undefined); assert.equal(sent.range, undefined); assert.equal(sent['if-match'], undefined); assert.equal(sent.cookie, undefined);
+  await f.request('/batch', { method: 'POST', headers: { cookie, origin: f.gateway.origin, 'content-type': 'application/json', 'if-none-match': '"5d41402abc4b2a76"' }, body: JSON.stringify({ files: ['data/a.spr'] }) });
+  assert.equal(f.observed.at(-1).headers['if-none-match'], undefined);
+});
+test('asset requests reuse a bounded pool of upstream connections, closed with the gateway', async t => {
+  const f = await fixture(t), cookie = await f.login();
+  for (let i = 0; i < 20; i++) assert.equal((await f.request(`/data/sprite/${i}.spr`, { headers: { cookie } })).status, 200);
+  assert.equal(f.connections.length, 1);
+  await Promise.all(Array.from({ length: 40 }, (_, i) => f.request(`/data/sprite/p${i}.spr`, { headers: { cookie } })));
+  assert.ok(f.connections.length <= 16, String(f.connections.length));
+  await f.gateway.stop();
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.ok(f.connections.every(socket => socket.destroyed));
 });

@@ -197,8 +197,15 @@ An invitation is exchanged from a URL fragment through a same-origin POST for a
 Secure, HttpOnly, SameSite cookie. The fragment is removed before game navigation.
 Expiry/revocation also closes live game sockets. HTTP bodies, sessions, account
 attempts, socket counts and WebSocket frames/messages are bounded; proxy pipes
-preserve backpressure. Authenticated content is private/no-store at the HTTP/CDN
-layer. The client's existing local file cache still applies.
+preserve backpressure. Authenticated content is never cached by Cloudflare
+(`cdn-cache-control: no-store`). The player's own browser may keep game files
+the asset server marks cacheable, as `private, no-cache`: it revalidates each
+one with its ETag and usually gets an empty 304. Never `max-age` or
+`immutable`, because a mod's files share URLs with the stock ones and nothing
+in a friend's browser follows the host's `overlay.id`, so a change on the host
+reaches friends on their next load. Generated pages (`/`, `Config.local.js`)
+and everything else stay `private, no-store`. The client's existing local file
+cache still applies.
 
 Friends mode replaces automatic failed-password bans of the shared proxy IP
 with five login attempts per minute per browser and per account. Other friends

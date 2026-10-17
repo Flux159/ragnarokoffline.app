@@ -33,6 +33,30 @@ const safeHeaders = {
   'cloudflare-cdn-cache-control': 'no-store', 'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY',
 };
+// The asset server's cache policy, made private: Cloudflare never stores a
+// game file (the CDN headers above stay no-store), only the invited player's
+// own browser does. Anything the upstream may cache becomes `no-cache`, i.e.
+// "keep it, but ask with its ETag first" -- never `max-age`/`immutable`.
+// The asset server marks GRF-type files immutable for a day, but a mod puts
+// its files at the same URLs as the stock ones, and nothing in a friend's
+// browser watches /overlay.id the way the Electron shell does (main.js,
+// dropStaleClientCache). An immutable copy would keep showing the host's
+// previous mods for up to a day; a revalidated one costs a 304 and is right
+// the moment the host relinks. Unknown or missing policy is not cached.
+function cachePolicy(upstream) {
+  const value = String(upstream || '').toLowerCase();
+  if (!value || value.includes('no-store') || !/(^|[\s,])(no-cache|max-age=\d+)/.test(value)) return 'private, no-store';
+  return 'private, no-cache';
+}
+// If-None-Match uses weak comparison (RFC 9110 13.1.2), but the asset server
+// matches its strong ETags byte for byte, and Cloudflare turns a strong ETag
+// weak whenever it recompresses a response. Offer the strong form too.
+function ifNoneMatch(value) {
+  if (typeof value !== 'string' || value.length > 1024) return null;
+  const tags = value.split(',').map(tag => tag.trim()).filter(tag => /^(W\/)?"[\x21\x23-\x7e]*"$|^\*$/.test(tag));
+  for (const tag of [...tags]) if (tag.startsWith('W/') && !tags.includes(tag.slice(2))) tags.push(tag.slice(2));
+  return tags.length ? tags.join(', ') : null;
+}
 function publicPath(raw) {
   if (typeof raw !== 'string' || raw.length > 4096 || !raw.startsWith('/') || raw.startsWith('//')) return false;
   const decoded = raw.split('?')[0].replace(/%([a-f0-9]{2})/ig, (_, n) => String.fromCharCode(parseInt(n, 16))).toLowerCase();
@@ -45,7 +69,7 @@ function publicPath(raw) {
   // is a 16-hex FNV fingerprint of the client overlay with no paths or secrets
   // in it, and a joining player needs it to know their cached copies of the
   // host's files are stale. It is still behind the invitation session checked
-  // below, and still answered private/no-store like everything else here.
+  // below, and the asset server answers it no-store.
   if (decoded === '/list-files') return false;
   return true;
 }
@@ -125,6 +149,10 @@ class FriendGateway {
     this.socketPaths = new Set(gameTargets(ports).map(target => '/ws/' + target));
     this.loginPath = '/ws/127.0.0.1:' + ports.login;
     this.host = url.host; this.sessions = new Map(); this.sockets = new Set(); this.requests = new Set();
+    // Reused connections to the asset server: a map load is hundreds of small
+    // files. Idle ones close after 4 s, well inside the asset server's own
+    // idle limit, so a request is never sent down a socket it is closing.
+    this.agent = new http.Agent({ keepAlive: true, maxSockets: 16, maxFreeSockets: 8, timeout: 4000 });
     // A supplied invitation survives restarts, so a link already sent to
     // friends keeps working after a crash or a repair. Only a token of the
     // right shape is accepted; anything else is replaced rather than trusted.
@@ -225,14 +253,25 @@ class FriendGateway {
     if (this.closed || this.session(req) !== entry) return this.reply(res, 401, { error: 'A current invitation is required' });
     const headers = { host: '127.0.0.1:' + this.upstreamPort };
     for (const name of ['accept', 'accept-encoding', 'content-type']) if (req.headers[name]) headers[name] = req.headers[name];
+    if (!bytes) {
+      const tags = ifNoneMatch(req.headers['if-none-match']);
+      if (tags) headers['if-none-match'] = tags;
+      const since = req.headers['if-modified-since'];
+      if (typeof since === 'string' && since.length <= 64 && !Number.isNaN(Date.parse(since))) headers['if-modified-since'] = since;
+    }
     if (bytes) headers['content-length'] = bytes.length;
     const search = req.method === 'POST' && ['/', '/search'].includes(req.url);
     if (search) headers['accept-encoding'] = 'identity';
-    const proxy = http.request({ host: '127.0.0.1', port: this.upstreamPort, path: req.url, method: req.method, headers, agent: false, timeout: 30000 }, response => {
+    const proxy = http.request({ host: '127.0.0.1', port: this.upstreamPort, path: req.url, method: req.method, headers, agent: this.agent, timeout: 30000 }, response => {
       // Never forward cookies, redirects, CORS headers or public cache policy.
-      const output = { ...safeHeaders };
-      for (const name of ['content-type', 'content-encoding', 'content-length']) if (response.headers[name]) output[name] = response.headers[name];
-      if (response.statusCode >= 300 && response.statusCode < 400) { response.destroy(); return this.reply(res, 502, { error: 'Unexpected game redirect' }); }
+      // Validators go back only on what the browser may keep.
+      const output = { ...safeHeaders, 'cache-control': cachePolicy(response.headers['cache-control']) };
+      const names = ['content-type', 'content-encoding', 'content-length'];
+      if (output['cache-control'] !== 'private, no-store' && !search) names.push('etag', 'last-modified');
+      for (const name of names) if (response.headers[name]) output[name] = response.headers[name];
+      if (/(^|,)\s*accept-encoding\s*(,|$)/i.test(response.headers.vary || '')) output.vary = 'Accept-Encoding';
+      // A 304 is the answer to a validator, not a redirect.
+      if (response.statusCode >= 300 && response.statusCode < 400 && response.statusCode !== 304) { response.destroy(); return this.reply(res, 502, { error: 'Unexpected game redirect' }); }
       if (search) {
         let result = '', count = 0;
         response.on('data', chunk => { count += chunk.length; if (count > 1024 * 1024) response.destroy(); else result += chunk; });
@@ -243,7 +282,9 @@ class FriendGateway {
     this.requests.add(proxy); proxy.once('close', () => this.requests.delete(proxy));
     proxy.on('timeout', () => proxy.destroy());
     proxy.on('error', () => { if (!res.headersSent) this.reply(res, 502, { error: 'The game server is reconnecting. Try again shortly.' }); else res.destroy(); });
-    res.on('close', () => proxy.destroy()); proxy.end(bytes);
+    // Only a player who left mid-response cuts the upstream request; one that
+    // finished leaves its socket in the pool for the next file.
+    res.on('close', () => { if (!res.writableFinished) proxy.destroy(); }); proxy.end(bytes);
   }
   // ---- Sign in with Google or Apple (oidc.js, docs/FRIENDS_SHARING.md) ----
   signInPage(res, status, title, message, next, extra = {}) {
@@ -481,7 +522,8 @@ class FriendGateway {
     this.closed = true; clearInterval(this.timer); this.revoke();
     for (const request of this.requests) request.destroy();
     for (const socket of this.sockets) socket.destroy();
+    this.agent.destroy();
     if (this.server) await new Promise(resolve => this.server.close(resolve));
   }
 }
-module.exports = { FriendGateway, Frames, publicPath };
+module.exports = { FriendGateway, Frames, publicPath, cachePolicy, ifNoneMatch };
