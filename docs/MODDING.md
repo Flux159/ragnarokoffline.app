@@ -1812,6 +1812,34 @@ what the copy says, name the track per map in `mod.json`:
 `"maps": { "my_isle": { "bgm": "my-theme.mp3" } }`. See
 [Custom maps](mods/CUSTOM_MAPS.md#the-sky-the-weather-and-the-music).
 
+### Playing a track from a script
+
+An NPC script plays a track with rAthena's `playBGM`, to the player it is
+running for, or with `playBGMall`, to a whole map, part of one, or every player
+online:
+
+```
+playBGM "my-theme";                                     // BGM/my-theme.mp3
+playBGMall "my-theme", "prontera";                      // everyone in Prontera
+playBGMall "my-theme", "prontera", 140, 170, 170, 200;  // only that rectangle of it
+```
+
+The name is a file in `BGM/`, the mod's own or one of the client's (`"08"` is
+Prontera's theme), and `.mp3` is added when it is left off. The track replaces
+the map's music until the player goes to another map, which starts that map's
+own; a warp within the same map keeps it playing. To give the map its music
+back sooner, play the map's track by name: the map editor's
+[music browser](mods/MAP_EDITOR.md#the-music-browser) shows which track each
+map plays.
+
+Name a track as `"maps"` asks: letters, digits, `_` and `-`, and no `bgm` in a
+name that has a `-`. The client cuts any name that mentions "bgm" down to its
+last run of letters, digits and `_`, so `playBGM "duel-bgm"` plays `bgm.mp3`.
+
+In apps up to 1.6.3 both commands change nothing: their client ignored the
+packet they send to the client versions the app offers. A mod that depends on
+its music can say `"requires": { "app": ">1.6.3" }`.
+
 ## Custom maps
 
 A mod can add a map that is in nobody's GRF: put its `.gat`, `.gnd` and `.rsw`
