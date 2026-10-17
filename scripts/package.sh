@@ -255,6 +255,10 @@ done
 (cd "$PAYLOAD/vendor/roBrowserLegacy/dist/Web" && rm -f \
     GrfViewer.js MapViewer.js ModelViewer.js StrViewer.js EffectViewer.js \
     GrannyModelViewer.js screenshotwide.png screenshotnarrow.png)
+# The copy above gave every file a new mtime in no particular order, and the
+# asset server ignores a .br/.gz older than the file it stands for. Write them
+# again here so they are newer.
+node "$ROOT/scripts/compress-bundle.cjs" --precompress-only "$PAYLOAD/vendor/roBrowserLegacy/dist/Web"
 
 # rAthena's db/import stubs, so a mod that overrides one table does not hide the
 # other fifty-nine. Staged here rather than lifted out of the image at runtime:

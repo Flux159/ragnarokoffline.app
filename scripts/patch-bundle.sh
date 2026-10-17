@@ -28,3 +28,7 @@ trap 'rm -f "$TMP"' EXIT
 node "$ROOT/scripts/patch-navigation-client.cjs" "$ONLINE" "$TMP"
 mv "$TMP" "$ONLINE"
 echo "patched Online.js (legacy navigation)"
+
+# Last, because it minifies: every patch above needs an exact signature in the
+# unminified bundle. Writes .br/.gz copies the asset server sends in its place.
+node "$ROOT/scripts/compress-bundle.cjs" "$WEB"
