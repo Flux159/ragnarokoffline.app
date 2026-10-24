@@ -3255,6 +3255,31 @@ mod tests {
         assert!(!header_clears(stub));
     }
 
+    // Names and ambient chat lines arrive the same way, so a mod can add to the
+    // pools the shells draw from.
+    #[test]
+    fn the_population_names_and_chat_tables_import_the_mod_overlay() {
+        for (table, stub, kind, path) in [
+            (
+                include_str!("../../third-party/population-engine/files/db/population_names.yml"),
+                include_str!("../../third-party/population-engine/files/db/import-tmpl/population_names.yml"),
+                "POPULATION_NAMES_DB",
+                "- Path: db/import/population_names.yml",
+            ),
+            (
+                include_str!("../../third-party/population-engine/files/db/population_chat.yml"),
+                include_str!("../../third-party/population-engine/files/db/import-tmpl/population_chat.yml"),
+                "POPULATION_CHAT_DB",
+                "- Path: db/import/population_chat.yml",
+            ),
+        ] {
+            assert_eq!(header_type(table).as_deref(), Some(kind));
+            assert!(table.contains(path), "the engine would read nothing a mod ships");
+            assert_eq!(header_type(stub).as_deref(), Some(kind));
+            assert!(!header_clears(stub));
+        }
+    }
+
     // Companion strategies arrive the same way, and the worked example must stay
     // a table of the same Type or the merge would refuse it.
     #[test]

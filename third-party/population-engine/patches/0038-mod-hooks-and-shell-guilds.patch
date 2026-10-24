@@ -1,0 +1,430 @@
+From 0000000000000000000000000000000000000038
+Subject: [PATCH] Mod hooks and shell guilds: what a mod's script can do with ambient shells
+
+The core side of the mod hooks in population_engine (search "RAGNAROKMAC (mod hooks)" and
+"RAGNAROKMAC (shell guilds)"):
+
+- Script commands (src/custom/script.inc): population_face, population_respawn,
+  population_revive, population_death_event, population_chat_event, population_chatroom,
+  population_chatroom_close, population_guild, population_guild_join, population_guild_leave,
+  population_guild_ally, population_war.
+- Battle config: population_engine_respawn_min_ms / _max_ms / _skew (how long a dead ambient
+  shell lies; 5000/5000/1 is the old fixed 5 s), population_engine_no_kill_steal (0),
+  population_engine_shell_kill_events (1: a shell that breaks the Emperium runs the castle's
+  OnAgitBreak like a player; 0 drops it as before; 2 every monster's death event).
+- clif.cpp: public chat reaches population_engine_on_public_chat (the mod's chat event).
+- Shell guilds live only in the map server's memory, at guild ids 1900000001-1900009999:
+  guild.cpp never asks the char server about them, never sends it their member or chat
+  packets, and runs castle scripts' pending info events once the mod makes the guild.
+- battle.cpp: for a shell at war (population_war), the engine's per-map shell "party" id
+  (0x70000000 | map) no longer makes it an ally of every other shell on a PvP or GvG map;
+  it fights by guild like a player. Shells not at war are as before.
+- pc.cpp: a shell at war that dies on a PvP or GvG map goes through the engine's own death
+  handling (the mod's death event, its respawn delay) instead of rAthena's return to the
+  save point. Shells not at war are as before.
+
+diff --git a/src/custom/battle_config_init.inc b/src/custom/battle_config_init.inc
+--- a/src/custom/battle_config_init.inc
++++ b/src/custom/battle_config_init.inc
+@@ -15,6 +15,11 @@
+ { "population_engine_enable",&battle_config.population_engine_enable,0,0,1,},
+ { "population_engine_demand_spawn",&battle_config.population_engine_demand_spawn,1,0,1,},
+ { "population_engine_demand_grace_ms",&battle_config.population_engine_demand_grace_ms,300000,0,3600000,},
++{ "population_engine_respawn_min_ms",&battle_config.population_engine_respawn_min_ms,5000,1000,600000,},
++{ "population_engine_respawn_max_ms",&battle_config.population_engine_respawn_max_ms,5000,1000,600000,},
++{ "population_engine_respawn_skew",&battle_config.population_engine_respawn_skew,1,1,6,},
++{ "population_engine_no_kill_steal",&battle_config.population_engine_no_kill_steal,0,0,1,},
++{ "population_engine_shell_kill_events",&battle_config.population_engine_shell_kill_events,0,0,2,},
+ { "population_engine_density_pct",&battle_config.population_engine_density_pct,100,10,500,},
+ { "population_engine_companion_limit",&battle_config.population_engine_companion_limit,4,4,11,},
+ { "population_engine_town_pct",&battle_config.population_engine_town_pct,100,0,100,},
+diff --git a/src/custom/battle_config_struct.inc b/src/custom/battle_config_struct.inc
+--- a/src/custom/battle_config_struct.inc
++++ b/src/custom/battle_config_struct.inc
+@@ -21,6 +21,17 @@ int32 population_engine_enable;
+ int32 population_engine_demand_spawn;
+ /// How long a map keeps its shells after the last real player leaves.
+ int32 population_engine_demand_grace_ms;
++/// RAGNAROKMAC (respawn control): how long a dead ambient shell lies before it stands up,
++/// rolled between min and max; skew > 1 favours the short end. 5000/5000/1 = as before.
++int32 population_engine_respawn_min_ms;
++int32 population_engine_respawn_max_ms;
++int32 population_engine_respawn_skew;
++/// RAGNAROKMAC: 1 = an ambient shell never picks a monster already fighting someone outside its party.
++int32 population_engine_no_kill_steal;
++/// RAGNAROKMAC (shell guilds): a monster's death event when a shell kills it. 0 dropped (as before),
++/// 1 runs, with the shell attached, for the Emperium and guardians (WoE), 2 for every monster.
++/// A mod turns it on with setbattleflag.
++int32 population_engine_shell_kill_events;
+ /// Percentage applied to every spawn-table population before it is
+ /// distributed across a map list. 100 = exactly what the YAML asks for.
+ int32 population_engine_density_pct;
+diff --git a/src/custom/script.inc b/src/custom/script.inc
+--- a/src/custom/script.inc
++++ b/src/custom/script.inc
+@@ -408,6 +408,181 @@ BUILDIN_FUNC(companion_hire)
+  *   in time, 4 went somewhere it cannot walk to. Through a portal it simply
+  *   follows: it walks into the same portal a moment later. "" turns it off.
+  *------------------------------------------*/
++/**
++ * RAGNAROKMAC (mod hooks): what a mod can do with the shells beyond moving them.
++ *
++ * population_face(<gid>, <body dir 0-7>{, <head 0 forward, 1 right, 2 left>})
++ *   Turns a shell's body (and head) on the spot, sitting or standing, the way a player
++ *   presses the arrow keys; everyone around sees it. 1 done, 0 not a shell.
++ */
++BUILDIN_FUNC(population_face)
++{
++	map_session_data *sd = map_id2sd(script_getnum(st, 2));
++	if (sd == nullptr || population_engine_shell_kind(sd->id) == 0) {
++		script_pushint(st, 0);
++		return SCRIPT_CMD_SUCCESS;
++	}
++	unit_setdir(sd, static_cast<uint8>(script_getnum(st, 3) & 7), false);
++	if (script_hasdata(st, 4))
++		sd->head_dir = static_cast<uint8>(script_getnum(st, 4) % 3);
++	clif_changed_dir(*sd, AREA);
++	script_pushint(st, 1);
++	return SCRIPT_CMD_SUCCESS;
++}
++
++/**
++ * population_respawn(<gid>, <ms>)
++ *   How long this shell's body lies the next times it dies: ms, 0 the battle config's
++ *   delay (population_engine_respawn_min_ms / _max_ms), -1 never: it stays down until
++ *   population_revive or population_despawn. 1 done, 0 not an ambient shell.
++ */
++BUILDIN_FUNC(population_respawn)
++{
++	map_session_data *sd = map_id2sd(script_getnum(st, 2));
++	if (sd == nullptr || population_engine_shell_kind(sd->id) != POP_SHELL_AMBIENT) {
++		script_pushint(st, 0);
++		return SCRIPT_CMD_SUCCESS;
++	}
++	sd->pop.respawn_ms = std::max(-1, script_getnum(st, 3));
++	script_pushint(st, 1);
++	return SCRIPT_CMD_SUCCESS;
++}
++
++/**
++ * population_revive(<gid>{, "<map>", <x>, <y>})
++ *   Stands a dead shell up again, at full HP and SP: where it lies, or on the map and
++ *   cell given (its save point, a portal it walks in from). 1 done, 0 not a dead shell.
++ */
++BUILDIN_FUNC(population_revive)
++{
++	int16 m = -1, x = 0, y = 0;
++	if (script_hasdata(st, 3)) {
++		m = map_mapname2mapid(script_getstr(st, 3));
++		if (m < 0) {
++			ShowWarning("buildin_population_revive: Unknown map '%s'.\n", script_getstr(st, 3));
++			script_pushint(st, 0);
++			return SCRIPT_CMD_SUCCESS;
++		}
++		x = static_cast<int16>(script_hasdata(st, 4) ? script_getnum(st, 4) : 0);
++		y = static_cast<int16>(script_hasdata(st, 5) ? script_getnum(st, 5) : 0);
++	}
++	script_pushint(st, population_engine_shell_revive(script_getnum(st, 2), m, x, y) ? 1 : 0);
++	return SCRIPT_CMD_SUCCESS;
++}
++
++/**
++ * population_guild("<name>", <n 1-9999>, "<master>"{, "<emblem BMP as hex>"{, "<Title0|Title1|...>"}})
++ *   Makes (or updates) shell guild n, kept only in the map server: it is never saved and
++ *   real players cannot join it. Returns its guild id (1900000000 + n), 0 if n is out of range.
++ *   Make them again in OnInit; members and alliances are not kept across restarts.
++ * population_guild_join(<gid>, <guild id>{, <title index>})
++ *   Puts a shell in it: name, title and emblem show over its head; GvG/WoE treat it as that
++ *   guild. 1 done, 0 not a shell, not a shell guild, the shell is in a real guild, or full.
++ * population_guild_leave(<gid>)
++ * population_guild_ally(<guild id>, <guild id>, <0 ally, 1 enemy, -1 drop>)
++ */
++BUILDIN_FUNC(population_guild)
++{
++	const char *emb = script_hasdata(st, 5) ? script_getstr(st, 5) : "";
++	const char *pos = script_hasdata(st, 6) ? script_getstr(st, 6) : "";
++	script_pushint(st, population_guild_define(script_getnum(st, 3), script_getstr(st, 2),
++		script_getstr(st, 4), emb, pos));
++	return SCRIPT_CMD_SUCCESS;
++}
++
++BUILDIN_FUNC(population_guild_join)
++{
++	script_pushint(st, population_guild_join(script_getnum(st, 2), script_getnum(st, 3),
++		script_hasdata(st, 4) ? script_getnum(st, 4) : 2));
++	return SCRIPT_CMD_SUCCESS;
++}
++
++BUILDIN_FUNC(population_guild_leave)
++{
++	map_session_data *sd = map_id2sd(script_getnum(st, 2));
++	bool ok = sd != nullptr && population_engine_shell_kind(sd->id) != 0 && population_guild_leave(sd, true);
++	script_pushint(st, ok ? 1 : 0);
++	return SCRIPT_CMD_SUCCESS;
++}
++
++BUILDIN_FUNC(population_guild_ally)
++{
++	const int how = script_getnum(st, 4);
++	script_pushint(st, population_guild_alliance(script_getnum(st, 2), script_getnum(st, 3),
++		how > 0 ? 1 : 0, how >= 0) ? 1 : 0);
++	return SCRIPT_CMD_SUCCESS;
++}
++
++/**
++ * population_war(<gid>, <1 on, 0 off>)
++ *   War mode for an ambient shell: it becomes mortal and fights whoever the map's rules
++ *   make its enemy (other guilds on GvG/WoE maps, everyone outside its guild on PvP maps),
++ *   real players included, and breaks the Emperium on GvG maps. Its heals and buffs go to
++ *   its guild and allies only; when it dies on a PvP or GvG map the engine (and the death
++ *   event) bring it back, not the save point. Off puts it back as it was. 1 done, 0 not an
++ *   ambient shell.
++ */
++BUILDIN_FUNC(population_war)
++{
++	script_pushint(st, population_engine_shell_set_war(script_getnum(st, 2), script_getnum(st, 3) != 0) ? 1 : 0);
++	return SCRIPT_CMD_SUCCESS;
++}
++
++/**
++ * population_death_event("<npc>::<label>")
++ *   Runs that label whenever an ambient shell dies, with $@pop_dead_gid set to it, before
++ *   the engine decides when it stands up. "" turns it off.
++ */
++BUILDIN_FUNC(population_death_event)
++{
++	population_engine_set_death_event(script_getstr(st, 2));
++	return SCRIPT_CMD_SUCCESS;
++}
++
++/**
++ * population_chat_event("<npc>::<label>")
++ *   Runs that label, attached to the player, whenever a real player says something in
++ *   public chat (not in an NPC dialog); @pop_chat$ is what they said. "" turns it off.
++ */
++BUILDIN_FUNC(population_chat_event)
++{
++	population_engine_set_public_chat_event(script_getstr(st, 2));
++	return SCRIPT_CMD_SUCCESS;
++}
++
++/**
++ * population_chatroom(<gid>, "<title>", <limit>{, <public 1/0>})
++ *   Opens a chat room owned by the shell, as a player opens one (Alt+C): the room's
++ *   sign over its head, the player's icon, anyone can walk in. 1 opened.
++ * population_chatroom_close(<gid>)
++ *   Closes it (the shell leaves its own room). 1 closed.
++ */
++BUILDIN_FUNC(population_chatroom)
++{
++	map_session_data *sd = map_id2sd(script_getnum(st, 2));
++	if (sd == nullptr || population_engine_shell_kind(sd->id) == 0 || sd->chatID != 0) {
++		script_pushint(st, 0);
++		return SCRIPT_CMD_SUCCESS;
++	}
++	const int32 limit = cap_value(script_getnum(st, 4), 2, 20);
++	const bool pub = script_hasdata(st, 5) ? script_getnum(st, 5) != 0 : true;
++	chat_createpcchat(sd, script_getstr(st, 3), "", limit, pub);
++	script_pushint(st, sd->chatID != 0 ? 1 : 0);
++	return SCRIPT_CMD_SUCCESS;
++}
++
++BUILDIN_FUNC(population_chatroom_close)
++{
++	map_session_data *sd = map_id2sd(script_getnum(st, 2));
++	if (sd == nullptr || population_engine_shell_kind(sd->id) == 0 || sd->chatID == 0) {
++		script_pushint(st, 0);
++		return SCRIPT_CMD_SUCCESS;
++	}
++	chat_leavechat(sd, 0);
++	script_pushint(st, 1);
++	return SCRIPT_CMD_SUCCESS;
++}
++
+ BUILDIN_FUNC(population_is_shell)
+ {
+ 	script_pushint(st, population_engine_shell_kind(script_getnum(st, 2)));
+diff --git a/src/custom/script_def.inc b/src/custom/script_def.inc
+--- a/src/custom/script_def.inc
++++ b/src/custom/script_def.inc
+@@ -28,6 +28,18 @@ BUILDIN_DEF(companion_hire_jobs, ""),
+ BUILDIN_DEF(companion_hire_fee, ""),
+ BUILDIN_DEF(companion_hire, "s"),
+ BUILDIN_DEF(population_is_shell, "i"),
++BUILDIN_DEF(population_face, "ii?"),
++BUILDIN_DEF(population_respawn, "ii"),
++BUILDIN_DEF(population_revive, "i???"),
++BUILDIN_DEF(population_death_event, "s"),
++BUILDIN_DEF(population_chat_event, "s"),
++BUILDIN_DEF(population_chatroom, "isi?"),
++BUILDIN_DEF(population_chatroom_close, "i"),
++BUILDIN_DEF(population_guild, "sis??"),
++BUILDIN_DEF(population_guild_join, "ii?"),
++BUILDIN_DEF(population_guild_leave, "i"),
++BUILDIN_DEF(population_guild_ally, "iii"),
++BUILDIN_DEF(population_war, "ii"),
+ BUILDIN_DEF(population_shells, "siiir?"),
+ BUILDIN_DEF(population_hold, "i?"),
+ BUILDIN_DEF(population_unhold, "i"),
+diff --git a/src/map/battle.cpp b/src/map/battle.cpp
+--- a/src/map/battle.cpp
++++ b/src/map/battle.cpp
+@@ -8222,6 +8222,10 @@ int32 battle_check_target( const block_list* src, const block_list* target, int3
+ 		if( flag&(BCT_PARTY|BCT_ENEMY) )
+ 		{
+ 			int32 s_party = status_get_party_id(s_bl);
++			// RAGNAROKMAC (shell guilds): the engine's per-map shell "party" (0x70000000 | map)
++			// is not a real party; a shell at war (population_war) fights by guild like a player.
++			if( s_party >= 0x70000000 && (population_engine_shell_at_war(s_bl) || population_engine_shell_at_war(t_bl)) )
++				s_party = 0;
+ 			if( s_party && s_party == status_get_party_id(t_bl) && !(mapdata->getMapFlag(MF_PVP) && mapdata->getMapFlag(MF_PVP_NOPARTY)) && !(mapdata_flag_gvg(mapdata) && mapdata->getMapFlag(MF_GVG_NOPARTY)) && (!mapdata->getMapFlag(MF_BATTLEGROUND) || sbg_id == tbg_id) )
+ 				state |= BCT_PARTY;
+ 			else
+diff --git a/src/map/clif.cpp b/src/map/clif.cpp
+--- a/src/map/clif.cpp
++++ b/src/map/clif.cpp
+@@ -11566,6 +11566,7 @@ void clif_parse_GlobalMessage(int32 fd, map_session_data* sd)
+ 	//achievement_update_objective(sd, AG_CHAT, 1, sd->m); //! TODO: What's the official use of this achievement type?
+ 
+ 	population_engine_on_global_chat_mention(sd, message);
++	population_engine_on_public_chat(sd, message); // RAGNAROKMAC (mod hooks)
+ }
+ 
+ 
+diff --git a/src/map/guild.cpp b/src/map/guild.cpp
+--- a/src/map/guild.cpp
++++ b/src/map/guild.cpp
+@@ -2,6 +2,7 @@
+ // For more information, see LICENCE in the main folder
+ 
+ #include "guild.hpp"
++#include "population_engine.hpp" // RAGNAROKMAC (shell guilds)
+ 
+ #include <cstdlib>
+ #include <memory>
+@@ -743,9 +744,26 @@ int32 guild_created(uint32 account_id,int32 guild_id) {
+ 
+ //Information request
+ int32 guild_request_info(int32 guild_id) {
++	if (population_guild_is_virtual(guild_id)) // RAGNAROKMAC (shell guilds): the char server has none
++		return 0;
+ 	return intif_guild_request_info(guild_id);
+ }
+ 
++// RAGNAROKMAC (shell guilds): a shell guild has just been made in memory; run what
++// castle scripts asked to run once its info arrived (they may start before the mod).
++void guild_population_defined(int32 guild_id) {
++	DBData data;
++	if (guild_infoevent_db->remove(guild_infoevent_db, db_i2key(guild_id), &data)) {
++		struct eventlist *ev = (struct eventlist *)db_data2ptr(&data), *ev2;
++		while(ev) {
++			npc_event_do(ev->name);
++			ev2=ev->next;
++			aFree(ev);
++			ev=ev2;
++		}
++	}
++}
++
+ //Information request with event
+ int32 guild_npc_request_info(int32 guild_id,const char *event) {
+ 	if( guild_search(guild_id) ) {
+@@ -1365,6 +1383,8 @@ int32 guild_send_memberinfoshort(map_session_data *sd,int32 online) { // cleaned
+ 
+ 	if(sd->status.guild_id <= 0)
+ 		return 0;
++	if (population_guild_is_virtual(sd->status.guild_id)) // RAGNAROKMAC (shell guilds)
++		return 0;
+ 
+ 	auto &g = sd->guild;
+ 
+@@ -1464,7 +1484,8 @@ int32 guild_send_message(map_session_data *sd, const char *mes, size_t len) {
+ 
+ 	if(sd->status.guild_id==0)
+ 		return 0;
+-	intif_guild_message(sd->status.guild_id,sd->status.account_id,mes,len);
++	if (!population_guild_is_virtual(sd->status.guild_id)) // RAGNAROKMAC (shell guilds)
++		intif_guild_message(sd->status.guild_id,sd->status.account_id,mes,len);
+ 	guild_recv_message(sd->status.guild_id,sd->status.account_id,mes,len);
+ 
+ 	// Chat logging type 'G' / Guild Chat
+diff --git a/src/map/guild.hpp b/src/map/guild.hpp
+--- a/src/map/guild.hpp
++++ b/src/map/guild.hpp
+@@ -60,6 +60,7 @@ int32 guild_request_info(int32 guild_id);
+ int32 guild_recv_noinfo(int32 guild_id);
+ int32 guild_recv_info(const struct mmo_guild &sg);
+ int32 guild_npc_request_info(int32 guild_id,const char *ev);
++void guild_population_defined(int32 guild_id); // RAGNAROKMAC (shell guilds)
+ bool guild_invite( map_session_data& sd, map_session_data* tsd );
+ bool guild_reply_invite( map_session_data& sd, int32 guild_id, int32 flag );
+ void guild_member_joined(map_session_data *sd);
+diff --git a/src/map/mob.cpp b/src/map/mob.cpp
+--- a/src/map/mob.cpp
++++ b/src/map/mob.cpp
+@@ -3631,11 +3631,18 @@ int32 mob_dead(mob_data *md, block_list *src, int32 type)
+ 					event_sd = owner_sd;
+ 			}
+ 
++			// RAGNAROKMAC (shell guilds): a shell that breaks the Emperium runs the castle's
++			// OnAgitBreak like a player (population_engine_shell_kill_events).
++			const bool pop_kill_event = event_sd != nullptr && population_engine_is_population_pc(event_sd->id)
++				&& (battle_config.population_engine_shell_kill_events >= 2
++					|| (battle_config.population_engine_shell_kill_events == 1 && (md->mob_id == MOBID_EMPERIUM || md->guardian_data != nullptr)));
+ 			if( event_sd && battle_config.mob_npc_event_type ) {
+ 				pc_setparam(event_sd, SP_KILLEDGID, md->id);
+ 				pc_setparam(event_sd, SP_KILLEDRID, md->mob_id);
+ 				pc_setparam(event_sd, SP_KILLERRID, event_sd->id);
++				event_sd->state.pop_kill_event = pop_kill_event ? 1 : 0;
+ 				npc_event(event_sd,md->npc_event,0);
++				event_sd->state.pop_kill_event = 0;
+ 			} else if( first_sd != nullptr ) {
+ 				pc_setparam(first_sd, SP_KILLEDGID, md->id);
+ 				pc_setparam(first_sd, SP_KILLEDRID, md->mob_id);
+diff --git a/src/map/npc.cpp b/src/map/npc.cpp
+--- a/src/map/npc.cpp
++++ b/src/map/npc.cpp
+@@ -1815,7 +1815,7 @@ int32 npc_event_sub(map_session_data* sd, struct event_data* ev, const char* eve
+ {
+ 	// Population engine shells never run NPC scripts — skip silently to avoid
+ 	// filling the event queue with OnTouch/OnTouch_ events as shells roam past NPCs.
+-	if (IS_POPULATION_ENGINE_ACCOUNT_ID(sd->status.account_id))
++	if (IS_POPULATION_ENGINE_ACCOUNT_ID(sd->status.account_id) && !sd->state.pop_kill_event) // RAGNAROKMAC (shell guilds)
+ 		return 0;
+ 
+ 	if ( sd->npc_id != 0 )
+diff --git a/src/map/pc.cpp b/src/map/pc.cpp
+--- a/src/map/pc.cpp
++++ b/src/map/pc.cpp
+@@ -10207,12 +10207,20 @@ int32 pc_dead(map_session_data *sd,block_list *src)
+ 				population_engine_on_shell_kills_player(ssd, sd);
+ 		}
+ 		if( sd->pvp_point < 0 ) {
++			if (population_engine_shell_at_war(sd)) { // RAGNAROKMAC (shell guilds): the engine/mod brings it back
++				population_engine_on_shell_death(sd);
++				return 1|8;
++			}
+ 			sd->respawn_tid = add_timer(tick+1000, pc_respawn_timer,sd->id,0);
+ 			return 1|8;
+ 		}
+ 	}
+ 	//GvG
+ 	if( mapdata_flag_gvg2(mapdata) ) {
++		if (population_engine_shell_at_war(sd)) { // RAGNAROKMAC (shell guilds): the engine/mod brings it back
++			population_engine_on_shell_death(sd);
++			return 1|8;
++		}
+ 		sd->respawn_tid = add_timer(tick+1000, pc_respawn_timer, sd->id, 0);
+ 		return 1|8;
+ 	}
+diff --git a/src/map/pc.hpp b/src/map/pc.hpp
+--- a/src/map/pc.hpp
++++ b/src/map/pc.hpp
+@@ -436,6 +436,7 @@ public:
+ 	//status_calc_pc, while special_state is recalculated in each call. [Skotlex]
+ 	struct s_state {
+ 		uint32 population_combat : 1;
++		uint32 pop_kill_event : 1; // RAGNAROKMAC (shell guilds): a shell is running a monster kill event
+ 		uint32 active : 1; //Marks active player (not active is logging in/out, or changing map servers)
+ 		uint32 menu_or_input : 1;// if a script is waiting for feedback from the player
+ 		uint32 dead_sit : 2;

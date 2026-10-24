@@ -1,0 +1,5 @@
+# Mods add to db/population_chat through this file.
+
+Header:
+  Type: POPULATION_CHAT_DB
+  Version: 1

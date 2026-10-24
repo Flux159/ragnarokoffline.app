@@ -189,6 +189,23 @@ void population_engine_combat_shell_stop(map_session_data *sd);
 void population_engine_on_whisper_to_population_pc(map_session_data *from_sd, map_session_data *bot_sd, const char *message);
 /// Map chat: any population PC on the same map whose name appears in `message` (case-insensitive) may reply overhead.
 void population_engine_on_global_chat_mention(map_session_data *from_sd, const char *message);
+// RAGNAROKMAC (mod hooks): what a mod's script can be told and can do (src/custom/script.inc).
+void population_engine_set_death_event(const char *ev);
+bool population_engine_shell_revive(int32_t gid, int16_t m, int16_t x, int16_t y);
+void population_engine_set_public_chat_event(const char *ev);
+void population_engine_on_public_chat(map_session_data *sd, const char *message);
+// RAGNAROKMAC (mod hooks): shell guilds, kept only in the map server's memory.
+#define POP_GUILD_ID_BASE 1900000000
+#define POP_ARENA_WAR 3 // pop.arena_team for a shell that fights by the map's PvP/GvG rules
+bool population_engine_shell_set_war(int32_t gid, bool on);
+/// True for a shell population_war put at war (a block_list that is not a PC is never at war).
+bool population_engine_shell_at_war(const block_list *bl);
+#define POP_GUILD_MAX 9999
+static inline bool population_guild_is_virtual(int32_t guild_id) { return guild_id > POP_GUILD_ID_BASE && guild_id <= POP_GUILD_ID_BASE + POP_GUILD_MAX; }
+int32_t population_guild_define(int32_t n, const char *name, const char *master, const char *emblem_hex, const char *positions);
+int population_guild_join(int32_t gid, int32_t guild_id, int position);
+bool population_guild_leave(map_session_data *sd, bool refresh);
+bool population_guild_alliance(int32_t guild_a, int32_t guild_b, int opposition, bool add);
 /// Party chat command channel for recruited companions. Only the real party
 /// leader can change party-wide engagement modes or named shell roles.
 void population_engine_on_party_chat(map_session_data *from_sd, const char *message);

@@ -33,6 +33,7 @@
 #include "../config/population_yaml_types.hpp"
 #include "../expanded_ai/expanded_condition.hpp"
 #include "../../battle.hpp"
+#include "../../guild.hpp" // RAGNAROKMAC (shell guilds)
 #include "../../clif.hpp"
 #include "../../homunculus.hpp"
 #include "../../script.hpp"
@@ -445,6 +446,15 @@ static bool pop_is_party_ally(const map_session_data *shell, const map_session_d
 /// that happened to pass; a Royal Guard cast Piety at a stranger's bot.
 static bool pop_shell_may_help(const map_session_data *shell, const map_session_data *ally)
 {
+	// RAGNAROKMAC (shell guilds): at war, help goes to the shell's guild and its allies only.
+	if (shell->pop.arena_team == POP_ARENA_WAR || ally->pop.arena_team == POP_ARENA_WAR) {
+		if (shell == ally)
+			return true;
+		const int32 g1 = shell->status.guild_id, g2 = ally->status.guild_id;
+		if (g1 == 0 || g2 == 0)
+			return !map_flag_vs(shell->m) && shell->pop.arena_team != POP_ARENA_WAR;
+		return g1 == g2 || guild_isallied(g1, g2);
+	}
 	if (pop_is_party_ally(shell, ally) || population_engine_arena_is_ally(shell, ally))
 		return true;
 	if (shell->pop.companion_owner_account != 0 && ally->status.account_id == shell->pop.companion_owner_account)
