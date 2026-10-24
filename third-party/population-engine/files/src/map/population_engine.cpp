@@ -1234,6 +1234,14 @@ std::vector<map_session_data*> population_engine_collect_stale_shells()
 				}
 			}
 		}
+		// RAGNAROKMAC (shell control API): a held shell a script just warped is off
+		// the map grid until population_shell_control_sweep() places it, which only
+		// the combat timer runs first. The wander timer collects stale shells too, so
+		// place the shell here instead of releasing it as stale.
+		if (sd && sd->prev == nullptr && sd->state.active && map_id2bl(sd->id) == sd
+			&& !pc_isdead(sd) && population_engine_shell_is_held(sd)
+			&& pop_shell_finish_map_placement(sd))
+			pop_shell_broadcast_map_placement(sd);
 		if (!sd || !population_engine_is_population_pc(sd->id) || !population_engine_combat_shell_ac_ok(sd)) {
 			if (sd && sd->status.party_id > 0 && sd->status.party_id < 0x70000000) {
 				ShowWarning("Population engine: companion %s became stale (active=%d, on_map=%d, registered=%d, flags=0x%x).\n",
