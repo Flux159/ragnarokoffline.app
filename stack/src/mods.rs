@@ -3255,10 +3255,10 @@ mod tests {
         assert!(!header_clears(stub));
     }
 
-    // Names and ambient chat lines arrive the same way, so a mod can add to the
-    // pools the shells draw from.
+    // Names, ambient chat lines and class skill lists arrive the same way, so a mod
+    // can add to the pools the shells draw from.
     #[test]
-    fn the_population_names_and_chat_tables_import_the_mod_overlay() {
+    fn the_population_names_chat_and_skill_tables_import_the_mod_overlay() {
         for (table, stub, kind, path) in [
             (
                 include_str!("../../third-party/population-engine/files/db/population_names.yml"),
@@ -3271,6 +3271,12 @@ mod tests {
                 include_str!("../../third-party/population-engine/files/db/import-tmpl/population_chat.yml"),
                 "POPULATION_CHAT_DB",
                 "- Path: db/import/population_chat.yml",
+            ),
+            (
+                include_str!("../../third-party/population-engine/files/db/population_skill_db.yml"),
+                include_str!("../../third-party/population-engine/files/db/import-tmpl/population_skill_db.yml"),
+                "POPULATION_SKILL_DB",
+                "- Path: db/import/population_skill_db.yml",
             ),
         ] {
             assert_eq!(header_type(table).as_deref(), Some(kind));
