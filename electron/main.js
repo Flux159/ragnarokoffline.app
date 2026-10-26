@@ -1346,8 +1346,9 @@ function openSettingsFirst() {
 // below the base default every group keeps its own stock value, and above it
 // every group is lifted to the player's number.
 //
-// Raise-only because the stock values are not a flat line -- 99 for first and
-// second jobs, 130 for third and summoner, 80 for baby. Any rule that mapped
+// Raise-only because the stock values are not a flat line -- 99 for first,
+// second and transcendent jobs, 130 for third and summoner, 80 for baby. Any
+// rule that mapped
 // one number onto all of them while still allowing a decrease either nerfed
 // third jobs on an untouched install or quietly raised baby classes from 80.
 // Nobody asking for "max stats" wants either, and nobody has asked to lower
@@ -1355,6 +1356,7 @@ function openSettingsFirst() {
 const ASPD_STOCK = { max_aspd: 190, max_third_aspd: 193, max_summoner_aspd: 193 };
 const PARAM_STOCK = {
 	max_parameter: 99,
+	max_trans_parameter: 99,
 	max_third_parameter: 130,
 	max_baby_parameter: 80,
 	max_extended_parameter: 130,
@@ -1423,8 +1425,9 @@ function generatedBattleConf(s) {
 		// may go in it is rAthena's and not obvious -- see
 		// electron/command-symbol.js.
 		require('./command-symbol').commandSymbolConf(s) +
-		// One cap in the UI, several keys here, because rAthena caps third,
-		// baby, extended and summoner classes separately and a player who
+		// One cap in the UI, several keys here, because rAthena caps
+		// transcendent, third, baby, extended and summoner classes separately
+		// and a player who
 		// raises "the" limit means all of them -- setting only max_parameter
 		// leaves every third-job character on the stock 130.
 		//
