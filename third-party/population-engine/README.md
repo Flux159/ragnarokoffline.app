@@ -662,6 +662,7 @@ documents the commands.
   `population_engine_on_public_chat`, which runs the mod's
   `population_chat_event` label. `population_chatroom` opens a player's chat room
   (`chat_createpcchat`) for a shell.
+- **`/w`.** `clif_user_count` adds `population_engine_who_extra` (0) to the count.
 - **Kill steal.** `population_engine_no_kill_steal` (0) keeps ambient shells off
   monsters already fighting someone outside their party.
 - **Shell guilds.** `population_guild_define` puts a `MapGuild` into `guild_db`
@@ -675,7 +676,9 @@ documents the commands.
 - **War.** `pop.arena_team == POP_ARENA_WAR` (3) is a third arena team that
   follows the map's rules: `population_shell_check_arena_target` asks
   `battle_check_target`, the scan takes mobs on GvG maps (Emperium, guardians), and
-  `pop_shell_may_help` keeps heals in the guild. In `battle.cpp` the engine's per-map
+  `pop_shell_may_help` keeps heals in the guild. `guild_castledatasave` sends the char
+  server 0 for a castle a shell guild takes, so the database never holds an id that
+  is gone after a restart; the mod restores it. In `battle.cpp` the engine's per-map
   shell party id no longer counts on PvP and GvG maps when a shell at war is on
   either side (`population_engine_shell_at_war`); it made every shell everyone's
   ally. `mob.cpp`/`npc.cpp` let a shell run an Emperium's or guardian's death event

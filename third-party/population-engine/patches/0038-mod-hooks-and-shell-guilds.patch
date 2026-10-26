@@ -15,7 +15,9 @@ The core side of the mod hooks in population_engine (search "RAGNAROKMAC (mod ho
 - clif.cpp: public chat reaches population_engine_on_public_chat (the mod's chat event).
 - Shell guilds live only in the map server's memory, at guild ids 1900000001-1900009999:
   guild.cpp never asks the char server about them, never sends it their member or chat
-  packets, and runs castle scripts' pending info events once the mod makes the guild.
+  packets, and runs castle scripts' pending info events once the mod makes the guild. A
+  castle a shell guild takes is saved to the char server as unowned (it stays theirs in
+  this map server); a mod that wants it kept across a restart remembers it and sets it again.
 - battle.cpp: for a shell at war (population_war), the engine's per-map shell "party" id
   (0x70000000 | map) no longer makes it an ally of every other shell on a PvP or GvG map;
   it fights by guild like a player. Shells not at war are as before.
@@ -26,7 +28,7 @@ The core side of the mod hooks in population_engine (search "RAGNAROKMAC (mod ho
 diff --git a/src/custom/battle_config_init.inc b/src/custom/battle_config_init.inc
 --- a/src/custom/battle_config_init.inc
 +++ b/src/custom/battle_config_init.inc
-@@ -15,6 +15,11 @@
+@@ -15,6 +15,12 @@
  { "population_engine_enable",&battle_config.population_engine_enable,0,0,1,},
  { "population_engine_demand_spawn",&battle_config.population_engine_demand_spawn,1,0,1,},
  { "population_engine_demand_grace_ms",&battle_config.population_engine_demand_grace_ms,300000,0,3600000,},
@@ -35,13 +37,14 @@ diff --git a/src/custom/battle_config_init.inc b/src/custom/battle_config_init.i
 +{ "population_engine_respawn_skew",&battle_config.population_engine_respawn_skew,1,1,6,},
 +{ "population_engine_no_kill_steal",&battle_config.population_engine_no_kill_steal,0,0,1,},
 +{ "population_engine_shell_kill_events",&battle_config.population_engine_shell_kill_events,0,0,2,},
++{ "population_engine_who_extra",&battle_config.population_engine_who_extra,0,0,100000,},
  { "population_engine_density_pct",&battle_config.population_engine_density_pct,100,10,500,},
  { "population_engine_companion_limit",&battle_config.population_engine_companion_limit,4,4,11,},
  { "population_engine_town_pct",&battle_config.population_engine_town_pct,100,0,100,},
 diff --git a/src/custom/battle_config_struct.inc b/src/custom/battle_config_struct.inc
 --- a/src/custom/battle_config_struct.inc
 +++ b/src/custom/battle_config_struct.inc
-@@ -21,6 +21,17 @@ int32 population_engine_enable;
+@@ -21,6 +21,20 @@ int32 population_engine_enable;
  int32 population_engine_demand_spawn;
  /// How long a map keeps its shells after the last real player leaves.
  int32 population_engine_demand_grace_ms;
@@ -56,6 +59,9 @@ diff --git a/src/custom/battle_config_struct.inc b/src/custom/battle_config_stru
 +/// 1 runs, with the shell attached, for the Emperium and guardians (WoE), 2 for every monster.
 +/// A mod turns it on with setbattleflag.
 +int32 population_engine_shell_kill_events;
++/// RAGNAROKMAC (mod hooks): added to the online count /w shows (players a mod counts but
++/// does not spawn, to spare the server). 0 = the real count.
++int32 population_engine_who_extra;
  /// Percentage applied to every spawn-table population before it is
  /// distributed across a map list. 100 = exactly what the YAML asks for.
  int32 population_engine_density_pct;
@@ -291,6 +297,15 @@ diff --git a/src/map/clif.cpp b/src/map/clif.cpp
  }
  
  
+@@ -11701,7 +11702,7 @@ static void clif_user_count(map_session_data& sd)
+ 	PACKET_ZC_USER_COUNT p{};
+ 
+ 	p.packetType = HEADER_ZC_USER_COUNT;
+-	p.playersCount = map_getusers();
++	p.playersCount = map_getusers() + battle_config.population_engine_who_extra; // RAGNAROKMAC (mod hooks): /w
+ 
+ 	clif_send(&p,sizeof(p),&sd,SELF);
+ }
 diff --git a/src/map/guild.cpp b/src/map/guild.cpp
 --- a/src/map/guild.cpp
 +++ b/src/map/guild.cpp
@@ -348,6 +363,19 @@ diff --git a/src/map/guild.cpp b/src/map/guild.cpp
  	guild_recv_message(sd->status.guild_id,sd->status.account_id,mes,len);
  
  	// Chat logging type 'G' / Guild Chat
+@@ -2441,6 +2462,12 @@ int32 guild_castledatasave(int32 castle_id, int32 index, int32 value) {
+ 		return 0;
+ 	}
+ 
++	// RAGNAROKMAC (shell guilds): a shell guild exists only in this map server, so the
++	// char server is told the castle is unowned; a mod that wants it kept across a
++	// restart saves the owner itself and sets it again (the castle stays the shell
++	// guild's here until then, and a real guild can take it like any castle).
++	if (index == CD_GUILD_ID && population_guild_is_virtual(value))
++		value = 0;
+ 	if (!intif_guild_castle_datasave(castle_id, index, value)) {
+ 		guild_castle_reconnect(castle_id, index, value);
+ 	}
 diff --git a/src/map/guild.hpp b/src/map/guild.hpp
 --- a/src/map/guild.hpp
 +++ b/src/map/guild.hpp

@@ -272,7 +272,20 @@ allies only. A held shell at war still fights. `0` puts it back as it was.
 For the castle to go to the shell's guild when it breaks the Emperium, turn on
 `setbattleflag "population_engine_shell_kill_events", 1;` (off by default): the
 castle's `OnAgitBreak` then runs with the shell attached, as it does for a
-player.
+player. `2` does the same for every monster's death event, not only the
+Emperium's and the guardians'.
+
+A shell guild is never saved as a castle's owner: the char server is told the
+castle is unowned, while this map server keeps it as the shell guild's. After a
+restart the castle is unowned until your script gives it back (remember the
+owner in a permanent variable and `setcastledata` it again in `OnAgitInit`), so
+nothing in the database points at a guild that no longer exists.
+
+### `population_engine_who_extra`
+
+A battle flag, not a command: `setbattleflag "population_engine_who_extra", <n>;`
+adds `n` to the online count `/w` shows. For a mod that counts people it does
+not spawn, to spare the server. 0 (the default) shows the real count.
 
 The engine fights only where a real player can see it (that is what keeps
 dozens of maps cheap), so a war you are not watching is the script's to decide —
