@@ -10426,7 +10426,30 @@ void population_engine_on_whisper_to_population_pc(map_session_data* from_sd, ma
 		}
 	}
 
+	// RAGNAROKMAC (mod hooks): a mod that answers whispers for every shell.
+	if (population_engine_default_whisper(from_sd, bot_sd, message))
+		return;
 	population_engine_deliver_chat_reply_locked(bot_sd, from_sd);
+}
+
+/// RAGNAROKMAC (mod hooks): "<npc>::<label>" run for a whisper to any ambient shell no
+/// script holds (a held one answers through its holder's label), unless it is a party
+/// request, which the engine's own companions handle. "" = none (the engine's canned reply).
+static std::string g_pop_default_whisper_event;
+
+void population_engine_set_default_whisper_event(const char *ev)
+{
+	g_pop_default_whisper_event = ev ? ev : "";
+}
+
+bool population_engine_default_whisper(map_session_data *from_sd, map_session_data *bot_sd, const char *message)
+{
+	if (g_pop_default_whisper_event.empty() || pop_is_companion(bot_sd))
+		return false;
+	pc_setreg(from_sd, add_str("@shell_gid"), bot_sd->id);
+	pc_setregstr(from_sd, add_str("@shell_msg$"), message);
+	npc_event(from_sd, g_pop_default_whisper_event.c_str(), 0);
+	return true;
 }
 
 /// RAGNAROKMAC (mod hooks): "<npc>::<label>" run, attached to the player, whenever a real

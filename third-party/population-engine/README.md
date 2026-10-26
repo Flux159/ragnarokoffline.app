@@ -662,6 +662,9 @@ documents the commands.
   `population_engine_on_public_chat`, which runs the mod's
   `population_chat_event` label. `population_chatroom` opens a player's chat room
   (`chat_createpcchat`) for a shell.
+- **Whispers.** `population_whisper_event(0, ...)` sets
+  `population_engine_default_whisper`: a whisper to an unheld shell runs the mod's
+  label instead of the canned reply (party requests excepted).
 - **`/w`.** `clif_user_count` adds `population_engine_who_extra` (0) to the count.
 - **Kill steal.** `population_engine_no_kill_steal` (0) keeps ambient shells off
   monsters already fighting someone outside their party.

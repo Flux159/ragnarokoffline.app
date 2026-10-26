@@ -13,6 +13,8 @@ The core side of the mod hooks in population_engine (search "RAGNAROKMAC (mod ho
   population_engine_shell_kill_events (1: a shell that breaks the Emperium runs the castle's
   OnAgitBreak like a player; 0 drops it as before; 2 every monster's death event).
 - clif.cpp: public chat reaches population_engine_on_public_chat (the mod's chat event).
+- population_whisper_event with unit id 0 sets a label for whispers to every shell no script
+  holds (party requests still go to the engine's companions).
 - Shell guilds live only in the map server's memory, at guild ids 1900000001-1900009999:
   guild.cpp never asks the char server about them, never sends it their member or chat
   packets, and runs castle scripts' pending info events once the mod makes the guild. A
@@ -250,6 +252,19 @@ diff --git a/src/custom/script.inc b/src/custom/script.inc
  BUILDIN_FUNC(population_is_shell)
  {
  	script_pushint(st, population_engine_shell_kind(script_getnum(st, 2)));
+@@ -499,6 +674,12 @@ BUILDIN_FUNC(population_despawn)
+ 
+ BUILDIN_FUNC(population_whisper_event)
+ {
++	// RAGNAROKMAC (mod hooks): unit id 0 sets the label for every shell no script holds.
++	if (script_getnum(st, 2) == 0) {
++		population_engine_set_default_whisper_event(script_getstr(st, 3));
++		script_pushint(st, 1);
++		return SCRIPT_CMD_SUCCESS;
++	}
+ 	script_pushint(st, population_engine_shell_set_whisper_event(script_getnum(st, 2), st->oid, script_getstr(st, 3)) ? 1 : 0);
+ 	return SCRIPT_CMD_SUCCESS;
+ }
 diff --git a/src/custom/script_def.inc b/src/custom/script_def.inc
 --- a/src/custom/script_def.inc
 +++ b/src/custom/script_def.inc

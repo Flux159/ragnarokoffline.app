@@ -172,6 +172,11 @@ canned reply, with the whisperer attached and two variables set:
 `""` turns it off. A held shell with no whisper event does not answer
 whispers at all. Releasing the hold clears it.
 
+Unit id `0` sets one label for whispers to **every** shell no script holds
+(field hunters, vendors, passers-by), instead of the engine's canned reply; it
+runs the same way. A whisper that asks for a party still goes to the engine's
+own companion recruiting.
+
 ### `population_whisper(<gid>, "<message>")`
 
 The shell whispers `<message>` to the attached player. Any shell, held or not.

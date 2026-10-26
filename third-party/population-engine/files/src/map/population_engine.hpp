@@ -194,6 +194,8 @@ void population_engine_set_death_event(const char *ev);
 bool population_engine_shell_revive(int32_t gid, int16_t m, int16_t x, int16_t y);
 void population_engine_set_public_chat_event(const char *ev);
 void population_engine_on_public_chat(map_session_data *sd, const char *message);
+void population_engine_set_default_whisper_event(const char *ev);
+bool population_engine_default_whisper(map_session_data *from_sd, map_session_data *bot_sd, const char *message);
 // RAGNAROKMAC (mod hooks): shell guilds, kept only in the map server's memory.
 #define POP_GUILD_ID_BASE 1900000000
 #define POP_ARENA_WAR 3 // pop.arena_team for a shell that fights by the map's PvP/GvG rules
