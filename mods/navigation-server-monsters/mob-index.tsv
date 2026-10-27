@@ -471,6 +471,7 @@ load	renewal	npc/re/instances/RoomOfConsciousness.txt
 load	renewal	npc/re/instances/SarahAndFenrir.txt
 load	renewal	npc/re/instances/SaraMemory.txt
 load	renewal	npc/re/instances/SealedOs.txt
+load	renewal	npc/re/instances/ShadowManor.txt
 load	renewal	npc/re/instances/SkyFortress.txt
 load	renewal	npc/re/instances/TempleOfDemonGod.txt
 load	renewal	npc/re/instances/ThorGunsuBase.txt
@@ -671,6 +672,7 @@ load	renewal	npc/re/jobs/novice/supernovice_ex.txt
 load	renewal	npc/re/jobs/repair.txt
 load	renewal	npc/re/jobs/doram/spirit_handler.txt
 load	renewal	npc/re/jobs/4-1/dragon_knight.txt
+load	renewal	npc/re/jobs/4-1/shadow_cross.txt
 load	renewal	npc/re/jobs/4-2/imperial_guard.txt
 load	renewal	npc/re/quests/skills/merchant_skills.txt
 load	renewal	npc/re/quests/skills/swordman_skills.txt
@@ -3842,6 +3844,7 @@ mob	renewal	20810	ILL_KING_DRAMOH	205	Fish	Large	Water	3	0	Deep Sea King Dramoh
 mob	renewal	20811	ILL_KRAKEN	204	Fish	Large	Water	4	1	Deep Sea Kraken
 mob	renewal	20825	4JOB_DEVOTION_NIGHT	200	Demihuman	Medium	Neutral	2	0	Knight of Devotion
 mob	renewal	20826	4JOB_ARMED_NIGHT	200	Demihuman	Medium	Neutral	2	0	Knight of Armament
+mob	renewal	20827	4JOB_DOOMK	200	Demihuman	Medium	Dark	2	0	Doomk
 mob	renewal	20834	ABR_BATTLE_WARIOR	200	Formless	Medium	Neutral	1	0	ABR Battle Warrior
 mob	renewal	20835	ABR_DUAL_CANNON	200	Formless	Medium	Neutral	1	0	ABR Duel Cannon
 mob	renewal	20836	ABR_MOTHER_NET	200	Formless	Small	Neutral	1	0	ABR Mother Net

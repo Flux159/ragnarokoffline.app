@@ -1,0 +1,23 @@
+{
+  "name": "anniversary-24th",
+  "author": "akreao",
+  "description": "kRO's 24th anniversary event from 2026. Visit the 24th Anniversary Coin Exchanger in Prontera once a day for 20 Attendance Boxes, each with a gift and anniversary coins, plus a Gift Box with All in One Potions and a Kafra Buff. Trade the coins for potions, buffs, Tokens of Siegfried, Costume Tris Sword, Costume Tan Spear and a Himmelmez wig in your choice of colour. A setting sends the boxes through the game's Attendance Check window instead, as on kRO. Renewal only.",
+  "tags": [
+    "event",
+    "anniversary",
+    "attendance",
+    "costume",
+    "npc",
+    "kro",
+    "renewal"
+  ],
+  "icon": "images/icon.png",
+  "homepage": "https://github.com/akreao/anniversary-24th",
+  "requires": {
+    "era": "renewal"
+  },
+  "source": {
+    "github": "akreao/anniversary-24th",
+    "asset": "anniversary-24th-*.zip"
+  }
+}

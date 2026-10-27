@@ -36,6 +36,7 @@ const sidebarItems = [
     title: 'Guides',
     items: [
       { label: 'Playing with friends', path: 'friends' },
+      { label: 'Playing in a browser', path: 'browser' },
       { label: 'Making mods', path: 'modding' },
       { label: 'Publishing a mod', path: 'mods/publishing' },
       { label: 'Where the AI characters go', path: 'mods/ai-characters' },

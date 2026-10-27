@@ -32,7 +32,7 @@ test('a plant is a Plant that can neither move nor attack', () => {
 test('shells neither target plants nor count them as enemies nearby', () => {
 	for (const f of ['bool population_shell_check_target(', 'bool population_shell_check_target_for_movement('])
 		assert.match(fn(f), /if \(population_shell_mob_is_plant\(md\) && !population_shell_plant_allowed\(sd, md\)\)\s*return false;/, f);
-	assert.match(runtime, /if \(md->special_state\.ai\)\s*return 0;[\s\S]{0,200}if \(population_shell_mob_is_plant\(md\)\) return 0;/,
+	assert.match(runtime, /if \(population_shell_mob_player_owned\(md\)\) return 0;[\s\S]{0,200}if \(population_shell_mob_is_plant\(md\)\) return 0;/,
 		'the mob tracker skips plants');
 });
 

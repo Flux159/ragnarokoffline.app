@@ -1236,6 +1236,9 @@ std::vector<map_session_data*> population_engine_collect_stale_shells()
 				}
 			}
 		}
+		// RAGNAROKMAC (shell control API): place a held shell a script just warped
+		// rather than release it as stale; the wander timer gets here too.
+		if (sd) population_shell_control_place_held(sd);
 		if (!sd || !population_engine_is_population_pc(sd->id) || !population_engine_combat_shell_ac_ok(sd)) {
 			if (sd && sd->status.party_id > 0 && sd->status.party_id < 0x70000000) {
 				ShowWarning("Population engine: companion %s became stale (active=%d, on_map=%d, registered=%d, flags=0x%x).\n",

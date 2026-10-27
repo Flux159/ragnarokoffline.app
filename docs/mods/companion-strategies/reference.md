@@ -452,6 +452,11 @@ With an `Enemy` selector, `When`'s `enemy_*` tokens ask about the chosen monster
 so `not_enemy_provoke` means "that one is not provoked yet". With an `Ally`
 selector, `ally_*` tokens ask about the chosen member.
 
+A monster a player owns is never an `Enemy`: a summon such as an Alchemist's
+sphere, or one a script gave a player as its master (`UMOB_MASTERAID`, a mod's
+pet). Selectors, `Count`, encounter and boss plans leave it out, as the
+engine's own fighting does, so a pet beside the party doesn't start a fight.
+
 A tank that peels:
 
 ```yaml

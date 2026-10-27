@@ -313,6 +313,13 @@ static void pop_shell_follow_lost(int32_t shell_id, int32_t target_id, int reaso
 	npc_event(tsd, sd->pop.hold.lost_event.c_str(), 0);
 }
 
+/// The stale collection's part: see population_shell_control.hpp.
+void population_shell_control_place_held(map_session_data *sd)
+{
+	if (population_engine_shell_is_held(sd))
+		pop_shell_finish_script_warp(sd);
+}
+
 /// The engine's part in a hold, from the combat timer before its stale sweep:
 /// finishes warps, chases attack orders, and ends the holds that lapsed or whose
 /// NPC no longer exists (a script reload), so a script that stops caring never

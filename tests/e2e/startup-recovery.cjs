@@ -49,10 +49,19 @@ const server = http.createServer((req, res) => {
     expect(await game.evaluate(() => window.__ELECTRON__.core.invoke('boot_failure').then(() => false, () => true))).toBe(true);
     // Crash only this fixture's renderer, then recover through the actual UI.
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().startsWith('http:')).webContents.forcefullyCrashRenderer());
-    await expect(game.locator('#fail')).toContainText('game window stopped unexpectedly');
-    await game.screenshot({ path: path.join(out, 'renderer-failure.png') });
-    await game.locator('#retry').click();
-    await expect(game.locator('h1')).toHaveText('Recovered game fixture');
+    // Playwright's handle on a page dies with its renderer on Chromium 152
+    // (Electron 44), so read and press the failure page from the main process.
+    const gameText = () => app.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows().find(w => /\/src\/index\.html$|^http:/.test(w.webContents.getURL()));
+      if (!win) return '';
+      return Promise.race([win.webContents.executeJavaScript('document.body.innerText').catch(() => ''),
+        new Promise(resolve => setTimeout(() => resolve(''), 2000))]);
+    });
+    await expect.poll(gameText).toContain('game window stopped unexpectedly');
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()
+      .find(w => w.webContents.getURL().endsWith('/src/index.html'))
+      .webContents.executeJavaScript("document.getElementById('retry').click()"));
+    await expect.poll(gameText).toContain('Recovered game fixture');
     expect(fs.existsSync(path.join(out, 'nebula'))).toBe(false);
     console.log('Setup cancellation, navigation failure/retry and renderer recovery passed:', out);
   } finally {

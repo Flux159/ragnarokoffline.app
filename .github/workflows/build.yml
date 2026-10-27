@@ -343,9 +343,25 @@ jobs:
         shell: bash
 
       # The version the official action pins, so the two move together.
+      # The runner has failed this with "Unable to find repository 'PSGallery'"
+      # (v1.7.2) on the same image that passed the day before: register the
+      # gallery if it's missing and retry, rather than fail the release.
       - name: Install the Artifact Signing module
         if: matrix.platform == 'win' && env.HAS_AZURE == 'true'
-        run: Install-Module -Name ArtifactSigning -RequiredVersion 0.1.20 -Force -Repository PSGallery -Scope CurrentUser
+        run: |
+          for ($i = 1; $i -le 3; $i++) {
+            try {
+              if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+                Register-PSRepository -Default
+              }
+              Install-Module -Name ArtifactSigning -RequiredVersion 0.1.20 -Force -Repository PSGallery -Scope CurrentUser -ErrorAction Stop
+              break
+            } catch {
+              if ($i -eq 3) { throw }
+              Write-Host "Attempt $i failed: $_"
+              Start-Sleep -Seconds 20
+            }
+          }
         shell: pwsh
 
       - name: Import signing certificate

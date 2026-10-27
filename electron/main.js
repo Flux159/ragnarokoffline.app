@@ -22,6 +22,12 @@ const HEADLESS = process.argv.includes('--headless') || process.env.RAGNAROK_OFF
 if (HEADLESS && process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
 	app.commandLine.appendSwitch('ozone-platform', 'headless');
 }
+// Electron 38 and later run as a native Wayland app in a Wayland session and
+// through X11 otherwise; Electron 33 always used X11 (Xwayland). Left at that
+// default on purpose: on Electron 44 with an NVIDIA card under KDE Wayland,
+// forcing X11 crashed the GPU process three times at start and left the game
+// on software rendering, while native Wayland ran it on the GPU.
+// `--ozone-platform=x11` on the command line still picks X11.
 // Mods' own settings pages are served from a private scheme, which Chromium
 // only accepts if it is declared before the app is ready.
 // Every privileged scheme in one call (Electron keeps only the last): the mod
@@ -445,15 +451,24 @@ function readIfExists(p) {
 // Not just the sandboxed filesystem: Config.local.js and the plugin bundles
 // are ordinary HTTP requests, and a stale one of those loads the previous
 // mod's client code, or a plugin the player has since switched off.
-async function dropStaleClientCache() {
+//
+// Every session has a cache of its own, so each gets its own stamp. The game
+// window uses the default session; each AI agent's window has a partition
+// (agent-play.js) and passes its name. With one stamp for all of them, the
+// player's launch marked every cache current while clearing only its own, and
+// an agent went on playing with files from before the mods changed: an
+// itemInfo table a later release had fixed still failed to parse in the
+// agent's window, and every item it named went with it.
+async function dropStaleClientCache(partition = null) {
 	const want = readIfExists(path.join(stateDir(), 'assets', 'overlay.id')).trim();
 	// No fingerprint means link-assets has not run, and dropping a warm cache
 	// on a guess would just make the launch slower.
 	if (!want) return;
-	const stamp = path.join(stateDir(), 'client-cache.id');
+	const name = partition ? `client-cache.${partition.replace(/^persist:/, '')}.id` : 'client-cache.id';
+	const stamp = path.join(stateDir(), name);
 	if (readIfExists(stamp).trim() === want) return;
 	try {
-		const ses = session.defaultSession;
+		const ses = partition ? session.fromPartition(partition) : session.defaultSession;
 		await ses.clearStorageData({ storages: ['filesystem', 'cachestorage'] });
 		await ses.clearCache();
 	} catch (e) {
@@ -1308,6 +1323,7 @@ function agentPlay() {
 			// prontera" in local chat instead of travelling.
 			commandPrefix: () => require('./command-symbol').symbol(getSettings().command_symbol),
 			hosting: () => getClientPaths().mode !== 'join',
+			dropStaleClientCache,
 			log: appLog,
 		});
 	}
@@ -1337,18 +1353,25 @@ function openSettingsFirst() {
 // every group is lifted to the player's number.
 //
 // Raise-only because the stock values are not a flat line -- 99 for first and
-// second jobs, 130 for third and summoner, 80 for baby. Any rule that mapped
+// second jobs, 130 for third, fourth and summoner, 80 for baby. Any rule that mapped
 // one number onto all of them while still allowing a decrease either nerfed
 // third jobs on an untouched install or quietly raised baby classes from 80.
 // Nobody asking for "max stats" wants either, and nobody has asked to lower
 // them at all.
 const ASPD_STOCK = { max_aspd: 190, max_third_aspd: 193, max_summoner_aspd: 193 };
+// Every max_*_parameter in conf/battle/player.conf, at its value there: a group
+// left out keeps its stock cap however high the setting goes (rebirth, trans
+// third, baby third and fourth jobs all did until 1.7.3).
 const PARAM_STOCK = {
 	max_parameter: 99,
+	max_trans_parameter: 99,
 	max_third_parameter: 130,
+	max_third_trans_parameter: 130,
 	max_baby_parameter: 80,
+	max_baby_third_parameter: 117,
 	max_extended_parameter: 130,
 	max_summoner_parameter: 130,
+	max_fourth_parameter: 130,
 };
 
 // 100..199; rAthena refuses anything outside and falls back to its default,
@@ -1413,8 +1436,8 @@ function generatedBattleConf(s) {
 		// may go in it is rAthena's and not obvious -- see
 		// electron/command-symbol.js.
 		require('./command-symbol').commandSymbolConf(s) +
-		// One cap in the UI, several keys here, because rAthena caps third,
-		// baby, extended and summoner classes separately and a player who
+		// One cap in the UI, several keys here, because rAthena caps rebirth,
+		// third, fourth, baby, extended and summoner classes separately and a player who
 		// raises "the" limit means all of them -- setting only max_parameter
 		// leaves every third-job character on the stock 130.
 		//
@@ -1711,11 +1734,13 @@ function makeWindow(id, file, opts) {
 	// Levels are Electron's: 0 verbose, 1 info, 2 warning, 3 error.
 	clientLogStart();
 	win.webContents.on('console-message', (...a) => {
-		// Electron 36 replaced (event, level, message, line, sourceId) with a
-		// single details object. Accept both so this does not go quiet on an
+		// Electron 35 moved (event, level, message, line, sourceId) onto the
+		// event itself and deprecated the extra arguments. Read the event first
+		// and fall back to the old arguments, so this does not go quiet on an
 		// upgrade -- silently logging nothing is the failure it exists to fix.
-		const d = a.length === 1 && typeof a[0] === 'object' ? a[0] : null;
-		const level = d ? d.level : a[1];
+		const d = a[0] && typeof a[0].message === 'string' ? a[0] : null;
+		// The event names the lowest level 'debug'; the log has called it 'verbose'.
+		const level = d ? (d.level === 'debug' ? 'verbose' : d.level) : a[1];
 		const text = d ? d.message : a[2];
 		const line = d ? d.lineNumber : a[3];
 		const src = d ? d.sourceId : a[4];
@@ -2893,7 +2918,7 @@ const handlers = {
 	// GitHub or Reddit, not a folder.
 	copy_diagnostics: async () => {
 		const text = await handlers.collect_diagnostics();
-		clipboard.writeText(text);
+		await clipboard.writeText(text);
 		return `Copied ${Math.round(text.length / 1024)} KB — paste it into the issue.`;
 	},
 
@@ -2907,7 +2932,7 @@ const handlers = {
 	// through that, so the body is a placeholder telling them to paste.
 	report_issue: async () => {
 		const text = await handlers.collect_diagnostics();
-		clipboard.writeText(text);
+		await clipboard.writeText(text);
 		const body = [
 			'**What happened?**', '', '(describe it here)', '',
 			'**What did you expect?**', '', '', '---', '',
@@ -2965,8 +2990,9 @@ const handlers = {
     // Remembered, so that applying a setting a minute later does not undo it.
     // Cleared by the next start, by hand or at the next launch.
     sharing_stop: async () => { sharingStoppedByHand = true; ++sharingStartRequest; await getSharing().stop(); return getSharing().status(); },
-    sharing_copy: () => {
-        clipboard.writeText(getSharing().invitation());
+    sharing_copy: async () => {
+        // Electron 44's clipboard writes return a promise.
+        await clipboard.writeText(getSharing().invitation());
         // Say the figure actually in force rather than a number baked into the
         // sentence: this is configurable, and it was never Cloudflare's limit.
         const days = Number(getSettings().sharing_invite_days);
@@ -3305,7 +3331,7 @@ const handlers = {
 		return true;
 	},
 
-	copy_text: ({ text }) => clipboard.writeText(String(text || '')),
+	copy_text: async ({ text }) => { await clipboard.writeText(String(text || '')); },
 
 	// Settings -> Tools (#195).
 	tools_list: () => toolsInstance().list(),

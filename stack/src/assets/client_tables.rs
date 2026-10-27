@@ -36,6 +36,9 @@ enum Order {
     /// a table for whatever the base does not define, which puts the key in
     /// the config even when no mod added to it.
     LastModFirst { base: fn(&Path) -> Vec<String>, fallback: fn(&Path) -> Option<String> },
+    /// Written by the caller, not by `config_entries`, because the entry
+    /// depends on more than the mods: see [`ModTables::package_supplements`].
+    ByCaller,
 }
 
 /// Which of a mod's folders a table is found in.
@@ -228,6 +231,26 @@ pub const STATE_ICON_INFO: ListTable = ListTable {
     order: Order::ModOrder,
 };
 
+/// `itemPackageSupplement`: what a selection box offers
+/// (`selectpackage/selectpackageitem.lub`), for boxes the client's own table
+/// does not define. The box's choices on the server are the mod's
+/// `db/item_packages.yml`; this is the window the client draws for it. Laid
+/// over the stock path it would replace the client's own table whole, so it is
+/// kept aside, and the client reads it as a supplement: one that never
+/// replaces or extends a box the client already defines.
+pub const PACKAGES: ListTable = ListTable {
+    layer: Layer::Data,
+    matches: is_package_table,
+    stem: "selectpackageitem",
+    ext: "lua",
+    dir: PACKAGE_DIR,
+    config_key: "itemPackageSupplement",
+    order: Order::ByCaller,
+};
+
+/// Where the client reads its selection package table from.
+const PACKAGE_DIR: &str = "data/luafiles514/lua files/selectpackage";
+
 /// Every list table, in the order their config entries are written.
 const LISTS: &[&ListTable] = &[
     &ITEMS,
@@ -241,6 +264,7 @@ const LISTS: &[&ListTable] = &[
     &STATE_ICON_IDS,
     &STATE_ICON_IMAGES,
     &STATE_ICON_INFO,
+    &PACKAGES,
 ];
 
 /// The list table a file under a mod's `data/` is, by its path there.
@@ -317,6 +341,13 @@ impl ModTables {
         Ok(())
     }
 
+    /// The mods' selection package tables, by their path from the served
+    /// root, last mod first: the client lets the first supplement that defines
+    /// a box own it, so a later mod wins, as in db/.
+    pub fn package_supplements(&self) -> Vec<String> {
+        self.list(&PACKAGES).iter().rev().map(|f| format!("{}/{f}", PACKAGES.dir)).collect()
+    }
+
     /// The Config.local.js entries, one per kind a mod added to. `web` is the
     /// served root, where `LastModFirst` finds the base tables.
     pub fn config_entries(&self, web: &Path) -> Vec<String> {
@@ -325,6 +356,7 @@ impl ModTables {
             let files = self.list(table);
             let path = |f: &String| format!("{}/{f}", table.dir);
             let names: Vec<String> = match table.order {
+                Order::ByCaller => continue,
                 Order::ModOrder if files.is_empty() => continue,
                 Order::ModOrder => files.iter().map(path).collect(),
                 Order::LastModFirst { base, fallback } => {
@@ -656,6 +688,12 @@ fn is_signboard_table(rel: &str) -> bool {
 fn is_signboard_name(name: &str) -> bool {
     let lower = name.to_lowercase();
     lower == "signboardlist.lub" || lower == "signboardlist.lua"
+}
+
+/// `luafiles514/lua files/selectpackage/selectpackageitem.lub` under `data/`,
+/// in any case, or as `.lua`.
+fn is_package_table(rel: &str) -> bool {
+    is_table_in(PACKAGE_DIR, rel, "selectpackageitem")
 }
 
 /// The client's names for its four skill tables, without the extension.
@@ -1164,6 +1202,34 @@ mod tests {
                   'data/luafiles514/lua files/SignBoardList-b.lub'],\n"
                 .to_string()]
         );
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// A mod's selection package table is kept aside rather than replacing
+    /// the client's own, and is listed by the caller, last mod first.
+    #[test]
+    fn package_tables_are_kept_aside_and_listed_last_mod_first() {
+        assert!(data_table("LuaFiles514/Lua Files/SelectPackage/selectpackageitem.lub").is_some());
+        assert!(data_table("luafiles514/lua files/selectpackage/selectpackageitem_cln.lub").is_none());
+        let tmp = tmp("packages");
+        let web = tmp.join("web");
+        let mut all = ModTables::default();
+        for m in ["a", "b"] {
+            let src = tmp.join(m).join("data");
+            write(&src.join("luafiles514/lua files/selectpackage/selectpackageitem.lua"), m);
+            all.extend(copy_data_layer(&src, &web, m).unwrap());
+        }
+        let dir = web.join("data/luafiles514/lua files/selectpackage");
+        assert!(!dir.join("selectpackageitem.lua").exists());
+        assert_eq!(fs::read_to_string(dir.join("selectpackageitem-b.lua")).unwrap(), "b");
+        assert_eq!(
+            all.package_supplements(),
+            [
+                "data/luafiles514/lua files/selectpackage/selectpackageitem-b.lua",
+                "data/luafiles514/lua files/selectpackage/selectpackageitem-a.lua",
+            ]
+        );
+        assert!(all.config_entries(&web).is_empty());
         let _ = fs::remove_dir_all(&tmp);
     }
 

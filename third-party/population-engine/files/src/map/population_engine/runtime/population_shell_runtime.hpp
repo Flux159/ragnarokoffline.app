@@ -24,6 +24,7 @@ bool population_shell_status_check_reset(map_session_data *sd, t_tick last_tick)
 
 bool population_shell_check_target(map_session_data *sd, unsigned int id);
 bool population_shell_mob_is_plant(const mob_data *md);
+bool population_shell_mob_player_owned(const mob_data *md);
 bool population_shell_check_target_for_movement(map_session_data *sd, unsigned int id);
 unsigned int population_shell_check_target_alive(map_session_data *sd);
 

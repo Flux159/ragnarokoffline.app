@@ -69,8 +69,9 @@ class AgentDriver {
 		this.errors = [];
 		this.errorsSeen = 0;
 		wc.on('console-message', (...a) => {
-			// Electron has had two signatures for this event.
-			const d = a[1] && typeof a[1] === 'object' ? a[1] : { level: a[1], message: a[2] };
+			// Electron 35 put the details on the event and deprecated the extra
+			// arguments (level, message). Read the event, fall back to the arguments.
+			const d = a[0] && typeof a[0].message === 'string' ? a[0] : { level: a[1], message: a[2] };
 			const level = typeof d.level === 'number' ? d.level : { warning: 2, error: 3 }[d.level] || 0;
 			// Warnings too: roBrowser reports an unhandled packet as a warning.
 			if (level >= 2) this.record(level === 3 ? 'console' : 'warning', String(d.message).slice(0, 2000));

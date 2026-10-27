@@ -1963,6 +1963,38 @@ lists them in the client's `customEfstIds`, `customStateIconImgInfo` and
 [A status icon of your own](mods/CUSTOM_SKILLS.md#a-status-icon-of-your-own)
 has an example of each, and the Lua side.
 
+### Selection boxes: the pick-one window
+
+A box that lets the player choose one reward, such as the Booster costume
+boxes, opens the client's selection window instead of an NPC dialogue when
+both sides know the box:
+
+- **The server** gives what was picked from `db/item_packages.yml`. Ship the
+  box's groups there, as an import like any other table.
+- **The client** draws the window from
+  `data/luafiles514/lua files/selectpackage/selectpackageitem.lub`. A mod's
+  copy is **added to the client's, not laid over it**: ship rows for your own
+  boxes only.
+
+```lua
+-- my-mod/data/luafiles514/lua files/selectpackage/selectpackageitem.lua
+packageitemsetbox = {
+	-- { box, group, item, amount, rental hours, refine }
+	{ 106849, 0, 31874, 1, 0, 0 },
+	{ 106849, 1, 31875, 1, 0, 0 },
+}
+```
+
+- **Group numbers start at 0 and must match `item_packages.yml`.** The
+  client sends the group number, and the server gives that group's items.
+- **A box the client already defines keeps its own choices.** A mod's rows
+  fill only boxes the client's table lacks. Among the mods, a later mod wins.
+- **Keep the box's item script.** It runs on clients without the window
+  (packet versions before 2022-02-16), so a menu there still works.
+
+The app copies each mod's table aside as `selectpackageitem-<mod>.lua` and
+lists it in the client's `itemPackageSupplement`, before the app's own.
+
 ### Cut-ins: an NPC's full-length picture
 
 `cutin "<name>", <position>;` in an NPC's script shows a picture beside the
@@ -2045,7 +2077,8 @@ the overlay to `state/assets/overlay.id` — the era, plus the name, size and
 mtime of every file each enabled mod puts under `data/`, `BGM/`, `System/` or
 `client/` — and the app drops the client's cache whenever that number moves.
 So installing, editing or switching off a mod takes effect on the next launch,
-and an ordinary launch still starts from a warm cache.
+and an ordinary launch still starts from a warm cache. Each AI agent's window
+keeps a cache of its own, and drops it the same way when it next opens.
 
 A mod that only touches `db/`, `npc/` or `conf/` deliberately does not count:
 the client never sees those, and clearing its cache would cost you a re-download
@@ -2426,6 +2459,7 @@ It is a supported interface, not a sandbox for untrusted JavaScript.
 | `api.input.suspend()` | Suspend movement while showing a plugin dialog. Returns an idempotent release function, also released at disposal. |
 | `api.actions.perform(name, payload)` | Native actions: `attack`, `target` (toggle auto-target), `interact`, `pickup`, `menu` (game options), `shortcut` with `{ index: 0…35 }`, `shortcut:assign` and `storage:transfer` (below), or `window` with an allowed `{ name }`. Returns whether the action was dispatched, not whether the server accepted it. |
 | `api.targeting.pick({ type, label })` | Raises the client's own target cursor and resolves to a frozen `{ classId, gid, name, kind }` for what the player clicks, or `null` for ESC, empty ground, a client too old to offer it, or the player starting a skill of their own (their action wins). `type` is `mob` (default), `player` or `any`; NPCs cannot be picked. One pick at a time: a new one cancels the last, and so does disposal. |
+| `api.monsters.friendly(gid, on)` / `.friendlySupported()` | A monster the player's party owns, such as a mod's pet: the plain cursor over it instead of the attack one, and left out of `api.actions.attackNearest()`. Looks only; the server decides what can be hit. Unmarked when the plugin goes. See [below](#a-partys-own-monsters--apimonstersfriendly). Absent in an older app. |
 | `api.server.command(text)` | Sends an `@` or `#` command as if the player had typed it in chat, so the server allows exactly what the player's group allows. Anything else is refused; returns whether it was sent. |
 | `api.graphics.registerPass({ name, fragment, uniforms, enabled })` | A full-screen GLSL pass over each frame, after bloom and before anti-aliasing. Returns a function that removes it; it also goes when the plugin does. See [Graphics passes](#graphics-passes). |
 | `api.ui.window({ id, title, width, height, resizable })` | A window of the plugin's own; fill its `body`. `show`, `hide`, `toggle`, `isOpen`, `setTitle`, `onClose`. See [Windows and server requests](#windows-and-server-requests). |
@@ -2908,6 +2942,29 @@ call it from `init`, and it is put back when the mod is turned off. An app
 before 1.4.5 has no `api.players`, and a client without the switches answers
 `gmLookSupported()` with `false` (`gmLook` then returns `null`). It reads `Session.AdminLook` in the
 roBrowser fork. See [`mods/gm-class-look`](../mods/gm-class-look).
+
+### A party's own monsters — `api.monsters.friendly`
+
+A monster a mod spawns for the player's party, such as a pet that follows a
+companion, is still a monster to the client: the mouse shows the attack
+cursor over it, and `api.actions.attackNearest()` walks up to it. Mark it by
+its gid, which the mod's server script knows (`monster` returns it) and can
+send to its plugin:
+
+```js
+if (api.monsters?.friendlySupported?.()) {
+    api.monsters.friendly(gid);          // the plain cursor, and left out of attackNearest
+    api.monsters.friendly(gid, false);   // a monster again
+}
+```
+
+`friendly` returns `true` once marked or unmarked, and `false` on a client
+without it. Marking the same gid twice is one mark. Two mods can mark the same
+monster, and it stays friendly until both let it go. Everything a mod marked
+is unmarked when it is turned off. This only changes what the player sees and
+what `attackNearest` picks: the server still decides what can be hit, so give
+the monster a master on the server too (`setunitdata .@gid, UMOB_MASTERAID, ...`).
+An older app has no `api.monsters`.
 
 ### Window sizes — `api.ui.scale`
 

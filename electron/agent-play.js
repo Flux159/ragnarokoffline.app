@@ -50,7 +50,7 @@ function writePrivate(file, text) {
  *   port() -> the agent API's preferred port (7490 unless overridden),
  *   gamePath, runAccount(request) -> Promise, era() -> 'renewal'|'prerenewal',
  *   hosting() -> bool (false when this app joins someone else's server),
- *   icon, log(text)
+ *   dropStaleClientCache(partition) -> Promise (main.js), icon, log(text)
  */
 function createAgentPlay(deps) {
 	const dir = () => path.join(deps.stateDir(), 'agent');
@@ -212,13 +212,18 @@ function createAgentPlay(deps) {
 			}
 			s.credentials = { user: accountName(n), pass: password };
 
+			const partition = n === 1 ? PARTITION : `${PARTITION}-${n}`;
+			// Before the page loads, as for the player's own game window: the
+			// client reads its file cache as it boots, and this session's cache
+			// is its own, so nothing the player's launch clears reaches it.
+			if (deps.dropStaleClientCache) await deps.dropStaleClientCache(partition);
 			const win = new deps.BrowserWindow({
 				width: 1280, height: 800, useContentSize: true,
 				show: visible,
 				title: `AI agent${n > 1 ? ` ${n}` : ''} — Ragnarok Offline`,
 				icon: deps.icon,
 				webPreferences: {
-					partition: n === 1 ? PARTITION : `${PARTITION}-${n}`,
+					partition,
 					contextIsolation: true,
 					nodeIntegration: false,
 					sandbox: true,

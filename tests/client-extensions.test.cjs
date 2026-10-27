@@ -440,6 +440,45 @@ test('api.players.gmLook turns parts of the GM look off, checks what it is given
     assert.equal(old.gmLook({ sprite: false }), null);
 });
 
+test('api.monsters.friendly marks a monster once per plugin, checks what it is given and unmarks on disposal', async () => {
+    const [, { createRuntime }] = await modules;
+    // The bridge as ExtensionBridge.mjs makes it: a count per gid, so two mods
+    // marking the same monster both have to let it go.
+    const marks = new Map();
+    const runtime = createRuntime();
+    runtime.configure({ markFriendly(gid, on) {
+        const count = marks.get(gid) || 0;
+        if (on) marks.set(gid, count + 1);
+        else if (count > 1) marks.set(gid, count - 1);
+        else marks.delete(gid);
+    } });
+    const pets = runtime.scope('companion-pets');
+    const other = runtime.scope('another-mod');
+    const { monsters } = pets.api;
+    assert.equal(monsters.friendlySupported(), true);
+    assert.throws(() => monsters.friendly('110000123'), TypeError);
+    assert.throws(() => monsters.friendly(0), TypeError);
+    assert.throws(() => monsters.friendly(110000123, 'yes'), TypeError);
+    assert.equal(monsters.friendly(110000123), true);
+    assert.equal(monsters.friendly(110000123), true);
+    assert.equal(marks.get(110000123), 1, 'marking twice from one plugin counts once');
+    other.api.monsters.friendly(110000123);
+    assert.equal(monsters.friendly(110000123, false), true);
+    assert.equal(marks.get(110000123), 1, 'still friendly while the other mod has it marked');
+    monsters.friendly(110000456);
+    pets.dispose();
+    await Promise.resolve();
+    assert.equal(marks.has(110000456), false, 'turning the mod off unmarks what it marked');
+    assert.equal(marks.get(110000123), 1);
+    other.dispose();
+    await Promise.resolve();
+    assert.equal(marks.size, 0);
+    // A client without the hook: nothing to call.
+    const old = createRuntime().scope('companion-pets').api.monsters;
+    assert.equal(old.friendlySupported(), false);
+    assert.equal(old.friendly(110000123), false);
+});
+
 test('api.ui.scale scales the windows the client allows, checks what it is given and puts the sizes back on disposal', async () => {
     const [, { createRuntime }] = await modules;
     // The bridge as ExtensionBridge.mjs makes it, over the fork's UI/UIScale.js.

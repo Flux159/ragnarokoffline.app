@@ -27,6 +27,7 @@ import PACKET from 'Network/PacketStructure.js';
 import PACKETVER from 'Network/PacketVerManager.js';
 import UIManager from 'UI/UIManager.js';
 import SkillTargetSelection from 'UI/Components/SkillTargetSelection/SkillTargetSelection.js';
+import Cursor from 'UI/CursorManager.js';
 import Entity from 'Renderer/Entity/Entity.js';
 
 const visible = component => Boolean(component?.__active && component._host?.getClientRects().length &&
@@ -238,6 +239,20 @@ function cancelTargeting() {
     settleTargeting(null);
 }
 
+// --- Friendly monsters -----------------------------------------------------
+// A monster the player's party owns (api.monsters.friendly): a pet a mod
+// spawned for a companion. The client gives every monster the attack cursor
+// (EntityControl.onMouseOver), and attackNearest would walk up and swing at
+// it. Counted, so two mods marking the same one both have to let it go.
+const friendlyMonsters = new Map();
+function markFriendly(gid, on) {
+    const count = friendlyMonsters.get(gid) || 0;
+    if (on) friendlyMonsters.set(gid, count + 1);
+    else if (count > 1) friendlyMonsters.set(gid, count - 1);
+    else friendlyMonsters.delete(gid);
+}
+const isFriendly = entity => Boolean(entity && entity.objecttype === Entity.TYPE_MOB && friendlyMonsters.has(entity.GID));
+
 // Send an @command the way the chat box does for the player's own input: a
 // public-chat packet the server reads as an atcommand. Atcommands only (@ or #),
 // so a plugin cannot put words in the player's mouth, and the server authorises
@@ -281,6 +296,18 @@ export function init() {
     SkillTargetSelection.set = function () {
         if (activePick && !settingPick) settleTargeting(null);
         return clientSet.apply(this, arguments);
+    };
+    // A friendly monster under the mouse gets the plain cursor, as a pet does
+    // (the client sets the attack one in onMouseOver, just before this). The
+    // map calls this every frame and setType restarts the cursor's animation,
+    // so switch only once.
+    const clientOver = EntityManager.setOverEntity;
+    EntityManager.setOverEntity = function (target) {
+        const result = clientOver.apply(this, arguments);
+        if (isFriendly(target) && !Camera.action?.active && Cursor.getActualType() !== Cursor.ACTION.DEFAULT) {
+            Cursor.setType(Cursor.ACTION.DEFAULT);
+        }
+        return result;
     };
     // Emit item:use so mods can react to a consumable being used. The id is the
     // item type (ITID), resolved from the live inventory at send time -- before
@@ -344,8 +371,12 @@ export function init() {
             if (!player || !inputState().canMove) return false;
             const MOB = player.constructor.TYPE_MOB;
             let target = EntityManager.getFocusEntity();
-            if (!target || target.objecttype !== MOB || target.action === target.ACTION.DIE) {
+            if (!target || target.objecttype !== MOB || target.action === target.ACTION.DIE || isFriendly(target)) {
                 target = EntityManager.getClosestEntity(player, MOB);
+                // A friendly monster nearest: the nearest of the others in sight.
+                if (isFriendly(target)) {
+                    target = EntityManager.getEntitiesSortedByDistance?.(player, MOB)?.find(entity => !isFriendly(entity)) || null;
+                }
             }
             if (!target) return false;
             const path = [];
@@ -377,6 +408,8 @@ export function init() {
         beginTargeting,
         cancelTargeting,
         serverCommand,
+        // api.monsters.friendly; defined above.
+        markFriendly,
         // Graphics passes (api.graphics); GraphicsPasses.mjs.
         registerPass: Graphics.registerPass,
         graphicsHook: Graphics.hook,

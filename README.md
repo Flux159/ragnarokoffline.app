@@ -179,6 +179,29 @@ Picking **Join a friend** asks for their address; **Play on my own server** take
 you back to hosting. Joining runs nothing locally — no server, no microVM — so
 switching to it stops your stack, and switching back starts it again.
 
+
+## Playing in a browser
+
+The game window is roBrowser, a web client the app serves over HTTP, so any
+browser with WebGL can play on your server too. While the app is running, open:
+
+```
+http://127.0.0.1:3338/
+```
+
+No setting is needed for that; it never leaves your machine. **This is how to
+play two characters at once:** keep the app window, open that address in a
+browser or another tab, and log in with a *different* account. rAthena allows
+one login per account, so the same account would kick the first one out. Make a
+second account at the login screen with `_M` or `_F` on the end of a new
+username.
+
+Other devices on the same wifi can use your LAN link instead,
+`http://<your LAN IP>:3338/`. That needs *Let other machines connect* and a
+server restart; see [Joining from a browser](#joining-from-a-browser-with-nothing-installed).
+The [Playing in a browser](https://flux159.github.io/ragnarokoffline.app/docs/browser)
+guide has the details.
+
 ---
 
 ## Architecture

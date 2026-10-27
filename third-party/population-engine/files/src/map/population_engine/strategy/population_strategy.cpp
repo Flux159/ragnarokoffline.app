@@ -2756,11 +2756,13 @@ struct MobScan {
 	std::vector<mob_data *> mobs;
 };
 
+/// A monster a player owns (a summon, a mod's pet) is no enemy here either: counted, a pet
+/// beside the party read as a fight in town.
 static int32 mob_scan_cb(block_list *bl, va_list ap)
 {
 	MobScan *scan = va_arg(ap, MobScan *);
 	mob_data *md = reinterpret_cast<mob_data *>(bl);
-	if (!status_isdead(*md))
+	if (!status_isdead(*md) && !population_shell_mob_player_owned(md))
 		scan->mobs.push_back(md);
 	return 0;
 }
@@ -3788,7 +3790,7 @@ static int32 chaser_cb(block_list *bl, va_list ap)
 {
 	ChaserScan *scan = va_arg(ap, ChaserScan *);
 	mob_data *md = reinterpret_cast<mob_data *>(bl);
-	if (status_isdead(*md) || md->target_id != scan->me)
+	if (status_isdead(*md) || md->target_id != scan->me || population_shell_mob_player_owned(md))
 		return 0;
 	const int d = distance_bl(scan->center, md);
 	if (scan->nearest == nullptr || d < scan->best_d || (d == scan->best_d && md->id < scan->nearest->id)) {
@@ -4458,7 +4460,7 @@ static int32 boss_scan_cb(block_list *bl, va_list ap)
 {
 	auto *found = va_arg(ap, std::vector<mob_data *> *);
 	mob_data *md = reinterpret_cast<mob_data *>(bl);
-	if (!status_isdead(*md) && md->status.class_ == CLASS_BOSS)
+	if (!status_isdead(*md) && md->status.class_ == CLASS_BOSS && !population_shell_mob_player_owned(md))
 		found->push_back(md);
 	return 0;
 }
@@ -4467,7 +4469,7 @@ static int32 encounter_scan_cb(block_list *bl, va_list ap)
 {
 	auto *found = va_arg(ap, std::vector<mob_data *> *);
 	mob_data *md = reinterpret_cast<mob_data *>(bl);
-	if (!status_isdead(*md) && g_db.encounter.count(md->mob_id) != 0)
+	if (!status_isdead(*md) && g_db.encounter.count(md->mob_id) != 0 && !population_shell_mob_player_owned(md))
 		found->push_back(md);
 	return 0;
 }

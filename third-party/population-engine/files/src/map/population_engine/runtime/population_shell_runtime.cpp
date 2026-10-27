@@ -366,6 +366,21 @@ bool population_shell_mob_is_plant(const mob_data *md)
 		&& !status_has_mode(&md->status, MD_CANMOVE) && !status_has_mode(&md->status, MD_CANATTACK);
 }
 
+/// RAGNAROKMAC: a monster a player owns, so not an enemy: a summon (special_state.ai, an
+/// Alchemist's sphere), or one a script gave a player as its master (UMOB_MASTERAID, a mod's
+/// pet). Only special_state.ai was skipped, so a mod's pet counted as a monster nearby.
+bool population_shell_mob_player_owned(const mob_data *md)
+{
+	if (md == nullptr)
+		return false;
+	if (md->special_state.ai)
+		return true;
+	if (md->master_id == 0)
+		return false;
+	const block_list *master = map_id2bl(md->master_id);
+	return master != nullptr && master->type == BL_PC;
+}
+
 /// A plant is a target only for a companion whose owner is attacking it: the player chose to
 /// harvest it, and the companion joins in. Ambient shells leave plants alone.
 static bool population_shell_plant_allowed(map_session_data *sd, const mob_data *md)
@@ -420,7 +435,7 @@ bool population_shell_check_target(map_session_data *sd, unsigned int id)
 		return false;
 
 	TBL_MOB *md = map_id2md(bl->id);
-	if (!md || md->type != BL_MOB || md->status.hp <= 0 || md->special_state.ai)
+	if (!md || md->type != BL_MOB || md->status.hp <= 0 || population_shell_mob_player_owned(md))
 		return false;
 	if (pop_mob_is_someone_elses(sd, md))
 		return false;
@@ -443,7 +458,7 @@ bool population_shell_check_target_for_movement(map_session_data *sd, unsigned i
 	if (status_isdead(*bl))
 		return false;
 	TBL_MOB *md = map_id2md(bl->id);
-	if (!md || md->type != BL_MOB || md->status.hp <= 0 || md->special_state.ai)
+	if (!md || md->type != BL_MOB || md->status.hp <= 0 || population_shell_mob_player_owned(md))
 		return false;
 	if (pop_mob_is_someone_elses(sd, md))
 		return false;
@@ -726,7 +741,7 @@ void population_shell_update_mob_tracker(map_session_data *sd)
 			if (md->spawn_timer != INVALID_TIMER) return 0;
 			if (md->status.hp <= 0)               return 0;
 			if (md->sc.option & (OPTION_HIDE | OPTION_CLOAK)) return 0;
-			if (md->special_state.ai)             return 0;
+			if (population_shell_mob_player_owned(md)) return 0;
 			// Nor count harvest plants as enemies nearby, or an area skill fires at a garden.
 			if (population_shell_mob_is_plant(md)) return 0;
 

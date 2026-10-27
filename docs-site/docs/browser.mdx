@@ -1,0 +1,68 @@
+# Playing in a browser
+
+The game window in the app is roBrowser, a web client. The app's asset server
+hands it out over HTTP, so **any browser with WebGL can play on your server
+too**. That's also how you log in with two characters at once.
+
+## On the same computer
+
+While the app is running with its server started, open this in Chrome, Firefox,
+Edge or Safari:
+
+```
+http://127.0.0.1:3338/
+```
+
+You don't need to change any settings. **Allow LAN connections** can stay off,
+because this address never leaves your machine.
+
+The first load in a new browser takes a little longer, because the browser
+downloads the client and artwork from the app. After that it uses its own cache.
+
+## Playing two characters at once
+
+1. Keep playing in the app window.
+2. Open `http://127.0.0.1:3338/` in a browser, or in another tab, and log in
+   with a **different account**.
+
+Each window or tab is its own client. They need different accounts because
+rAthena allows one login per account: logging in again with the same account
+disconnects the first. To make a second account, type a new username with
+`_M` or `_F` on the end at the login screen (for example `alt_M`), pick a
+password, and press Login. Both need at least four characters.
+
+Now you can party, trade or open a vending stall with yourself.
+
+## From other devices on your network
+
+Other computers, tablets and phones on the same wifi can play too.
+
+1. **Settings → Multiplayer**, turn on **Allow LAN connections**.
+2. Press **Restart server**. The server only reads that setting when it starts.
+3. Open **Your link — on this network** on the other device. It's your
+   computer's LAN address on port 3338, something like:
+
+```
+http://192.168.1.20:3338/
+```
+
+Your address will probably be different, so use the one Settings shows. The
+first time you turn LAN on, your computer may ask you to allow local network
+access. Say yes, or nobody can connect.
+
+Phones work, but the UI isn't made for small touch screens.
+
+Starting **Share with friends** (sharing over the internet) turns **Allow LAN
+connections** off, so LAN links stop working while sharing is on. Turn it back
+on and restart the server when you want LAN again. See
+[Multiplayer](./settings-multiplayer).
+
+## If it doesn't load
+
+- **The app has to be running.** It is the server. Quitting it stops every
+  browser client too.
+- **Use the address exactly as written:** `http`, not `https`, with `:3338`.
+- **A LAN link doesn't work on another device:** check that Allow LAN
+  connections is on and that you pressed **Restart server** afterwards. Also
+  check that both devices are on the same network. Guest and "isolated" wifi
+  networks often block devices from reaching each other.

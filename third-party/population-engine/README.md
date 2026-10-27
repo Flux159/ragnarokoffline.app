@@ -495,7 +495,9 @@ What remains in the engine's own files are one-line hooks, each marked
 name-mention replies skip a held shell (`population_engine_shell_is_held`); the
 whisper handler asks `population_shell_control_whisper` first; the drift check
 and the two map-quota counts skip `sd->pop.hold`; and the combat timer calls
-`population_shell_control_sweep` before its stale sweep.
+`population_shell_control_sweep` before its stale sweep; the stale collection
+calls `population_shell_control_place_held` so a held shell a script just warped
+is placed, not released, when the wander timer gets there first.
 
 A hold belongs to the NPC that took it, is bounded (30 minutes at most), and
 ends by itself when it lapses or its NPC is unloaded. The sweep also does the

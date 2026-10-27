@@ -472,6 +472,7 @@ load	renewal	npc/re/instances/RoomOfConsciousness.txt
 load	renewal	npc/re/instances/SarahAndFenrir.txt
 load	renewal	npc/re/instances/SaraMemory.txt
 load	renewal	npc/re/instances/SealedOs.txt
+load	renewal	npc/re/instances/ShadowManor.txt
 load	renewal	npc/re/instances/SkyFortress.txt
 load	renewal	npc/re/instances/TempleOfDemonGod.txt
 load	renewal	npc/re/instances/ThorGunsuBase.txt
@@ -672,6 +673,7 @@ load	renewal	npc/re/jobs/novice/supernovice_ex.txt
 load	renewal	npc/re/jobs/repair.txt
 load	renewal	npc/re/jobs/doram/spirit_handler.txt
 load	renewal	npc/re/jobs/4-1/dragon_knight.txt
+load	renewal	npc/re/jobs/4-1/shadow_cross.txt
 load	renewal	npc/re/jobs/4-2/imperial_guard.txt
 load	renewal	npc/re/quests/skills/merchant_skills.txt
 load	renewal	npc/re/quests/skills/swordman_skills.txt
@@ -4895,6 +4897,10 @@ warp	ve_fild04	115	50	ve_fild4-3	ve_fild06	80	183
 warp	ve_fild06	153	220	ve_fild6-1	veins	218	355
 warp	ve_fild07	147	371	ve_fild7-1	veins	146	28
 warp	ve_fild06	81	177	VeF06S_VeF04S	ve_fild04	115	55
+warp	ve_fild03	222	43	VeF03S_VeF05N	ve_fild05	200	325
+warp	ve_fild05	200	330	VeF05N_VeF03S	ve_fild03	222	48
+warp	ve_fild05	359	192	VeF05E_VeF06S	ve_fild06	88	261
+warp	ve_fild06	89	265	VeF06S_VeF05E	ve_fild05	354	191
 file	npc/re/warps/fields/yuno_fild.txt
 warp	yuno_fild02	18	337	yunfild03	yuno_fild03	381	331
 warp	yuno_fild03	383	331	yunfild03-1	yuno_fild02	20	337

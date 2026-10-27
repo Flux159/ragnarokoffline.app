@@ -76,6 +76,10 @@ bool population_engine_shell_set_lost_event(int32_t gid, int32_t npc_id, const c
 /// From the combat timer, before its stale sweep: finishes held shells' warps,
 /// runs their follows and attack orders, and ends lapsed holds.
 void population_shell_control_sweep();
+/// From the stale collection, which the wander timer runs as well as the combat
+/// timer: finishes a held shell's script warp before the sweep would, so a shell
+/// still off the map grid is not released as stale.
+void population_shell_control_place_held(map_session_data *sd);
 /// From the whisper handler: true when the shell is held, and its script (or
 /// nobody) has answered; false lets the engine answer as usual.
 bool population_shell_control_whisper(map_session_data *from_sd, map_session_data *bot_sd, const char *message);

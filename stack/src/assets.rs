@@ -943,11 +943,21 @@ fn write_client_config(
     if setting_on(cfg, "instant_map_changes") {
         body = insert_before_close(body, "\ttransitionDuration: 1,\n");
     }
-    // Only the stock Renewal server defines these packages. This separate file
-    // fills missing client boxes without replacing any native package table.
+    // Selection boxes the client's own package table lacks: each mod's, last
+    // mod first, then the app's. Only the stock Renewal server defines the
+    // app's packages. Each file fills missing client boxes without replacing
+    // any native package table. One file stays a plain path, as it always was.
+    let mut packages = tables.package_supplements();
     if !crate::cmds::is_prerenewal(cfg) {
-        body = insert_before_close(body,
-            "\titemPackageSupplement: 'data/luafiles514/lua files/selectpackage/selectpackageitem_supplement.lua',\n");
+        packages.push("data/luafiles514/lua files/selectpackage/selectpackageitem_supplement.lua".to_string());
+    }
+    match packages.as_slice() {
+        [] => {}
+        [one] => body = insert_before_close(body, &format!("\titemPackageSupplement: '{one}',\n")),
+        all => {
+            let list = all.iter().map(|p| format!("'{p}'")).collect::<Vec<_>>().join(", ");
+            body = insert_before_close(body, &format!("\titemPackageSupplement: [{list}],\n"));
+        }
     }
     // The tables mods add to the client's own, each a list the client loads
     // beside its base; client_tables says in which order, and why.
@@ -1587,7 +1597,22 @@ mod tests {
         write(&cfg.root.join("client-assets").join(supplement), "updated supplement");
         link(&cfg, &args).unwrap();
         assert_ne!(fs::read_to_string(cfg.state.join("assets/overlay.id")).unwrap(), before);
+        // A mod's package table comes first, as a list; the client's own
+        // table is never replaced.
+        let own = "data/luafiles514/lua files/selectpackage/selectpackageitem-boxes.lua";
+        write(&cfg.state.join("mods/boxes/data/luafiles514/lua files/selectpackage/selectpackageitem.lua"), "mod boxes");
+        crate::mods::set_enabled(&cfg.state, "boxes", true).unwrap();
+        link(&cfg, &args).unwrap();
+        assert_eq!(fs::read_to_string(cfg.state.join("assets").join(own)).unwrap(), "mod boxes");
+        assert!(!cfg.state.join("assets/data/luafiles514/lua files/selectpackage/selectpackageitem.lua").exists());
+        let config = fs::read_to_string(cfg.state.join("assets/Config.local.js")).unwrap();
+        assert!(config.contains(&format!("itemPackageSupplement: ['{own}', '{supplement}'],")), "{config}");
+        // Pre-renewal: the app's packages are off, the mod's stay.
         write(&cfg.state.join("prerenewal"), "");
+        link(&cfg, &args).unwrap();
+        let config = fs::read_to_string(cfg.state.join("assets/Config.local.js")).unwrap();
+        assert!(config.contains(&format!("itemPackageSupplement: '{own}',")), "{config}");
+        crate::mods::set_enabled(&cfg.state, "boxes", false).unwrap();
         link(&cfg, &args).unwrap();
         let config = fs::read_to_string(cfg.state.join("assets/Config.local.js")).unwrap();
         assert!(!config.contains("itemPackageSupplement"), "{config}");

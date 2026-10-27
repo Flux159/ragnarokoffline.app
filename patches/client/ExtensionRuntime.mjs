@@ -98,6 +98,10 @@ export function createRuntime({ storage, report = (...args) => console.error(...
             }
             return write(value);
         };
+        // api.monsters.friendly: the monsters this plugin marked, unmarked
+        // when it goes.
+        const friendlyGids = new Set();
+        let friendlyCleanup = null;
         const api = Object.freeze({
             version: 1, name, cleanup, on, snapshot,
             input: Object.freeze({
@@ -411,6 +415,28 @@ export function createRuntime({ storage, report = (...args) => console.error(...
                     const now = bridge.gmLook(wanted);
                     cleanup(() => bridge.gmLook(before));
                     return freeze(copy(now));
+                },
+            }),
+            // A monster the player's party owns -- a pet the mod spawned for
+            // a companion -- drawn with the plain cursor instead of the
+            // attack one, and left out of actions.attackNearest. Only looks:
+            // the server still decides what can be hit. Unmarked when the
+            // plugin goes.
+            monsters: Object.freeze({
+                friendlySupported: () => typeof bridge.markFriendly === 'function',
+                friendly(gid, on = true) {
+                    if (disposed) throw new Error(`Plugin ${name} is disposed`);
+                    if (!Number.isInteger(gid) || gid <= 0) throw new TypeError('friendly: a monster is named by its gid, a positive whole number');
+                    if (typeof on !== 'boolean') throw new TypeError('friendly: on must be true or false');
+                    if (typeof bridge.markFriendly !== 'function') return false;
+                    if (on === friendlyGids.has(gid)) return true;
+                    if (on) friendlyGids.add(gid); else friendlyGids.delete(gid);
+                    bridge.markFriendly(gid, on);
+                    friendlyCleanup ??= cleanup(() => {
+                        for (const marked of friendlyGids) bridge.markFriendly(marked, false);
+                        friendlyGids.clear();
+                    });
+                    return true;
                 },
             }),
             // The mod's own host route (HostRoutes.mjs): its handler on the

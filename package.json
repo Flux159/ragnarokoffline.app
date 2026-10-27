@@ -1,7 +1,7 @@
 {
   "name": "ragnarokoffline",
   "productName": "Ragnarok Offline",
-  "version": "1.7.0",
+  "version": "1.7.4",
   "description": "Ragnarok Online, offline, in one app",
   "license": "GPL-3.0",
   "private": true,
@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
-    "electron": "^33.0.0",
+    "electron": "^44.9.3",
     "electron-builder": "^25.1.8"
   },
   "build": {

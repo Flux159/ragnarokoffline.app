@@ -219,7 +219,8 @@ function create({ BrowserWindow, session, preload, log }) {
 		// Chromium words each refusal twice; one line is enough.
 		let lastRefused = '';
 		contents.on('console-message', (event, _level, message) => {
-			const text = String(typeof message === 'string' ? message : event?.message || '');
+			// The event carries the message since Electron 35; the argument is the deprecated form.
+			const text = String(typeof event?.message === 'string' ? event.message : message || '');
 			const refused = /^Refused to (?:connect to|load) '([^']{1,300})'.*Content Security Policy/.exec(text);
 			if (!refused || refused[1] === lastRefused) return;
 			lastRefused = refused[1];
