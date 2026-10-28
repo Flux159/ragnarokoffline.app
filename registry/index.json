@@ -504,6 +504,51 @@
       "files": []
     },
     {
+      "name": "discord-announcements",
+      "version": "1.0.0",
+      "author": "Ragnarok Offline",
+      "description": "Posts what happens in your world to a Discord channel: players coming and going, level milestones, MVP kills and War of Emperium. Needs a channel webhook in Settings -> General -> Discord announcements.",
+      "homepage": "https://github.com/Flux159/ragnarokoffline.app/tree/main/registry/mods/discord-announcements",
+      "tags": [
+        "discord",
+        "quality-of-life",
+        "server"
+      ],
+      "icon": "",
+      "screenshots": [],
+      "requires": {
+        "mods": [],
+        "era": "any",
+        "app": ">=1.7.7"
+      },
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "55a9a617229626543d99cc499b53cac264e1419616106d02abcf9c8d18d2f420"
+        },
+        {
+          "path": "mod.json",
+          "sha256": "7913a838b27c33321d72076ff524fc2ca98770065bb48875ad710ed5b74ab9ec"
+        },
+        {
+          "path": "npc/levels.txt",
+          "sha256": "6d808a8698ac9521081c1a45daa7e74174d279ec88bc103bcfd78d2921229dcd"
+        },
+        {
+          "path": "npc/when/announce_logins/logins.txt",
+          "sha256": "ec673e6608202ad6b6137ff7136fa4e435b89a69ca58739d82e1dd4e2cb5aabe"
+        },
+        {
+          "path": "npc/when/announce_mvps/mvps.txt",
+          "sha256": "9e9d98e3abacfb684a349b6a84db894a2ae78a690f6f810428e28dcfb32d78c3"
+        },
+        {
+          "path": "npc/when/announce_woe/woe.txt",
+          "sha256": "ab1c14acce0ed30b5b103011393c5a0eb2505daaaf31f9d73953e87c445b6952"
+        }
+      ]
+    },
+    {
       "name": "dps-meter",
       "version": "1.0.0",
       "author": "popkdodge",

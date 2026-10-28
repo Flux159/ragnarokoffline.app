@@ -589,6 +589,31 @@
        the app's own, which shows as "Playing Ragnarok Offline".</p>
   </div>
 
+  <h2>Discord announcements</h2>
+  <div class="panel" id="discord-hook-panel">
+    <div class="row"><span class="name">Webhook</span><span class="state" id="s-discord-hook">—</span></div>
+    <label>
+      <span>Channel webhook</span>
+      <input type="password" id="discord-hook-url" autocomplete="off" spellcheck="false" placeholder="https://discord.com/api/webhooks/…" style="flex: 1; min-width: 0" />
+    </label>
+    <div class="row actions" style="padding-top:10px; justify-content: flex-start">
+      <button id="discord-hook-save">Save</button>
+      <button id="discord-hook-test" class="ghost">Send a test</button>
+      <button id="discord-hook-clear" class="ghost">Remove</button>
+    </div>
+    <label>
+      <span>World status</span>
+      <input type="checkbox" id="discord_announce_world" style="accent-color: var(--accent); flex: none" />
+      <span class="val" style="width:auto; color: var(--dim)">post when your world comes online and goes offline</span>
+    </label>
+    <p class="note" id="discord-hook-status" hidden style="margin:8px 0 0; color: var(--text)"></p>
+    <p class="note">Posts what happens in your world to a Discord channel. In Discord, open the
+       channel's <b>Edit Channel &rarr; Integrations &rarr; Webhooks</b>, make one and copy its
+       link, then paste it here. Then install the <b>discord-announcements</b> mod under
+       <b>Mods</b> to choose the events: logins, level milestones, MVP kills and War of
+       Emperium. Anyone with the link can post in that channel, so keep it to yourself.</p>
+  </div>
+
   <h2>Server</h2>
   <div class="panel">
     <div class="row"><span class="name">Assets &amp; client (:3338)</span><span class="state" id="s-assets">—</span></div>
@@ -3137,6 +3162,54 @@ for (const key of DISCORD_KEYS) {
   };
 }
 
+// ---- Discord announcements (electron/discord-webhook.js). The link goes to
+// the app and is never read back: the page only learns whether one is set.
+function paintDiscordHook(st) {
+  paint($('s-discord-hook'), st.set, st.set ? `Set (${st.hint})${st.following ? ', following the server' : ''}` : 'Not set');
+  $('discord-hook-test').disabled = !st.set && !$('discord-hook-url').value.trim();
+  $('discord-hook-clear').disabled = !st.set;
+}
+async function refreshDiscordHook() {
+  try { paintDiscordHook(await invoke('discord_webhook_status')); }
+  catch { $('discord-hook-panel').hidden = true; $('discord-hook-panel').previousElementSibling.hidden = true; }
+}
+function discordHookNote(message, kind = '') {
+  setNote('discord-hook-status', message, kind);
+  $('discord-hook-status').hidden = false;
+}
+$('discord-hook-url').oninput = () => {
+  $('discord-hook-test').disabled = false;
+};
+$('discord-hook-save').onclick = async () => {
+  const url = $('discord-hook-url').value.trim();
+  if (!url) { discordHookNote('Paste the webhook link first.', 'bad'); return; }
+  try {
+    paintDiscordHook(await invoke('discord_webhook_set', { url }));
+    $('discord-hook-url').value = '';
+    discordHookNote('Saved. Install the discord-announcements mod under Mods to choose what is posted.', 'good');
+  } catch (error) { discordHookNote(error.message || String(error), 'bad'); }
+};
+$('discord-hook-test').onclick = async () => {
+  const url = $('discord-hook-url').value.trim();
+  $('discord-hook-test').disabled = true;
+  try {
+    await invoke('discord_webhook_test', url ? { url } : {});
+    discordHookNote('Sent. Look in the channel.', 'good');
+  } catch (error) { discordHookNote(error.message || String(error), 'bad'); }
+  $('discord-hook-test').disabled = false;
+};
+$('discord-hook-clear').onclick = async () => {
+  try {
+    paintDiscordHook(await invoke('discord_webhook_clear'));
+    discordHookNote('Removed. Nothing more is posted.');
+  } catch (error) { discordHookNote(error.message || String(error), 'bad'); }
+};
+$('discord_announce_world').onchange = async () => {
+  const on = $('discord_announce_world').checked;
+  try { await invoke('set_app_preference', { key: 'discord_announce_world', value: on }); }
+  catch (error) { $('discord_announce_world').checked = !on; discordHookNote(`Could not save that: ${error.message || String(error)}`, 'bad'); }
+};
+
 // Mod names, descriptions and refusal reasons are written by whoever made the
 // mod, and land in innerHTML. Nothing about a mod folder is trusted markup.
 function esc(s) {
@@ -4056,6 +4129,8 @@ invoke('get_settings').then(s => {
   $('discord-app-id').value = s.discord_app_id || '';
   paintDiscordDetails();
   refreshDiscord();
+  $('discord_announce_world').checked = s.discord_announce_world !== false;
+  refreshDiscordHook();
   $('move_prediction').checked = !!s.move_prediction;
   $('instant_map_changes').checked = !!s.instant_map_changes;
   $('population_enable').checked = !!s.population_enable;

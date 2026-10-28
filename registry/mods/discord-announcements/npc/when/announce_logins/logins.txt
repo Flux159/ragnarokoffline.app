@@ -1,0 +1,16 @@
+//===== Ragnarok Offline: discord-announcements ==========================
+//= Players logging in and out, while "announce_logins" is on.
+//===========================================================================
+-	script	DiscordLogins	-1,{
+	end;
+OnPCLoginEvent:
+	if (population_is_shell(getcharid(3)))
+		end;
+	debugmes "[discord] **" + strcharinfo(0) + "** logged in (Lv " + BaseLevel + " " + jobname(Class) + ").";
+	end;
+OnPCLogoutEvent:
+	if (population_is_shell(getcharid(3)))
+		end;
+	debugmes "[discord] **" + strcharinfo(0) + "** logged out.";
+	end;
+}

@@ -1,0 +1,24 @@
+//===== Ragnarok Offline: discord-announcements ==========================
+//= War of Emperium, while "announce_woe" is on.
+//===========================================================================
+-	script	DiscordWoE	-1,{
+	end;
+OnAgitStart:
+	debugmes "[discord] War of Emperium has begun.";
+	end;
+OnAgitEnd:
+	debugmes "[discord] War of Emperium has ended.";
+	end;
+OnAgitStart2:
+	debugmes "[discord] War of Emperium SE has begun.";
+	end;
+OnAgitEnd2:
+	debugmes "[discord] War of Emperium SE has ended.";
+	end;
+OnAgitStart3:
+	debugmes "[discord] War of Emperium TE has begun.";
+	end;
+OnAgitEnd3:
+	debugmes "[discord] War of Emperium TE has ended.";
+	end;
+}
