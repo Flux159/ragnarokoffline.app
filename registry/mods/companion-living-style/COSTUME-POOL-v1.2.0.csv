@@ -1,0 +1,137 @@
+slot,item_id,reference_view,name
+upper,19501,137,T Spinx Helm
+upper,19506,300,T Valkyrie Feather Band
+upper,19507,654,Clear Sun
+upper,19515,701,Yellow Hat
+upper,19516,702,Singing Bird
+upper,19517,703,Chicken Crest
+upper,19518,704,Rainbow
+upper,19519,688,Thunderstorm Cloud
+upper,19520,705,Rain Cloud
+upper,19521,706,Charlies Hat
+upper,19522,707,Mini Crown
+upper,19523,244,Green Ribbon
+upper,19524,85,Costume Green Feeler
+upper,19525,58,Costume Jack A Dandy
+upper,19526,40,Costume Helm
+upper,19527,43,Costume Spiky Band
+upper,19529,38,Costume Angel Wing
+upper,19530,541,Costume Wild Rose
+upper,19532,640,Red Bunny Band
+upper,19533,114,Costume Spore Hat
+upper,19535,730,Costume Sinsuncho Hat
+upper,19536,533,Costume Rose Corsage
+upper,19537,591,Costume Gryphon Hat
+upper,19538,780,Full Moon
+upper,19543,849,Oliver Wolf Hood
+upper,19544,692,Costume Tare Neko Cru
+upper,19545,102,Costume Boy's Cap
+upper,19546,225,Costume Valkyrie Helm
+upper,19547,123,Costume Deviruchi Cap
+upper,19548,448,Costume Frog Cap
+upper,19549,41,Costume Magestic Goat
+upper,19557,334,Costume Ayothaya Hat
+upper,19558,524,Costume Crow Hat
+upper,19559,525,Costume Baby Dragon Hat
+upper,19560,527,Costume Coati Hat
+upper,19565,583,Costume Chung Hairpin
+upper,19568,757,Costume Ancient Horns
+upper,19569,758,Costume Sprout Hat
+upper,19570,759,Costume Mercury Riser
+upper,19571,770,Costume White Musang Hat
+upper,19572,771,Costume Black Musang Hat
+upper,19573,733,Costume Heart Wing Hairband
+upper,19575,863,Costume Ascension Black Dragon
+upper,19576,817,Costume Tare Pope
+upper,19577,874,10th Anni Poring Hat
+upper,19579,613,Costume Red Wind Hat
+upper,19581,891,Costume Adventurer's Hat
+upper,19582,411,Costume Cowboy Hat
+middle,19504,12,T Sunglasses
+middle,19509,695,Butterfly Wing Ears
+middle,19510,696,Screw Stuck in Head
+middle,19511,697,Heart Eye Patch 1
+middle,19512,698,Heart Eye Patch 2
+middle,19542,712,Costume Devil Whisper
+middle,19550,125,Costume Blush
+middle,19551,73,Costume Elven Ears
+middle,19583,50,Costume Zorro Mask
+middle,19609,316,Costume Red Glasses
+middle,19611,366,Costume Peco Ears
+middle,19621,152,Costume Evil Wing Ear
+middle,19624,185,Costume Blank Eyes
+middle,19644,184,Costume Takius Blindfold
+middle,19669,468,Costume Reginleif Hairband
+middle,19722,404,Costume Black Glasses
+middle,19734,83,Costume Binoculars
+middle,19735,100,Costume Fin Helm
+middle,19742,724,Costume Small Golden Wings
+middle,19752,990,Costume Shelter Wing Ears
+middle,19755,744,Costume YinYang Earring
+middle,19765,158,Costume Wing Angels Ears
+middle,19769,405,Costume Elf Ears
+middle,19776,998,Costume Tomboy Fairy
+middle,19787,1021,Costume Devoted Eyes
+middle,19788,779,Costume Heart Eyebandage
+middle,19810,422,Costume Ifrit Ear
+middle,19826,584,Costume Ice Wing Ear
+middle,19846,128,Costume Opera Masque
+middle,19853,595,Costume Filir Wings
+middle,19871,1074,Costume Decoration of Music
+middle,19877,467,"""Costume: Eyes Of Darkness"""
+lower,19505,54,T Cigarette
+lower,19513,699,Chicken Bill
+lower,19514,700,Charlies Beard
+lower,19528,53,Costume Iron Cain
+lower,19541,259,Costume Romantic White Flower
+lower,19552,56,Costume Centimental Flower
+lower,19553,180,Costume Assassin Mask
+lower,19566,644,Costume Samurai Mask
+lower,19584,327,Costume Dagger In Mouth
+lower,19605,369,Costume Gang Scarf
+lower,19606,370,Costume Ninja Scroll
+lower,19634,8,Costume Flu Mask
+lower,19636,49,Costume Clown Nose
+lower,19651,194,Costume RWC Shouting Mouth
+lower,19672,604,Costume Poring Letter
+lower,19683,414,Costume Sweet Candy
+lower,19692,383,Costume Peace Pipe
+lower,19713,571,Costume Lucky Clover
+lower,19726,534,Costume Scarlet Rose
+lower,19764,526,Costume Monster Card
+lower,19770,557,Costume Sake
+lower,19783,25,Costume Grampa Beard
+lower,19785,188,Costume Crunch Toast
+lower,19805,1045,Costume Curse Scroll
+lower,19817,1050,Costume Ifrits Breath
+lower,19947,460,Costume Rainbow Scarf
+lower,19952,572,Costume Bubble Gum in Mouth
+lower,19992,885,Costume Chilly Breath
+lower,19993,774,Costume Onigiri
+lower,20015,1205,Costume Lincoln Beard
+lower,20022,734,Costume Love Fragment
+lower,20029,569,Costume Donut in Mouth
+garment,20500,1,Archangel Wing
+garment,20501,11,Costume Mechanic Wing
+garment,20502,12,Costume Little Devil Wings
+garment,20503,13,Costume Candy Pouch Bag
+garment,20504,14,Costume Cupid's Pink Wings
+garment,20505,15,Costume Cupid Wing Skyblue
+garment,20507,16,Costume Poring Bag
+garment,20509,17,Costume Wings of Uriel
+garment,20510,19,Costume Sword Wing
+garment,20511,21,Blue Wings of Fairy
+garment,20512,2,Costume Adventurer's Backpack
+garment,20513,22,Costume EXE Backpack
+garment,20514,23,Costume Thanatos Sword
+garment,20516,24,Costume Wings of Michael
+garment,20517,25,Costume Giant Cat Bag
+garment,20518,27,Costume Gerhard Von Devi Bag
+garment,20521,26,Costume Black Cat Bag
+garment,20523,28,"""Costume: 2018 RTC Memorial Cloak"""
+garment,20525,33,Costume Crimson Wings
+garment,20526,34,Costume Brilliant Blue Angel Wings
+garment,20527,35,Costume Pink Butterfly Wing
+garment,20528,36,Costume Golden Butterfly Wings
+garment,20530,37,Costume Wings of Gabriel
+garment,20533,38,Costume Pink Butterfly Wing

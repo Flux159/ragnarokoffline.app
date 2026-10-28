@@ -1,0 +1,13 @@
+<!doctype html><meta charset="utf-8"><title>Companion Living Style v1.2.0</title>
+<style>body{font:15px system-ui;background:#152029;color:#edf4f7;max-width:760px;margin:28px auto;padding:0 20px}label{display:block;padding:14px;background:#20313d;margin:10px 0;border-radius:8px}small{display:block;color:#bdcdd8;margin-top:5px}button{padding:10px 18px}input[type=number]{width:85px}</style>
+<h1>Companion Living Style <small>v1.2.0 — test build</small></h1>
+<p>Keep Companion Party Overhaul enabled. Save here, then use Apply &amp; restart in the app.</p>
+<p>Choose upper, middle, lower and garment looks separately below. Costumes you equip on them take priority.</p>
+<p><b>Shuffle range: 1–9999.</b> The number chooses outfits, not how quickly they appear. Map arrival requests an immediate refresh; newly spawned AI are checked in small batches about every 250 ms. Actual rendering/network timing can vary.</p>
+<div id="fields"></div><button id="save" disabled>Save changes</button><p id="status"></p>
+<script>
+const fields=document.getElementById('fields'), status=document.getElementById('status'), save=document.getElementById('save');
+let controls=[];
+(async()=>{try{const m=await window.modSettings.get();for(const s of m.settings){const label=document.createElement('label'),input=document.createElement('input');input.type=s.type==='boolean'?'checkbox':'number';if(s.type==='boolean')input.checked=s.value;else{input.value=s.value;input.min=s.min;input.max=s.max;}const name=document.createElement('span');name.textContent=' '+s.label;const help=document.createElement('small');help.textContent=s.description;label.append(input,name,help);fields.append(label);controls.push({s,input});}save.disabled=false;}catch(e){status.textContent='Could not load settings: '+e.message;}})();
+save.onclick=async()=>{save.disabled=true;try{const values={};for(const {s,input} of controls){if(s.type==='boolean')values[s.key]=input.checked;else{const n=Number(input.value);if(!Number.isInteger(n)||n<s.min||n>s.max)throw Error('Enter a shuffle number from 1 to 9999.');values[s.key]=n;}}await window.modSettings.set(values);status.textContent='Saved. Use Apply & restart in the app.';}catch(e){status.textContent=e.message;}finally{save.disabled=false;}};
+</script>

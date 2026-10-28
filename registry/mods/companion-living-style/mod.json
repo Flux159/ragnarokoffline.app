@@ -1,0 +1,99 @@
+{
+  "name": "companion-living-style",
+  "version": "1.2.0",
+  "author": "DaggerHashimoto",
+  "description": "Give recruited companions, town AI and AI vendors varied upper, middle, lower and garment costume looks, colours and supported same-job outfits. Includes an outfit shuffle setting and optional Cold Bolt use for companions that already know the skill. Renewal only; enable Population Engine. Cosmetic styling does not create items or change equipment stats.",
+  "requires": {
+    "app": ">=1.7.0",
+    "era": "renewal"
+  },
+  "settingsPage": "settings/index-v1.2.0.html",
+  "settings": [
+    {
+      "key": "equipment_cold_bolt",
+      "type": "boolean",
+      "default": true,
+      "label": "Equipment Cold Bolt",
+      "description": "Companions of every class may cast Cold Bolt when they possess it. Healing stays higher priority. Requires the equipment to actually grant the skill."
+    },
+    {
+      "key": "style_companions",
+      "type": "boolean",
+      "default": true,
+      "label": "Style recruited companions",
+      "description": "Cosmetic appearances only; no items, stats or jobs are changed."
+    },
+    {
+      "key": "style_townspeople",
+      "type": "boolean",
+      "default": true,
+      "label": "Style ambient townspeople",
+      "description": "Applies to ambient AI on town maps. Vendors and real players are excluded."
+    },
+    {
+      "key": "style_vendors",
+      "type": "boolean",
+      "default": true,
+      "label": "Style AI vendors",
+      "description": "Apply cosmetic looks to population-engine vendor AI. Their shops and goods stay unchanged. Regular NPC shopkeepers are not population AI."
+    },
+    {
+      "key": "style_headgear",
+      "type": "boolean",
+      "default": true,
+      "label": "Upper costume headgear",
+      "description": "Random hats and other upper-slot looks. An actual equipped costume in this slot takes priority. Recruited companions keep costumes you equip on them; ambient and vendor AI receive cosmetic overlays over their default looks."
+    },
+    {
+      "key": "style_middle",
+      "type": "boolean",
+      "default": true,
+      "label": "Middle costume headgear",
+      "description": "Random glasses, ears and other middle-slot looks. An actual equipped costume in this slot takes priority. Recruited companions keep costumes you equip on them; ambient and vendor AI receive cosmetic overlays over their default looks."
+    },
+    {
+      "key": "style_lower",
+      "type": "boolean",
+      "default": true,
+      "label": "Lower costume headgear",
+      "description": "Random scarves, masks and other lower-slot looks. An actual equipped costume in this slot takes priority. Recruited companions keep costumes you equip on them; ambient and vendor AI receive cosmetic overlays over their default looks."
+    },
+    {
+      "key": "style_garment",
+      "type": "boolean",
+      "default": true,
+      "label": "Garment costumes",
+      "description": "Random wings, backpacks and other back-slot looks. An actual equipped costume garment takes priority. Recruited companions keep costumes you equip on them; ambient and vendor AI receive cosmetic overlays over their default looks."
+    },
+    {
+      "key": "style_colours",
+      "type": "boolean",
+      "default": true,
+      "label": "Varied hair and outfit colours",
+      "description": "Keeps the real job. Conservative outfit palettes for first jobs; other jobs keep their original colours."
+    },
+    {
+      "key": "style_bodies",
+      "type": "boolean",
+      "default": true,
+      "label": "Supported alternate bodies",
+      "description": "Uses alternate outfits supported by official 1.7.0 for the same job family. Other jobs keep their original body."
+    },
+    {
+      "key": "style_seed",
+      "type": "number",
+      "default": 1,
+      "min": 1,
+      "max": 9999,
+      "label": "Outfit shuffle number (1\u20139999)",
+      "description": "Minimum 1, maximum 9999. This selects a stable set of outfits, not a delay or speed. Numbers 1, 5 and 9999 all use the same refresh timing. Save, then Apply & restart to change outfits."
+    }
+  ],
+  "tags": [
+    "companions",
+    "population",
+    "costumes",
+    "immersion",
+    "renewal"
+  ]
+}
