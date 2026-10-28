@@ -165,15 +165,36 @@ const BUTTONS = [
 	{ label: 'Join the Discord', url: 'https://discord.gg/jUYC9dMbu5' },
 ];
 
+// Ask to Join. A status with a party id and a join secret gets an "Ask to
+// Join" button for whoever can see it. The secret is never shown: Discord
+// hands it over only to someone the player let in, and only then. Ours is the
+// sharing invitation link, so being let in is the same as being sent the link.
+// Discord takes up to 128 characters, and a status with a secret cannot also
+// have buttons.
+function joinOffer(join) {
+	if (!join || typeof join.secret !== 'string' || typeof join.partyId !== 'string') return null;
+	if (join.secret.length < 2 || join.secret.length > 128 || join.partyId.length < 2 || join.partyId.length > 128) return null;
+	return join;
+}
+function offerJoin(activity, join, partySize) {
+	const offer = joinOffer(join);
+	if (!offer) return activity;
+	delete activity.buttons;
+	activity.party = { id: offer.partyId, size: [Math.max(partySize || 0, 1), PARTY_MAX] };
+	activity.secrets = { join: offer.secret };
+	return activity;
+}
+
 // What the player chose to show, applied to what the game page reported.
 // `state` is null outside the game (login, character select).
 //
 // state: { map, mapName, name, job, baseLevel, jobLevel, partySize }
 // prefs: { name, map, party } booleans
-// context: { joined, startedAt, jobName(id), assets }
+// context: { joined, startedAt, jobName(id), assets, join }
 //   assets: the art keys the Discord application has (fetchAssetNames), or
 //   null when unknown. A picture it lacks is left out, so the status shows the
 //   logo instead of a blank square.
+//   join: { partyId, secret } to offer Ask to Join, or null.
 function buildActivity(state, prefs = {}, context = {}) {
 	const activity = {
 		assets: { large_image: 'logo', large_text: context.joined ? 'Playing on a friend\'s world' : 'Playing on their own world' },
@@ -183,7 +204,7 @@ function buildActivity(state, prefs = {}, context = {}) {
 	if (prefs.buttons) activity.buttons = BUTTONS.map(b => ({ ...b }));
 	if (!state) {
 		activity.details = 'Choosing a character';
-		return activity;
+		return offerJoin(activity, context.join, 0);
 	}
 	const level = Number.isInteger(state.baseLevel) && state.baseLevel > 0
 		? `Lv ${state.baseLevel}${Number.isInteger(state.jobLevel) && state.jobLevel > 0 ? `/${state.jobLevel}` : ''}` : '';
@@ -211,12 +232,17 @@ function buildActivity(state, prefs = {}, context = {}) {
 		activity.state = text(where) || undefined;
 	}
 	if (activity.state === undefined) delete activity.state;
-	return activity;
+	return offerJoin(activity, context.join, prefs.party ? size : 0);
 }
 
 // The connection. `clientId` is the Discord application id; without one the
 // whole thing stays off.
-function createPresence({ clientId, log = () => {}, connect = p => net.createConnection(p), paths = socketPaths(), now = Date.now, timers = { setTimeout, clearTimeout } } = {}) {
+//
+// onJoin(secret): Discord says this player was let into someone's game; the
+// secret is what that player's status offered. onJoinRequest(user): someone
+// asks to join this player's game; answer with respond(). Discord sends
+// neither unless they are asked for, at each connection.
+function createPresence({ clientId, log = () => {}, onJoin = null, onJoinRequest = null, connect = p => net.createConnection(p), paths = socketPaths(), now = Date.now, timers = { setTimeout, clearTimeout } } = {}) {
 	let socket = null;
 	let ready = false;
 	let connecting = false;
@@ -292,7 +318,20 @@ function createPresence({ clientId, log = () => {}, connect = p => net.createCon
 			ready = true;
 			loggedMissing = false;
 			log('discord: connected');
+			if (onJoin) command('SUBSCRIBE', undefined, 'ACTIVITY_JOIN');
+			if (onJoinRequest) command('SUBSCRIBE', undefined, 'ACTIVITY_JOIN_REQUEST');
 			flush();
+		} else if (data.cmd === 'DISPATCH' && data.evt === 'ACTIVITY_JOIN') {
+			const secret = data.data && data.data.secret;
+			if (onJoin && typeof secret === 'string') {
+				try { onJoin(secret); } catch (e) { log(`discord: join failed (${e.message})`); }
+			}
+		} else if (data.cmd === 'DISPATCH' && data.evt === 'ACTIVITY_JOIN_REQUEST') {
+			const user = data.data && data.data.user;
+			if (onJoinRequest && user && /^\d{15,25}$/.test(String(user.id || ''))) {
+				try { onJoinRequest({ id: String(user.id), name: String(user.global_name || user.username || 'Someone') }); }
+				catch (e) { log(`discord: join request failed (${e.message})`); }
+			}
 		} else if (data.evt === 'ERROR') {
 			log(`discord: ${data.cmd || 'command'} refused: ${data.data?.message || 'no reason'}`);
 		} else if (data.cmd === 'SET_ACTIVITY' && !shownLogged) {
@@ -302,6 +341,15 @@ function createPresence({ clientId, log = () => {}, connect = p => net.createCon
 			shownLogged = true;
 			log(`discord: status accepted (${data.data ? `"${data.data.details || ''}"` : 'cleared'})`);
 		}
+	}
+
+	function command(cmd, args, evt) {
+		if (!socket || !ready) return false;
+		const frame = { cmd, nonce: `ro-${++nonce}` };
+		if (args !== undefined) frame.args = args;
+		if (evt) frame.evt = evt;
+		socket.write(encode(OP.FRAME, frame));
+		return true;
 	}
 
 	function open() {
@@ -347,6 +395,12 @@ function createPresence({ clientId, log = () => {}, connect = p => net.createCon
 			socket = null;
 			ready = false;
 		},
+		// Let a player who asked to join in (Discord sends them the secret), or
+		// turn them down.
+		respond(userId, accept) {
+			if (!/^\d{15,25}$/.test(String(userId || ''))) return false;
+			return command(accept ? 'SEND_ACTIVITY_JOIN_INVITE' : 'CLOSE_ACTIVITY_REQUEST', { user_id: String(userId) });
+		},
 		status: () => ({ enabled: Boolean(clientId), connected: ready }),
 	};
 }
@@ -366,4 +420,4 @@ async function fetchAssetNames(clientId, { fetch: fetchImpl = globalThis.fetch, 
 	}
 }
 
-module.exports = { fetchAssetNames, socketPaths, encode, decode, buildActivity, createPresence, regionOf, familyOf, REGIONS, FAMILIES, PARTY_MAX, MIN_GAP_MS };
+module.exports = { joinOffer, fetchAssetNames, socketPaths, encode, decode, buildActivity, createPresence, regionOf, familyOf, REGIONS, FAMILIES, PARTY_MAX, MIN_GAP_MS };

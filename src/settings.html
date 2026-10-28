@@ -566,6 +566,11 @@
       <span class="val" style="width:auto; color: var(--dim)">add "Get Ragnarok Offline" and "Join the Discord" buttons</span>
     </label>
     <label>
+      <span>Ask to Join</span>
+      <input type="checkbox" id="discord_ask_to_join" style="accent-color: var(--accent); flex: none" />
+      <span class="val" style="width:auto; color: var(--dim)">while you share over the internet, let Discord friends ask to join</span>
+    </label>
+    <label>
       <span>Application ID</span>
       <input type="text" id="discord-app-id" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="1234567890123456789" style="flex: 1; min-width: 0" />
       <button id="discord-app-id-save" class="ghost" style="flex: none">Save</button>
@@ -575,6 +580,11 @@
        as long as the game window is open. It needs the Discord desktop app running on this
        computer. Players who join you from a web browser don't get it; joining through this
        app does.</p>
+    <p class="note"><b>Ask to Join.</b> While <b>Share with friends</b> is on, your status gets an
+       "Ask to Join" button. When someone presses it, the app asks you here, and letting them in
+       sends them your invitation link through Discord, privately. They need this app open with its
+       game window, on the same Discord application as you. The status then shows a party of you
+       out of 12 and leaves out the two links, which Discord does not allow beside it.</p>
     <p class="note"><b>Using your own Discord application.</b> The application's name is what
        Discord shows after "Playing". To make one:</p>
     <ol class="note" style="margin:4px 0 0; padding-left: 20px">
@@ -3111,7 +3121,7 @@ for (const key of ['auto_update', 'install_update_on_quit']) {
 
 // ---- Discord Rich Presence (electron/discord-presence.js). Saved at once,
 // like the update switches: nothing the server reads is involved.
-const DISCORD_KEYS = ['discord_presence', 'discord_show_name', 'discord_show_map', 'discord_show_party', 'discord_show_buttons'];
+const DISCORD_KEYS = ['discord_presence', 'discord_show_name', 'discord_show_map', 'discord_show_party', 'discord_show_buttons', 'discord_ask_to_join'];
 function paintDiscordDetails() {
   const on = $('discord_presence').checked;
   for (const key of DISCORD_KEYS.slice(1)) $(key).disabled = !on;

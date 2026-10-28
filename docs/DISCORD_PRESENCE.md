@@ -50,8 +50,43 @@ server restart.
 | `discord_show_name` | **off** | the character's name |
 | `discord_show_map` | on | the map name |
 | `discord_show_party` | on | "In a party" and its size |
+| `discord_show_buttons` | on | the two public link buttons |
+| `discord_ask_to_join` | **off** | an "Ask to Join" button while sharing (below) |
 
 Job and level are always shown while presence is on.
+
+## Ask to Join
+
+With `discord_ask_to_join` on, and **Share with friends** running, the host's
+status carries a party and a join secret, so Discord shows an "Ask to Join"
+button to people who can see it. The secret is the sharing invitation link.
+Discord never shows it; it hands it to one person, and only after the host
+lets them in. So nothing goes public, and being let in gives a friend exactly
+what "Copy invitation link" would have given them.
+
+1. A friend presses **Ask to Join** on the host's profile.
+2. The host's app asks "*name* asks to join your world" beside the game
+   (Discord shows the request in its own window too). **Let them in** answers
+   Discord with `SEND_ACTIVITY_JOIN_INVITE`. Anything else turns them down.
+3. Discord sends the link to the friend's app (`ACTIVITY_JOIN`). Their app
+   checks that it is an HTTPS invitation link, asks before switching to it
+   (joining stops a server of their own), then joins as **Join** does.
+
+What it needs and what it changes:
+
+- Both apps on the same Discord application id (the default one, unless
+  someone set their own), with the Discord desktop app running.
+- The friend's app open with its game window, which is when it is connected
+  to Discord. A friend in a web browser cannot be let in this way; send the
+  link instead.
+- Discord takes a secret of at most 128 characters. A longer link (a very
+  long hostname) is not offered, and the app log says so.
+- A status with a join secret cannot have buttons, so the two links are left
+  out while it is offered. The party shows as the player's real party when
+  `discord_show_party` is on, otherwise as one of 12.
+- **Replace invitation** and **Stop sharing** take effect on the status at
+  once: a request after that is turned down, and a friend let in earlier
+  holds a link that no longer works.
 
 ## Setting up the Discord application
 

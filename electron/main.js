@@ -80,6 +80,8 @@ function getSharing() {
             } catch { /* diagnostics must never break sharing */ }
         },
         invite: () => { try { return getSharingSecrets().loadInvite(); } catch { return null; } },
+        // Ask to Join offers the current link only while sharing is on.
+        onChange: () => { try { refreshDiscordPresence(); } catch (e) { appLog(`discord: ${e.message}`); } },
         onInvite: value => { try { getSharingSecrets().saveInvite(value); } catch { /* no secure store */ } },
         lifetime: () => {
             const days = Number(getSettings().sharing_invite_days);
@@ -1178,6 +1180,10 @@ const SETTINGS_DEFAULTS = {
 	discord_show_party: true,
 	// Two public links on the status: the app's page and its Discord.
 	discord_show_buttons: true,
+	// Ask to Join: while sharing over the internet, Discord friends get a
+	// button to ask, and the invitation reaches only those let in. Off by
+	// default: it is how the invitation leaves this computer.
+	discord_ask_to_join: false,
 	// Discord announcements (discord-webhook.js): also post when the world
 	// comes online and goes offline. The webhook itself is in state/private.
 	discord_announce_world: true,
@@ -1224,8 +1230,8 @@ function getSettings() {
 // only names set_app_preference will write. Everything else in that file
 // changes how the server runs and has to go through Apply.
 const APP_PREFERENCES = new Set(['open_settings_first', 'auto_update', 'install_update_on_quit',
-	'discord_presence', 'discord_show_name', 'discord_show_map', 'discord_show_party', 'discord_show_buttons', 'discord_announce_world']);
-const DISCORD_PREFERENCES = new Set(['discord_presence', 'discord_show_name', 'discord_show_map', 'discord_show_party', 'discord_show_buttons']);
+	'discord_presence', 'discord_show_name', 'discord_show_map', 'discord_show_party', 'discord_show_buttons', 'discord_ask_to_join', 'discord_announce_world']);
+const DISCORD_PREFERENCES = new Set(['discord_presence', 'discord_show_name', 'discord_show_map', 'discord_show_party', 'discord_show_buttons', 'discord_ask_to_join']);
 
 // ---------------------------------------------------------------------------
 // Discord Rich Presence
@@ -1253,9 +1259,75 @@ function discordAppId() {
 
 function discordClient() {
 	if (!discordPresence) {
-		discordPresence = require('./discord-presence').createPresence({ clientId: discordAppId(), log: appLog });
+		discordPresence = require('./discord-presence').createPresence({
+			clientId: discordAppId(), log: appLog,
+			onJoin: secret => { joinFromDiscord(secret).catch(e => appLog(`discord: could not join (${e.message})`)); },
+			onJoinRequest: user => { askDiscordJoin(user).catch(e => appLog(`discord: join request (${e.message})`)); },
+		});
 	}
 	return discordPresence;
+}
+
+// Ask to Join (discord-presence.js). Offered only while this player hosts,
+// shares over the internet and has it switched on. The secret is the
+// invitation link, so whoever is let in holds exactly what "Copy invitation
+// link" would have given them. The party id is random, one per link.
+let discordParty = { link: '', id: '' };
+function discordJoinOffer(settings) {
+	if (!settings.discord_ask_to_join || getClientPaths().mode !== 'host' || !sharing || sharing.state !== 'sharing') return null;
+	let link;
+	try { link = sharing.invitation(); } catch { return null; }
+	if (link.length > 128) {
+		if (discordParty.link !== link) appLog('discord: the invitation link is longer than Discord allows; Ask to Join is not offered');
+		discordParty = { link, id: '' };
+		return null;
+	}
+	if (discordParty.link !== link || !discordParty.id) discordParty = { link, id: require('node:crypto').randomBytes(12).toString('hex') };
+	return { partyId: discordParty.id, secret: link };
+}
+
+// Someone asked to join. Discord also shows the request in its own window;
+// this asks here too, beside the game, and lets them in on a yes.
+const discordAsking = new Set();
+async function askDiscordJoin(user) {
+	if (discordAsking.has(user.id)) return;
+	if (!discordJoinOffer(getSettings())) { discordClient().respond(user.id, false); return; }
+	discordAsking.add(user.id);
+	try {
+		const parent = [windows.game, windows.settings].find(w => w && !w.isDestroyed());
+		if (parent) parent.flashFrame(true);
+		const name = String(user.name).replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 64);
+		const options = {
+			type: 'question', buttons: ['Let them in', 'Not now'], defaultId: 1, cancelId: 1,
+			title: 'Ask to Join', message: `${name} asks to join your world.`,
+			detail: 'Letting them in sends them your invitation link through Discord, the same link "Copy invitation link" gives you.',
+		};
+		const { response } = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
+		if (parent && !parent.isDestroyed()) parent.flashFrame(false);
+		const accept = response === 0 && Boolean(discordJoinOffer(getSettings()));
+		discordClient().respond(user.id, accept);
+		appLog(`discord: ${accept ? 'let in' : 'turned down'} a join request`);
+	} finally {
+		discordAsking.delete(user.id);
+	}
+}
+
+// This player was let into someone's game: the secret is that host's
+// invitation link. Joining stops a server of our own, so it asks first.
+async function joinFromDiscord(secret) {
+	const { origin, invite } = parseJoinAddress(secret);
+	if (!origin.startsWith('https://') || !/^#invite=[A-Za-z0-9_-]{20,}$/.test(invite)) throw new Error('Discord sent something that is not an invitation link');
+	const hosting = getClientPaths().mode !== 'join' && (assetServer.running || fs.existsSync(path.join(dataRoot(), 'nebula/run/docker.sock')));
+	const parent = [windows.game, windows.settings].find(w => w && !w.isDestroyed());
+	const options = {
+		type: 'question', buttons: ['Join', 'Cancel'], defaultId: 0, cancelId: 1,
+		title: 'Join through Discord', message: `Join the world at ${new URL(origin).host}?`,
+		detail: hosting ? 'Your own server stops while you play there. Your characters stay where they are.' : 'You can switch back to your own world in Settings.',
+	};
+	const { response } = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
+	if (response !== 0) return;
+	await handlers.set_mode({ mode: 'join', join_host: secret });
+	handlers.open_game();
 }
 
 // rAthena's own English job names, from the table the Control panel uses
@@ -1301,7 +1373,8 @@ function refreshDiscordPresence() {
 	discordClient().set(buildActivity(discordLastState, {
 		name: settings.discord_show_name, map: settings.discord_show_map, party: settings.discord_show_party,
 		buttons: settings.discord_show_buttons !== false,
-	}, { joined: getClientPaths().mode === 'join', startedAt: discordStartedAt, jobName: discordJobName, assets: discordAssets.names }));
+	}, { joined: getClientPaths().mode === 'join', startedAt: discordStartedAt, jobName: discordJobName, assets: discordAssets.names,
+		join: discordJoinOffer(settings) }));
 }
 
 // ---------------------------------------------------------------------------
@@ -3150,6 +3223,7 @@ const handlers = {
     // holding the old one, which is why the button is styled as destructive.
     sharing_replace: () => {
         getSharing().replaceInvitation();
+        refreshDiscordPresence();
         return 'New link created. The previous link stopped working and friends using it were disconnected.';
     },
     // Google/Apple sign-in setup. Only what identifies the client comes back
