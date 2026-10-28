@@ -11,10 +11,12 @@ import * as WindowScale from './WindowScale.mjs';
 import * as MenuButtons from './MenuButtons.mjs';
 import { createAccount } from './RememberLogin.mjs';
 import { createHostRoutes } from './HostRoutes.mjs';
+import { startPresence } from './DiscordPresence.mjs';
 import ExitHooks from 'UI/ExitHooks.js';
 import Session from 'Engine/SessionStorage.js';
 import Camera from 'Renderer/Camera.js';
 import Renderer from 'Renderer/Renderer.js';
+import MapRenderer from 'Renderer/MapRenderer.js';
 import EntityManager from 'Renderer/EntityManager.js';
 import Altitude from 'Renderer/Map/Altitude.js';
 import PathFinding from 'Utils/PathFinding.js';
@@ -34,6 +36,27 @@ const visible = component => Boolean(component?.__active && component._host?.get
     getComputedStyle(component._host).display !== 'none' && getComputedStyle(component._host).visibility !== 'hidden');
 let composing = false;
 let installed = false;
+let presence = null;
+
+// Discord Rich Presence (DiscordPresence.mjs): the character, while it is in
+// a map. null at login and character select. The job is the id; the app names
+// it in English from rAthena's own table.
+function presenceState() {
+    const me = Session.Entity;
+    if (!me || !Runtime.movement.snapshot().active) return null;
+    const map = String(MapRenderer.currentMap || '').replace(/\.(gat|rsw)$/i, '');
+    const members = Session.hasParty ? component('PartyFriends')?.getPartyMembers?.() : null;
+    return {
+        map,
+        mapName: map ? DB.getMapName(map + '.gat', '') : '',
+        name: String(me.display?.name || ''),
+        job: Number.isInteger(me._job) ? me._job : null,
+        baseLevel: me.clevel | 0,
+        jobLevel: me.joblevel | 0,
+        // Members online, self included; 1 when the list has not arrived yet.
+        partySize: Session.hasParty ? Math.max(1, (members || []).filter(m => m.state === 0).length) : 0,
+    };
+}
 
 function inputState() {
     const player = Session.Entity;
@@ -505,6 +528,7 @@ export function init() {
             invoke: window.__ELECTRON__?.core?.invoke,
         }),
     });
+    presence = startPresence({ invoke: window.__ELECTRON__?.core?.invoke, read: presenceState });
     const clear = () => Runtime.movement.clear('focus-lost');
     const compose = () => { composing = true; clear(); };
     const composed = () => { composing = false; };
@@ -524,6 +548,7 @@ export function init() {
 const tick = now => Runtime.movement.tick(now);
 export function enterMap(name) {
     Runtime.enterMap(name);
+    presence?.poke();
     // Renderer.stop() clears all callbacks during a warp; register on each map.
     Renderer.render(tick);
 }
