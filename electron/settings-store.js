@@ -54,6 +54,15 @@ function validate(settings) {
       throw new Error('Cannot read the AI agent setting. Turn it off and on again in Settings.');
     }
   }
+  for (const key of ['discord_presence', 'discord_show_name', 'discord_show_map', 'discord_show_party', 'discord_show_buttons']) {
+    if (Object.hasOwn(settings, key) && typeof settings[key] !== 'boolean') {
+      throw new Error('Cannot read the Discord settings. Turn them off and on again in Settings -> General -> Discord.');
+    }
+  }
+  if (Object.hasOwn(settings, 'discord_app_id') && settings.discord_app_id !== null &&
+      !(typeof settings.discord_app_id === 'string' && /^\d{15,25}$/.test(settings.discord_app_id))) {
+    throw new Error('Cannot read the Discord application ID. Enter it again in Settings -> General -> Discord.');
+  }
   for (const key of ['auto_update', 'install_update_on_quit']) {
     if (Object.hasOwn(settings, key) && typeof settings[key] !== 'boolean') {
       throw new Error('Cannot read the update settings. Turn them off and on again in Settings -> General -> Updates.');
