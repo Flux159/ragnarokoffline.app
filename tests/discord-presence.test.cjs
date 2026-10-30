@@ -366,3 +366,78 @@ test('a picture the application has not uploaded is left out, so the logo shows'
   assert.equal(await fetchAssetNames('1564743117444354220', { fetch: async () => { throw new Error('offline'); } }), null);
   assert.equal(await fetchAssetNames('not-an-id', { fetch: async () => { throw new Error('asked'); } }), null);
 });
+
+// ---------------------------------------------------------------------------
+// Ask to Join (electron/discord-presence.js, joinFromDiscord in main.js)
+// ---------------------------------------------------------------------------
+const LINK = 'https://play.example.com/#invite=' + 'A'.repeat(43);
+
+test('Ask to Join puts the link in the secret, a party id beside it, and drops the buttons', () => {
+  const state = { map: 'prontera', job: 0, baseLevel: 10, jobLevel: 5, partySize: 3 };
+  const join = { partyId: 'abcdef0123456789', secret: LINK };
+  const a = buildActivity(state, { party: true, buttons: true }, { join });
+  assert.deepEqual(a.secrets, { join: LINK });
+  assert.deepEqual(a.party, { id: 'abcdef0123456789', size: [3, 12] });
+  assert.equal(a.buttons, undefined);
+  // Party hidden: still a party for Discord, of one.
+  assert.deepEqual(buildActivity(state, { party: false }, { join }).party.size, [1, 12]);
+  // At character select too.
+  assert.deepEqual(buildActivity(null, {}, { join }).secrets, { join: LINK });
+  // Too long for Discord, or no offer: an ordinary status, buttons kept.
+  for (const bad of [null, { partyId: 'x1', secret: LINK + 'x'.repeat(100) }, { secret: LINK }]) {
+    const plain = buildActivity(state, { buttons: true }, { join: bad });
+    assert.equal(plain.secrets, undefined);
+    assert.ok(plain.buttons);
+  }
+});
+
+test('join events are asked for at READY, delivered, and requests are answered', async () => {
+  const d = fakeDiscord();
+  const joins = [];
+  const asks = [];
+  const p = createPresence({ clientId: '123456789012345678', connect: d.connect, paths: ['good'],
+    onJoin: s => joins.push(s), onJoinRequest: u => asks.push(u) });
+  p.set({ details: 'one' });
+  await tick(); await tick();
+  const s = d.sockets[0];
+  assert.equal(p.respond('123456789012345678', true), false, 'nothing to answer on before READY');
+  s.emit('data', encode(1, { cmd: 'DISPATCH', evt: 'READY', data: {} }));
+  const subscribed = s.written.filter(f => f.data && f.data.cmd === 'SUBSCRIBE').map(f => f.data.evt);
+  assert.deepEqual(subscribed, ['ACTIVITY_JOIN', 'ACTIVITY_JOIN_REQUEST']);
+  s.emit('data', encode(1, { cmd: 'DISPATCH', evt: 'ACTIVITY_JOIN', data: { secret: LINK } }));
+  assert.deepEqual(joins, [LINK]);
+  s.emit('data', encode(1, { cmd: 'DISPATCH', evt: 'ACTIVITY_JOIN_REQUEST', data: { user: { id: '223456789012345678', username: 'pal', global_name: 'Pal' } } }));
+  s.emit('data', encode(1, { cmd: 'DISPATCH', evt: 'ACTIVITY_JOIN_REQUEST', data: { user: { id: 'nope' } } }));
+  assert.deepEqual(asks, [{ id: '223456789012345678', name: 'Pal' }]);
+  assert.ok(p.respond('223456789012345678', true));
+  assert.ok(p.respond('223456789012345678', false));
+  assert.equal(p.respond('bad', true), false);
+  const answers = s.written.slice(-2).map(f => [f.data.cmd, f.data.args.user_id]);
+  assert.deepEqual(answers, [['SEND_ACTIVITY_JOIN_INVITE', '223456789012345678'], ['CLOSE_ACTIVITY_REQUEST', '223456789012345678']]);
+  p.stop();
+});
+
+test('without join handlers nothing is subscribed', async () => {
+  const d = fakeDiscord();
+  const p = createPresence({ clientId: '123456789012345678', connect: d.connect, paths: ['good'] });
+  p.set({ details: 'one' });
+  await tick(); await tick();
+  d.sockets[0].emit('data', encode(1, { cmd: 'DISPATCH', evt: 'READY', data: {} }));
+  assert.equal(d.sockets[0].written.filter(f => f.data && f.data.cmd === 'SUBSCRIBE').length, 0);
+  p.stop();
+});
+
+test('Ask to Join is off by default, a preference, and joins only an HTTPS invitation', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.js'), 'utf8');
+  assert.match(main, /discord_ask_to_join: false/);
+  assert.match(main, /APP_PREFERENCES = new Set\(\[[^\]]*'discord_ask_to_join'/);
+  assert.match(main, /DISCORD_PREFERENCES = new Set\(\[[^\]]*'discord_ask_to_join'/);
+  // Offered only while hosting and sharing; the joining side checks the link.
+  assert.match(main, /settings\.discord_ask_to_join \|\| getClientPaths\(\)\.mode !== 'host' \|\| !sharing \|\| sharing\.state !== 'sharing'/);
+  assert.match(main, /origin\.startsWith\('https:\/\/'\) \|\| !\/\^#invite=/);
+  const settings = require('../electron/settings-store');
+  const os = require('node:os');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'discord-')), 'settings.json');
+  fs.writeFileSync(file, JSON.stringify({ discord_ask_to_join: 'yes' }));
+  assert.throws(() => settings.read(file, {}), /Discord/);
+});

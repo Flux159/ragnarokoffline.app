@@ -54,7 +54,7 @@ function validate(settings) {
       throw new Error('Cannot read the AI agent setting. Turn it off and on again in Settings.');
     }
   }
-  for (const key of ['discord_presence', 'discord_show_name', 'discord_show_map', 'discord_show_party', 'discord_show_buttons', 'discord_announce_world']) {
+  for (const key of ['discord_presence', 'discord_show_name', 'discord_show_map', 'discord_show_party', 'discord_show_buttons', 'discord_ask_to_join', 'discord_announce_world']) {
     if (Object.hasOwn(settings, key) && typeof settings[key] !== 'boolean') {
       throw new Error('Cannot read the Discord settings. Turn them off and on again in Settings -> General -> Discord.');
     }
