@@ -102,3 +102,21 @@ The socket is looked for in `$XDG_RUNTIME_DIR`. It is also looked for in the
 folders the Flatpak (`app/com.discordapp.Discord`) and Snap (`snap.discord`)
 builds use, then `$TMPDIR` and `/tmp`. Vesktop needs its arRPC option turned on.
 Discord running in a web browser has no socket.
+
+## Announcements to a channel
+
+This is separate from presence. A host can paste a Discord channel webhook into
+**Settings → General → Discord announcements**. While one is set, the app
+follows the map server's log and posts every line a script writes with
+`debugmes "[discord] …"` (`electron/discord-webhook.js`). The
+**discord-announcements** mod writes those lines for logins, level milestones,
+MVP kills and War of Emperium, and any other mod can write them too. It is in the mod list (Settings → Mods);
+see `registry/mods/discord-announcements/README.md`. The app adds "world
+online" when the map server reports ready, and "world offline" when the app
+quits.
+
+The link is stored in `state/private/discord-webhook.json`, readable only by
+this user. Settings shows only its last four characters. Posts are batched
+every two seconds, and Discord's 429 responses are waited out. Mentions are
+turned off, so a line can't ping `@everyone`. Headless hosts get the same
+section in their admin page.

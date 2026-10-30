@@ -1,0 +1,29 @@
+//===== Ragnarok Offline: discord-announcements ==========================
+//= Level milestones. A line written with debugmes and starting "[discord] "
+//= is posted to the host's Discord webhook by the app (see README.md).
+//= AI characters (population shells) level up too; they are skipped.
+//===========================================================================
+-	script	DiscordLevels	-1,{
+	end;
+OnInit:
+	.@list$ = callfunc("F_ModSetting", "discord-announcements", "level_milestones", "99");
+	deletearray .levels;
+	explode(.@part$, .@list$, ",");
+	.@n = getarraysize(.@part$);
+	for (.@i = 0; .@i < .@n; .@i++) {
+		.@lv = atoi(.@part$[.@i]);
+		if (.@lv > 0)
+			.levels[getarraysize(.levels)] = .@lv;
+	}
+	end;
+OnPCBaseLvUpEvent:
+	if (population_is_shell(getcharid(3)))
+		end;
+	for (.@i = 0; .@i < getarraysize(.levels); .@i++) {
+		if (BaseLevel == .levels[.@i]) {
+			debugmes "[discord] **" + strcharinfo(0) + "** reached base level " + BaseLevel + " as " + jobname(Class) + "!";
+			end;
+		}
+	}
+	end;
+}

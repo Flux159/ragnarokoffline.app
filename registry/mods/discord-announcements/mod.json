@@ -1,0 +1,45 @@
+{
+  "name": "discord-announcements",
+  "version": "1.0.0",
+  "author": "Ragnarok Offline",
+  "description": "Posts what happens in your world to a Discord channel: players coming and going, level milestones, MVP kills and War of Emperium. Needs a channel webhook in Settings -> General -> Discord announcements.",
+  "default": "off",
+  "requires": {
+    "app": ">=1.7.7",
+    "era": "any"
+  },
+  "tags": [
+    "server",
+    "discord",
+    "quality-of-life"
+  ],
+  "homepage": "https://github.com/Flux159/ragnarokoffline.app/tree/main/registry/mods/discord-announcements",
+  "settings": [
+    {
+      "key": "announce_logins",
+      "type": "boolean",
+      "default": true,
+      "label": "Players logging in and out"
+    },
+    {
+      "key": "level_milestones",
+      "type": "string",
+      "default": "99",
+      "max_length": 60,
+      "label": "Base levels to announce",
+      "description": "Comma-separated, such as 50,99,175. Leave empty for none."
+    },
+    {
+      "key": "announce_mvps",
+      "type": "boolean",
+      "default": true,
+      "label": "MVP kills"
+    },
+    {
+      "key": "announce_woe",
+      "type": "boolean",
+      "default": true,
+      "label": "War of Emperium starting and ending"
+    }
+  ]
+}

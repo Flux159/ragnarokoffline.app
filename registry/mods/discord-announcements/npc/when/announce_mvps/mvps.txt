@@ -1,0 +1,14 @@
+//===== Ragnarok Offline: discord-announcements ==========================
+//= MVP kills, while "announce_mvps" is on. An MVP is a monster that gives
+//= MVP experience.
+//===========================================================================
+-	script	DiscordMVPs	-1,{
+	end;
+OnNPCKillEvent:
+	if (population_is_shell(getcharid(3)))
+		end;
+	if (getmonsterinfo(killedrid, MOB_MVPEXP) <= 0)
+		end;
+	debugmes "[discord] **" + strcharinfo(0) + "** defeated **" + getmonsterinfo(killedrid, MOB_NAME) + "** on " + strcharinfo(3) + "!";
+	end;
+}
