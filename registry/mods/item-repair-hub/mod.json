@@ -1,0 +1,19 @@
+{
+  "name": "item-repair-hub",
+  "author": "DaggerHashimoto",
+  "description": "An in-game Renewal item editor: add optional skills and attack autocasts to weapons and armor, adjust class access and transfer permissions, and manage your repair collection. Includes three starter examples and optional World Sync Extras v2.1.5 compatibility. Custom changes require Save & Export, manual folder replacement, then Apply & restart.",
+  "tags": [
+    "equipment",
+    "skills",
+    "quality-of-life",
+    "renewal"
+  ],
+  "requires": {
+    "era": "renewal"
+  },
+  "homepage": "https://github.com/tonspri/item-repair-hub",
+  "source": {
+    "github": "tonspri/item-repair-hub",
+    "asset": "ItemRepairHub-v*.zip"
+  }
+}
