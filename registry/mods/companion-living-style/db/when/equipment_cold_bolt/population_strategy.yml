@@ -1,0 +1,18 @@
+# Companion Living Style v1.2.0: additive rules; no skills are granted here.
+Header:
+  Type: POPULATION_STRATEGY_DB
+  Version: 1
+Body:
+  - Mob: All
+    Jobs:
+      - Job: All
+        Build: dagger_equipment_cold_bolt_v1
+        For: companions
+        Requires: { Skills: [MG_COLDBOLT] }
+        Rules:
+          - Name: dagger_equipment_cold_bolt_v1
+            Priority: 10
+            Cast: [MG_COLDBOLT]
+            Target: { Enemy: attacking }
+            When: [self_sp_pct_ge50, not_enemy_magicmirror]
+            Cooldown: 3000

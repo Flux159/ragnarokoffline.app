@@ -478,6 +478,69 @@
       ]
     },
     {
+      "name": "companion-living-style",
+      "version": "1.2.0",
+      "author": "DaggerHashimoto",
+      "description": "Give recruited companions, town AI and AI vendors varied upper, middle, lower and garment costume looks, colours and supported same-job outfits. Includes an outfit shuffle setting and optional Cold Bolt use for companions that already know the skill. Renewal only; enable Population Engine. Cosmetic styling does not create items or change equipment stats.",
+      "homepage": "",
+      "tags": [
+        "companions",
+        "costumes",
+        "immersion",
+        "population",
+        "renewal"
+      ],
+      "icon": "",
+      "screenshots": [],
+      "requires": {
+        "mods": [],
+        "era": "renewal",
+        "app": ">=1.7.0"
+      },
+      "files": [
+        {
+          "path": "CHANGELOG-v1.2.0.md",
+          "sha256": "9c7defef5323763fa3a2cfc83371cece2d98dc76bf75dc30cd03180e63f6e159"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "sha256": "8920c9d7d8bf470be890be84675879ccc5c3089d21075b02a11815523e843ffb"
+        },
+        {
+          "path": "COSTUME-POOL-v1.2.0.csv",
+          "sha256": "6ab74c5940a83070e51d77de8c71872cd3e369859b435efcf0d0fcd83f2a078f"
+        },
+        {
+          "path": "LICENSE-v1.2.0.txt",
+          "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+        },
+        {
+          "path": "READ-ME-v1.2.0.md",
+          "sha256": "d3f6a05e1f3d9182e7ce48ef128d531496d1ef0772e25ede913905c0b4cb9ae3"
+        },
+        {
+          "path": "client/index.js",
+          "sha256": "bafbb612831988e7fa3d7c965056d5f767fecdc592f5b9111116deb83824ba58"
+        },
+        {
+          "path": "db/when/equipment_cold_bolt/population_strategy.yml",
+          "sha256": "a7d21b59253daa3e9af682af2c10834945f180fa0075ea8761781aeb16fa9608"
+        },
+        {
+          "path": "mod.json",
+          "sha256": "35476aa93e066c3bc2f3eaf1d286723f1f33f15a8fe00a0cd4f69d4f8324ff74"
+        },
+        {
+          "path": "npc/living-style-v1.2.0.txt",
+          "sha256": "a1c5e3bb06952dda6c65727c92598683ff47c41703bed9334f8132f556b6744f"
+        },
+        {
+          "path": "settings/index-v1.2.0.html",
+          "sha256": "31d9537742dd6a1e7105725d12ff7865319195b03ae2b4047142960681b4d83b"
+        }
+      ]
+    },
+    {
       "name": "companion-party-overhaul",
       "version": "",
       "author": "Always",
