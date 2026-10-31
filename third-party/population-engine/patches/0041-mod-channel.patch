@@ -1,0 +1,280 @@
+From 0000000000000000000000000000000000000041
+Subject: [PATCH] mod_channel: mods talk to their client plugin over their own packets
+
+Server extension mod_channel (off by default). CZ 0x0cfe / ZC 0x0cff carry a
+channel name, a request id and typed values (numbers, strings, arrays).
+modchannel binds a channel to an NPC label, which runs as soon as the packet
+arrives, also while the player has an NPC dialog open (stock atcommand events
+are queued by name only, two at most, until the dialog closes). modsend /
+modsendto answer, modready tells whether a client can be sent to. The logic is
+in src/map/mod_channel.cpp; this adds the hooks: the packet, the session's
+hello and rate counters, an event lookup, and the script commands.
+
+--- a/db/extension_db.yml
++++ b/db/extension_db.yml
+@@ -167,6 +167,38 @@
+       setstylistcost warns and does nothing.
+     Enabled: false
+ 
++  - Id: mod_channel
++    Name: Mods talk to their client plugin over their own packets
++    Description: |
++      A client plugin and the NPC scripts of a mod exchange typed values
++      (numbers, strings, arrays) over two packets of their own, CZ 0x0cfe
++      and ZC 0x0cff, instead of chat lines: modchannel binds a channel to a
++      label, which runs as soon as the packet arrives, also while the player
++      has an NPC dialog open; modsend / modsendto answer. The server sends
++      nothing to a client that did not say hello first, so a client without
++      the plugin never gets a packet it can't read. Off is stock rAthena:
++      the packets are ignored and the commands warn and do nothing.
++    Enabled: false
++    Values:
++      - Key: rate
++        Type: Int
++        Default: 200
++        Min: 10
++        Max: 5000
++        Description: Packets a client may send per second; the rest of that second are dropped.
++      - Key: ask
++        Type: String
++        Default: where mobs scan status buffs
++        Description: |
++          The verbs of channel ask the server answers, by spaces; any other
++          is answered s "off". Empty: none.
++      - Key: protocol
++        Type: Int
++        Default: 2
++        Min: 2
++        Max: 2
++        Description: The wire format's version, for the client's NPC (getextensionvalue); not a setting.
++
+ Footer:
+   Imports:
+     - Path: db/import/extension_db.yml
+--- a/src/custom/script.inc
++++ b/src/custom/script.inc
+@@ -542,3 +542,148 @@
+ 	population_engine_set_mod_vendor_lane_fill(script_getstr(st, 2), script_getnum(st, 3));
+ 	return SCRIPT_CMD_SUCCESS;
+ }
++
++/*==========================================
++ * Mod channel (mod_channel.cpp; server extension mod_channel). The commands warn and do nothing while it is off.
++ *
++ * modchannel "<channel>", "<NPC>::<On label>"{, <flags>};
++ *   A client packet on that channel runs the label right away with no player attached (also while the player is in
++ *   an NPC dialog): .@mc_cid / .@mc_aid say who, for commands that take a char or account id. Flag 1: run it with
++ *   the player attached instead; it then waits, packet and all, while the player is in an NPC dialog. Flag 2:
++ *   attached too, but a packet that comes while the player is in an NPC dialog is dropped (polls: a late answer or
++ *   order is worse than none).
++ *   Also set: .@mc_id (request id, reply with the same), .@mc_n (values), .@mc_fmt$ (their types, as modsend's
++ *   format), .@mc_int[k] (number; an array's length), .@mc_str$[k] (string), .@mc_arr<k>[] / .@mc_arr<k>$[].
++ * modsend "<channel>", <request id>, "<format>"{, <value>...};   (to the attached player; detached: modsendto .@mc_cid)
++ * modsendto <char id>, "<channel>", <request id>, "<format>"{, <value>...};
++ *   Format, one letter per value: i number, s string, I number array, S string array (a variable, sent from index 0
++ *   to its getarraysize). 1 if sent; 0 if that player is offline or their client has no mod channel.
++ * modready({<char id>}) -> 1 if that player's client can be sent to.
++ *------------------------------------------*/
++#include "../map/mod_channel.hpp"
++
++static bool mc_off(script_state* st, const char* command)
++{
++	if( mod_channel_enabled() )
++		return false;
++	ShowWarning("%s: the server extension mod_channel is off.\n", command);
++	script_pushint(st, 0);
++	return true;
++}
++
++/// Encodes modsend's values: `fmt` from argument `arg` on. False (with an error) on a bad format or argument.
++static bool mc_encode(script_state* st, const char* command, const char* fmt, int32 arg, mod_channel::writer& w)
++{
++	for( const char* f = fmt; *f != '\0'; ++f, ++arg ){
++		if( !script_hasdata(st, arg) ){
++			ShowError("%s: format \"%s\" wants more values.\n", command, fmt);
++			return false;
++		}
++		switch( *f ){
++			case 'i': w.num(script_getnum64(st, arg)); break;
++			case 's': w.str(script_getstr(st, arg)); break;
++			case 'I':
++			case 'S': {
++				script_data* data = script_getdata(st, arg);
++				if( !data_isreference(data) ){
++					ShowError("%s: value %d (%c) must be an array variable.\n", command, (int32)(f - fmt) + 1, *f);
++					return false;
++				}
++				const char* name = reference_getname(data);
++				if( is_string_variable(name) != (*f == 'S') ){
++					ShowError("%s: value %d is %s array, the format says %c.\n", command, (int32)(f - fmt) + 1, is_string_variable(name) ? "a string" : "a number", *f);
++					return false;
++				}
++				map_session_data* vsd = nullptr;
++				if( not_server_variable(*name) && !script_rid2sd(vsd) )
++					return false;
++				uint32 id = reference_getid(data);
++				uint32 count = script_array_highest_key(st, vsd, name, reference_getref(data));
++				if( *f == 'I' ){
++					w.array(mod_channel::T_INT_ARRAY, count);
++					for( uint32 i = 0; i < count; i++ )
++						w.i32((int32)get_val2_num(st, reference_uid(id, i), reference_getref(data)));
++				}else{
++					w.array(mod_channel::T_STR_ARRAY, count);
++					for( uint32 i = 0; i < count; i++ ){
++						w.raw_str(get_val2_str(st, reference_uid(id, i), reference_getref(data)));
++						script_removetop(st, -1, 0);
++					}
++				}
++				break;
++			}
++			default:
++				ShowError("%s: unknown format letter '%c' in \"%s\" (i, s, I, S).\n", command, *f, fmt);
++				return false;
++		}
++	}
++	if( script_hasdata(st, arg) )
++		ShowWarning("%s: more values than format \"%s\" says; the rest are not sent.\n", command, fmt);
++	if( !w.fits() ){
++		ShowError("%s: the values are more than %d bytes.\n", command, (int32)mod_channel::MAX_PACKET);
++		return false;
++	}
++	return true;
++}
++
++/// modsend / modsendto from argument `first` (the channel) on.
++static int32 mc_send(script_state* st, const char* command, map_session_data* sd, int32 first)
++{
++	const char* channel = script_getstr(st, first);
++	uint32 request = (uint32)script_getnum64(st, first + 1);
++	const char* fmt = script_getstr(st, first + 2);
++	mod_channel::writer w;
++
++	if( !mc_encode(st, command, fmt, first + 3, w) ){
++		script_reportsrc(st);
++		script_pushint(st, 0);
++		return SCRIPT_CMD_FAILURE;
++	}
++	script_pushint(st, mod_channel_send(sd, channel, request, w.buf) ? 1 : 0);
++	return SCRIPT_CMD_SUCCESS;
++}
++
++BUILDIN_FUNC(modchannel)
++{
++	if( mc_off(st, "modchannel") )
++		return SCRIPT_CMD_SUCCESS;
++	const char* channel = script_getstr(st, 2);
++	int32 flags = script_hasdata(st, 4) ? script_getnum(st, 4) : 0;
++	if( !mod_channel_bind(channel, script_getstr(st, 3), flags) ){
++		ShowError("modchannel: \"%s\" is not a channel name (1-15 characters, not \"sys\" or \"ask\").\n", channel);
++		script_pushint(st, 0);
++		return SCRIPT_CMD_FAILURE;
++	}
++	script_pushint(st, 1);
++	return SCRIPT_CMD_SUCCESS;
++}
++
++BUILDIN_FUNC(modsend)
++{
++	if( mc_off(st, "modsend") )
++		return SCRIPT_CMD_SUCCESS;
++	map_session_data* sd = nullptr;
++	if( !script_rid2sd(sd) ){
++		script_pushint(st, 0);
++		return SCRIPT_CMD_SUCCESS;
++	}
++	return mc_send(st, "modsend", sd, 2);
++}
++
++BUILDIN_FUNC(modsendto)
++{
++	if( mc_off(st, "modsendto") )
++		return SCRIPT_CMD_SUCCESS;
++	return mc_send(st, "modsendto", map_charid2sd(script_getnum(st, 2)), 3);
++}
++
++BUILDIN_FUNC(modready)
++{
++	map_session_data* sd = nullptr;
++	if( script_hasdata(st, 2) )
++		sd = map_charid2sd(script_getnum(st, 2));
++	else
++		script_rid2sd(sd);
++	script_pushint(st, mod_channel_ready(sd) ? 1 : 0);
++	return SCRIPT_CMD_SUCCESS;
++}
+--- a/src/custom/script_def.inc
++++ b/src/custom/script_def.inc
+@@ -37,3 +37,7 @@
+ BUILDIN_DEF(population_whisper, "is"),
+ BUILDIN_DEF(population_lost_event, "is"),
+ BUILDIN_DEF(population_vendor_lanefill, "si"),
++BUILDIN_DEF(modchannel, "ss?"),
++BUILDIN_DEF(modsend, "sis*"),
++BUILDIN_DEF(modsendto, "isis*"),
++BUILDIN_DEF(modready, "?"),
+--- a/src/map/clif.cpp
++++ b/src/map/clif.cpp
+@@ -51,6 +51,7 @@
+ #include "party.hpp"
+ #include "pc.hpp"
+ #include "pc_groups.hpp"
++#include "mod_channel.hpp"
+ #include "pet.hpp"
+ #include "population_engine.hpp"
+ #include "quest.hpp"
+--- a/src/map/clif_packetdb.hpp
++++ b/src/map/clif_packetdb.hpp
+@@ -2046,4 +2046,7 @@
+ 	parseable_packet( HEADER_CZ_MOVE_ITEM_TO_PERSONAL, sizeof( PACKET_CZ_MOVE_ITEM_TO_PERSONAL ), clif_parse_MoveFromKafraFav, 0 );
+ #endif
+ 
++	// RAGNAROKMAC: mod channel (mod_channel.cpp), every packet version
++	parseable_packet( mod_channel::HEADER_CZ, -1, clif_parse_mod_msg, 0 );
++
+ #endif /* CLIF_PACKETDB_HPP */
+--- a/src/map/npc.cpp
++++ b/src/map/npc.cpp
+@@ -1865,6 +1865,18 @@
+ /*==========================================
+  * NPC processing event type
+  *------------------------------------------*/
++// RAGNAROKMAC: mod channel (mod_channel.cpp) runs bound events itself, so it needs to find them.
++bool npc_event_resolve(const char* eventname, npc_data** nd, int32* pos)
++{
++	struct event_data* ev = (struct event_data*)strdb_get(ev_db, eventname);
++
++	if( ev == nullptr || ev->nd == nullptr )
++		return false;
++	*nd = ev->nd;
++	*pos = ev->pos;
++	return true;
++}
++
+ int32 npc_event(map_session_data* sd, const char* eventname, int32 ontouch)
+ {
+ 	struct event_data* ev = (struct event_data*)strdb_get(ev_db, eventname);
+--- a/src/map/npc.hpp
++++ b/src/map/npc.hpp
+@@ -1628,6 +1628,8 @@
+ int32 npc_chat_sub(block_list* bl, va_list ap);
+ int32 npc_event_dequeue(map_session_data* sd,bool free_script_stack=true);
+ int32 npc_event(map_session_data* sd, const char* eventname, int32 ontouch);
++/// RAGNAROKMAC: the NPC and script position of an event ("<NPC>::On<Label>"); false if there is none.
++bool npc_event_resolve(const char* eventname, npc_data** nd, int32* pos);
+ int32 npc_touch_areanpc(map_session_data* sd, int16 m, int16 x, int16 y, npc_data* nd);
+ int32 npc_touch_area_allnpc(map_session_data* sd, int16 m, int16 x, int16 y);
+ int32 npc_touch_areanpc2(mob_data *md); // [Skotlex]
+--- a/src/map/pc.hpp
++++ b/src/map/pc.hpp
+@@ -959,6 +959,11 @@
+ #ifdef PACKET_OBFUSCATION
+ 	uint32 cryptKey; ///< Packet obfuscation key to be used for the next received packet
+ #endif
++	// RAGNAROKMAC: mod channel (mod_channel.cpp): the client said hello, the ZC id it reads, its packets this second
++	bool mc_ready = false;
++	uint16 mc_zc = 0;
++	t_tick mc_window = 0;
++	int64 mc_count = 0;
+ 
+ 	struct {
+ 		int32 bronze, silver, gold; ///< Roulette Coin
