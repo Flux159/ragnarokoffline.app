@@ -168,7 +168,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             platform: mac
             arch: arm64
             triple: aarch64-apple-darwin
