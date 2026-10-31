@@ -54,7 +54,8 @@ test('it lives in files of its own, reached from the engine through a few one-li
 	assert.doesNotMatch(state, /hold_npc|whisper_event|follow_portal/, 'the fields live in population_shell_hold.hpp');
 	// Every mention of the API in the engine's own source is a hook, not logic.
 	const uses = engine.split('\n').filter(l => /population_shell_control_|population_engine_shell_is_held|pop\.hold\./.test(l));
-	assert.ok(uses.length <= 10, `hooks in population_engine.cpp: ${uses.length}\n${uses.join('\n')}`);
+	// 11: main's place_held hook, and shell guilds' release skip for held shells.
+	assert.ok(uses.length <= 11, `hooks in population_engine.cpp: ${uses.length}\n${uses.join('\n')}`);
 });
 
 test('the hold belongs to an NPC, the script runs it by its own id', () => {

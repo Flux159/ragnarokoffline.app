@@ -112,3 +112,8 @@ Body:
       - "Jara"
       - "Beni"
       - "Kira"
+
+# RAGNAROKMAC: the import a mod's table arrives through.
+Footer:
+  Imports:
+    - Path: db/import/population_names.yml
