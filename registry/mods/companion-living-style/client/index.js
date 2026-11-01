@@ -1,4 +1,4 @@
-// Companion Living Style v1.4.0: supported Client API 1, no engine/packet hooks.
+// Companion Living Style v1.6.0: supported Client API 1, no engine/packet hooks.
 export default function init(parameters, api) {
     if (api?.version !== 1) throw new Error('Companion Living Style needs Client API 1.');
     let disposed = false;

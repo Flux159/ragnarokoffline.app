@@ -1,13 +1,13 @@
 {
   "name": "companion-living-style",
-  "version": "1.4.0",
+  "version": "1.6.0",
   "author": "DaggerHashimoto",
-  "description": "Give recruited companions, town AI and AI vendors varied costume looks, colours and supported same-job outfits, with town-themed looks in 34 major towns (a Costume Guide in each switches the theme off or on), townsfolk who sit to rest and show idle emotes, an outfit shuffle setting and optional Cold Bolt use for companions that already know the skill. Renewal only; enable Population Engine. Cosmetic styling does not create items or change equipment stats.",
+  "description": "Give recruited companions, AI vendors and the ambient AI across the whole world (towns, fields and dungeons) varied costume looks, colours and supported same-job outfits, with town-themed looks in 34 major towns (a Costume Guide in each switches the theme off or on), townsfolk who sit to rest and show idle emotes, an outfit shuffle setting and optional Cold Bolt use for companions that already know the skill. Renewal and pre-renewal; enable Population Engine. Cosmetic styling does not create items or change equipment stats.",
   "requires": {
     "app": ">=1.7.7",
-    "era": "renewal"
+    "era": "any"
   },
-  "settingsPage": "settings/index-v1.4.0.html",
+  "settingsPage": "settings/index-v1.6.0.html",
   "settings": [
     {
       "key": "equipment_cold_bolt",
@@ -27,8 +27,15 @@
       "key": "style_townspeople",
       "type": "boolean",
       "default": true,
-      "label": "Style ambient townspeople",
-      "description": "Applies to ambient AI on town maps. Vendors and real players are excluded."
+      "label": "Style ambient AI",
+      "description": "Applies to the ambient AI characters walking the world. With Costumes everywhere off, only those on town maps. Vendors and real players are excluded."
+    },
+    {
+      "key": "style_whole_world",
+      "type": "boolean",
+      "default": true,
+      "label": "Costumes everywhere",
+      "description": "Ambient AI in fields and dungeons get costumes too, not only in towns. They use the everyday pool; town themes and emotes stay in towns. Off: town maps only, as before."
     },
     {
       "key": "style_vendors",
@@ -116,6 +123,7 @@
     "costumes",
     "immersion",
     "towns",
-    "renewal"
+    "renewal",
+    "pre-renewal"
   ]
 }

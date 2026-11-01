@@ -1,4 +1,4 @@
-# Companion Living Style v1.4.0: AI characters rest when nothing is around.
+# Companion Living Style v1.6.0: AI characters rest when nothing is around.
 # For: shells only; companions keep Companion Party Overhaul's own idle_sit.
 # After 90 s strolling with no monster within 14 cells they sit for 30 s.
 # A monster in sight ends the rest at once. The engine stands a sitter up before
