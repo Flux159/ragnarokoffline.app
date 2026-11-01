@@ -500,3 +500,8 @@ Body:
       - shop
       - greet
       - idle
+
+# RAGNAROKMAC: the import a mod's table arrives through.
+Footer:
+  Imports:
+    - Path: db/import/population_chat.yml

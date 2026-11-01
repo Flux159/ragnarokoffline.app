@@ -394,6 +394,22 @@ static bool population_shell_plant_allowed(map_session_data *sd, const mob_data 
 	return ud->target == md->id || (ud->skilltimer != INVALID_TIMER && ud->skilltarget == md->id);
 }
 
+// RAGNAROKMAC (population_engine_no_kill_steal): a monster already fighting someone
+// else, not this shell and not its party, is theirs.
+static bool pop_mob_is_someone_elses(map_session_data *sd, const mob_data *md)
+{
+	if (!battle_config.population_engine_no_kill_steal)
+		return false;
+	if (md->target_id == 0 || md->target_id == sd->id)
+		return false;
+	map_session_data *tsd = map_id2sd(md->target_id);
+	if (tsd == nullptr)
+		return false;
+	if (sd->status.party_id != 0 && tsd->status.party_id == sd->status.party_id)
+		return false;
+	return true;
+}
+
 bool population_shell_check_target(map_session_data *sd, unsigned int id)
 {
 	if (!sd || id == 0)
@@ -421,6 +437,8 @@ bool population_shell_check_target(map_session_data *sd, unsigned int id)
 	TBL_MOB *md = map_id2md(bl->id);
 	if (!md || md->type != BL_MOB || md->status.hp <= 0 || population_shell_mob_player_owned(md))
 		return false;
+	if (pop_mob_is_someone_elses(sd, md))
+		return false;
 	if (population_shell_mob_is_plant(md) && !population_shell_plant_allowed(sd, md))
 		return false;
 	if (md->sc.option & (OPTION_HIDE | OPTION_CLOAK))
@@ -441,6 +459,8 @@ bool population_shell_check_target_for_movement(map_session_data *sd, unsigned i
 		return false;
 	TBL_MOB *md = map_id2md(bl->id);
 	if (!md || md->type != BL_MOB || md->status.hp <= 0 || population_shell_mob_player_owned(md))
+		return false;
+	if (pop_mob_is_someone_elses(sd, md))
 		return false;
 	if (population_shell_mob_is_plant(md) && !population_shell_plant_allowed(sd, md))
 		return false;
@@ -1186,7 +1206,21 @@ bool population_shell_check_arena_target(map_session_data *sd, unsigned int id)
 		return false;
 	if (status_isdead(*bl))
 		return false;
-	if (sd->pop.arena_team == 2) {
+	if (sd->pop.arena_team == POP_ARENA_WAR) {
+		// RAGNAROKMAC (shell guilds): a war shell fights whoever the map's rules make its
+		// enemy (other guilds on GvG/WoE maps, everyone outside its guild on PvP maps),
+		// real players and shells alike, and on GvG maps the Emperium and guardians.
+		if (bl->type == BL_MOB) {
+			const mob_data *md = BL_CAST(BL_MOB, bl);
+			if (!md || !map_flag_gvg2(sd->m) || (md->guardian_data == nullptr && md->mob_id != MOBID_EMPERIUM))
+				return false;
+		} else if (bl->type != BL_PC)
+			return false;
+		if (bl->type == BL_PC && pc_isinvisible(BL_CAST(BL_PC, bl)))
+			return false;
+		if (battle_check_target(sd, bl, BCT_ENEMY) <= 0)
+			return false;
+	} else if (sd->pop.arena_team == 2) {
 		// Allied shells (team 2) target enemy arena shells (team 1).
 		map_session_data *opp = BL_CAST(BL_PC, bl);
 		if (!opp || !population_engine_is_population_pc(id))
@@ -1253,6 +1287,22 @@ static int32 arena_allied_scan_cb(block_list *bl, va_list ap)
 	}
 	return 0;
 }
+// Callback for war shells: the nearest enemy by the map's rules; players and shells
+// before the Emperium, so a guild clears the room before it breaks it.
+static int32 arena_war_scan_cb(block_list *bl, va_list ap)
+{
+	ArenaOpponentCtx *ctx = va_arg(ap, ArenaOpponentCtx*);
+	if (!population_shell_check_arena_target(ctx->attacker, bl->id))
+		return 0;
+	int dist = distance_bl((block_list *)ctx->attacker, bl);
+	if (bl->type == BL_MOB)
+		dist += 6;
+	if (dist < ctx->best_dist) {
+		ctx->best_dist = dist;
+		ctx->best_id   = bl->id;
+	}
+	return 0;
+}
 } // namespace
 
 unsigned int population_shell_find_arena_opponent(map_session_data *sd)
@@ -1263,7 +1313,9 @@ unsigned int population_shell_find_arena_opponent(map_session_data *sd)
 		? battle_config.population_engine_shell_mdetection_cells : 30;
 	ArenaOpponentCtx ctx;
 	ctx.attacker = sd;
-	if (sd->pop.arena_team == 2)
+	if (sd->pop.arena_team == POP_ARENA_WAR)
+		map_foreachinrange(arena_war_scan_cb, sd, det, BL_PC | BL_MOB, &ctx);
+	else if (sd->pop.arena_team == 2)
 		map_foreachinrange(arena_allied_scan_cb, sd, det, BL_PC, &ctx);
 	else
 		map_foreachinrange(arena_opponent_scan_cb, sd, det, BL_PC, &ctx);

@@ -1052,6 +1052,8 @@ void population_engine_shell_release(map_session_data* sd)
 	// Only call map_quit if the shell is still registered.  Any external path that
 	// calls map_quit on a shell (handle_shutdown, @kickall, etc.) will have already
 	// removed it from id_db via map_deliddb; skip here to avoid double unit_free.
+	// A shell guild member leaves it first, so logout never tells the char server about it.
+	population_guild_leave(sd, false);
 	if (map_id2bl(sd->id) != nullptr)
 		map_quit(sd);
 	else {
@@ -3436,6 +3438,10 @@ TIMER_FUNC(population_engine_autosummon_timer)
 				continue;
 			if (pop_is_companion(sd))
 				continue;
+			// RAGNAROKMAC: a shell a script holds is the script's to place and to release
+			// (a town crowd kept while nobody is there, a hangout regular).
+			if (population_engine_shell_is_held(sd))
+				continue;
 			const bool keep = under_pressure
 				? g_pop_occupied_maps.count(sd->m) != 0
 				: pop_map_is_live(sd->m);
@@ -3664,8 +3670,9 @@ static int32 pop_combat_tick_bot_in_range(block_list *bl, va_list ap)
 		if (!pop_is_companion(sd))
 			pop_companion_set_owner(sd, nullptr);
 	}
-	// RAGNAROKMAC (shell control API): a held shell does what its script says.
-	if (population_engine_shell_is_held(sd))
+	// RAGNAROKMAC (shell control API): a held shell does what its script says,
+	// except that a held shell at war still fights (the script holds it so it stays).
+	if (population_engine_shell_is_held(sd) && sd->pop.arena_team != POP_ARENA_WAR)
 		return 0;
 	// Dedupe across multiple real-PC viewers.
 	if (!ctx->ticked.insert(sd->id).second)
@@ -5197,6 +5204,8 @@ TIMER_FUNC(population_engine_global_combat_timer)
 	return 0;
 }
 
+static bool pop_shell_revive_at(map_session_data *sd, int16_t m, int16 sx, int16 sy);
+
 /// Respawn timer for mortal shells: fired ~5 s after death to teleport to spawn and revive.
 /// Mob-style respawn: full state reset via unit_remove_map (target/timers/SCs) before re-add.
 TIMER_FUNC(population_engine_respawn_shell_timer)
@@ -5232,17 +5241,40 @@ TIMER_FUNC(population_engine_respawn_shell_timer)
 		unit_remove_map(sd, CLR_OUTSIGHT);
 		return 0;
 	}
-
-	// Mob-style: tear down map presence + clear stale unit_data (target, ongoing skill timers,
-	// status changes) BEFORE re-spawning at the chosen point. Without this, shells revive
-	// with residual SCs / locked target / canact_tick from the moment of death.
 	int16 sx = owner ? owner->x : sd->pop.spawn_x;
 	int16 sy = owner ? owner->y : sd->pop.spawn_y;
 	if (owner)
 		map_search_freecell(owner, respawn_map, &sx, &sy, 2, 2, 0);
 	else if (sx <= 0 || sy <= 0 || map_getcell(respawn_map, sx, sy, CELL_CHKNOPASS))
 		map_search_freecell(nullptr, respawn_map, &sx, &sy, 4, 4, 1);
+	pop_shell_revive_at(sd, respawn_map, sx, sy);
+	if (owner)
+		ShowInfo("Population engine: companion %s respawned near %s on map %s.\n",
+			sd->status.name, owner->status.name, mapindex_id2name(mapdata->index));
+	return 0;
+}
 
+/// RAGNAROKMAC (respawn control): stand dead shell sd up on map m at (sx, sy), as the
+/// respawn timer does: off the map, revived there, then placed. Shared by the timer and by
+/// population_revive, so a script that keeps a body down (respawn_ms -1) brings it back the
+/// same way the engine would. False if the shell could not be placed.
+static bool pop_shell_revive_at(map_session_data *sd, int16_t m, int16 sx, int16 sy)
+{
+	struct map_data *mapdata = map_getmapdata(m);
+	if (mapdata == nullptr)
+		return false;
+	if (sd->pop.respawn_timer != INVALID_TIMER) {
+		const TimerData* td = get_timer(sd->pop.respawn_timer);
+		if (td && td->func == population_engine_respawn_shell_timer)
+			delete_timer(sd->pop.respawn_timer, population_engine_respawn_shell_timer);
+		sd->pop.respawn_timer = INVALID_TIMER;
+	}
+	if (sx <= 0 || sy <= 0 || map_getcell(m, sx, sy, CELL_CHKNOPASS))
+		map_search_freecell(nullptr, m, &sx, &sy, 4, 4, 1);
+
+	// Mob-style: tear down map presence + clear stale unit_data (target, ongoing skill timers,
+	// status changes) BEFORE re-spawning at the chosen point. Without this, shells revive
+	// with residual SCs / locked target / canact_tick from the moment of death.
 	// A shell has no client-side respawn handshake. CLR_RESPAWN can leave the
 	// already-dead actor rendered as a corpse when the same GID is spawned near
 	// the owner, so explicitly remove the old visual from every viewer first.
@@ -5250,13 +5282,17 @@ TIMER_FUNC(population_engine_respawn_shell_timer)
 	if (pc_setpos(sd, mapdata->index, sx, sy, CLR_OUTSIGHT) != SETPOS_OK) {
 		ShowError("Population engine: failed to respawn shell %u (%s) on map %s.\n",
 			sd->id, sd->status.name, mapindex_id2name(mapdata->index));
-		return 0;
+		return false;
 	}
 	// Revive while the shell is deliberately still outside the map block grid.
 	// status_revive otherwise broadcasts resurrection/standing packets, followed
 	// by our spawn packet, which makes some clients retain clickable duplicates.
 	status_revive(sd, 100, 100);
 	status_calc_pc(sd, SCO_FORCE);
+	// RAGNAROKMAC (respawn control): pc_setpos already stood a dead character up, with
+	// restart HP (1 HP and SP by default), so status_revive found nobody dead and the
+	// shell came back at 1 HP. Full, as a respawn means.
+	status_percent_heal(sd, 100, 100);
 	sd->ud.canmove_tick = 0;
 	sd->ud.canact_tick  = 0;
 	sd->pop.target_id           = 0;
@@ -5289,14 +5325,29 @@ TIMER_FUNC(population_engine_respawn_shell_timer)
 	if (!pop_shell_finish_map_placement(sd)) {
 		ShowError("Population engine: failed to place respawned shell %u (%s) on map %s.\n",
 			sd->id, sd->status.name, mapindex_id2name(mapdata->index));
-		return 0;
+		return false;
 	}
 	pop_shell_broadcast_map_placement(sd);
-	if (owner)
-		ShowInfo("Population engine: companion %s respawned near %s on map %s.\n",
-			sd->status.name, owner->status.name, mapindex_id2name(mapdata->index));
-	return 0;
+	return true;
 }
+
+bool population_engine_shell_revive(int32_t gid, int16_t m, int16_t x, int16_t y)
+{
+	if (!population_engine_is_population_pc(gid))
+		return false;
+	map_session_data *sd = map_id2sd(gid);
+	if (sd == nullptr || !pc_isdead(sd) || pop_is_companion(sd))
+		return false;
+	if (m < 0)
+		m = sd->m;
+	if (x <= 0 || y <= 0) {
+		x = sd->x;
+		y = sd->y;
+	}
+	return pop_shell_revive_at(sd, m, x, y);
+}
+
+static void population_engine_fire_death_event(map_session_data *sd);
 
 void population_engine_on_shell_death(map_session_data *sd)
 {
@@ -5333,9 +5384,44 @@ void population_engine_on_shell_death(map_session_data *sd)
 		population_companion_on_down(sd); // RAGNAROKMAC (roam)
 		return;
 	}
-	// Ambient Mortal shells retain their original five-second respawn delay.
-	sd->pop.respawn_timer = add_timer(gettick() + 5000,
+	// RAGNAROKMAC (respawn control): a mod's script hears about it first, and may ask
+	// for this shell's body to stay down (respawn_ms -1) to bring it back itself.
+	population_engine_fire_death_event(sd);
+	if (sd->pop.respawn_ms < 0)
+		return;
+	// How long the body lies: the script's choice for this shell, else between
+	// population_engine_respawn_min_ms and _max_ms, mostly near the short end (the
+	// uniform roll raised to population_engine_respawn_skew). The defaults keep
+	// the engine's five seconds.
+	t_tick delay = sd->pop.respawn_ms;
+	if (delay <= 0) {
+		const int32 lo = battle_config.population_engine_respawn_min_ms;
+		const int32 hi = std::max(lo, battle_config.population_engine_respawn_max_ms);
+		double u = static_cast<double>(rnd() % 10001) / 10000.0;
+		double f = u;
+		for (int32 i = 1; i < battle_config.population_engine_respawn_skew; ++i)
+			f *= u;
+		delay = lo + static_cast<t_tick>(f * (hi - lo));
+	}
+	sd->pop.respawn_timer = add_timer(gettick() + delay,
 		population_engine_respawn_shell_timer, sd->id, 0);
+}
+
+/// RAGNAROKMAC (respawn control): "<npc>::<label>" run when an ambient shell dies, with
+/// $@pop_dead_gid set to it; "" = none. Set by population_death_event.
+static std::string g_pop_death_event;
+
+void population_engine_set_death_event(const char *ev)
+{
+	g_pop_death_event = ev ? ev : "";
+}
+
+static void population_engine_fire_death_event(map_session_data *sd)
+{
+	if (g_pop_death_event.empty())
+		return;
+	mapreg_setreg(add_str("$@pop_dead_gid"), sd->id);
+	npc_event_do(g_pop_death_event.c_str());
 }
 
 void population_engine_on_shell_kills_player(map_session_data *killer_sd, map_session_data *victim_sd)
@@ -10343,7 +10429,49 @@ void population_engine_on_whisper_to_population_pc(map_session_data* from_sd, ma
 		}
 	}
 
+	// RAGNAROKMAC (mod hooks): a mod that answers whispers for every shell.
+	if (population_engine_default_whisper(from_sd, bot_sd, message))
+		return;
 	population_engine_deliver_chat_reply_locked(bot_sd, from_sd);
+}
+
+/// RAGNAROKMAC (mod hooks): "<npc>::<label>" run for a whisper to any ambient shell no
+/// script holds (a held one answers through its holder's label), unless it is a party
+/// request, which the engine's own companions handle. "" = none (the engine's canned reply).
+static std::string g_pop_default_whisper_event;
+
+void population_engine_set_default_whisper_event(const char *ev)
+{
+	g_pop_default_whisper_event = ev ? ev : "";
+}
+
+bool population_engine_default_whisper(map_session_data *from_sd, map_session_data *bot_sd, const char *message)
+{
+	if (g_pop_default_whisper_event.empty() || pop_is_companion(bot_sd))
+		return false;
+	pc_setreg(from_sd, add_str("@shell_gid"), bot_sd->id);
+	pc_setregstr(from_sd, add_str("@shell_msg$"), message);
+	npc_event(from_sd, g_pop_default_whisper_event.c_str(), 0);
+	return true;
+}
+
+/// RAGNAROKMAC (mod hooks): "<npc>::<label>" run, attached to the player, whenever a real
+/// player says something in public chat; @pop_chat$ holds what they said. "" = none.
+static std::string g_pop_public_chat_event;
+
+void population_engine_set_public_chat_event(const char *ev)
+{
+	g_pop_public_chat_event = ev ? ev : "";
+}
+
+void population_engine_on_public_chat(map_session_data *sd, const char *message)
+{
+	if (g_pop_public_chat_event.empty() || sd == nullptr || message == nullptr || !message[0])
+		return;
+	if (population_engine_is_population_pc(sd->id) || sd->npc_id != 0 || sd->state.menu_or_input)
+		return; // a shell, or someone in the middle of an NPC dialog
+	pc_setregstr(sd, add_str("@pop_chat$"), message);
+	npc_event(sd, g_pop_public_chat_event.c_str(), 0);
 }
 
 void population_engine_on_global_chat_mention(map_session_data* from_sd, const char* message)
@@ -10701,6 +10829,9 @@ int population_engine_arena_relation(const block_list *s_bl, const block_list *t
 
     const int s_team = s_sd->pop.arena_team;
     const int t_team = t_sd->pop.arena_team;
+    // RAGNAROKMAC (shell guilds): war shells follow the map's own PvP/GvG rules.
+    if (s_team == POP_ARENA_WAR || t_team == POP_ARENA_WAR)
+        return 0;
 
     // Effective team: real players on a map that has any arena shell are
     // implicitly team 2 (the player's side). For a relation to apply, at
@@ -10727,4 +10858,295 @@ bool population_engine_arena_is_ally(const map_session_data *a, const map_sessio
     return population_engine_arena_relation(
         reinterpret_cast<const block_list*>(a),
         reinterpret_cast<const block_list*>(b)) > 0;
+}
+
+// ---------------------------------------------------------------------------
+// RAGNAROKMAC (mod hooks): shell guilds.
+//
+// A mod can make guilds that exist only in the map server's memory, from
+// POP_GUILD_ID_BASE up, and put shells in them. They look like real guilds to
+// everyone (name, position title and emblem over the head, the guild on the
+// name tag, ally/enemy on GvG and WoE maps, Guardian Approval to break the
+// Emperium) but the char server never hears of them: no saving, no guild
+// storage, no exp tax, no packets for a guild it does not know. Real players
+// cannot join them. The mod makes them again at every start (OnInit).
+// ---------------------------------------------------------------------------
+#include "guild.hpp"
+#include <common/grfio.hpp>
+
+extern std::unordered_map<int32, std::shared_ptr<MapGuild>> guild_db;
+
+static std::shared_ptr<MapGuild> pop_guild_find(int32_t guild_id)
+{
+	if (!population_guild_is_virtual(guild_id))
+		return nullptr;
+	auto it = guild_db.find(guild_id);
+	return it == guild_db.end() ? nullptr : it->second;
+}
+
+static void pop_guild_refresh_name(map_session_data *sd)
+{
+	clif_name_area(sd);
+	clif_guild_emblem_area(sd);
+}
+
+static int pop_hexval(char c)
+{
+	if (c >= '0' && c <= '9') return c - '0';
+	if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+	return -1;
+}
+
+int32_t population_guild_define(int32_t n, const char *name, const char *master,
+	const char *emblem_hex, const char *positions)
+{
+	if (n < 1 || n > POP_GUILD_MAX)
+		return 0;
+	const int32_t guild_id = POP_GUILD_ID_BASE + n;
+	auto g = pop_guild_find(guild_id);
+	bool fresh = false;
+	if (!g) {
+		g = std::make_shared<MapGuild>();
+		memset(&g->guild, 0, sizeof(g->guild));
+		g->channel = nullptr;
+		g->instance_id = 0;
+		g->chargeshout_flag_id = 0;
+		guild_db[guild_id] = g;
+		fresh = true;
+	}
+	auto &mg = g->guild;
+	mg.guild_id = guild_id;
+	mg.guild_lv = 10;
+	mg.max_member = MAX_GUILD;
+	safestrncpy(mg.name, name, NAME_LENGTH);
+	safestrncpy(mg.master, master, NAME_LENGTH);
+	// Slot 0 is the master's, as in a real guild (getguildmaster, the guild window).
+	if (mg.member[0].account_id == 0)
+		safestrncpy(mg.member[0].name, master, NAME_LENGTH);
+
+	// Titles: "Leader|Officer|Member|...", position 0 is the leader's.
+	for (int i = 0; i < MAX_GUILDPOSITION; i++) {
+		mg.position[i].mode = (i == 0) ? 0x11 : 0;
+		mg.position[i].exp_mode = 0;
+		snprintf(mg.position[i].name, NAME_LENGTH, "%s", i == 0 ? "Guild Master" : "Member");
+	}
+	if (positions != nullptr && *positions) {
+		const char *p = positions;
+		for (int i = 0; i < MAX_GUILDPOSITION && *p; i++) {
+			const char *bar = strchr(p, '|');
+			size_t len = bar ? static_cast<size_t>(bar - p) : strlen(p);
+			if (len >= NAME_LENGTH)
+				len = NAME_LENGTH - 1;
+			if (len > 0) {
+				memcpy(mg.position[i].name, p, len);
+				mg.position[i].name[len] = '\0';
+			}
+			if (!bar)
+				break;
+			p = bar + 1;
+		}
+	}
+
+	// The skills that matter for GvG: Guardian Approval breaks the Emperium.
+	for (int i = 0; i < MAX_GUILDSKILL; i++) {
+		mg.skill[i].id = GD_SKILLBASE + i;
+		mg.skill[i].lv = 0;
+	}
+	const uint16 learnt[] = { GD_APPROVAL, GD_KAFRACONTRACT, GD_GUARDRESEARCH, GD_EXTENSION };
+	for (uint16 sk : learnt) {
+		const int idx = sk - GD_SKILLBASE;
+		if (idx >= 0 && idx < MAX_GUILDSKILL)
+			mg.skill[idx].lv = (sk == GD_EXTENSION) ? 10 : 1;
+	}
+
+	// The emblem: the hex of a 24x24 BMP (magenta is see-through). It is zipped
+	// the way the client expects; a new one gets a new emblem id so clients fetch it.
+	if (emblem_hex != nullptr && *emblem_hex) {
+		const size_t hl = strlen(emblem_hex);
+		std::vector<uint8_t> raw;
+		raw.reserve(hl / 2);
+		for (size_t i = 0; i + 1 < hl; i += 2) {
+			const int hi = pop_hexval(emblem_hex[i]), lo = pop_hexval(emblem_hex[i + 1]);
+			if (hi < 0 || lo < 0) {
+				raw.clear();
+				break;
+			}
+			raw.push_back(static_cast<uint8_t>(hi * 16 + lo));
+		}
+		unsigned long zl = sizeof(mg.emblem_data);
+		if (raw.size() >= 54 && raw[0] == 'B' && raw[1] == 'M'
+			&& encode_zip(mg.emblem_data, &zl, raw.data(), static_cast<unsigned long>(raw.size())) == 0) {
+			mg.emblem_len = static_cast<int32>(zl);
+			mg.emblem_id++;
+		} else {
+			ShowWarning("population_guild_define: emblem for '%s' is not a BMP in hex, kept the old one.\n", name);
+		}
+	}
+
+	if (fresh)
+		guild_population_defined(guild_id);
+
+	// Members who are already in it see the new name/emblem.
+	for (int i = 0; i < mg.max_member; i++) {
+		map_session_data *msd = mg.member[i].sd;
+		if (msd != nullptr && map_id2sd(msd->id) == msd) {
+			msd->guild_emblem_id = mg.emblem_id;
+			pop_guild_refresh_name(msd);
+		}
+	}
+	return guild_id;
+}
+
+bool population_guild_leave(map_session_data *sd, bool refresh)
+{
+	if (sd == nullptr || !population_guild_is_virtual(sd->status.guild_id))
+		return false;
+	auto g = pop_guild_find(sd->status.guild_id);
+	if (g) {
+		auto &mg = g->guild;
+		for (int i = 0; i < mg.max_member; i++) {
+			if (mg.member[i].account_id == sd->status.account_id && mg.member[i].char_id == sd->status.char_id) {
+				memset(&mg.member[i], 0, sizeof(mg.member[i]));
+				if (i == 0)
+					safestrncpy(mg.member[0].name, mg.master, NAME_LENGTH);
+				if (mg.connect_member > 0)
+					mg.connect_member--;
+			}
+		}
+	}
+	sd->status.guild_id = 0;
+	sd->guild_emblem_id = 0;
+	sd->guild = nullptr;
+	sd->state.gmaster_flag = 0;
+	if (refresh)
+		pop_guild_refresh_name(sd);
+	return true;
+}
+
+int population_guild_join(int32_t gid, int32_t guild_id, int position)
+{
+	map_session_data *sd = map_id2sd(gid);
+	if (sd == nullptr || population_engine_shell_kind(sd->id) == 0)
+		return 0;
+	auto g = pop_guild_find(guild_id);
+	if (!g)
+		return 0;
+	if (sd->status.guild_id != 0 && !population_guild_is_virtual(sd->status.guild_id))
+		return 0; // never touch a real guild
+	if (sd->status.guild_id == guild_id) {
+		// Same guild: only the title changes.
+		for (int i = 0; i < g->guild.max_member; i++)
+			if (g->guild.member[i].sd == sd)
+				g->guild.member[i].position = std::clamp(position, 0, MAX_GUILDPOSITION - 1);
+		pop_guild_refresh_name(sd);
+		return 1;
+	}
+	population_guild_leave(sd, false);
+
+	auto &mg = g->guild;
+	const bool is_master = strcmp(sd->status.name, mg.master) == 0;
+	int slot = -1;
+	for (int i = 1; i < mg.max_member; i++) {
+		if (mg.member[i].account_id == 0) {
+			slot = i;
+			break;
+		}
+	}
+	if (is_master) {
+		// The master takes slot 0; whoever had it moves to a free one.
+		if (mg.member[0].account_id != 0) {
+			if (slot < 0)
+				return 0;
+			mg.member[slot] = mg.member[0];
+		}
+		slot = 0;
+		position = 0;
+	} else if (slot < 0)
+		return 0; // full (MAX_GUILD)
+	guild_member &m = mg.member[slot];
+	memset(&m, 0, sizeof(m));
+	m.account_id = sd->status.account_id;
+	m.char_id = sd->status.char_id;
+	m.hair = sd->status.hair;
+	m.hair_color = sd->status.hair_color;
+	m.gender = sd->status.sex;
+	m.class_ = sd->status.class_;
+	m.lv = sd->status.base_level;
+	m.online = 1;
+	m.position = std::clamp(position, 0, MAX_GUILDPOSITION - 1);
+	safestrncpy(m.name, sd->status.name, NAME_LENGTH);
+	m.sd = sd;
+	mg.connect_member++;
+
+	sd->status.guild_id = guild_id;
+	sd->guild_emblem_id = mg.emblem_id;
+	sd->guild = g;
+	sd->state.gmaster_flag = (strcmp(sd->status.name, mg.master) == 0) ? 1 : 0;
+	pop_guild_refresh_name(sd);
+	return 1;
+}
+
+bool population_guild_alliance(int32_t guild_a, int32_t guild_b, int opposition, bool add)
+{
+	auto ga = pop_guild_find(guild_a), gb = pop_guild_find(guild_b);
+	if (!ga || !gb || guild_a == guild_b)
+		return false;
+	for (auto pair : { std::make_pair(ga, gb), std::make_pair(gb, ga) }) {
+		auto &al = pair.first->guild.alliance;
+		int slot = -1;
+		for (int i = 0; i < MAX_GUILDALLIANCE; i++) {
+			if (al[i].guild_id == pair.second->guild.guild_id) { slot = i; break; }
+			if (slot < 0 && al[i].guild_id == 0) slot = i;
+		}
+		if (slot < 0)
+			return false;
+		if (add) {
+			al[slot].guild_id = pair.second->guild.guild_id;
+			al[slot].opposition = opposition ? 1 : 0;
+			safestrncpy(al[slot].name, pair.second->guild.name, NAME_LENGTH);
+		} else if (al[slot].guild_id == pair.second->guild.guild_id) {
+			memset(&al[slot], 0, sizeof(al[slot]));
+		}
+	}
+	return true;
+}
+
+// RAGNAROKMAC (shell guilds): war mode. A war shell is mortal and its combat picks
+// enemies by the map's PvP/GvG rules (population_shell_check_arena_target), so two
+// shell guilds fight each other, the real player's guild, and the Emperium.
+static std::unordered_set<int32_t> g_pop_war_was_immortal;
+
+bool population_engine_shell_set_war(int32_t gid, bool on)
+{
+	map_session_data *sd = map_id2sd(gid);
+	if (sd == nullptr || population_engine_shell_kind(sd->id) != POP_SHELL_AMBIENT)
+		return false;
+	if (sd->pop.arena_team != 0 && sd->pop.arena_team != POP_ARENA_WAR)
+		return false; // an arena shell keeps its arena team
+	if (on) {
+		if (sd->pop.arena_team != POP_ARENA_WAR) {
+			if (!(sd->pop.flags & PSF::Mortal))
+				g_pop_war_was_immortal.insert(sd->id);
+			sd->pop.flags |= PSF::Mortal | PSF::CombatActive;
+			sd->pop.arena_team = POP_ARENA_WAR;
+			sd->pop.behavior = static_cast<uint8_t>(PopulationBehavior::Combat);
+		}
+		population_engine_combat_start_session(sd, PopulationCombatStartMode::AutoCombat, -1, SCSTART_NOAVOID | SCSTART_LOADED);
+	} else if (sd->pop.arena_team == POP_ARENA_WAR) {
+		sd->pop.arena_team = 0;
+		if (g_pop_war_was_immortal.erase(sd->id))
+			sd->pop.flags &= ~PSF::Mortal;
+		sd->pop.behavior = sd->pop.behavior_base;
+		population_shell_target_change(sd, 0);
+	}
+	return true;
+}
+
+bool population_engine_shell_at_war(const block_list *bl)
+{
+	if (bl == nullptr || bl->type != BL_PC)
+		return false;
+	const map_session_data *sd = reinterpret_cast<const map_session_data *>(bl);
+	return sd->pop.arena_team == POP_ARENA_WAR && population_engine_is_population_pc(sd->id);
 }
