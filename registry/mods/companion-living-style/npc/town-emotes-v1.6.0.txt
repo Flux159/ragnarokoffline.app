@@ -1,4 +1,4 @@
-// Companion Living Style v1.4.0: idle emotes for ambient townsfolk.
+// Companion Living Style v1.6.0: idle emotes for ambient townsfolk.
 // Cheap by design: no server-wide scan. Every 5 s, for each real player on a
 // town map, up to 2 ambient AI within 12 cells show one emote.
 -	script	DaggerTownEmotesV1	-1,{

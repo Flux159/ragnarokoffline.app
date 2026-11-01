@@ -1,3 +1,13 @@
+## 1.6.0
+- Costumes everywhere: ambient AI in fields and dungeons are styled too (style_whole_world, on by default).
+- Unchanged AI are only re-applied every 5 s on maps a real player is on; elsewhere once per change.
+- Kept all v1.5.0 features, including Renewal and pre-renewal support.
+
+## 1.5.0
+- Works on both Renewal and pre-renewal servers.
+- Pre-renewal: costume looks come from built-in Renewal View IDs when the item database lacks the item.
+- Renewal unchanged; all v1.4.0 features kept.
+
 ## 1.4.0
 - Added Townsfolk sit and rest (engine-native shell plan, town_idle_sit).
 - Added Townsfolk emotes around real players on town maps (town_idle_emotes).

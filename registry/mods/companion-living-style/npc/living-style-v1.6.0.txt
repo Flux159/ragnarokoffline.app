@@ -1,5 +1,8 @@
-// Companion Living Style v1.4.0. Appearance packets only: no inventory or stats.
+// Companion Living Style v1.6.0. Appearance packets only: no inventory or stats.
+// Ambient AI are styled world-wide (style_whole_world) or on town maps only.
 // Ambient townsfolk on themed town maps mix town-flavoured costumes into the pool.
+// Pre-renewal's item database lacks most costume items; the client sprites are
+// shared by both eras, so there each missing item falls back to its Renewal View.
 // changelook deliberately does not persist changes to character data.
 // Finite scans yield every four units/candidates to stay below script execution limits.
 // The client requests a map-local refresh on arrival. A 250 ms discovery timer
@@ -14,6 +17,7 @@ OnInit:
     .companions = callfunc("F_ModSetting", .mod$, "style_companions", 1);
     .townspeople = callfunc("F_ModSetting", .mod$, "style_townspeople", 1);
     .vendors = callfunc("F_ModSetting", .mod$, "style_vendors", 1);
+    .whole_world = callfunc("F_ModSetting", .mod$, "style_whole_world", 1);
     .upper = callfunc("F_ModSetting", .mod$, "style_headgear", 1);
     .middle = callfunc("F_ModSetting", .mod$, "style_middle", 1);
     .lower = callfunc("F_ModSetting", .mod$, "style_lower", 1);
@@ -25,42 +29,67 @@ OnInit:
     // Read each View from the active database; item IDs are not view IDs.
     // Reject absent or changed definitions, and never mix head and robe views.
     setarray .@upper_ids, 19501, 19506, 19507, 19515, 19516, 19517, 19518, 19519, 19520, 19521, 19522, 19523, 19524, 19525, 19526, 19527, 19529, 19530, 19532, 19533, 19535, 19536, 19537, 19538, 19543, 19544, 19545, 19546, 19547, 19548, 19549, 19557, 19558, 19559, 19560, 19565, 19568, 19569, 19570, 19571, 19572, 19573, 19575, 19576, 19577, 19579, 19581, 19582;
+    setarray .@upper_refs, 137, 300, 654, 701, 702, 703, 704, 688, 705, 706, 707, 244, 85, 58, 40, 43, 38, 541, 640, 114, 730, 533, 591, 780, 849, 692, 102, 225, 123, 448, 41, 334;
+    setarray .@upper_refs[32], 524, 525, 527, 583, 757, 758, 759, 770, 771, 733, 863, 817, 874, 613, 891, 411;
     for (.@i = 0; .@i < getarraysize(.@upper_ids); .@i++) {
         if (.@i % 4 == 0) sleep 1;
         .@id = .@upper_ids[.@i];
-        if (getitemname(.@id) == "null") continue;
-        if (getiteminfo(.@id, ITEMINFO_LOCATIONS) != EQP_COSTUME_HEAD_TOP) continue;
-        .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+        // Renewal: only an exact single-slot costume counts. Pre-renewal: its own
+        // definition if it matches, else the shipped Renewal look.
+        if (getitemname(.@id) != "null" && getiteminfo(.@id, ITEMINFO_LOCATIONS) == EQP_COSTUME_HEAD_TOP)
+            .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+        else if (checkre(0))
+            continue;
+        else
+            .@view = .@upper_refs[.@i];
         if (.@view > 0 && inarray(.upper_views, .@view) < 0)
             .upper_views[getarraysize(.upper_views)] = .@view;
     }
     setarray .@middle_ids, 19504, 19509, 19510, 19511, 19512, 19542, 19550, 19551, 19583, 19609, 19611, 19621, 19624, 19644, 19669, 19722, 19734, 19735, 19742, 19752, 19755, 19765, 19769, 19776, 19787, 19788, 19810, 19826, 19846, 19853, 19871, 19877;
+    setarray .@middle_refs, 12, 695, 696, 697, 698, 712, 125, 73, 50, 316, 366, 152, 185, 184, 468, 404, 83, 100, 724, 990, 744, 158, 405, 998, 1021, 779, 422, 584, 128, 595, 1074, 467;
     for (.@i = 0; .@i < getarraysize(.@middle_ids); .@i++) {
         if (.@i % 4 == 0) sleep 1;
         .@id = .@middle_ids[.@i];
-        if (getitemname(.@id) == "null") continue;
-        if (getiteminfo(.@id, ITEMINFO_LOCATIONS) != EQP_COSTUME_HEAD_MID) continue;
-        .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+        // Renewal: only an exact single-slot costume counts. Pre-renewal: its own
+        // definition if it matches, else the shipped Renewal look.
+        if (getitemname(.@id) != "null" && getiteminfo(.@id, ITEMINFO_LOCATIONS) == EQP_COSTUME_HEAD_MID)
+            .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+        else if (checkre(0))
+            continue;
+        else
+            .@view = .@middle_refs[.@i];
         if (.@view > 0 && inarray(.middle_views, .@view) < 0)
             .middle_views[getarraysize(.middle_views)] = .@view;
     }
     setarray .@lower_ids, 19505, 19513, 19514, 19528, 19541, 19552, 19553, 19566, 19584, 19605, 19606, 19634, 19636, 19651, 19672, 19683, 19692, 19713, 19726, 19764, 19770, 19783, 19785, 19805, 19817, 19947, 19952, 19992, 19993, 20015, 20022, 20029;
+    setarray .@lower_refs, 54, 699, 700, 53, 259, 56, 180, 644, 327, 369, 370, 8, 49, 194, 604, 414, 383, 571, 534, 526, 557, 25, 188, 1045, 1050, 460, 572, 885, 774, 1205, 734, 569;
     for (.@i = 0; .@i < getarraysize(.@lower_ids); .@i++) {
         if (.@i % 4 == 0) sleep 1;
         .@id = .@lower_ids[.@i];
-        if (getitemname(.@id) == "null") continue;
-        if (getiteminfo(.@id, ITEMINFO_LOCATIONS) != EQP_COSTUME_HEAD_LOW) continue;
-        .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+        // Renewal: only an exact single-slot costume counts. Pre-renewal: its own
+        // definition if it matches, else the shipped Renewal look.
+        if (getitemname(.@id) != "null" && getiteminfo(.@id, ITEMINFO_LOCATIONS) == EQP_COSTUME_HEAD_LOW)
+            .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+        else if (checkre(0))
+            continue;
+        else
+            .@view = .@lower_refs[.@i];
         if (.@view > 0 && inarray(.lower_views, .@view) < 0)
             .lower_views[getarraysize(.lower_views)] = .@view;
     }
     setarray .@garment_ids, 20500, 20501, 20502, 20503, 20504, 20505, 20507, 20509, 20510, 20511, 20512, 20513, 20514, 20516, 20517, 20518, 20521, 20523, 20525, 20526, 20527, 20528, 20530, 20533;
+    setarray .@garment_refs, 1, 11, 12, 13, 14, 15, 16, 17, 19, 21, 2, 22, 23, 24, 25, 27, 26, 28, 33, 34, 35, 36, 37, 38;
     for (.@i = 0; .@i < getarraysize(.@garment_ids); .@i++) {
         if (.@i % 4 == 0) sleep 1;
         .@id = .@garment_ids[.@i];
-        if (getitemname(.@id) == "null") continue;
-        if (getiteminfo(.@id, ITEMINFO_LOCATIONS) != EQP_COSTUME_GARMENT) continue;
-        .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+        // Renewal: only an exact single-slot costume counts. Pre-renewal: its own
+        // definition if it matches, else the shipped Renewal look.
+        if (getitemname(.@id) != "null" && getiteminfo(.@id, ITEMINFO_LOCATIONS) == EQP_COSTUME_GARMENT)
+            .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+        else if (checkre(0))
+            continue;
+        else
+            .@view = .@garment_refs[.@i];
         if (.@view > 0 && inarray(.garment_views, .@view) < 0)
             .garment_views[getarraysize(.garment_views)] = .@view;
     }
@@ -90,12 +119,21 @@ OnInit:
         setarray .@upper_tof[96], 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9;
         setarray .@upper_tof[128], 9, 9, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 12, 12;
         setarray .@upper_tof[160], 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12;
+        setarray .@upper_trefs, 940, 328, 1018, 2120, 2121, 1055, 2296, 1221, 1891, 137, 300, 707, 40, 225, 19, 45, 1998, 209, 497, 130, 112, 912, 911, 717, 630, 36, 131, 1301, 1150, 1408, 1006, 1441;
+        setarray .@upper_trefs[32], 1381, 300, 702, 640, 849, 224, 15, 934, 539, 72, 148, 384, 249, 267, 727, 1215, 137, 7, 1300, 615, 567, 1570, 367, 236, 728, 61, 386, 162, 149, 6, 62, 540;
+        setarray .@upper_trefs[64], 1365, 726, 592, 1174, 798, 844, 1338, 210, 5, 312, 993, 602, 333, 146, 145, 324, 1260, 4, 37, 1369, 186, 852, 2079, 961, 964, 619, 343, 1080, 1144, 20, 196, 1216;
+        setarray .@upper_trefs[96], 395, 616, 1313, 1554, 1690, 1707, 153, 602, 645, 908, 1330, 949, 1476, 1535, 1727, 2162, 2366, 2582, 1018, 525, 863, 221, 464, 115, 454, 1192, 729, 319, 973, 1242, 1243, 1245;
+        setarray .@upper_trefs[128], 1029, 858, 1721, 30, 1069, 1405, 1406, 1555, 608, 1335, 1777, 2350, 2583, 2659, 1379, 679, 38, 907, 264, 344, 431, 587, 987, 222, 204, 1113, 1104, 1117, 1302, 646, 382, 757;
+        setarray .@upper_trefs[160], 586, 298, 562, 988, 713, 1103, 319, 61, 1238, 1419, 930, 1036, 1885, 2135;
         for (.@i = 0; .@i < getarraysize(.@upper_tids); .@i++) {
             if (.@i % 4 == 0) sleep 1;
             .@id = .@upper_tids[.@i];
-            if (getitemname(.@id) == "null") continue;
-            if (getiteminfo(.@id, ITEMINFO_LOCATIONS) != EQP_COSTUME_HEAD_TOP) continue;
-            .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+            if (getitemname(.@id) != "null" && getiteminfo(.@id, ITEMINFO_LOCATIONS) == EQP_COSTUME_HEAD_TOP)
+                .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+            else if (checkre(0))
+                continue;
+            else
+                .@view = .@upper_trefs[.@i];
             if (.@view <= 0) continue;
             .@t = .@upper_tof[.@i];
             if (!.theme_upper_count[.@t]) .theme_upper_start[.@t] = getarraysize(.theme_upper_views);
@@ -109,12 +147,18 @@ OnInit:
         setarray .@middle_tof, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 5, 5, 5, 5, 5, 5;
         setarray .@middle_tof[32], 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10, 11;
         setarray .@middle_tof[64], 11, 11, 11, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12, 12;
+        setarray .@middle_trefs, 100, 1583, 810, 1227, 2199, 2275, 2276, 742, 1670, 316, 404, 26, 23, 3, 807, 661, 935, 405, 875, 1232, 737, 1812, 1875, 2178, 1875, 1420, 1370, 1094, 960, 697, 698, 1712;
+        setarray .@middle_trefs[32], 1218, 1227, 12, 1176, 1223, 925, 954, 856, 2119, 2082, 584, 1162, 2080, 2085, 1223, 1720, 2119, 2112, 2280, 1413, 1922, 1227, 2058, 2244, 2245, 2316, 483, 1266, 10, 2116, 2736, 158;
+        setarray .@middle_trefs[64], 394, 1425, 1662, 1420, 2291, 2518, 2730, 1036, 712, 467, 394, 760, 1440, 1548, 498;
         for (.@i = 0; .@i < getarraysize(.@middle_tids); .@i++) {
             if (.@i % 4 == 0) sleep 1;
             .@id = .@middle_tids[.@i];
-            if (getitemname(.@id) == "null") continue;
-            if (getiteminfo(.@id, ITEMINFO_LOCATIONS) != EQP_COSTUME_HEAD_MID) continue;
-            .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+            if (getitemname(.@id) != "null" && getiteminfo(.@id, ITEMINFO_LOCATIONS) == EQP_COSTUME_HEAD_MID)
+                .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+            else if (checkre(0))
+                continue;
+            else
+                .@view = .@middle_trefs[.@i];
             if (.@view <= 0) continue;
             .@t = .@middle_tof[.@i];
             if (!.theme_middle_count[.@t]) .theme_middle_start[.@t] = getarraysize(.theme_middle_views);
@@ -126,12 +170,17 @@ OnInit:
         setarray .@lower_tids[32], 31432, 31545, 31593, 19566, 19606, 19993, 20043, 20150, 20156, 20192, 20193, 31428, 420237, 420244, 31315, 31330, 31422, 31438, 420088, 20034, 20798, 31121, 31825, 420053, 420078, 420602;
         setarray .@lower_tof, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 7;
         setarray .@lower_tof[32], 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 11, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12;
+        setarray .@lower_trefs, 1629, 1697, 2059, 634, 2530, 1691, 404, 1950, 1831, 1004, 2327, 57, 848, 1704, 2646, 2130, 2335, 2622, 2623, 406, 1364, 2141, 2570, 259, 56, 1893, 2261, 369, 460, 25, 1416, 1501;
+        setarray .@lower_trefs[32], 1562, 1776, 1170, 644, 370, 774, 823, 1051, 857, 1058, 711, 1115, 2417, 2216, 1664, 1674, 976, 1706, 2170, 1041, 1450, 1549, 801, 2096, 2093, 2439;
         for (.@i = 0; .@i < getarraysize(.@lower_tids); .@i++) {
             if (.@i % 4 == 0) sleep 1;
             .@id = .@lower_tids[.@i];
-            if (getitemname(.@id) == "null") continue;
-            if (getiteminfo(.@id, ITEMINFO_LOCATIONS) != EQP_COSTUME_HEAD_LOW) continue;
-            .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+            if (getitemname(.@id) != "null" && getiteminfo(.@id, ITEMINFO_LOCATIONS) == EQP_COSTUME_HEAD_LOW)
+                .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+            else if (checkre(0))
+                continue;
+            else
+                .@view = .@lower_trefs[.@i];
             if (.@view <= 0) continue;
             .@t = .@lower_tof[.@i];
             if (!.theme_lower_count[.@t]) .theme_lower_start[.@t] = getarraysize(.theme_lower_views);
@@ -143,12 +192,17 @@ OnInit:
         setarray .@garment_tids[32], 20501, 20988, 480629, 480630, 20526, 20536, 20541, 20602, 20604, 20606, 20502, 20587, 20762;
         setarray .@garment_tof, 1, 1, 1, 1, 2, 2, 3, 3, 3, 3, 3, 3, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 9, 9, 9, 9;
         setarray .@garment_tof[32], 10, 10, 10, 10, 11, 11, 11, 11, 11, 11, 12, 12, 12;
+        setarray .@garment_trefs, 48, 131, 154, 189, 65, 149, 45, 62, 87, 145, 169, 172, 106, 115, 165, 187, 214, 261, 45, 70, 71, 116, 202, 40, 83, 69, 167, 265, 129, 178, 204, 254;
+        setarray .@garment_trefs[32], 11, 92, 283, 284, 34, 39, 42, 84, 86, 5, 12, 20, 10;
         for (.@i = 0; .@i < getarraysize(.@garment_tids); .@i++) {
             if (.@i % 4 == 0) sleep 1;
             .@id = .@garment_tids[.@i];
-            if (getitemname(.@id) == "null") continue;
-            if (getiteminfo(.@id, ITEMINFO_LOCATIONS) != EQP_COSTUME_GARMENT) continue;
-            .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+            if (getitemname(.@id) != "null" && getiteminfo(.@id, ITEMINFO_LOCATIONS) == EQP_COSTUME_GARMENT)
+                .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+            else if (checkre(0))
+                continue;
+            else
+                .@view = .@garment_trefs[.@i];
             if (.@view <= 0) continue;
             .@t = .@garment_tof[.@i];
             if (!.theme_garment_count[.@t]) .theme_garment_start[.@t] = getarraysize(.theme_garment_views);
@@ -164,6 +218,16 @@ OnTimer250:
     stopnpctimer;
     if (.ready && !.busy && (.companions || .townspeople || .vendors)) {
         .busy = 1;
+        deletearray .player_maps$;
+        for (.@i = getarraysize(.players) - 1; .@i >= 0; .@i--) {
+            if (.@i % 4 == 0) sleep 1;
+            if (!isloggedin(.players[.@i])) {
+                deletearray .players[.@i], 1;
+                continue;
+            }
+            if (getmapxy(.@pmap$, .@px, .@py, BL_PC, rid2name(.players[.@i])) == 0)
+                .player_maps$[getarraysize(.player_maps$)] = .@pmap$;
+        }
         .@n = getunits(BL_PC, .@gids);
         for (.@i = 0; .@i < .@n; .@i++) {
             // Yield before filters too, even when most units are not eligible.
@@ -201,6 +265,8 @@ OnMapRefresh:
     @dls_refresh_tick = .@now;
     .@requester_cid = getcharid(0);
     .@requester_aid = getcharid(3);
+    if (inarray(.players, .@requester_aid) < 0)
+        .players[getarraysize(.players)] = .@requester_aid;
     getmapxy .@map$, .@x, .@y;
     .busy = 1;
     .@n = getmapunits(BL_PC, .@map$, .@gids);
@@ -214,6 +280,13 @@ OnMapRefresh:
         dispbottom "@@reply " + .@req$ + " 1/1 ok", 0xFFFFFF, .@requester_cid;
     end;
 
+OnPCLoginEvent:
+    // Remember real players only; AI characters are not tracked.
+    if (population_is_shell(getcharid(3)) != 0) end;
+    if (inarray(.players, getcharid(3)) < 0)
+        .players[getarraysize(.players)] = getcharid(3);
+    end;
+
 L_Style:
     .@gid = getarg(0);
     .@force = getarg(1);
@@ -223,7 +296,7 @@ L_Style:
     .@cid = getcharid(0, .@name$);
     if (.@cid <= 0) return;
     if (getmapxy(.@map$, .@x, .@y, BL_PC, .@name$) != 0) return;
-    if (.@kind == 1 && !getmapflag(.@map$, mf_town)) return;
+    if (.@kind == 1 && !.whole_world && !getmapflag(.@map$, mf_town)) return;
     .@job = readparam(Class, .@cid);
     // A town's guide can switch its theme off; the permanent flag survives restarts.
     .@theme = 0;
@@ -236,7 +309,10 @@ L_Style:
         + ":" + getequipid(EQI_COSTUME_GARMENT, .@cid);
     .@now = gettimetick(2);
     .@stamp = getd(".stamp_" + .@gid);
-    if (!.@force && .@stamp > 0 && .@now - .@stamp < 5 && getd(".key_" + .@gid + "$") == .@key$) return;
+    // Unchanged AI are re-applied every 5 s only where a real player is;
+    // elsewhere once per change. A player's arrival forces a fresh pass.
+    if (!.@force && .@stamp > 0 && getd(".key_" + .@gid + "$") == .@key$
+        && (.@now - .@stamp < 5 || inarray(.player_maps$, .@map$) < 0)) return;
     // Avoid overflow and stable across refreshes: no random flickering.
     .@pick = (.@cid % 100000) + .seed * 97;
     // Respect actual costume items, including items occupying multiple head slots.
