@@ -1,0 +1,37 @@
+# Companion Living Style v1.4.0: AI characters rest when nothing is around.
+# For: shells only; companions keep Companion Party Overhaul's own idle_sit.
+# After 90 s strolling with no monster within 14 cells they sit for 30 s.
+# A monster in sight ends the rest at once. The engine stands a sitter up before
+# any other rule acts, so movement and fights are never blocked.
+# Timers count from each shell's own spawn, so a crowd does not sit in step.
+Header:
+  Type: POPULATION_STRATEGY_DB
+  Version: 1
+Body:
+  - Mob: All
+    Jobs:
+      - Job: All
+        Build: dagger_town_rest_v1
+        For: shells
+        Start: stroll
+        Strategies:
+          - Name: stroll
+            Rules:
+              - Name: dagger_town_rest_ready
+                Priority: 134
+                InStrategy: { AtLeast: 90000 }
+                Count: { Enemy: any, Range: 14, Below: 1 }
+                Switch: rest
+          - Name: rest
+            Rules:
+              - Name: dagger_town_rest_stir
+                Priority: 134
+                Count: { Enemy: any, Range: 14, AtLeast: 1 }
+                Switch: stroll
+              - Name: dagger_town_rest_done
+                Priority: 134
+                InStrategy: { AtLeast: 30000 }
+                Switch: stroll
+              - Name: dagger_town_rest_sit
+                Priority: 20
+                Sit: true

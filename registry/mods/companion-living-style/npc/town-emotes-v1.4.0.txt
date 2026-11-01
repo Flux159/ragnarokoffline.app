@@ -1,0 +1,42 @@
+// Companion Living Style v1.4.0: idle emotes for ambient townsfolk.
+// Cheap by design: no server-wide scan. Every 5 s, for each real player on a
+// town map, up to 2 ambient AI within 12 cells show one emote.
+-	script	DaggerTownEmotesV1	-1,{
+OnInit:
+    .on = callfunc("F_ModSetting", "companion-living-style", "town_idle_emotes", 1);
+    if (!.on) end;
+    // Friendly, everyday emotes only.
+    setarray .emotes, ET_DELIGHT, ET_THROB, ET_AHA, ET_THINK, ET_THANKS, ET_KEK, ET_SMILE, ET_BEST, ET_QUESTION, ET_OK, ET_COOL, ET_HUM, ET_LUV, ET_BLABLA;
+    initnpctimer;
+    end;
+
+OnPCLoginEvent:
+    // Remember real players only; AI characters are not tracked.
+    if (!.on || population_is_shell(getcharid(3)) != 0) end;
+    if (inarray(.players, getcharid(3)) < 0)
+        .players[getarraysize(.players)] = getcharid(3);
+    end;
+
+OnTimer5000:
+    stopnpctimer;
+    for (.@p = getarraysize(.players) - 1; .@p >= 0; .@p--) {
+        .@aid = .players[.@p];
+        if (!isloggedin(.@aid)) {
+            deletearray .players[.@p], 1;
+            continue;
+        }
+        if (getmapxy(.@map$, .@x, .@y, BL_PC, rid2name(.@aid)) != 0 || !getmapflag(.@map$, mf_town)) continue;
+        .@n = getareaunits(BL_PC, .@map$, .@x - 12, .@y - 12, .@x + 12, .@y + 12, .@gids);
+        .@shown = 0;
+        // A few random picks; kind 1 is ambient AI (not vendors, companions or players).
+        for (.@try = 0; .@try < 6 && .@shown < 2 && .@n > 0; .@try++) {
+            .@gid = .@gids[rand(.@n)];
+            if (population_is_shell(.@gid) != 1) continue;
+            emotion .emotes[rand(getarraysize(.emotes))], .@gid;
+            .@shown++;
+        }
+        deletearray .@gids;
+    }
+    initnpctimer;
+    end;
+}

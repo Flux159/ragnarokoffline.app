@@ -1,13 +1,13 @@
 {
   "name": "companion-living-style",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "author": "DaggerHashimoto",
-  "description": "Give recruited companions, town AI and AI vendors varied upper, middle, lower and garment costume looks, colours and supported same-job outfits. Includes an outfit shuffle setting and optional Cold Bolt use for companions that already know the skill. Renewal only; enable Population Engine. Cosmetic styling does not create items or change equipment stats.",
+  "description": "Give recruited companions, town AI and AI vendors varied costume looks, colours and supported same-job outfits, with town-themed looks in 34 major towns (a Costume Guide in each switches the theme off or on), townsfolk who sit to rest and show idle emotes, an outfit shuffle setting and optional Cold Bolt use for companions that already know the skill. Renewal only; enable Population Engine. Cosmetic styling does not create items or change equipment stats.",
   "requires": {
-    "app": ">=1.7.0",
+    "app": ">=1.7.7",
     "era": "renewal"
   },
-  "settingsPage": "settings/index-v1.2.0.html",
+  "settingsPage": "settings/index-v1.4.0.html",
   "settings": [
     {
       "key": "equipment_cold_bolt",
@@ -36,6 +36,27 @@
       "default": true,
       "label": "Style AI vendors",
       "description": "Apply cosmetic looks to population-engine vendor AI. Their shops and goods stay unchanged. Regular NPC shopkeepers are not population AI."
+    },
+    {
+      "key": "style_town_themes",
+      "type": "boolean",
+      "default": true,
+      "label": "Town-themed looks",
+      "description": "Ambient townsfolk in major towns mix in costumes that suit the place (winter wear in Lutie, sailors in Alberta, sakura in Amatsu, and so on). About 60% of each costume slot comes from the town theme; the rest stays the everyday pool. A Costume Guide beside each town's Warpra or Kafra can switch one town's theme off or on. Companions and vendors are unchanged."
+    },
+    {
+      "key": "town_idle_sit",
+      "type": "boolean",
+      "default": true,
+      "label": "Townsfolk sit and rest",
+      "description": "AI characters (not your companions) sit for about 30 seconds after roughly 90 seconds with no monster within 14 cells, so mostly in towns. The population engine stands them up before they walk or fight. Uses the engine's own rules, with no extra server scans."
+    },
+    {
+      "key": "town_idle_emotes",
+      "type": "boolean",
+      "default": true,
+      "label": "Townsfolk emotes",
+      "description": "Now and then, ambient townsfolk near you show an emote: a smile, a heart, an idea, a laugh. At most 2 every 5 seconds, only within 12 cells of you and only on town maps. Companions and vendors are left alone."
     },
     {
       "key": "style_headgear",
@@ -85,7 +106,7 @@
       "default": 1,
       "min": 1,
       "max": 9999,
-      "label": "Outfit shuffle number (1\u20139999)",
+      "label": "Outfit shuffle number (1–9999)",
       "description": "Minimum 1, maximum 9999. This selects a stable set of outfits, not a delay or speed. Numbers 1, 5 and 9999 all use the same refresh timing. Save, then Apply & restart to change outfits."
     }
   ],
@@ -94,6 +115,7 @@
     "population",
     "costumes",
     "immersion",
+    "towns",
     "renewal"
   ]
 }

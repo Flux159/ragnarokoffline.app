@@ -1,0 +1,384 @@
+// Companion Living Style v1.4.0. Appearance packets only: no inventory or stats.
+// Ambient townsfolk on themed town maps mix town-flavoured costumes into the pool.
+// changelook deliberately does not persist changes to character data.
+// Finite scans yield every four units/candidates to stay below script execution limits.
+// The client requests a map-local refresh on arrival. A 250 ms discovery timer
+// catches newly spawned AI; cached AI get a five-second recovery refresh.
+// No promise of zero rendering/network latency or of unavailable client sprites.
+-	script	DaggerLivingStyleV1	-1,{
+OnInit:
+    .ready = 0;
+    .busy = 0;
+    .mod$ = "companion-living-style";
+    bindatcmd "dlsrefresh", strnpcinfo(3) + "::OnMapRefresh", 0, 99;
+    .companions = callfunc("F_ModSetting", .mod$, "style_companions", 1);
+    .townspeople = callfunc("F_ModSetting", .mod$, "style_townspeople", 1);
+    .vendors = callfunc("F_ModSetting", .mod$, "style_vendors", 1);
+    .upper = callfunc("F_ModSetting", .mod$, "style_headgear", 1);
+    .middle = callfunc("F_ModSetting", .mod$, "style_middle", 1);
+    .lower = callfunc("F_ModSetting", .mod$, "style_lower", 1);
+    .garment = callfunc("F_ModSetting", .mod$, "style_garment", 1);
+    .colours = callfunc("F_ModSetting", .mod$, "style_colours", 1);
+    .bodies = callfunc("F_ModSetting", .mod$, "style_bodies", 1);
+    .seed = cap_value(callfunc("F_ModSetting", .mod$, "style_seed", 1), 1, 9999);
+    // Curated, single-slot candidates from official 1.7.0 item definitions.
+    // Read each View from the active database; item IDs are not view IDs.
+    // Reject absent or changed definitions, and never mix head and robe views.
+    setarray .@upper_ids, 19501, 19506, 19507, 19515, 19516, 19517, 19518, 19519, 19520, 19521, 19522, 19523, 19524, 19525, 19526, 19527, 19529, 19530, 19532, 19533, 19535, 19536, 19537, 19538, 19543, 19544, 19545, 19546, 19547, 19548, 19549, 19557, 19558, 19559, 19560, 19565, 19568, 19569, 19570, 19571, 19572, 19573, 19575, 19576, 19577, 19579, 19581, 19582;
+    for (.@i = 0; .@i < getarraysize(.@upper_ids); .@i++) {
+        if (.@i % 4 == 0) sleep 1;
+        .@id = .@upper_ids[.@i];
+        if (getitemname(.@id) == "null") continue;
+        if (getiteminfo(.@id, ITEMINFO_LOCATIONS) != EQP_COSTUME_HEAD_TOP) continue;
+        .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+        if (.@view > 0 && inarray(.upper_views, .@view) < 0)
+            .upper_views[getarraysize(.upper_views)] = .@view;
+    }
+    setarray .@middle_ids, 19504, 19509, 19510, 19511, 19512, 19542, 19550, 19551, 19583, 19609, 19611, 19621, 19624, 19644, 19669, 19722, 19734, 19735, 19742, 19752, 19755, 19765, 19769, 19776, 19787, 19788, 19810, 19826, 19846, 19853, 19871, 19877;
+    for (.@i = 0; .@i < getarraysize(.@middle_ids); .@i++) {
+        if (.@i % 4 == 0) sleep 1;
+        .@id = .@middle_ids[.@i];
+        if (getitemname(.@id) == "null") continue;
+        if (getiteminfo(.@id, ITEMINFO_LOCATIONS) != EQP_COSTUME_HEAD_MID) continue;
+        .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+        if (.@view > 0 && inarray(.middle_views, .@view) < 0)
+            .middle_views[getarraysize(.middle_views)] = .@view;
+    }
+    setarray .@lower_ids, 19505, 19513, 19514, 19528, 19541, 19552, 19553, 19566, 19584, 19605, 19606, 19634, 19636, 19651, 19672, 19683, 19692, 19713, 19726, 19764, 19770, 19783, 19785, 19805, 19817, 19947, 19952, 19992, 19993, 20015, 20022, 20029;
+    for (.@i = 0; .@i < getarraysize(.@lower_ids); .@i++) {
+        if (.@i % 4 == 0) sleep 1;
+        .@id = .@lower_ids[.@i];
+        if (getitemname(.@id) == "null") continue;
+        if (getiteminfo(.@id, ITEMINFO_LOCATIONS) != EQP_COSTUME_HEAD_LOW) continue;
+        .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+        if (.@view > 0 && inarray(.lower_views, .@view) < 0)
+            .lower_views[getarraysize(.lower_views)] = .@view;
+    }
+    setarray .@garment_ids, 20500, 20501, 20502, 20503, 20504, 20505, 20507, 20509, 20510, 20511, 20512, 20513, 20514, 20516, 20517, 20518, 20521, 20523, 20525, 20526, 20527, 20528, 20530, 20533;
+    for (.@i = 0; .@i < getarraysize(.@garment_ids); .@i++) {
+        if (.@i % 4 == 0) sleep 1;
+        .@id = .@garment_ids[.@i];
+        if (getitemname(.@id) == "null") continue;
+        if (getiteminfo(.@id, ITEMINFO_LOCATIONS) != EQP_COSTUME_GARMENT) continue;
+        .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+        if (.@view > 0 && inarray(.garment_views, .@view) < 0)
+            .garment_views[getarraysize(.garment_views)] = .@view;
+    }
+
+    .town_themes = callfunc("F_ModSetting", .mod$, "style_town_themes", 1);
+    // Town themes blend into the everyday pool for ambient AI only.
+    // .theme_blend is the themed share of each slot, in percent.
+    .theme_blend = 60;
+    if (.town_themes && .townspeople) {
+        // Theme numbers start at 1; 0 means the town keeps the everyday pool.
+        setarray .@town_maps$, "prontera", "izlude", "aldebaran", "geffen", "yuno", "lasagna", "payon", "umbala", "hugel", "eclage", "mora", "splendide", "morocc", "veins", "dicastes01", "alberta", "malangdo", "comodo", "dewata", "brasilis", "malaya", "ayothaya", "xmas", "moscovia", "amatsu", "gonryun", "louyang", "einbroch", "einbech", "lighthalzen", "mid_camp", "manuk";
+        setarray .@town_maps$[32], "rachel", "niflheim";
+        setarray .@town_of, 1, 5, 10, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 5, 5, 6, 6, 6, 6, 6, 7, 7, 8, 9, 9, 10, 10, 10, 10, 10;
+        setarray .@town_of[32], 11, 12;
+        for (.@i = 0; .@i < getarraysize(.@town_maps$); .@i++)
+            setd ".town_theme_" + .@town_maps$[.@i], .@town_of[.@i];
+
+        setarray .@upper_tids, 5909, 15851, 15888, 15894, 15899, 15905, 15952, 19288, 19472, 19501, 19506, 19522, 19526, 19546, 19629, 19630, 15842, 19597, 19652, 19662, 19890, 19893, 19895, 19903, 19968, 20093, 20185, 20218, 20252, 20383, 20395, 20431;
+        setarray .@upper_tids[32], 5980, 19506, 19516, 19532, 19543, 19585, 19625, 19650, 19763, 19797, 19858, 19876, 19878, 19879, 19955, 20031, 19501, 19844, 20217, 20297, 20331, 31141, 19654, 19657, 19857, 20055, 20105, 20138, 20157, 20203, 20320, 20322;
+        setarray .@upper_tids[64], 20327, 20347, 31034, 31038, 31059, 31504, 19403, 19592, 19633, 19757, 19761, 19767, 19812, 19829, 19983, 20121, 20122, 20205, 20271, 20339, 20484, 20485, 15854, 19685, 19686, 19697, 19715, 19856, 19976, 19982, 19984, 20032;
+        setarray .@upper_tids[96], 20222, 20231, 20242, 31132, 31390, 31439, 19618, 19767, 19768, 19894, 20284, 20437, 20490, 31098, 31476, 400269, 400431, 400898, 15888, 19559, 19575, 19645, 19667, 19733, 19841, 19998, 20008, 20009, 20053, 20081, 20082, 20086;
+        setarray .@upper_tids[128], 20103, 20179, 15841, 19799, 20374, 20380, 20381, 31136, 31185, 31379, 31546, 400594, 400993, 400994, 5915, 15836, 19529, 19589, 19596, 19712, 19723, 19745, 19750, 19773, 19848, 19930, 20079, 20135, 20219, 20233, 5981, 19290;
+        setarray .@upper_tids[160], 19721, 19727, 19741, 19751, 19904, 19915, 20009, 20055, 20098, 20408, 31291, 31525, 31708, 400158;
+        setarray .@upper_tof, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2;
+        setarray .@upper_tof[32], 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5;
+        setarray .@upper_tof[64], 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7;
+        setarray .@upper_tof[96], 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9;
+        setarray .@upper_tof[128], 9, 9, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 12, 12;
+        setarray .@upper_tof[160], 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12;
+        for (.@i = 0; .@i < getarraysize(.@upper_tids); .@i++) {
+            if (.@i % 4 == 0) sleep 1;
+            .@id = .@upper_tids[.@i];
+            if (getitemname(.@id) == "null") continue;
+            if (getiteminfo(.@id, ITEMINFO_LOCATIONS) != EQP_COSTUME_HEAD_TOP) continue;
+            .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+            if (.@view <= 0) continue;
+            .@t = .@upper_tof[.@i];
+            if (!.theme_upper_count[.@t]) .theme_upper_start[.@t] = getarraysize(.theme_upper_views);
+            .theme_upper_views[getarraysize(.theme_upper_views)] = .@view;
+            .theme_upper_count[.@t]++;
+        }
+
+        setarray .@middle_tids, 19735, 31187, 31706, 31830, 410121, 410178, 410179, 410318, 19293, 19609, 19722, 19886, 19887, 19888, 19925, 19954, 5911, 19769, 20136, 31308, 31327, 31614, 31686, 410169, 31686, 400756, 19289, 19900, 20345, 31106, 31107, 31449;
+        setarray .@middle_tids[32], 31785, 31830, 19504, 19995, 20047, 20077, 20295, 20314, 31973, 410055, 19826, 31462, 410051, 15877, 20047, 31718, 31973, 410063, 410182, 31692, 31798, 31830, 410048, 410131, 410132, 410212, 410281, 20131, 31486, 410187, 410471, 19765;
+        setarray .@middle_tids[64], 20146, 20404, 31313, 400756, 410189, 410315, 410458, 5912, 19542, 19877, 20146, 20215, 20430, 31120, 31310;
+        setarray .@middle_tof, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 5, 5, 5, 5, 5, 5;
+        setarray .@middle_tof[32], 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10, 11;
+        setarray .@middle_tof[64], 11, 11, 11, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12, 12;
+        for (.@i = 0; .@i < getarraysize(.@middle_tids); .@i++) {
+            if (.@i % 4 == 0) sleep 1;
+            .@id = .@middle_tids[.@i];
+            if (getitemname(.@id) == "null") continue;
+            if (getiteminfo(.@id, ITEMINFO_LOCATIONS) != EQP_COSTUME_HEAD_MID) continue;
+            .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+            if (.@view <= 0) continue;
+            .@t = .@middle_tof[.@i];
+            if (!.theme_middle_count[.@t]) .theme_middle_start[.@t] = getarraysize(.theme_middle_views);
+            .theme_middle_views[getarraysize(.theme_middle_views)] = .@view;
+            .theme_middle_count[.@t]++;
+        }
+
+        setarray .@lower_tids, 31559, 420046, 420047, 420056, 420336, 31395, 31551, 31852, 420051, 420254, 420344, 20223, 31695, 31793, 400757, 420071, 420192, 420405, 420406, 20107, 20326, 420044, 420357, 19541, 19552, 31729, 420156, 19605, 19947, 19981, 20405, 31057;
+        setarray .@lower_tids[32], 31432, 31545, 31593, 19566, 19606, 19993, 20043, 20150, 20156, 20192, 20193, 31428, 420237, 420244, 31315, 31330, 31422, 31438, 420088, 20034, 20798, 31121, 31825, 420053, 420078, 420602;
+        setarray .@lower_tof, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 7;
+        setarray .@lower_tof[32], 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 11, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12;
+        for (.@i = 0; .@i < getarraysize(.@lower_tids); .@i++) {
+            if (.@i % 4 == 0) sleep 1;
+            .@id = .@lower_tids[.@i];
+            if (getitemname(.@id) == "null") continue;
+            if (getiteminfo(.@id, ITEMINFO_LOCATIONS) != EQP_COSTUME_HEAD_LOW) continue;
+            .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+            if (.@view <= 0) continue;
+            .@t = .@lower_tof[.@i];
+            if (!.theme_lower_count[.@t]) .theme_lower_start[.@t] = getarraysize(.theme_lower_views);
+            .theme_lower_views[getarraysize(.theme_lower_views)] = .@view;
+            .theme_lower_count[.@t]++;
+        }
+
+        setarray .@garment_tids, 20571, 480189, 480246, 480344, 20588, 480236, 20545, 20584, 20605, 480221, 480297, 480310, 480111, 480127, 480289, 480336, 480431, 480556, 20545, 20592, 20593, 480129, 480405, 20539, 20599, 480052, 480295, 480581, 480181, 480318, 480408, 480517;
+        setarray .@garment_tids[32], 20501, 20988, 480629, 480630, 20526, 20536, 20541, 20602, 20604, 20606, 20502, 20587, 20762;
+        setarray .@garment_tof, 1, 1, 1, 1, 2, 2, 3, 3, 3, 3, 3, 3, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 9, 9, 9, 9;
+        setarray .@garment_tof[32], 10, 10, 10, 10, 11, 11, 11, 11, 11, 11, 12, 12, 12;
+        for (.@i = 0; .@i < getarraysize(.@garment_tids); .@i++) {
+            if (.@i % 4 == 0) sleep 1;
+            .@id = .@garment_tids[.@i];
+            if (getitemname(.@id) == "null") continue;
+            if (getiteminfo(.@id, ITEMINFO_LOCATIONS) != EQP_COSTUME_GARMENT) continue;
+            .@view = getiteminfo(.@id, ITEMINFO_VIEW);
+            if (.@view <= 0) continue;
+            .@t = .@garment_tof[.@i];
+            if (!.theme_garment_count[.@t]) .theme_garment_start[.@t] = getarraysize(.theme_garment_views);
+            .theme_garment_views[getarraysize(.theme_garment_views)] = .@view;
+            .theme_garment_count[.@t]++;
+        }
+    }
+    .ready = 1;
+    initnpctimer;
+    end;
+
+OnTimer250:
+    stopnpctimer;
+    if (.ready && !.busy && (.companions || .townspeople || .vendors)) {
+        .busy = 1;
+        .@n = getunits(BL_PC, .@gids);
+        for (.@i = 0; .@i < .@n; .@i++) {
+            // Yield before filters too, even when most units are not eligible.
+            if (.@i % 4 == 0) sleep 1;
+            callsub L_Style, .@gids[.@i], 0;
+        }
+        for (.@i = 0; .@i < getarraysize(.previous_gids); .@i++) {
+            if (.@i % 4 == 0) sleep 1;
+            .@old = .previous_gids[.@i];
+            if (population_is_shell(.@old) == 0) {
+                setd ".stamp_" + .@old, 0;
+                setd ".key_" + .@old + "$", "";
+            }
+        }
+        deletearray .previous_gids;
+        if (.@n > 0) copyarray .previous_gids, .@gids, .@n;
+        .busy = 0;
+    }
+    initnpctimer;
+    end;
+
+OnMapRefresh:
+    // Only style the requesting real player's current map. Ignore client IDs/maps.
+    .@req$ = .@atcmd_parameters$[0];
+    if (population_is_shell(getcharid(3)) != 0) end;
+    if (!.ready || .busy) {
+        dispbottom "@@reply " + .@req$ + " 1/1 busy";
+        end;
+    }
+    .@now = gettimetick(0);
+    if (@dls_refresh_tick && .@now - @dls_refresh_tick < 250) {
+        dispbottom "@@reply " + .@req$ + " 1/1 throttled";
+        end;
+    }
+    @dls_refresh_tick = .@now;
+    .@requester_cid = getcharid(0);
+    .@requester_aid = getcharid(3);
+    getmapxy .@map$, .@x, .@y;
+    .busy = 1;
+    .@n = getmapunits(BL_PC, .@map$, .@gids);
+    for (.@i = 0; .@i < .@n; .@i++) {
+        if (.@i % 4 == 0) sleep 1;
+        callsub L_Style, .@gids[.@i], 1;
+    }
+    .busy = 0;
+    // sleep releases the RID; address the reply explicitly and tolerate logout.
+    if (isloggedin(.@requester_aid, .@requester_cid))
+        dispbottom "@@reply " + .@req$ + " 1/1 ok", 0xFFFFFF, .@requester_cid;
+    end;
+
+L_Style:
+    .@gid = getarg(0);
+    .@force = getarg(1);
+    .@kind = population_is_shell(.@gid);
+    if (!(.@kind == 3 && .companions) && !(.@kind == 1 && .townspeople) && !(.@kind == 2 && .vendors)) return;
+    .@name$ = rid2name(.@gid);
+    .@cid = getcharid(0, .@name$);
+    if (.@cid <= 0) return;
+    if (getmapxy(.@map$, .@x, .@y, BL_PC, .@name$) != 0) return;
+    if (.@kind == 1 && !getmapflag(.@map$, mf_town)) return;
+    .@job = readparam(Class, .@cid);
+    // A town's guide can switch its theme off; the permanent flag survives restarts.
+    .@theme = 0;
+    if (.@kind == 1 && .town_themes && !getd("$dls_theme_off_" + .@map$))
+        .@theme = getd(".town_theme_" + .@map$);
+    .@key$ = .@name$ + ":" + .@kind + ":" + .@job + ":" + .@map$ + ":" + .@theme
+        + ":" + getequipid(EQI_COSTUME_HEAD_TOP, .@cid)
+        + ":" + getequipid(EQI_COSTUME_HEAD_MID, .@cid)
+        + ":" + getequipid(EQI_COSTUME_HEAD_LOW, .@cid)
+        + ":" + getequipid(EQI_COSTUME_GARMENT, .@cid);
+    .@now = gettimetick(2);
+    .@stamp = getd(".stamp_" + .@gid);
+    if (!.@force && .@stamp > 0 && .@now - .@stamp < 5 && getd(".key_" + .@gid + "$") == .@key$) return;
+    // Avoid overflow and stable across refreshes: no random flickering.
+    .@pick = (.@cid % 100000) + .seed * 97;
+    // Respect actual costume items, including items occupying multiple head slots.
+    // Independent choices per slot; no equipment or inventory is created.
+    if (.upper && getarraysize(.upper_views) > 0 && (.@kind != 3 || getequipid(EQI_COSTUME_HEAD_TOP, .@cid) <= 0)) {
+        .@view = .upper_views[((.@pick * 37) + 17) % getarraysize(.upper_views)];
+        if (.@theme && .theme_upper_count[.@theme] > 0 && ((.@pick * 41) + 7) % 100 < .theme_blend)
+            .@view = .theme_upper_views[.theme_upper_start[.@theme] + ((.@pick * 59) + 11) % .theme_upper_count[.@theme]];
+        changelook LOOK_HEAD_TOP, .@view, .@cid;
+    }
+    if (.middle && getarraysize(.middle_views) > 0 && (.@kind != 3 || getequipid(EQI_COSTUME_HEAD_MID, .@cid) <= 0)) {
+        .@view = .middle_views[((.@pick * 53) + 29) % getarraysize(.middle_views)];
+        if (.@theme && .theme_middle_count[.@theme] > 0 && ((.@pick * 43) + 19) % 100 < .theme_blend)
+            .@view = .theme_middle_views[.theme_middle_start[.@theme] + ((.@pick * 67) + 23) % .theme_middle_count[.@theme]];
+        changelook LOOK_HEAD_MID, .@view, .@cid;
+    }
+    if (.lower && getarraysize(.lower_views) > 0 && (.@kind != 3 || getequipid(EQI_COSTUME_HEAD_LOW, .@cid) <= 0)) {
+        .@view = .lower_views[((.@pick * 71) + 43) % getarraysize(.lower_views)];
+        if (.@theme && .theme_lower_count[.@theme] > 0 && ((.@pick * 47) + 31) % 100 < .theme_blend)
+            .@view = .theme_lower_views[.theme_lower_start[.@theme] + ((.@pick * 73) + 37) % .theme_lower_count[.@theme]];
+        changelook LOOK_HEAD_BOTTOM, .@view, .@cid;
+    }
+    if (.garment && getarraysize(.garment_views) > 0 && (.@kind != 3 || getequipid(EQI_COSTUME_GARMENT, .@cid) <= 0)) {
+        .@view = .garment_views[((.@pick * 97) + 61) % getarraysize(.garment_views)];
+        if (.@theme && .theme_garment_count[.@theme] > 0 && ((.@pick * 61) + 47) % 100 < .theme_blend)
+            .@view = .theme_garment_views[.theme_garment_start[.@theme] + ((.@pick * 79) + 53) % .theme_garment_count[.@theme]];
+        changelook LOOK_ROBE, .@view, .@cid;
+    }
+    if (.colours) {
+        .@lo = getbattleflag("min_hair_color");
+        .@hi = min(8, getbattleflag("max_hair_color"));
+        if (.@hi >= .@lo)
+            changelook LOOK_HAIR_COLOR, .@lo + ((.@pick / 7) % (.@hi - .@lo + 1)), .@cid;
+        // Known conservative first-job palette range; preserve other jobs.
+        if (.@job >= Job_Swordman && .@job <= Job_Thief) {
+            .@hi = min(3, getbattleflag("max_cloth_color"));
+            .@lo = getbattleflag("min_cloth_color");
+            if (.@hi >= .@lo)
+                changelook LOOK_CLOTHES_COLOR, .@lo + ((.@pick / 11) % (.@hi - .@lo + 1)), .@cid;
+        }
+    }
+    .@alt = 0;
+    if (.@job == Job_Rune_Knight || .@job == Job_Rune_Knight2 || .@job == Job_Rune_Knight_T || .@job == Job_Rune_Knight_T2 || .@job == Job_Baby_Rune_Knight || .@job == Job_Baby_Rune_Knight2 || .@job == Job_Dragon_Knight || .@job == Job_Dragon_Knight2)
+        .@alt = Job_Rune_Knight_2nd;
+    if (.@job == Job_Warlock || .@job == Job_Warlock_T || .@job == Job_Baby_Warlock || .@job == Job_Arch_Mage)
+        .@alt = Job_Warlock_2nd;
+    if (.@job == Job_Ranger || .@job == Job_Ranger2 || .@job == Job_Ranger_T || .@job == Job_Ranger_T2 || .@job == Job_Baby_Ranger || .@job == Job_Baby_Ranger2 || .@job == Job_Windhawk || .@job == Job_Windhawk2)
+        .@alt = Job_Ranger_2nd;
+    if (.@job == Job_Arch_Bishop || .@job == Job_Arch_Bishop_T || .@job == Job_Baby_Arch_Bishop || .@job == Job_Cardinal)
+        .@alt = Job_ArchBishop_2nd;
+    if (.@job == Job_Mechanic || .@job == Job_Mechanic2 || .@job == Job_Mechanic_T || .@job == Job_Mechanic_T2 || .@job == Job_Baby_Mechanic || .@job == Job_Baby_Mechanic2 || .@job == Job_Meister || .@job == Job_Meister2)
+        .@alt = Job_Mechanic_2nd;
+    if (.@job == Job_Guillotine_Cross || .@job == Job_Guillotine_Cross_T || .@job == Job_Baby_Guillotine_Cross || .@job == Job_Shadow_Cross)
+        .@alt = Job_Guillotine_Cross_2nd;
+    if (.@job == Job_Royal_Guard || .@job == Job_Royal_Guard2 || .@job == Job_Royal_Guard_T || .@job == Job_Royal_Guard_T2 || .@job == Job_Baby_Royal_Guard || .@job == Job_Baby_Royal_Guard2 || .@job == Job_Imperial_Guard || .@job == Job_Imperial_Guard2)
+        .@alt = Job_Royal_Guard_2nd;
+    if (.@job == Job_Sorcerer || .@job == Job_Sorcerer_T || .@job == Job_Baby_Sorcerer || .@job == Job_Elemental_Master)
+        .@alt = Job_Sorcerer_2nd;
+    if (.@job == Job_Minstrel || .@job == Job_Minstrel_T || .@job == Job_Baby_Minstrel || .@job == Job_Troubadour)
+        .@alt = Job_Minstrel_2nd;
+    if (.@job == Job_Wanderer || .@job == Job_Wanderer_T || .@job == Job_Baby_Wanderer || .@job == Job_Trouvere)
+        .@alt = Job_Wanderer_2nd;
+    if (.@job == Job_Sura || .@job == Job_Sura_T || .@job == Job_Baby_Sura || .@job == Job_Inquisitor)
+        .@alt = Job_Sura_2nd;
+    if (.@job == Job_Genetic || .@job == Job_Genetic_T || .@job == Job_Baby_Genetic || .@job == Job_Biolo)
+        .@alt = Job_Genetic_2nd;
+    if (.@job == Job_Shadow_Chaser || .@job == Job_Shadow_Chaser_T || .@job == Job_Baby_Shadow_Chaser || .@job == Job_Abyss_Chaser)
+        .@alt = Job_Shadow_Chaser_2nd;
+    if (.bodies && .@alt > 0)
+        changelook LOOK_BODY2, ((.@pick / 13) % 2) ? .@alt : .@job, .@cid;
+
+    setd ".stamp_" + .@gid, .@now;
+    setd ".key_" + .@gid + "$", .@key$;
+    return;
+}
+
+// Costume Guide: lets any player switch the current town's theme off or on.
+// No GM level needed. The choice is a permanent server variable per town map.
+-	script	DaggerTownThemeGuide	-1,{
+    .@n$ = "[" + strnpcinfo(1) + "]";
+    .@map$ = strnpcinfo(4);
+    .@i = inarray(.maps$, .@map$);
+    mes .@n$;
+    if (.@i < 0) {
+        mes "This town keeps the everyday look.";
+        close;
+    }
+    if (!getvariableofnpc(.town_themes, "DaggerLivingStyleV1") || !getvariableofnpc(.townspeople, "DaggerLivingStyleV1")) {
+        mes "Town-themed looks are switched off in the Companion Living Style settings.";
+        mes "Turn on ^0055AATown-themed looks^000000 and ^0055AAStyle ambient townspeople^000000, then use Apply & restart.";
+        close;
+    }
+    .@off = getd("$dls_theme_off_" + .@map$);
+    mes "Townsfolk here mix the ^0055AA" + .labels$[.@i] + "^000000 look into their everyday outfits.";
+    mes "Theme in this town: " + (.@off ? "^AA0000off^000000" : "^008800on^000000") + ".";
+    next;
+    if (select((.@off ? "Turn this town's theme on" : "Turn this town's theme off") + ":Leave") == 1) {
+        setd "$dls_theme_off_" + .@map$, !.@off;
+        mes .@n$;
+        mes "Done. Townsfolk here will change within a few seconds.";
+    }
+    close;
+
+OnInit:
+    setarray .maps$, "prontera", "izlude", "aldebaran", "geffen", "yuno", "lasagna", "payon", "umbala", "hugel", "eclage", "mora", "splendide", "morocc", "veins", "dicastes01", "alberta", "malangdo", "comodo", "dewata", "brasilis", "malaya", "ayothaya", "xmas", "moscovia", "amatsu", "gonryun", "louyang", "einbroch", "einbech", "lighthalzen", "mid_camp", "manuk";
+    setarray .maps$[32], "rachel", "niflheim";
+    setarray .labels$, "Royal capital", "Harbour sailors", "Steam and gears", "Arcane scholars", "Arcane scholars", "Forest and hunters", "Forest and hunters", "Forest and hunters", "Forest and hunters", "Forest and hunters", "Forest and hunters", "Forest and hunters", "Desert caravans", "Desert caravans", "Desert caravans", "Harbour sailors", "Harbour sailors", "Seaside summer", "Seaside summer", "Seaside summer", "Seaside summer", "Seaside summer", "Winter festival", "Winter festival", "Eastern islands", "Eastern mountains", "Eastern mountains", "Steam and gears", "Steam and gears", "Steam and gears", "Steam and gears", "Steam and gears";
+    setarray .labels$[32], "Holy pilgrims", "Shadow and spirits";
+    end;
+}
+
+prontera,149,172,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsprontera	122
+izlude,134,116,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsizlude	122
+aldebaran,146,116,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsaldebaran	122
+geffen,116,64,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsgeffen	122
+yuno,140,162,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsyuno	122
+lasagna,198,187,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlslasagna	122
+payon,185,110,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlspayon	122
+umbala,135,130,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsumbala	122
+hugel,92,127,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlshugel	122
+eclage,109,37,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlseclage	122
+mora,112,100,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsmora	122
+splendide,207,153,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlssplendide	122
+morocc,159,95,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsmorocc	122
+veins,212,123,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsveins	122
+dicastes01,196,194,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsdicastes01	122
+alberta,32,242,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsalberta	122
+malangdo,134,114,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsmalangdo	122
+comodo,197,158,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlscomodo	122
+dewata,194,176,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsdewata	122
+brasilis,203,222,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsbrasilis	122
+malaya,73,79,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsmalaya	122
+ayothaya,218,171,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsayothaya	122
+xmas,153,134,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsxmas	122
+moscovia,218,196,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsmoscovia	122
+amatsu,195,81,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsamatsu	122
+gonryun,154,130,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsgonryun	122
+louyang,213,106,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlslouyang	122
+einbroch,231,196,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlseinbroch	122
+einbech,173,129,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlseinbech	122
+lighthalzen,153,98,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlslighthalzen	122
+mid_camp,205,289,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsmid_camp	122
+manuk,264,177,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsmanuk	122
+rachel,137,116,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsrachel	122
+niflheim,195,192,4	duplicate(DaggerTownThemeGuide)	Costume Guide#dlsniflheim	122
