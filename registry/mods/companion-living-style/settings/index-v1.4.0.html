@@ -1,9 +1,11 @@
-<!doctype html><meta charset="utf-8"><title>Companion Living Style v1.2.0</title>
+<!doctype html><meta charset="utf-8"><title>Companion Living Style v1.4.0</title>
 <style>body{font:15px system-ui;background:#152029;color:#edf4f7;max-width:760px;margin:28px auto;padding:0 20px}label{display:block;padding:14px;background:#20313d;margin:10px 0;border-radius:8px}small{display:block;color:#bdcdd8;margin-top:5px}button{padding:10px 18px}input[type=number]{width:85px}</style>
-<h1>Companion Living Style <small>v1.2.0 — test build</small></h1>
+<h1>Companion Living Style <small>v1.4.0 — test build</small></h1>
 <p>Keep Companion Party Overhaul enabled. Save here, then use Apply &amp; restart in the app.</p>
 <p>Choose upper, middle, lower and garment looks separately below. Costumes you equip on them take priority.</p>
 <p><b>Shuffle range: 1–9999.</b> The number chooses outfits, not how quickly they appear. Map arrival requests an immediate refresh; newly spawned AI are checked in small batches about every 250 ms. Actual rendering/network timing can vary.</p>
+<p><b>Town themes:</b> ambient townsfolk in major towns mix in costumes that suit the town, about 60% per slot. A Costume Guide stands beside each town's Warpra or Kafra and can switch that town's theme off or on, with no GM commands needed.</p>
+<p><b>Town life:</b> AI characters sit for a short rest when no monster is near, and townsfolk near you show the odd emote. Both are light on the server: sitting uses the engine's own rules, and emotes only look around you.</p>
 <div id="fields"></div><button id="save" disabled>Save changes</button><p id="status"></p>
 <script>
 const fields=document.getElementById('fields'), status=document.getElementById('status'), save=document.getElementById('save');

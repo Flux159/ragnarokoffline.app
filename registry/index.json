@@ -479,64 +479,77 @@
     },
     {
       "name": "companion-living-style",
-      "version": "1.2.0",
+      "version": "1.4.0",
       "author": "DaggerHashimoto",
-      "description": "Give recruited companions, town AI and AI vendors varied upper, middle, lower and garment costume looks, colours and supported same-job outfits. Includes an outfit shuffle setting and optional Cold Bolt use for companions that already know the skill. Renewal only; enable Population Engine. Cosmetic styling does not create items or change equipment stats.",
+      "description": "Give recruited companions, town AI and AI vendors varied costume looks, colours and supported same-job outfits, with town-themed looks in 34 major towns (a Costume Guide in each switches the theme off or on), townsfolk who sit to rest and show idle emotes, an outfit shuffle setting and optional Cold Bolt use for companions that already know the skill. Renewal only; enable Population Engine. Cosmetic styling does not create items or change equipment stats.",
       "homepage": "",
       "tags": [
         "companions",
         "costumes",
         "immersion",
         "population",
-        "renewal"
+        "renewal",
+        "towns"
       ],
       "icon": "",
       "screenshots": [],
       "requires": {
         "mods": [],
         "era": "renewal",
-        "app": ">=1.7.0"
+        "app": ">=1.7.7"
       },
       "files": [
         {
-          "path": "CHANGELOG-v1.2.0.md",
-          "sha256": "9c7defef5323763fa3a2cfc83371cece2d98dc76bf75dc30cd03180e63f6e159"
+          "path": "CHANGELOG-v1.4.0.md",
+          "sha256": "af0963f728231a7eb47673a2c3abaaf0a876017f388014711331f57b1ed2b0a5"
         },
         {
           "path": "CHANGELOG.md",
-          "sha256": "8920c9d7d8bf470be890be84675879ccc5c3089d21075b02a11815523e843ffb"
+          "sha256": "92309c460640d72da4c1c8018783fcb9b104586f45c7bc1baf52b2704312ba5e"
         },
         {
-          "path": "COSTUME-POOL-v1.2.0.csv",
+          "path": "COSTUME-POOL-v1.4.0.csv",
           "sha256": "6ab74c5940a83070e51d77de8c71872cd3e369859b435efcf0d0fcd83f2a078f"
         },
         {
-          "path": "LICENSE-v1.2.0.txt",
+          "path": "LICENSE-v1.4.0.txt",
           "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
         },
         {
-          "path": "READ-ME-v1.2.0.md",
-          "sha256": "d3f6a05e1f3d9182e7ce48ef128d531496d1ef0772e25ede913905c0b4cb9ae3"
+          "path": "READ-ME-v1.4.0.md",
+          "sha256": "ee9faff9fa3978b4ca14ae2f9335a456fff4e655b31598f49b181e59cd4bb082"
+        },
+        {
+          "path": "TOWN-THEMES-v1.4.0.csv",
+          "sha256": "d8b47438a9f13ccf78aa817f49c84c0b01310afd22dad3260ae5b99f7caa067f"
         },
         {
           "path": "client/index.js",
-          "sha256": "bafbb612831988e7fa3d7c965056d5f767fecdc592f5b9111116deb83824ba58"
+          "sha256": "d9b43440ed33d7202240e11e64f6e8ac73f3a23853a2f75a258864f621d7718b"
         },
         {
           "path": "db/when/equipment_cold_bolt/population_strategy.yml",
-          "sha256": "a7d21b59253daa3e9af682af2c10834945f180fa0075ea8761781aeb16fa9608"
+          "sha256": "fc0937f843388a0d9b17b8eceeb6e6649d68c5cde80d30384abc7567f9cb28b1"
+        },
+        {
+          "path": "db/when/town_idle_sit/population_strategy.yml",
+          "sha256": "5376a1fafce9d78f1e875276a879b716bc907ef4935e6e138c06fe31f220e2d0"
         },
         {
           "path": "mod.json",
-          "sha256": "35476aa93e066c3bc2f3eaf1d286723f1f33f15a8fe00a0cd4f69d4f8324ff74"
+          "sha256": "5c7e58c50a6c8b11ab9b37de96a175ed485267d0efcb9007fe9009c7dbc1a3ad"
         },
         {
-          "path": "npc/living-style-v1.2.0.txt",
-          "sha256": "a1c5e3bb06952dda6c65727c92598683ff47c41703bed9334f8132f556b6744f"
+          "path": "npc/living-style-v1.4.0.txt",
+          "sha256": "eb9c0845710cd6f0160a2bcc4411b19750a405125e1e87bad52decebd990f1e0"
         },
         {
-          "path": "settings/index-v1.2.0.html",
-          "sha256": "31d9537742dd6a1e7105725d12ff7865319195b03ae2b4047142960681b4d83b"
+          "path": "npc/town-emotes-v1.4.0.txt",
+          "sha256": "770c202b787c260b53479ee0f0b2a545de85c46579ac59e6b1f1ca3282aece27"
+        },
+        {
+          "path": "settings/index-v1.4.0.html",
+          "sha256": "eda3ab2badbd751deaa5684c54685f2b909e0f0c7d41440f04a511087a75b60a"
         }
       ]
     },
