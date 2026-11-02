@@ -1218,6 +1218,10 @@ bool population_shell_check_arena_target(map_session_data *sd, unsigned int id)
 			return false;
 		if (bl->type == BL_PC && pc_isinvisible(BL_CAST(BL_PC, bl)))
 			return false;
+		// Hiding, Cloaking and Chase Walk hide a player from a war shell as
+		// from any player (no detection here: Sight and Ruwach are skills).
+		if (bl->type == BL_PC && (BL_CAST(BL_PC, bl)->sc.option & (OPTION_HIDE | OPTION_CLOAK | OPTION_CHASEWALK)) != 0)
+			return false;
 		if (battle_check_target(sd, bl, BCT_ENEMY) <= 0)
 			return false;
 	} else if (sd->pop.arena_team == 2) {
