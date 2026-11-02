@@ -1,0 +1,27 @@
+{
+  "name": "item-collection-ui",
+  "author": "DaggerHashimoto",
+  "description": "A card collection window shared by your whole account. Deposit cards to complete them for small permanent bonuses, and activate nine themed combo sets, with real card art, filters and search. Open it from the card icon in the Basic Info menu or with @collection. Fees, copies needed and bonuses can be changed in Settings. Renewal and pre-renewal.",
+  "tags": [
+    "cards",
+    "collection",
+    "ui",
+    "quality-of-life",
+    "renewal",
+    "pre-renewal"
+  ],
+  "icon": "images/icon.png",
+  "screenshots": [
+    "images/cards.png",
+    "images/combos.png",
+    "images/bonuses.png"
+  ],
+  "requires": {
+    "era": "any"
+  },
+  "homepage": "https://github.com/tonspri/item-collection-ui",
+  "source": {
+    "github": "tonspri/item-collection-ui",
+    "asset": "ItemCollectionUI-v*.zip"
+  }
+}
