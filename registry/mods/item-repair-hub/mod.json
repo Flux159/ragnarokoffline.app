@@ -1,15 +1,14 @@
 {
   "name": "item-repair-hub",
   "author": "DaggerHashimoto",
-  "description": "An in-game Renewal item editor: add optional skills and attack autocasts to weapons and armor, adjust class access and transfer permissions, and manage your repair collection. Includes three starter examples and optional World Sync Extras v2.1.5 compatibility. Custom changes require Save & Export, manual folder replacement, then Apply & restart.",
+  "description": "An in-game item editor for renewal and pre-renewal: give weapons and armor optional skills and attack autocasts, adjust class access and transfer rules, and change the gear you wear live with no restart (plain-English effects, a description check, stat presets). In renewal it also restores iRO item effects (refine tiers, autocasts, Base Level bonuses) for 33 items. Lasting edits use Save & Export, folder replacement, then Apply & restart.",
   "tags": [
     "equipment",
     "skills",
-    "quality-of-life",
-    "renewal"
+    "quality-of-life"
   ],
   "requires": {
-    "era": "renewal"
+    "era": "any"
   },
   "homepage": "https://github.com/tonspri/item-repair-hub",
   "source": {
