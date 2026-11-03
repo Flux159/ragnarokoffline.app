@@ -1785,6 +1785,7 @@ load	renewal	npc/re/instances/RoomOfConsciousness.txt
 load	renewal	npc/re/instances/SarahAndFenrir.txt
 load	renewal	npc/re/instances/SaraMemory.txt
 load	renewal	npc/re/instances/SealedOs.txt
+load	renewal	npc/re/instances/AbyssalMansion.txt
 load	renewal	npc/re/instances/ShadowManor.txt
 load	renewal	npc/re/instances/SkyFortress.txt
 load	renewal	npc/re/instances/TempleOfDemonGod.txt
@@ -1986,6 +1987,7 @@ load	renewal	npc/re/jobs/novice/supernovice_ex.txt
 load	renewal	npc/re/jobs/repair.txt
 load	renewal	npc/re/jobs/doram/spirit_handler.txt
 load	renewal	npc/re/jobs/4-1/dragon_knight.txt
+load	renewal	npc/re/jobs/4-1/abyss_chaser.txt
 load	renewal	npc/re/jobs/4-1/shadow_cross.txt
 load	renewal	npc/re/jobs/4-2/imperial_guard.txt
 load	renewal	npc/re/quests/skills/merchant_skills.txt
@@ -8816,6 +8818,13 @@ npc	xmas	148	127	0	714	Soy
 npc	xmas	149	127	0	714	Mimi
 npc	xmas	151	127	0	716	Spectator
 npc	xmas	154	129	0	797	Spectator
+file	npc/re/jobs/4-1/abyss_chaser.txt
+npc	s_atelier	122	59	0	899	Vicente
+npc	rachel	54	48	0	914	Julie
+npc	ve_fild02	53	191	0	921	Mulie
+npc	ve_fild02	55	191	0	962	Peter
+npc	ve_fild02	54	187	0	10045	Pale Shadow
+npc	ve_fild05	313	110	0	481	Doomk
 file	npc/re/jobs/4-1/dragon_knight.txt
 npc	gef_fild08	54	101	0	10307	Oscar
 npc	gef_fild08	57	104	0	10368	Leticia
