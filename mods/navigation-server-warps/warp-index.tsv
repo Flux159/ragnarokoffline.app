@@ -472,6 +472,7 @@ load	renewal	npc/re/instances/RoomOfConsciousness.txt
 load	renewal	npc/re/instances/SarahAndFenrir.txt
 load	renewal	npc/re/instances/SaraMemory.txt
 load	renewal	npc/re/instances/SealedOs.txt
+load	renewal	npc/re/instances/AbyssalMansion.txt
 load	renewal	npc/re/instances/ShadowManor.txt
 load	renewal	npc/re/instances/SkyFortress.txt
 load	renewal	npc/re/instances/TempleOfDemonGod.txt
@@ -673,6 +674,7 @@ load	renewal	npc/re/jobs/novice/supernovice_ex.txt
 load	renewal	npc/re/jobs/repair.txt
 load	renewal	npc/re/jobs/doram/spirit_handler.txt
 load	renewal	npc/re/jobs/4-1/dragon_knight.txt
+load	renewal	npc/re/jobs/4-1/abyss_chaser.txt
 load	renewal	npc/re/jobs/4-1/shadow_cross.txt
 load	renewal	npc/re/jobs/4-2/imperial_guard.txt
 load	renewal	npc/re/quests/skills/merchant_skills.txt
