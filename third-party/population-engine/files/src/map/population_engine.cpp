@@ -2272,6 +2272,20 @@ static bool pop_companion_follow_owner(map_session_data *sd, map_session_data *o
 	// "recovered" thirteen times in a row, and a shell teleported that often cannot
 	// walk at all. On failure, back off instead of retrying immediately.
 	if (sd->prev == nullptr) {
+		// RAGNAROKMAC (roam): a roamer's own teleport (a Fly Wing from a UseItem rule). pc_setpos takes
+		// it off the map and waits for the client's load ack to put it back, which a shell never sends,
+		// so it arrived here and was warped beside its owner with the wing spent. The whole map is its
+		// own: finish the placement where it landed.
+		if (population_companion_roams(sd) && sd->m == owner->m && pop_shell_finish_map_placement(sd)) {
+			population_shell_target_change(sd, 0);
+			unit_stop_attack(sd);
+			population_shell_prepare_ammo(sd);
+			sd->pop.last_teleport = now;
+			pop_shell_broadcast_map_placement(sd);
+			sd->pop.companion_follow_next = now + 400;
+			sd->pop.placement_fail_streak = 0;
+			return false;
+		}
 		if (warp_near_owner()) {
 			sd->pop.companion_follow_next = now + 400;
 			sd->pop.placement_fail_streak = 0;
