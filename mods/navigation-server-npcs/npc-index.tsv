@@ -8832,11 +8832,11 @@ file	npc/re/jobs/4-1/shadow_cross.txt
 npc	job3_guil01	74	92	0	10246	Rumin
 npc	ve_in	212	384	0	467	Verkhasel
 npc	ve_in	210	386	0	640	Mayssel
-npc	ve_in	214	383	0	899	Vicente
-npc	ve_fild07	99	141	0	723	Pale Shadow
+npc	ve_in	216	391	0	899	Vicente
+npc	ve_fild07	99	141	0	10045	Pale Shadow
 npc	ve_fild07	104	143	0	946	Villager
 npc	veins	87	158	0	941	Noah
-npc	veins	85	156	0	944	Tori
+npc	veins	85	160	0	944	Tori
 npc	ve_fild05	317	235	0	467	Verkhasel
 file	npc/re/jobs/4-2/imperial_guard.txt
 npc	prt_cas	181	10	0	470	King's Knight
