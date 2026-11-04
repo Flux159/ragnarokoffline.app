@@ -78,6 +78,14 @@ test('a roaming companion is off the leash but still changes maps with its owner
 	assert.match(follow, /if \(population_companion_roams\(sd\)\) \/\/ RAGNAROKMAC \(roam\)[^\n]*\n\t\tleash = INT16_MAX;/);
 });
 
+test('a roamer that teleports stays where it landed', () => {
+	const follow = body(src, 'static bool pop_companion_follow_owner(');
+	const offMap = follow.indexOf('if (sd->prev == nullptr) {');
+	const inPlace = follow.indexOf('if (population_companion_roams(sd) && sd->m == owner->m && pop_shell_finish_map_placement(sd)) {');
+	assert.ok(offMap > 0 && inPlace > offMap, 'placed where it is, on its own map');
+	assert.ok(inPlace < follow.indexOf('if (warp_near_owner()) {'), 'before the repair that warps it beside its owner');
+});
+
 test('it walks on when it has nothing to fight, with the field shells\' own steps', () => {
 	assert.match(combat, /if \(hired_companion && tid == 0\) \{\s*population_companion_roam_step\(sd, current_tick\);[^\n]*\n\s*return;/);
 	const step = body(roam, 'void population_companion_roam_step(');
