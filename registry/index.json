@@ -977,6 +977,54 @@
       ]
     },
     {
+      "name": "item-collection-ui",
+      "version": "",
+      "author": "DaggerHashimoto",
+      "description": "A card collection window shared by your whole account. Deposit cards to complete them for small permanent bonuses, and activate nine themed combo sets, with real card art, filters and search. Open it from the card icon in the Basic Info menu or with @collection. Fees, copies needed and bonuses can be changed in Settings. Renewal and pre-renewal.",
+      "homepage": "https://github.com/tonspri/item-collection-ui",
+      "tags": [
+        "cards",
+        "collection",
+        "pre-renewal",
+        "quality-of-life",
+        "renewal",
+        "ui"
+      ],
+      "icon": "images/icon.png",
+      "screenshots": [
+        "images/cards.png",
+        "images/combos.png",
+        "images/bonuses.png"
+      ],
+      "requires": {
+        "mods": [],
+        "era": "any",
+        "app": ""
+      },
+      "source": {
+        "github": "tonspri/item-collection-ui",
+        "asset": "ItemCollectionUI-v*.zip"
+      },
+      "files": [
+        {
+          "path": "images/bonuses.png",
+          "sha256": "2a534d7022a5b17d7167b37b21b560a8a5508dd97e00dde3da39bad853d70f24"
+        },
+        {
+          "path": "images/cards.png",
+          "sha256": "fd0d71f34f38b7395003700aef05347f183d3c1cd1c5168a7fb8b84f0df656b3"
+        },
+        {
+          "path": "images/combos.png",
+          "sha256": "c4e663788cc46fab35231541105a20ea6fceda58760d7295191f82f97cc8a2ed"
+        },
+        {
+          "path": "images/icon.png",
+          "sha256": "6b4cccabb64d57bb0b71460e34adaf5bb727c75641b55d3ac933f74332da70e1"
+        }
+      ]
+    },
+    {
       "name": "item-repair-hub",
       "version": "",
       "author": "DaggerHashimoto",
