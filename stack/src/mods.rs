@@ -39,7 +39,8 @@ pub struct Assembled {
     pub db: Option<PathBuf>,
     /// Host directory to bind at `/rathena/npc/mods`, if any mod ships scripts.
     pub npc: Option<PathBuf>,
-    /// `npc:` lines for map_conf.txt, naming each script inside that mount.
+    /// `npc:` lines for map_conf.txt, naming each script inside that mount,
+    /// then a `delnpc:` line per stock script a mod removes.
     pub npc_lines: String,
     /// `map:` lines for map_conf.txt, one per custom map.
     ///
@@ -1304,11 +1305,16 @@ impl Installed {
         self.all_roots().iter().any(|root| CLIENT_LAYERS.iter().any(|layer| root.join(layer).is_dir()))
     }
 
-    /// Whether the mod has the map server load scripts: its own `npc/`, or
-    /// stock ones named in `stock-npc.txt`. Server-side, except that with
+    /// Whether the mod changes which scripts the map server loads: its own
+    /// `npc/`, stock ones named in `stock-npc.txt`, or stock ones it removes
+    /// in `stock-npc-remove.txt`. Server-side, except that with
     /// navigation-server-npcs on they reach the client's NPC table too.
     pub fn has_npc_layers(&self) -> bool {
-        self.roots.iter().any(|root| root.join("npc").is_dir() || root.join("stock-npc.txt").is_file())
+        self.roots.iter().any(|root| {
+            root.join("npc").is_dir()
+                || root.join(STOCK_NPC).is_file()
+                || root.join(STOCK_NPC_REMOVE).is_file()
+        })
     }
 
     /// Whether the mod changes one `db/` table, directly or behind a setting.
@@ -1904,9 +1910,11 @@ pub fn assemble(cfg: &Config) -> Result<Assembled, String> {
 
     // Stock scripts first, so a mod's own can duplicate or disable them.
     let mut stock: Vec<String> = Vec::new();
+    let mut removed: Vec<String> = Vec::new();
     for m in &live {
         for root in &m.roots {
             read_stock_npc(root, &m.name, &mut stock);
+            read_stock_npc_remove(root, &m.name, &mut removed);
         }
     }
     let mut lines: String = stock.iter().map(|p| format!("npc: {p}\n")).collect();
@@ -1942,6 +1950,15 @@ pub fn assemble(cfg: &Config) -> Result<Assembled, String> {
         // point rather than the host path, and forward-slashed because rAthena
         // parses them itself rather than handing them to the OS.
         collect_scripts(&dst, &format!("npc/mods/{}", m.name), &mut lines);
+    }
+    // Last, though the order is not what makes them work: this config is read
+    // before the stock list, and the server applies a `delnpc:` from it again
+    // once that list is loaded (rathena#91).
+    if !removed.is_empty() {
+        println!("stock scripts removed: {}", removed.len());
+    }
+    for p in &removed {
+        lines.push_str(&format!("delnpc: {p}\n"));
     }
     if !lines.is_empty() {
         // The mount is only needed when a mod ships its own scripts; stock
@@ -2295,12 +2312,22 @@ fn write_map_layer(db: &Path, maps: &[mapcache::Map]) -> Result<(), String> {
     fs::write(&index, body).map_err(|e| format!("writing {}: {e}", index.display()))
 }
 
-/// The scripts a mod has the map server load, for the navigation table
-/// (navnpc.rs): the stock ones its `stock-npc.txt` names, and its own `.txt`
-/// files as `assemble` lays them down -- every root, a later root's file
-/// replacing an earlier one of the same path, and a `when/<setting>/` folder
-/// only while that setting is on.
-pub fn npc_sources(cfg: &Config, m: &Installed) -> Result<(Vec<String>, Vec<PathBuf>), String> {
+/// The scripts a mod has the map server load, for the navigation tables
+/// (navnpc.rs, navwarp.rs, navmob.rs).
+pub struct NpcSources {
+    /// The stock scripts its `stock-npc.txt` switches on.
+    pub stock: Vec<String>,
+    /// The stock scripts its `stock-npc-remove.txt` takes out. They are gone
+    /// whichever mod loaded them, so a table drops them after every mod's
+    /// `stock` is in.
+    pub removed: Vec<String>,
+    /// Its own `.txt` files as `assemble` lays them down -- every root, a
+    /// later root's file replacing an earlier one of the same path, and a
+    /// `when/<setting>/` folder only while that setting is on.
+    pub files: Vec<PathBuf>,
+}
+
+pub fn npc_sources(cfg: &Config, m: &Installed) -> Result<NpcSources, String> {
     fn walk(dir: &Path, rel: &str, top: bool, out: &mut BTreeMap<String, PathBuf>) {
         let Ok(rd) = fs::read_dir(dir) else { return };
         for e in rd.flatten() {
@@ -2320,16 +2347,18 @@ pub fn npc_sources(cfg: &Config, m: &Installed) -> Result<(Vec<String>, Vec<Path
     let saved = read_settings(&cfg.state)?;
     let settings = effective(&m.manifest, saved.get(&m.name));
     let mut stock = Vec::new();
+    let mut removed = Vec::new();
     let mut files = BTreeMap::new();
     for root in &m.roots {
         read_stock_npc(root, &m.name, &mut stock);
+        read_stock_npc_remove(root, &m.name, &mut removed);
         let npc = root.join("npc");
         walk(&npc, "", true, &mut files);
         for (key, folder) in conditional_folders(&npc, &m.name, "npc", &settings) {
             walk(&folder, &format!("when/{key}"), false, &mut files);
         }
     }
-    Ok((stock, files.into_values().collect()))
+    Ok(NpcSources { stock, removed, files: files.into_values().collect() })
 }
 
 /// A mod's copies of one `db/` table, in the order `assemble` merges them:
@@ -2355,6 +2384,11 @@ pub fn db_sources(cfg: &Config, m: &Installed, table: &str) -> Result<Vec<PathBu
     Ok(out)
 }
 
+/// The file at a mod's root naming stock scripts to switch on.
+const STOCK_NPC: &str = "stock-npc.txt";
+/// The file at a mod's root naming stock scripts to take out.
+const STOCK_NPC_REMOVE: &str = "stock-npc-remove.txt";
+
 /// Scripts rAthena already ships that a mod asks to switch on.
 ///
 /// rAthena carries a job changer, a warper, a healer and a stylist in
@@ -2369,20 +2403,38 @@ pub fn db_sources(cfg: &Config, m: &Installed, table: &str) -> Result<Vec<PathBu
 /// can do is load a script rAthena wrote -- but a path this ends up in a config
 /// file is not a place to skip validation.
 fn read_stock_npc(dir: &Path, name: &str, out: &mut Vec<String>) {
-    let path = dir.join("stock-npc.txt");
-    let Ok(body) = fs::read_to_string(&path) else { return };
+    read_stock_list(&dir.join(STOCK_NPC), name, "load", false, out);
+}
+
+/// Stock scripts a mod takes out, from `stock-npc-remove.txt` at its root:
+/// the same one-path-per-line list, checked the same way.
+///
+/// This is how a mod replaces stock content that has no name to
+/// `disablenpc` -- a monster spawn line above all. It removes the whole file
+/// and ships its own copy in `npc/`. A path that names the other era's copy,
+/// or nothing at all, removes nothing and is not an error, so one list can
+/// serve both eras. A mod's own scripts (`npc/mods/`) are not stock and
+/// cannot be removed this way.
+fn read_stock_npc_remove(dir: &Path, name: &str, out: &mut Vec<String>) {
+    read_stock_list(&dir.join(STOCK_NPC_REMOVE), name, "remove", true, out);
+}
+
+/// `stock_only` refuses `npc/mods/`, where mods' own scripts are mounted.
+fn read_stock_list(path: &Path, name: &str, verb: &str, stock_only: bool, out: &mut Vec<String>) {
+    let Ok(body) = fs::read_to_string(path) else { return };
     for line in body.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with("//") || line.starts_with('#') {
             continue;
         }
         let bad = !line.starts_with("npc/")
+            || (stock_only && line.starts_with("npc/mods/"))
             || line.contains("..")
             || line.contains('\\')
             || !line.ends_with(".txt");
         if bad {
             eprintln!(
-                "mods: {name} asked to load \"{line}\", which is not a script path under npc/ -- ignoring"
+                "mods: {name} asked to {verb} \"{line}\", which is not a script path under npc/ -- ignoring"
             );
             continue;
         }
@@ -4486,6 +4538,54 @@ mod tests {
                 (got, _) => panic!("{body}: {:?}", got.map(|m| m.map(|m| m.client_folders))),
             }
         }
+    }
+
+    /// `stock-npc-remove.txt` takes a stock script out (a `delnpc:` line the
+    /// map server applies after its stock list) and the mod's own copy goes
+    /// in. Paths outside npc/, a mod's own scripts and repeats are refused,
+    /// and the navigation tables see the removal through `npc_sources`.
+    #[test]
+    fn a_mod_removes_a_stock_script_and_ships_its_own() {
+        let cfg = kind_config("stock-remove");
+        install(&cfg, "maze-rooms", "{}");
+        let dir = cfg.state.join("mods/maze-rooms");
+        fs::create_dir_all(dir.join("npc")).unwrap();
+        fs::write(dir.join("npc/prt_maze.txt"), "// fixed spawns").unwrap();
+        fs::write(
+            dir.join("stock-npc-remove.txt"),
+            "# both eras: the other era's path removes nothing\n\
+             npc/re/mobs/dungeons/prt_maze.txt\n\
+             npc/pre-re/mobs/dungeons/prt_maze.txt\n\
+             npc/re/mobs/dungeons/prt_maze.txt\n\
+             npc/mods/other-mod/thing.txt\n\
+             conf/battle/exp.conf\n\
+             npc/../conf/x.txt\n",
+        )
+        .unwrap();
+
+        let out = assemble(&cfg).unwrap();
+        let lines = &out.npc_lines;
+        assert!(lines.contains("npc: npc/mods/maze-rooms/prt_maze.txt\n"), "{lines}");
+        let removed: Vec<&str> = lines.lines().filter(|l| l.starts_with("delnpc:")).collect();
+        assert_eq!(
+            removed,
+            ["delnpc: npc/re/mobs/dungeons/prt_maze.txt", "delnpc: npc/pre-re/mobs/dungeons/prt_maze.txt"],
+            "{lines}"
+        );
+        assert!(out.npc.is_some());
+
+        let m = enabled(&cfg).into_iter().find(|m| m.name == "maze-rooms").unwrap();
+        assert!(m.has_npc_layers());
+        let sources = npc_sources(&cfg, &m).unwrap();
+        assert!(sources.stock.is_empty());
+        assert_eq!(sources.removed, ["npc/re/mobs/dungeons/prt_maze.txt", "npc/pre-re/mobs/dungeons/prt_maze.txt"]);
+        assert_eq!(sources.files.len(), 1);
+
+        // A list with nothing else is still a change to the server's scripts.
+        fs::remove_dir_all(dir.join("npc")).unwrap();
+        let out = assemble(&cfg).unwrap();
+        assert_eq!(out.npc_lines.lines().filter(|l| l.starts_with("delnpc:")).count(), 2, "{}", out.npc_lines);
+        assert!(enabled(&cfg).into_iter().find(|m| m.name == "maze-rooms").unwrap().has_npc_layers());
     }
 
     /// The running era's folder is laid over the mod's own: its table replaces

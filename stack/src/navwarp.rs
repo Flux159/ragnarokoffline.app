@@ -370,19 +370,23 @@ pub fn stage(cfg: &Config, server_root: &Path) -> Result<Option<Vec<u8>>, String
     let mut warps = Vec::new();
     let mut mod_gates = Vec::new();
     let mut mod_warps = Vec::new();
+    let mut removed = Vec::new();
     for m in &enabled {
-        let (more, files) = crate::mods::npc_sources(cfg, m)?;
-        for p in more {
+        let sources = crate::mods::npc_sources(cfg, m)?;
+        removed.extend(sources.removed);
+        for p in sources.stock {
             if !stock.contains(&p) {
                 stock.push(p);
             }
         }
-        for f in files {
+        for f in sources.files {
             let text = fs::read(&f).map_err(|e| format!("reading {}: {e}", f.display()))?;
             mod_gates.push(gates(&text));
             mod_warps.extend(parse_warps(&text));
         }
     }
+    // A script one mod removes is gone whichever mod loaded it.
+    stock.retain(|p| !removed.contains(p));
     for f in &stock {
         warps.extend(index.files.get(f).cloned().unwrap_or_default());
     }

@@ -397,20 +397,24 @@ pub fn stage(cfg: &Config, server_root: &Path) -> Result<Option<Vec<u8>>, String
     let mut stock = if prerenewal { index.prerenewal.clone() } else { index.renewal.clone() };
     let mut mobs = if prerenewal { index.mobs_prerenewal.clone() } else { index.mobs_renewal.clone() };
     let mut mod_scripts = Vec::new();
+    let mut removed = Vec::new();
     for m in &enabled {
-        let (more, files) = crate::mods::npc_sources(cfg, m)?;
-        for p in more {
+        let sources = crate::mods::npc_sources(cfg, m)?;
+        removed.extend(sources.removed);
+        for p in sources.stock {
             if !stock.contains(&p) {
                 stock.push(p);
             }
         }
-        for f in files {
+        for f in sources.files {
             mod_scripts.push(fs::read(&f).map_err(|e| format!("reading {}: {e}", f.display()))?);
         }
         for f in crate::mods::db_sources(cfg, m, "mob_db.yml")? {
             merge_mob_db(&fs::read(&f).map_err(|e| format!("reading {}: {e}", f.display()))?, &mut mobs);
         }
     }
+    // A script one mod removes is gone whichever mod loaded it.
+    stock.retain(|p| !removed.contains(p));
     let mut spawns: Vec<Spawn> = stock.iter().flat_map(|f| index.files.get(f).cloned().unwrap_or_default()).collect();
     for text in &mod_scripts {
         spawns.extend(parse_spawns(text));

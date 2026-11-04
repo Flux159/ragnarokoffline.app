@@ -8,7 +8,8 @@ those routes lead to the wrong place or nowhere.
 
 With this mod on, routes use the server's portals instead: the `warp` and
 `warp2` lines in the scripts the server loads for your era, the stock scripts
-other mods switch on (`stock-npc.txt`), and the scripts other mods ship. A
+other mods switch on (`stock-npc.txt`) less the ones they take out
+(`stock-npc-remove.txt`), and the scripts other mods ship. A
 portal switched off when the server starts (`disablenpc "<name>"` under
 `OnInit`) is left out, so a mod that reroutes a gate is routed over correctly.
 One that some script switches back on with `enablenpc` is kept: it is a gate an

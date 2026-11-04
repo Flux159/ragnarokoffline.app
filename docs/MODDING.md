@@ -8,6 +8,8 @@ rebuild, no compiler, no Docker.
 ├── mod.json     name, version, author, description, what it requires
 ├── db/          server tables: mob stats, item stats, drops, skills — new ones too
 ├── npc/         server scripts: NPCs, warps, monster spawns, quests
+├── stock-npc.txt         stock rAthena scripts to switch on
+├── stock-npc-remove.txt  stock rAthena scripts to take out
 ├── lua/         skill hooks: damage formulas, what a hit does, passives, statuses
 ├── conf/        a few server settings, from a short allowlist
 ├── data/        client assets: sprites, textures, map geometry, Lua
@@ -995,10 +997,61 @@ Warp names are in `vendor/rathena/npc/warps/`; they are short and stable
 (`prt01`, `prt001`). This is verified — rerouting Prontera's south gate to a
 custom island works, with no duplicate-name complaint.
 
-What genuinely cannot be removed is a **monster spawn definition**. Those come
-from the stock spawn scripts and nothing unloads them, which is why the
-[randomizer](../examples/mods/randomizer) shuffles what each monster *is*
-rather than where it stands.
+### Switching stock scripts on and off
+
+Two plain-text files at the mod's root name scripts rAthena already ships,
+one path per line, `#` for comments:
+
+| file | does |
+|---|---|
+| `stock-npc.txt` | loads a stock script the server leaves off — [common-npcs](../mods/common-npcs) switches on the warper, healer, job changer and stylist from `npc/custom/` this way, with no files of its own |
+| `stock-npc-remove.txt` | takes a stock script out of the server's list, so nothing in it loads |
+
+Removing is how a mod changes what `disablenpc` cannot reach, and a **monster
+spawn line** is the main example: it has no name, so the only way to change one
+is to remove the whole file it is in and ship your own copy. Say the rooms of
+the Labyrinth Forest should keep their monsters to themselves:
+
+```
+my-maze/
+├── mod.json
+├── stock-npc-remove.txt
+└── npc/
+    └── prt_maze.txt      a copy of the stock file, with your changes
+```
+
+```
+# my-maze/stock-npc-remove.txt
+npc/re/mobs/dungeons/prt_maze.txt
+npc/pre-re/mobs/dungeons/prt_maze.txt
+```
+
+Get the paths from the `npc:` lines in `vendor/rathena/npc/re/scripts_*.conf`
+and `vendor/rathena/npc/pre-re/scripts_*.conf`, and spell them **exactly** as
+they appear there. A path that matches nothing removes nothing and nothing is
+logged, so a typo looks like a mod that did nothing. A path for the other era
+is harmless for the same reason, which is why one list can name both. When the
+two eras' files differ, as spawn files usually do, put each era's copy in that
+era's folder (`renewalFolder` / `prerenewalFolder`, above) so each server loads
+the copy that matches it.
+
+Things worth knowing first:
+
+- **It removes the whole file**, not the line you meant: every spawn, NPC,
+  warp and mapflag in it. Your copy has to carry the rest.
+- **Your copy is frozen.** A later fix to the stock file never reaches a server
+  running your mod. Remove as little as you can.
+- **Two mods that replace the same file both load their copies**, so the map
+  gets both sets of spawns. Nothing detects this.
+- Only stock paths can be removed. `npc/mods/...` (another mod's scripts) and
+  anything outside `npc/` are refused, with a line in the supervisor log.
+- The navigation mods (`navigation-server-*`) build their tables from the
+  same list, so a removed file's NPCs, warps and spawns leave their tables
+  too.
+
+To change only *what* each monster is, not where it stands, there is also the
+[randomizer](../examples/mods/randomizer)'s approach: it shuffles monster
+identities and leaves every spawn script untouched.
 
 How *many* monsters a map's stock spawns put out can be changed, though, from a
 script: the fork's `map_mob_count_rate` extension adds

@@ -9,7 +9,8 @@ With this mod on, the monster table is built from those instead:
 
 - **where and how many:** the `monster` and `boss_monster` lines in the scripts
   the server loads for your era, the stock scripts other mods switch on
-  (`stock-npc.txt`), and the scripts other mods ship;
+  (`stock-npc.txt`) less the ones they take out (`stock-npc-remove.txt`), and
+  the scripts other mods ship;
 - **what each one is:** name, level, element, race, size and whether it is an
   MVP, from rAthena's `mob_db` with every mod's `db/mob_db.yml` merged over it
   field by field, as the server merges them. A custom monster, or the
