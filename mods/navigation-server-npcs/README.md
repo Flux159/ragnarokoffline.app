@@ -7,7 +7,8 @@ the wrong place, and never lists the ones a mod adds.
 
 With this mod on, the NPC table is built from the scripts the server loads:
 the stock ones for the era you are playing, the stock scripts other mods switch
-on (`stock-npc.txt`), and the scripts other mods ship. Search then finds what
+on (`stock-npc.txt`) less the ones they take out (`stock-npc-remove.txt`), and
+the scripts other mods ship. Search then finds what
 is in the world, at the server's coordinates, under the name over its head.
 
 It replaces the client's NPC table rather than adding to it, so NPCs only kRO

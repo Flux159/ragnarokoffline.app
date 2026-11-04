@@ -414,9 +414,11 @@ pub fn stage(cfg: &Config, server_root: &Path) -> Result<Option<Vec<u8>>, String
     let index = Index::from_text(&text);
     let mut stock = if crate::cmds::is_prerenewal(cfg) { index.prerenewal.clone() } else { index.renewal.clone() };
     let mut scripts = Vec::new();
+    let mut removed = Vec::new();
     for m in &enabled {
-        let (more, files) = crate::mods::npc_sources(cfg, m)?;
-        for p in more {
+        let sources = crate::mods::npc_sources(cfg, m)?;
+        removed.extend(sources.removed);
+        for p in sources.stock {
             if !index.files.contains_key(&p) && !stock.contains(&p) {
                 eprintln!("{MOD}: {} loads {p}, which the index does not list", m.name);
             }
@@ -424,10 +426,12 @@ pub fn stage(cfg: &Config, server_root: &Path) -> Result<Option<Vec<u8>>, String
                 stock.push(p);
             }
         }
-        for f in files {
+        for f in sources.files {
             scripts.push(fs::read(&f).map_err(|e| format!("reading {}: {e}", f.display()))?);
         }
     }
+    // A script one mod removes is gone whichever mod loaded it.
+    stock.retain(|p| !removed.contains(p));
     let npcs = collect(&index, &stock, &scripts);
     let path = server_root.join(TABLE);
     if let Some(parent) = path.parent() {

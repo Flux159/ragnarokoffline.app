@@ -290,9 +290,10 @@ later.
 randomizer?". It can, and getting there established three things about
 `db/import` that are not written down anywhere else.
 
-**Identity shuffling is the way around the no-removal rule.** A mod cannot
-remove a stock monster spawn — the ~3,000 spawn lines load before any mod and
-nothing can unload them. But every spawn line names an *ID*, and an ID is a
+**Identity shuffling works without removing anything.** Removing a spawn
+means removing its whole file (`stock-npc-remove.txt`, in MODDING.md) and
+shipping a frozen copy, which is no way to touch ~3,000 spawn lines. But every
+spawn line names an *ID*, and an ID is a
 label on a block of numbers. Permuting the blocks across the IDs reshuffles the
 whole world with the spawn scripts untouched. The same shape would work for
 items and skills.
@@ -345,9 +346,12 @@ files are split between `npc/warps/` and `npc/<era>/warps/`, which overlap.
   folder in it".** Settings can list and toggle mods and open the folder, but
   cannot accept a dragged-in folder or a zip. That is a product decision, not a
   missing capability.
-- **A mod cannot remove anything.** Stock spawns, stock NPCs and stock warps are
-  loaded before any mod and there is no way to unload a script a mod did not
-  add. Adding is the whole vocabulary.
+- **Removal is by whole file.** `disablenpc` switches off a named NPC or warp,
+  and `stock-npc-remove.txt` takes a whole stock script out of the server's
+  list (a `delnpc:` line in `conf/import/map_conf.txt`). That config is read
+  *before* the stock list, so stock rAthena would find nothing to remove; our
+  fork applies those lines again once the list is loaded (rathena#91). There
+  is no way to remove a single spawn line and keep the rest of its file.
 - **No generator for palettes.** A mod can ship any `.pal` under its Korean or
   ASCII name, but there is no `mkpal` beside `mkmap.py` and `mkloginbg.py` to
   derive colours from a job's existing ones, and the stylist cannot offer more
