@@ -1,0 +1,23 @@
+{
+  "name": "dynamic-item-info",
+  "author": "DaggerHashimoto",
+  "description": "Turns the item information window into clear sections: live stats, refine values now and at the next level, a labelled comparison with what you have equipped, the copies you carry, restrictions, effects, random options and cards you can expand. Works on any item the game shows you, and keeps the game's own art, buttons and full description. Renewal and pre-renewal.",
+  "tags": [
+    "ui",
+    "items",
+    "refine",
+    "compare",
+    "quality-of-life",
+    "renewal",
+    "pre-renewal"
+  ],
+  "icon": "images/icon.png",
+  "requires": {
+    "era": "any"
+  },
+  "homepage": "https://github.com/tonspri/dynamic-item-info",
+  "source": {
+    "github": "tonspri/dynamic-item-info",
+    "asset": "DynamicItemInfo-v*.zip"
+  }
+}
