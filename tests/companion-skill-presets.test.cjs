@@ -191,12 +191,18 @@ test('the generated rows include offensive skill, not only upkeep', () => {
 	}
 });
 
-test('the file keeps its Header/Body shape and gains no trailing block', () => {
-	// Appending to this file lands rows inside a Footer, corrupting its Imports list
-	// and killing the map server at startup. The file must end inside a job block.
+test('the file keeps its Header/Body shape, and its Footer is only the mods\' import', () => {
+	// Appending to this file lands rows inside the Footer, corrupting its Imports list
+	// and killing the map server at startup. The Body must end on a skill row, and the
+	// Footer must be exactly the import, last in the file.
 	assert.match(text, /^Header:/m, 'Header block must survive');
 	assert.match(text, /^\s*Type: POPULATION_SKILL_DB$/m);
-	const tail = text.trimEnd().split(/\r?\n/).slice(-6).join('\n');
-	assert.ok(!/^Footer:/m.test(text), 'this file must not grow a Footer');
-	assert.match(tail, /SkillId:/, `last lines are not a skill row:\n${tail}`);
+	const footer = text.indexOf('\nFooter:\n');
+	assert.ok(footer > 0 && text.indexOf('\nFooter:', footer + 1) < 0, 'exactly one Footer');
+	assert.strictEqual(text.slice(footer).trimEnd(),
+		'\nFooter:\n  Imports:\n    - Path: db/import/population_skill_db.yml',
+		'nothing after the Footer\'s import: new rows go inside their job block');
+	const tail = text.slice(0, footer).trimEnd().split('\n')
+		.filter(l => l.trim() && !l.trimStart().startsWith('#')).slice(-1)[0];
+	assert.match(tail, /SkillId:/, `the Body does not end on a skill row:\n${tail}`);
 });
