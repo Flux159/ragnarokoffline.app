@@ -192,6 +192,10 @@ export default function init(parameters, api) {
         return;
     }
     const uniforms = strengths(parameters);
+    // Screen effects off: no pass at all, so the client draws straight to the
+    // screen instead of into an offscreen picture first. That picture is what
+    // Performance mode shrinks to three-quarter size and stretches back up.
+    const screen = parameters?.screen_effects !== false;
     const anything = Object.values(uniforms).some(value => value > 0);
     const percent = key => { const value = Number(parameters?.[key]); return Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) / 100 : 0; };
 
@@ -263,7 +267,7 @@ export default function init(parameters, api) {
     api.graphics.registerPass({
         name: 'Graphics+',
         fragment: FRAGMENT,
-        enabled: () => on && anything,
+        enabled: () => on && screen && anything,
         uniforms: () => {
             live.uDrops = raining ? uniforms.uDrops : 0;
             return live;
