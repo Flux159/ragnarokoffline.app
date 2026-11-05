@@ -695,6 +695,38 @@ fn write_mod_conf_files(cfg: &Config, mods: &crate::mods::Assembled) -> Result<(
     Ok(())
 }
 
+/// Write `conf/inter_server.yml` from the storages mods add, after creating the
+/// tables they are kept in (`crate::mods::combine_storages` says why the mods'
+/// own copies are never written).
+///
+/// Removed when no mod adds one, like the whole files above. A storage whose
+/// table could not be made is left out of the file rather than listed: the
+/// char server would otherwise fail its SQL each time a script opened it.
+fn write_mod_storages(cfg: &Config, dk: &Docker, mods: &crate::mods::Assembled) -> Result<(), String> {
+    let file = crate::mods::STORAGE_CONF;
+    let path = cfg.state.join("conf").join(file);
+    let entries = mods.conf.get(&format!("file:{file}"));
+    let (mut storages, notes) = entries.map(|e| crate::mods::combine_storages(e)).unwrap_or_default();
+    for note in &notes {
+        eprintln!("mods: {note}");
+    }
+    if let Some(sql) = crate::mods::storage_tables_sql(&storages) {
+        if let Err(e) = dk.private_sql(&sql) {
+            eprintln!("warning: mods' extra storages are off this time: creating their tables: {e}");
+            storages.retain(|s| s.id == 0);
+        }
+    }
+    if storages.is_empty() {
+        let _ = fs::remove_file(&path);
+        return Ok(());
+    }
+    let names: Vec<&str> = entries.into_iter().flatten().map(|(n, _)| n.as_str()).collect();
+    fs::write(&path, crate::mods::storage_yml(&storages))
+        .map_err(|e| format!("writing conf/{file} from {}: {e}", names.join(", ")))?;
+    eprintln!("mods: {} supplies conf/{file}", names.join(", "));
+    Ok(())
+}
+
 /// The settings mods asked for in one conf file, ready to append.
 ///
 /// Empty for every file no mod named, which is the usual case, and the reason
@@ -1960,6 +1992,7 @@ pub fn up(cfg: &Config, dk: &Docker, lan: bool, ram_mib: Option<u32>) -> Result<
     // on a map that a removed mod used to provide cannot be selected at all.
     rescue_stranded_characters(cfg, dk, &mods.maps);
     write_mod_conf_files(cfg, &mods)?;
+    write_mod_storages(cfg, dk, &mods)?;
     // Owner account policy is final, after mod assembly, and regenerated for
     // startup, Repair and each era. Mods cannot reopen suffix registration.
     let mut login_config = crate::registration::login_config(open_registration);

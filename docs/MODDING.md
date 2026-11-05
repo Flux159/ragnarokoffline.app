@@ -1850,6 +1850,48 @@ conf/groups.yml` — so read it before installing a mod you did not write.
 
 See [`examples/mods/start-in-your-town`](../examples/mods/start-in-your-town).
 
+### Extra storages: `conf/inter_server.yml`
+
+rAthena's `inter_server.yml` lists the storages a player has. Storage 0 is the
+ordinary Kafra storage. Any other storage is a separate one that an NPC opens
+with `openstorage2 <id>, STOR_MODE_GET|STOR_MODE_PUT;`, and it is shared by
+every character on the account.
+
+```yaml
+# my-mod/conf/inter_server.yml — a second storage, opened by my NPC
+Header:
+  Type: INTER_SERVER_DB
+  Version: 1
+Body:
+  - ID: 1
+    Name: "Bank Vault"
+    Max: 300
+```
+
+The supervisor does not copy this file the way it copies `groups.yml`. It
+reads three fields from each entry, checks them, and writes the file the
+server loads itself:
+
+| field | what is allowed |
+|---|---|
+| `ID` | 0 to 255. 0 changes the main storage; any other number adds a storage |
+| `Name` | shown on the storage window's title bar: up to 23 printable ASCII characters, without `"` or `\`. Needed for a new storage |
+| `Max` | 1 to 600 slots (rAthena's `MAX_STORAGE`). The default is 600 |
+
+**`Table` is ignored.** The app keeps storage N in a table called `storage_N`
+and creates it, shaped like rAthena's `storage`, on the next server start. A
+mod has no other way to make a table. Storage 0 always stays in `storage`.
+Both rules exist because rAthena puts the table name straight into its SQL and
+does not check it: a wrong one hides every player's storage, or worse. For the
+same reason `Header: Clear: true` is ignored, since clearing the table would
+remove storage 0.
+
+A storage's table is never dropped. If you remove the mod, the items stay in
+the database, and they come back when the mod is installed again. Two mods
+that use the same `ID` share one storage. The later mod's `Name` and `Max`
+win, and the log names both mods. Everything that is left out is named in the
+log as well.
+
 ## data/ — sprites, textures and map geometry
 
 Anything under `data/` is served **ahead of the GRFs**, so a file here replaces
