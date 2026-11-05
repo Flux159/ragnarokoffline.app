@@ -3091,6 +3091,12 @@ static block_list *resolve_target(Turn &t, const Rule &rule, const RuleState &rs
 static void say(Turn &t, const Rule &rule, const RuleState &rs, block_list *target)
 {
 	map_session_data *sd = t.sd;
+	// RAGNAROKMAC (chat settings): a rule's line is chatter too, under the same switch as
+	// the shell's other lines (population_engine_shell_may_chat).
+	const bool companion = sd->status.party_id > 0 && sd->status.party_id < 0x70000000
+		&& sd->pop.companion_owner_account != 0;
+	if (!(companion ? battle_config.population_engine_companion_chat_enable : battle_config.population_engine_chat_enable))
+		return;
 	std::string text = rule.say;
 	auto put = [&](const char *key, const std::string &value) {
 		for (size_t at = text.find(key); at != std::string::npos; at = text.find(key, at + value.size()))

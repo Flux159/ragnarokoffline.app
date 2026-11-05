@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000039
+Subject: [PATCH] Settings: companions' chat has its own switch
+
+Players found recruited companions too talkative, and the only control was
+population_engine_chat_enable, which silences every shell at once and which the app never
+wrote. population_engine_companion_chat_enable (on by default, as before) is the same switch
+for companions in a player's party alone; population_engine_chat_enable now covers every
+other shell. Both are in Settings -> Population. Off silences what a shell says of its own
+accord: ambient lines, replies to its name or a whisper, kill taunts and strategy rule lines
+(population_engine_shell_may_chat). Answers to its owner's commands are sent either way.
+
+diff --git a/src/custom/battle_config_init.inc b/src/custom/battle_config_init.inc
+--- a/src/custom/battle_config_init.inc
++++ b/src/custom/battle_config_init.inc
+@@ -69,6 +69,7 @@
+ { "population_engine_companion_inventory",&battle_config.population_engine_companion_inventory,0,0,1,},
+ { "population_engine_companion_roam",&battle_config.population_engine_companion_roam,0,0,1,},
+ { "population_engine_companion_start_unequipped",&battle_config.population_engine_companion_start_unequipped,0,0,1,},
++{ "population_engine_companion_chat_enable",&battle_config.population_engine_companion_chat_enable,1,0,1,},
+ { "population_engine_loot_enable",&battle_config.population_engine_loot_enable,0,0,1,},
+ { "population_engine_loot_rare_rate",&battle_config.population_engine_loot_rare_rate,100,0,10000,},
+ { "population_engine_loot_rare_pickup_pct",&battle_config.population_engine_loot_rare_pickup_pct,95,0,100,},
+diff --git a/src/custom/battle_config_struct.inc b/src/custom/battle_config_struct.inc
+--- a/src/custom/battle_config_struct.inc
++++ b/src/custom/battle_config_struct.inc
+@@ -143,6 +143,10 @@ int32 population_engine_companion_roam;
+ /// job change or a recall either: it wears what its owner gives it; 0 = the engine dresses it
+ /// from its job's gear set (as before). Kept per companion from its draft on.
+ int32 population_engine_companion_start_unequipped;
++/// Chat: 1 = companions in a player's party say lines of their own accord (ambient lines,
++/// replies, kill taunts, strategy rule lines), as before; 0 = they keep quiet, and still
++/// answer their owner's commands. Every other shell follows population_engine_chat_enable.
++int32 population_engine_companion_chat_enable;
+ /// Looting: 1 = ambient shells pick up the drops of their own kills; 0 = they
+ /// leave them on the ground (as before). Recruited companions are unaffected.
+ int32 population_engine_loot_enable;
