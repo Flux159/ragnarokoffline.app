@@ -101,6 +101,19 @@ function companionStartUnequipped(s) {
 }
 
 /**
+ * Whether companions in a player's party (companionChat) and every other shell
+ * (chat) say things of their own accord: ambient lines, replies to their name
+ * or a whisper, kill taunts, strategy rule lines. On unless the player turns it
+ * off, as before; a companion answers its owner's commands either way.
+ */
+function companionChat(s) {
+	return s.population_companion_chat === false ? 0 : 1;
+}
+function shellChat(s) {
+	return s.population_chat === false ? 0 : 1;
+}
+
+/**
  * How ambient shells deal with the drops of their own kills. Off by default:
  * every drop stays on the ground until it expires, as before. On, a shell
  * decides once per drop whether it means to take it: a rare drop (any card,
@@ -159,6 +172,8 @@ function lines(settings) {
 		`population_engine_companion_inventory: ${companionInventory(settings)}\n` +
 		`population_engine_companion_roam: ${companionRoam(settings)}\n` +
 		`population_engine_companion_start_unequipped: ${companionStartUnequipped(settings)}\n` +
+		`population_engine_companion_chat_enable: ${companionChat(settings)}\n` +
+		`population_engine_chat_enable: ${shellChat(settings)}\n` +
 		// Written even while the engine is off, so the choices stick.
 		`population_engine_loot_enable: ${loot.enable}\n` +
 		`population_engine_loot_rare_rate: ${Math.round(loot.rarePct * 100)}\n` +
@@ -176,4 +191,4 @@ function lines(settings) {
 	);
 }
 
-module.exports = { lines, companionLimit, areaShare, companionHire, companionFee, skillWeaponCheck, companionInventory, companionRoam, companionStartUnequipped, shellLoot, LOOT_DEFAULTS, HIRE_MODES, AREAS, COMPANION_LIMIT_MIN, COMPANION_LIMIT_MAX };
+module.exports = { lines, companionLimit, areaShare, companionHire, companionFee, skillWeaponCheck, companionInventory, companionRoam, companionStartUnequipped, companionChat, shellChat, shellLoot, LOOT_DEFAULTS, HIRE_MODES, AREAS, COMPANION_LIMIT_MIN, COMPANION_LIMIT_MAX };

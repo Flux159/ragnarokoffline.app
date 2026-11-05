@@ -284,6 +284,18 @@ A companion that still wears or carries anything of yours is not removed while i
 is not summoned: summon it and take the gear back first. The same as commands:
 `@companion spare <name> list`, `stow <slot>`, `wear <#>`, `take <#>`.
 
+### Quiet companions
+
+Companions chat now and then like the other people in the world: a line in
+passing, a reply when you say their name or whisper them, a taunt after a fight.
+**Settings → Population → Companion chat** turns that off for companions in your
+party, and **Population chat** turns it off for everyone else. Both are on by
+default.
+
+A quiet companion still answers what you tell it to do (a role change in party
+chat, for one), and a roaming companion still tells you when it is down. Lines
+from a strategy rule's `say` are chatter, so they stop too.
+
 ## Free or hired
 
 **Settings → Population → Companions** decides what a new companion costs:
