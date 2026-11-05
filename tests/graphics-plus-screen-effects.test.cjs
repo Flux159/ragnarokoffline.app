@@ -7,13 +7,14 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 const MOD = path.join(__dirname, '..', 'mods', 'graphics-plus');
 const manifest = JSON.parse(fs.readFileSync(path.join(MOD, 'mod.json'), 'utf8'));
 const defaults = Object.fromEntries(manifest.settings.map(s => [s.key, s.default]));
 
 async function start(overrides) {
-    const { default: init } = await import(path.join(MOD, 'client', 'index.js'));
+    const { default: init } = await import(pathToFileURL(path.join(MOD, 'client', 'index.js')).href);
     const passes = [];
     const hooks = [];
     const listeners = [];
