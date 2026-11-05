@@ -251,7 +251,10 @@ class FriendGateway {
       }
     }
     if (this.closed || this.session(req) !== entry) return this.reply(res, 401, { error: 'A current invitation is required' });
-    const headers = { host: '127.0.0.1:' + this.upstreamPort };
+    // Marked remote: everything here is for a friend's machine, and with Send
+    // game files to friends off the asset server keeps the GRFs to the host
+    // (REMOTE_GRF_DATA). It cannot tell from the peer, which is this gateway.
+    const headers = { host: '127.0.0.1:' + this.upstreamPort, 'x-ragnarok-remote': '1' };
     for (const name of ['accept', 'accept-encoding', 'content-type']) if (req.headers[name]) headers[name] = req.headers[name];
     // ETags only. The asset server answers If-Modified-Since even beside an
     // If-None-Match that does not match (RFC 9110 13.1.3 says ignore it), so

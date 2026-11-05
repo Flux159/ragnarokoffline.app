@@ -85,6 +85,50 @@ Forgetting a connection removes its saved local credential. The stopped tunnel
 and DNS record remain in Cloudflare for the account owner to remove there.
 Open public registration, SMTP/reset services and ngrok are not provided.
 
+## Friends who bring their own game files
+
+By default a friend gets everything from you: the game, your mods and your
+client's GRFs, as they play. That needs nothing on their side, and a browser
+works. It also means your upload carries every texture and map they load.
+Two settings, both off by default, change that.
+
+**For a friend: Use my own game files** (Settings → Multiplayer → Join a
+friend). It needs a client set up in your own copy of the app, the same one the
+host plays with (iRO, kRO…). The game page, the sign-in and the connection
+still go to the host; only what the client reads out of the GRFs comes from your
+disk. **Mods’ files** says where the rest comes from:
+
+- **From the host** (the default): the host's mods, the translation and its
+  merged System tables come from the host, file by file, and nothing of your own
+  mods is used. Your era doesn't matter.
+- **My own mods**: everything comes from your computer, including your mods.
+  Your era must be the host's, and your mods the ones their world uses.
+
+The host's app writes `join.json` beside the files it serves: the era, the
+client its files are from, its mods with their versions, and the list of files
+it adds on top of the GRFs. Your client reads it as the game starts. If the host
+plays with another client, or your era is not theirs with your own mods, it
+says so and uses the host's files instead. A host on an older app has no
+`join.json`, and is used the old way.
+
+Your files are read through `ro-local://`, a scheme only this app answers, from
+your own asset server on loopback. The host's page never learns a port on your
+machine, and reaches nothing there but the game files it asks for.
+
+**For a host: Send game files to friends** (Settings → Multiplayer, on by
+default). Off, your GRFs and your client's BGM and AI folders go to nobody but
+this computer: not LAN players, not invited friends. Your mods' files, the
+translation, the merged System tables and the game itself still go. Friends then
+need **Use my own game files**, and **a browser cannot join**, since it has no
+game files of its own. Turning it off rebuilds the served files first, so
+nothing your asset server copied out of the GRFs while sharing them is left to
+send. The asset server does this itself (`REMOTE_GRF_DATA=false` in the Rust
+RemoteClient): a request from another address, or one the friend gateway marks
+`X-Ragnarok-Remote`, never gets archive bytes.
+
+Both sides need an app version with this: the joining client runs the host's
+copy of the game, so a host on an older version ignores a friend's own files.
+
 ## Sign in with Google or Apple
 
 Optional. If you bring your own OAuth client from Google, Apple or both,

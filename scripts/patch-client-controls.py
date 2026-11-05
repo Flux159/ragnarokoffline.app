@@ -323,3 +323,37 @@ edit('UI/Components/MobileUI/MobileUI.js', """function pickUpItem() {
 	}
 	Network.sendPacket(pickup);
 }""")
+
+# Joining a friend with your own game files (patches/client/JoinAssets.mjs,
+# electron/join-assets.js): the client reads its assets from this player's
+# machine, and what the host adds on top of the GRFs from the host.
+edit('Core/Client.js', "import Thread from './Thread.js';",
+     "import Thread from './Thread.js';\nimport { joinAssets } from 'Plugins/Ragnarok/JoinAssets.mjs';")
+edit('Core/Client.js', "const remoteClient = Configs.get('remoteClient');",
+     "const remoteClient = joinAssets(Configs.get('remoteClient'), Thread);")
+edit('Core/FileManager.js', "\tstatic remoteClient = '';\n",
+     "\tstatic remoteClient = '';\n"
+     "\t// The host's added files (its join.json), read from the host while the\n"
+     "\t// rest comes from remoteClient: this player's own game files.\n"
+     "\tstatic overlayHost = '';\n"
+     "\tstatic overlayFiles = null;\n"
+     "\tstatic hostFor(filename) {\n"
+     "\t\tconst key = String(filename).replace(/\\\\/g, '/').toLowerCase();\n"
+     "\t\treturn FileManager.overlayFiles && FileManager.overlayFiles.has(key) ? FileManager.overlayHost : FileManager.remoteClient;\n"
+     "\t}\n")
+edit('Core/FileManager.js', "\t\t\turl = FileManager.remoteClient + url;",
+     "\t\t\turl = FileManager.hostFor(filename) + url;")
+edit('Core/FileManager.js', "\t\t_batchQueue.push({ filename: filename, callback: callback });",
+     "\t\t// A batch goes to one server; the host's added files go one by one.\n"
+     "\t\tif (FileManager.overlayFiles && FileManager.hostFor(filename) !== FileManager.remoteClient) {\n"
+     "\t\t\tFileManager.getHTTP(filename, callback);\n"
+     "\t\t\treturn;\n"
+     "\t\t}\n\n"
+     "\t\t_batchQueue.push({ filename: filename, callback: callback });")
+edit('Core/ThreadEventHandler.js', "\t\t// Modify client host\n",
+     "\t\t// The host's added files, when the rest are this player's own\n"
+     "\t\tcase 'SET_OVERLAY_HOST':\n"
+     "\t\t\tFileManager.overlayHost = msg.data.base;\n"
+     "\t\t\tFileManager.overlayFiles = new Set(msg.data.files);\n"
+     "\t\t\tbreak;\n\n"
+     "\t\t// Modify client host\n")
