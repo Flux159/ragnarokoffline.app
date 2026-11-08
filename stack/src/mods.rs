@@ -4108,6 +4108,26 @@ mod tests {
     }
 
     #[test]
+    fn every_bundled_and_example_manifest_reads() {
+        // A manifest the app refuses ships as "Not loaded" to every player:
+        // 1.8.0's Graphics+ did, over a 471-byte setting description.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let mut read = 0;
+        for parent in ["mods", "examples/mods"] {
+            for entry in fs::read_dir(root.join(parent)).unwrap() {
+                let dir = entry.unwrap().path();
+                if dir.join("mod.json").is_file() {
+                    if let Err(e) = read_manifest(&dir) {
+                        panic!("{}: {e}", dir.display());
+                    }
+                    read += 1;
+                }
+            }
+        }
+        assert!(read > 0);
+    }
+
+    #[test]
     fn a_manifest_with_a_quote_in_the_description_reads_back_whole() {
         let d = tmp("desc");
         fs::write(d.join("mod.json"), r#"{"description": "adds a \"boss\" to prontera"}"#).unwrap();

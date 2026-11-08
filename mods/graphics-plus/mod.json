@@ -15,7 +15,7 @@
       "type": "boolean",
       "default": true,
       "label": "Screen effects",
-      "description": "The effects drawn over the finished picture: colour grading, tone mapping, lamp glow, vignette, distance haze, tilt-shift, colour fringing and drops on the lens. Off, the game draws straight to the screen, which is the sharpest picture; grass, water, shadows and trees still work. If the game looks blurry with Graphics+ on, try this off, or turn off Performance mode in the game's graphics options: with both on, the picture is drawn at three-quarter size and stretched."
+      "description": "Colour grading, tone mapping, glow, vignette, haze, tilt-shift, fringing and lens drops. Off draws straight to the screen, the sharpest picture; grass, water, shadows and trees still work. If the game looks blurry, try this off, or turn off Performance mode in the game's graphics options: with both on, the picture is drawn at three-quarter size and stretched."
     },
     {
       "key": "grade",
