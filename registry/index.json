@@ -1010,6 +1010,38 @@
       ]
     },
     {
+      "name": "huntcraft",
+      "version": "",
+      "author": "DaggerHashimoto",
+      "description": "An in-game Auto Combat window. Set up skills (priority or sequence, with conditions), which monsters to hunt on each map, roaming or holding position, healing, resting and teleporting inside the game, then press Save & Start. Skills are found on your character and cast from your Skill window, monsters you did not pick are left alone, roaming uses the server's pathfinding and keeps clear of warps, and it finds your Fly Wings or Teleport skill by itself. Settings per character, no GM rights. Renewal and pre-renewal.",
+      "homepage": "https://github.com/tonspri/huntcraft",
+      "tags": [
+        "auto-hunt",
+        "combat",
+        "pre-renewal",
+        "quality-of-life",
+        "renewal",
+        "ui"
+      ],
+      "icon": "images/icon.png",
+      "screenshots": [],
+      "requires": {
+        "mods": [],
+        "era": "any",
+        "app": ""
+      },
+      "source": {
+        "github": "tonspri/huntcraft",
+        "asset": "Huntcraft-v*.zip"
+      },
+      "files": [
+        {
+          "path": "images/icon.png",
+          "sha256": "a0bac5011fc353b5e0d9a15f0e441be1c50296cb6681f331f39e0003e6942ef9"
+        }
+      ]
+    },
+    {
       "name": "item-collection-ui",
       "version": "",
       "author": "DaggerHashimoto",
