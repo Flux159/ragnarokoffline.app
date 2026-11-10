@@ -51,9 +51,9 @@ if(require.main===module){
  const result=validate(input,reference);
  const template=fs.readFileSync(path.join(here,'living-style.template.txt'),'utf8');
  if(template.split('// GENERATED_ROPD_CATALOG').length!==2)throw Error('Missing/duplicate generation marker');
- fs.writeFileSync(path.join(mod,'npc/living-style-v1.7.0.txt'),template.replace('// GENERATED_ROPD_CATALOG',generate(result.accepted)));
+ fs.writeFileSync(path.join(mod,'npc/living-style-v1.7.1.txt'),template.replace('// GENERATED_ROPD_CATALOG',generate(result.accepted)));
  const catalog={schemaVersion:1,source:input.source,collectedAt:input.collectedAt,pagesCollected:input.pagesCollected,recordsCollected:input.recordsCollected,observedUnique:input.outfits.length,included:result.accepted.length,excluded:result.rejected.length,validation:'Complete combinations matching reference costume slots and bundled client view tables; sprite rendering requires live testing.',outfits:result.accepted};
- fs.writeFileSync(path.join(mod,'ROPD-OUTFITS-v1.7.0.json'),compactRows(catalog,'outfits'));
+ fs.writeFileSync(path.join(mod,'ROPD-OUTFITS-v1.7.1.json'),compactRows(catalog,'outfits'));
  console.log(JSON.stringify({included:result.accepted.length,excluded:result.rejected.length}));
 }
 module.exports={validate,generate};

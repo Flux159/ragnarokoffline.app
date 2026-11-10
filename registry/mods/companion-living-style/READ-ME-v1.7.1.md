@@ -1,6 +1,10 @@
-# Companion Living Style v1.7.0
+# Companion Living Style v1.7.1
 
 By DaggerHashimoto. Requires Ragnarok Offline 1.8.3 or newer and Population Engine. Supports Renewal and pre-renewal.
+
+## New in v1.7.1: no more costume flipping
+
+The game only shows a costume as a one-off look update. Before, an AI walking into your view was drawn in its own headgear until the next five-second refresh, so outfits seemed to flip back and forth. Now each AI is restyled the moment it comes into a real player's view. Outfit choices are unchanged.
 
 ## Complete observed outfits
 
@@ -30,7 +34,7 @@ Town sitting, emotes, same-family alternate bodies, colour options, world-wide s
 
 Install the ZIP or updated registry folder, keep your saved options, then use the app's **Apply & restart**. Do not keep old and new Living Style NPC files together.
 
-This update passes 20 automated catalog/settings/client-refresh checks and the app 1.8.3 manifest check. Live NPC parsing, sprite rendering, relogin behavior and pre-renewal remain to be tested for v1.7.0.
+This update passes the automated catalog/settings/client-refresh checks and the app 1.8.3 manifest check. The author confirmed v1.7.0 and v1.7.1 working in game on a pre-renewal server (Windows, app 1.8.3). Renewal play with v1.7.x and individual relogin and multiplayer cases have not been tested one by one.
 
 Check: populated town, field and dungeon; logout/login; map revisit within one session; equipped companion costumes; disabled slots; town theme toggle; automatic and manual modes. Inspect fresh map-server logs for parse and loop-limit errors.
 

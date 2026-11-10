@@ -4,8 +4,8 @@ const dir=__dirname,mod=path.resolve(dir,'../../mods/companion-living-style');
 const {validate,generate}=require('./build.cjs');
 const input=JSON.parse(fs.readFileSync(path.join(dir,'observed-outfits.json')));
 const ref=JSON.parse(fs.readFileSync(path.join(dir,'costume-reference.json')));
-const catalog=JSON.parse(fs.readFileSync(path.join(mod,'ROPD-OUTFITS-v1.7.0.json')));
-const npc=fs.readFileSync(path.join(mod,'npc/living-style-v1.7.0.txt'),'utf8');
+const catalog=JSON.parse(fs.readFileSync(path.join(mod,'ROPD-OUTFITS-v1.7.1.json')));
+const npc=fs.readFileSync(path.join(mod,'npc/living-style-v1.7.1.txt'),'utf8');
 const manifest=JSON.parse(fs.readFileSync(path.join(mod,'mod.json')));
 const checks=[];function check(name,fn){fn();checks.push(name);}
 check('Reproducible catalog: exact observed tuples, unique and complete',()=>{
@@ -59,16 +59,16 @@ check('Observed branch uses one row across four slots and respects real companio
  assert(npc.includes('if (.@theme && ((.@pick * 41) + 7) % 100 < .theme_blend) .@use_ropd = 0;'));
  assert(npc.includes('.@use_ropd = .ropd && .ropd_count > 0;'));
 });
-check('All 13 bounded scans yield; balanced braces; no inventory or stat mutations',()=>{
+check('All 14 bounded scans yield; balanced braces; no inventory or stat mutations',()=>{
  const loops=[...npc.matchAll(/for \([^\n]+\) \{\n((?:\s*\/\/[^\n]*\n)*\s*[^\n]+)/g)];
- assert.equal(loops.length,13);for(const m of loops)assert(m[1].includes('if (.@i % 4 == 0) sleep 1;'));
+ assert.equal(loops.length,14);for(const m of loops)assert(/if \(\.@[a-z]+ % 4 == 0\) sleep 1;/.test(m[1]));
  const code=npc.replace(/\/\/[^\n]*/g,'').replace(/"(?:[^"\\]|\\.)*"/g,'""');let depth=0;
  for(const ch of code){if(ch==='{')depth++;if(ch==='}')depth--;assert(depth>=0);}assert.equal(depth,0);
  assert(!/\b(?:getitem|equip|setlook|jobchange|freeloop)\s*\(/.test(code));
 });
 check('Defaults enable observed outfits and automatic sessions; legacy settings remain',()=>{
  for(const k of ['style_ropd_outfits','style_login_shuffle','style_town_themes'])assert.equal(manifest.settings.find(s=>s.key===k).default,true);
- assert.equal(manifest.version,'1.7.0');assert.equal(manifest.requires.app,'>=1.8.3');assert.equal(manifest.requires.era,'any');
+ assert.equal(manifest.version,'1.7.1');assert.equal(manifest.requires.app,'>=1.8.3');assert.equal(manifest.requires.era,'any');
 });
 (async()=>{
  const elements=new Map();class Element{constructor(){this.children=[];this.value='';this.checked=false;}append(...n){this.children.push(...n);}}

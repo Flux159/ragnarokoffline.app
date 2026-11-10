@@ -18,6 +18,6 @@ python3 scripts/mod-index.py
 python3 scripts/mod-index.py --check
 ```
 
-The v1.7.0 catalog deliberately retains only 431 of 1,487 collected combinations. A missing bundled table entry is not proof that the user's GRFs lack it; expand the allowlist only after verifying mappings and sprites. Preserve zero slots and the observed tuple. Do not replace missing pieces with guesses.
+The v1.7.0 catalog (unchanged in v1.7.1) deliberately retains only 431 of 1,487 collected combinations. A missing bundled table entry is not proof that the user's GRFs lack it; expand the allowlist only after verifying mappings and sprites. Preserve zero slots and the observed tuple. Do not replace missing pieces with guesses.
 
 For future releases, update the versioned output paths and test counts deliberately. Record collection date/counts and validation limits. Never publish raw authenticated HTML or session data. No network access occurs in the generator or installed mod.

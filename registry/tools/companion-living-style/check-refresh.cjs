@@ -2,7 +2,7 @@
 const fs=require('node:fs'), vm=require('node:vm'), assert=require('node:assert/strict'), path=require('node:path');
 const mod=path.resolve(__dirname,'../../mods/companion-living-style');
 const source=fs.readFileSync(path.join(mod,'client/index.js'),'utf8');
-const npc=fs.readFileSync(path.join(mod,'npc/living-style-v1.7.0.txt'),'utf8').replace(/\r\n/g,'\n');
+const npc=fs.readFileSync(path.join(mod,'npc/living-style-v1.7.1.txt'),'utf8').replace(/\r\n/g,'\n');
 const manifest=JSON.parse(fs.readFileSync(path.join(mod,'mod.json'),'utf8'));
 const checks=[];
 function harness(params={},map=null){
@@ -58,10 +58,10 @@ checks.push('Manual shuffle limits remain 1–9999 and its description explains 
 // Every finite traversal, including startup, cleanup and map refresh, yields
 // before its body. This targets the reported runaway script execution regression.
 const loops=[...npc.matchAll(/for \([^\n]+\) \{\n((?:\s*\/\/[^\n]*\n)*\s*[^\n]+)/g)];
-assert.equal(loops.length,13);
-for(const match of loops)assert(match[1].includes('if (.@i % 4 == 0) sleep 1;'));
+assert.equal(loops.length,14);
+for(const match of loops)assert(/if \(\.@[a-z]+ % 4 == 0\) sleep 1;/.test(match[1]));
 assert(!npc.includes('freeloop('));
-checks.push('All thirteen finite scans (including the complete outfit catalog) yield in groups of four without disabling the server loop guard');
+checks.push('All fourteen finite scans (including the complete outfit catalog and the in-view pass) yield in groups of four without disabling the server loop guard');
 assert(npc.includes('stopnpctimer;'));
 assert(npc.includes('if (.ready && !.busy'));
 assert(npc.includes('if (!.ready || .busy)'));
@@ -77,6 +77,11 @@ checks.push('Server refresh uses the real requester map, ignores client targets 
 for(const eq of ['TOP','MID','LOW'])assert(npc.includes(`.@kind != 3 || getequipid(EQI_COSTUME_HEAD_${eq}, .@cid) <= 0`));
 assert(npc.includes('.@kind != 3 || getequipid(EQI_COSTUME_GARMENT, .@cid) <= 0'));
 checks.push('Companions keep actual equipped costumes while ambient/vendor AI can override default costume looks visually');
-const report=`Companion Living Style v1.7.0 refresh checks\n${checks.length} checks passed.\n\n`+checks.map(c=>'PASS '+c).join('\n')+'\n\nLive rendering and server execution after restart remain to be confirmed.\n';
+// AI entering a player's client view (AREA_SIZE 14) are restyled at once.
+assert(npc.includes('getareaunits(BL_PC, .@pmap$, .@px - 14, .@py - 14, .@px + 14, .@py + 14, .@near)'));
+assert(npc.includes('if (getd(".near_" + .@aid + "_" + .@near[.@j]) != .pass - 1)\n                    callsub L_Style, .@near[.@j], 1;'));
+assert(npc.indexOf('.pass++;')<npc.indexOf('getareaunits(')&&npc.indexOf('getareaunits(')<npc.indexOf('.@n = getunits(BL_PC, .@gids);'));
+checks.push('AI coming into a real player\'s view are restyled on the next pass, before the world-wide scan, without waiting for the five-second refresh');
+const report=`Companion Living Style v1.7.1 refresh checks\n${checks.length} checks passed.\n\n`+checks.map(c=>'PASS '+c).join('\n')+'\n\nLive rendering and server execution after restart remain to be confirmed.\n';
 
 console.log(report);
