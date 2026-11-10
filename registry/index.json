@@ -479,9 +479,9 @@
     },
     {
       "name": "companion-living-style",
-      "version": "1.6.0",
+      "version": "1.7.0",
       "author": "DaggerHashimoto",
-      "description": "Give recruited companions, AI vendors and the ambient AI across the whole world (towns, fields and dungeons) varied costume looks, colours and supported same-job outfits, with town-themed looks in 34 major towns (a Costume Guide in each switches the theme off or on), townsfolk who sit to rest and show idle emotes, an outfit shuffle setting and optional Cold Bolt use for companions that already know the skill. Renewal and pre-renewal; enable Population Engine. Cosmetic styling does not create items or change equipment stats.",
+      "description": "Complete offline ROPD outfit combinations for companions, ambient AI and AI vendors, automatically reshuffled for each new play session. Preserves town themes, equipped companion costumes, town life and optional Cold Bolt rules. Cosmetic only; enable Population Engine.",
       "homepage": "",
       "tags": [
         "companions",
@@ -497,31 +497,35 @@
       "requires": {
         "mods": [],
         "era": "any",
-        "app": ">=1.7.7"
+        "app": ">=1.8.3"
       },
       "files": [
         {
-          "path": "CHANGELOG-v1.6.0.md",
-          "sha256": "17035b28ddb4a18f99c905af91e65512cfc7c85e477dd88ca51bbaea328767ef"
+          "path": "CHANGELOG-v1.7.0.md",
+          "sha256": "00cf23604905438820bafacd210a62912e9cbd19144e2a50e025e18440427ea1"
         },
         {
           "path": "CHANGELOG.md",
-          "sha256": "44e58e3263aec842eb4ee0a368a9ff617fda561dbe9c4e2e02adaa1ea56f22ab"
+          "sha256": "ff2a452d4a489fc473458d38d9cbd9b78f627023115f0a76dcb5bf23c698fc1f"
         },
         {
-          "path": "COSTUME-POOL-v1.6.0.csv",
+          "path": "COSTUME-POOL-v1.7.0.csv",
           "sha256": "6ab74c5940a83070e51d77de8c71872cd3e369859b435efcf0d0fcd83f2a078f"
         },
         {
-          "path": "LICENSE-v1.6.0.txt",
+          "path": "LICENSE-v1.7.0.txt",
           "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
         },
         {
-          "path": "READ-ME-v1.6.0.md",
-          "sha256": "ada0afa263c3b9c2f5cb0435b65d04b315791dca41a66d5d265eb03ace353daa"
+          "path": "READ-ME-v1.7.0.md",
+          "sha256": "2f8c4f25699c99d5b353b3a2235adccff63e5307c12ab598b5131f130bb9e34c"
         },
         {
-          "path": "TOWN-THEMES-v1.6.0.csv",
+          "path": "ROPD-OUTFITS-v1.7.0.json",
+          "sha256": "9a943ed4b58d02c3651bbee5df0ad3e09cce8ad35477a5afa76fd8ba4fce6679"
+        },
+        {
+          "path": "TOWN-THEMES-v1.7.0.csv",
           "sha256": "d8b47438a9f13ccf78aa817f49c84c0b01310afd22dad3260ae5b99f7caa067f"
         },
         {
@@ -538,19 +542,19 @@
         },
         {
           "path": "mod.json",
-          "sha256": "1e9a4d58f62bcea363e63c5dbf08ceae570c6ba6e65f20b3de0c7e4982249ba5"
+          "sha256": "5639d59999547055683d929714d7becc489c4d7cd5cae281c26b9f00d4528e51"
         },
         {
-          "path": "npc/living-style-v1.6.0.txt",
-          "sha256": "1d92d532f8400b78cee40f991ec472cd6cc04fc777f5ec51ad5d62a951c86535"
+          "path": "npc/living-style-v1.7.0.txt",
+          "sha256": "966d0d2ac04e26eefeac20ab9f879f40ca133be8e362b76013043c2a804cfa11"
         },
         {
-          "path": "npc/town-emotes-v1.6.0.txt",
-          "sha256": "56ffb30d3193831cbe3e0b28e4ffb48cb9b69816c6520172a403f6fbe5e48ee8"
+          "path": "npc/town-emotes-v1.7.0.txt",
+          "sha256": "9bed47de369a9763163f54bf83342b7692ea4304134455a5ce31fcc78b11073b"
         },
         {
-          "path": "settings/index-v1.6.0.html",
-          "sha256": "44c50c6dc580e4183abe1ed1266f1d3581e287b8e4024234be2b7d615e8700bb"
+          "path": "settings/index-v1.7.0.html",
+          "sha256": "d9eef07e7073c0a263f8e8881e7b7cbe485fa4d9e292f8eb0e00a3532fb5c12d"
         }
       ]
     },

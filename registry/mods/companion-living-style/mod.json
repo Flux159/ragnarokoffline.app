@@ -1,13 +1,13 @@
 {
   "name": "companion-living-style",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "author": "DaggerHashimoto",
-  "description": "Give recruited companions, AI vendors and the ambient AI across the whole world (towns, fields and dungeons) varied costume looks, colours and supported same-job outfits, with town-themed looks in 34 major towns (a Costume Guide in each switches the theme off or on), townsfolk who sit to rest and show idle emotes, an outfit shuffle setting and optional Cold Bolt use for companions that already know the skill. Renewal and pre-renewal; enable Population Engine. Cosmetic styling does not create items or change equipment stats.",
+  "description": "Complete offline ROPD outfit combinations for companions, ambient AI and AI vendors, automatically reshuffled for each new play session. Preserves town themes, equipped companion costumes, town life and optional Cold Bolt rules. Cosmetic only; enable Population Engine.",
   "requires": {
-    "app": ">=1.7.7",
+    "app": ">=1.8.3",
     "era": "any"
   },
-  "settingsPage": "settings/index-v1.6.0.html",
+  "settingsPage": "settings/index-v1.7.0.html",
   "settings": [
     {
       "key": "equipment_cold_bolt",
@@ -49,7 +49,7 @@
       "type": "boolean",
       "default": true,
       "label": "Town-themed looks",
-      "description": "Ambient townsfolk in major towns mix in costumes that suit the place (winter wear in Lutie, sailors in Alberta, sakura in Amatsu, and so on). About 60% of each costume slot comes from the town theme; the rest stays the everyday pool. A Costume Guide beside each town's Warpra or Kafra can switch one town's theme off or on. Companions and vendors are unchanged."
+      "description": "About 60% of ambient townsfolk in themed towns use town-themed looks; the others use a complete observed ROPD outfit. With ROPD outfits off, the original per-slot theme blend is used. Costume Guides keep their town toggles."
     },
     {
       "key": "town_idle_sit",
@@ -113,8 +113,22 @@
       "default": 1,
       "min": 1,
       "max": 9999,
-      "label": "Outfit shuffle number (1–9999)",
-      "description": "Minimum 1, maximum 9999. This selects a stable set of outfits, not a delay or speed. Numbers 1, 5 and 9999 all use the same refresh timing. Save, then Apply & restart to change outfits."
+      "label": "Manual shuffle number (automatic mode does not need this)",
+      "description": "Used when Fresh outfits each login is off, and for existing colour/body variation. No need to change this number for automatic costume reshuffling."
+    },
+    {
+      "key": "style_ropd_outfits",
+      "type": "boolean",
+      "default": true,
+      "label": "Complete ROPD outfits",
+      "description": "Use bundled observed outfits as coordinated sets, including empty slots. Townsfolk choose a themed look or a complete ROPD outfit. Off: use the original mixed costume pools."
+    },
+    {
+      "key": "style_login_shuffle",
+      "type": "boolean",
+      "default": true,
+      "label": "Fresh outfits each login",
+      "description": "Reshuffle when the first real player enters an empty world. Outfits stay stable across map changes; additional players joining the same session do not reshuffle everyone. Off: use the saved shuffle number."
     }
   ],
   "tags": [
