@@ -2,7 +2,7 @@
 const fs=require('node:fs'), vm=require('node:vm'), assert=require('node:assert/strict'), path=require('node:path');
 const mod=path.resolve(__dirname,'../../mods/companion-living-style');
 const source=fs.readFileSync(path.join(mod,'client/index.js'),'utf8');
-const npc=fs.readFileSync(path.join(mod,'npc/living-style-v1.7.1.txt'),'utf8').replace(/\r\n/g,'\n');
+const npc=fs.readFileSync(path.join(mod,'npc/living-style-v1.7.2.txt'),'utf8').replace(/\r\n/g,'\n');
 const manifest=JSON.parse(fs.readFileSync(path.join(mod,'mod.json'),'utf8'));
 const checks=[];
 function harness(params={},map=null){
@@ -79,9 +79,16 @@ assert(npc.includes('.@kind != 3 || getequipid(EQI_COSTUME_GARMENT, .@cid) <= 0'
 checks.push('Companions keep actual equipped costumes while ambient/vendor AI can override default costume looks visually');
 // AI entering a player's client view (AREA_SIZE 14) are restyled at once.
 assert(npc.includes('getareaunits(BL_PC, .@pmap$, .@px - 14, .@py - 14, .@px + 14, .@py + 14, .@near)'));
-assert(npc.includes('if (getd(".near_" + .@aid + "_" + .@near[.@j]) != .pass - 1)\n                    callsub L_Style, .@near[.@j], 1;'));
-assert(npc.indexOf('.pass++;')<npc.indexOf('getareaunits(')&&npc.indexOf('getareaunits(')<npc.indexOf('.@n = getunits(BL_PC, .@gids);'));
+assert(npc.includes('if (inarray(.@seen, .@near[.@j]) < 0)\n                    callsub L_Style, .@near[.@j], 1;'));
+assert(npc.indexOf('getareaunits(')<npc.indexOf('.@n = getunits(BL_PC, .@gids);'));
 checks.push('AI coming into a real player\'s view are restyled on the next pass, before the world-wide scan, without waiting for the five-second refresh');
-const report=`Companion Living Style v1.7.1 refresh checks\n${checks.length} checks passed.\n\n`+checks.map(c=>'PASS '+c).join('\n')+'\n\nLive rendering and server execution after restart remain to be confirmed.\n';
+// Review of PR 777: tracking is one array per player, replaced each pass and dropped at logout.
+assert(!npc.includes('".near_" + .@aid + "_"'));
+assert(npc.includes('copyarray .@seen, getd(".near_" + .@aid), .@k;'));
+assert(npc.includes('deletearray getd(".near_" + .@aid);\n            if (.@m > 0) copyarray getd(".near_" + .@aid), .@near, .@m;'));
+assert(npc.includes('deletearray getd(".near_" + .@aid);\n                deletearray .players[.@i], 1;'));
+assert(npc.includes('OnPCLogoutEvent:')&&npc.indexOf('deletearray getd(".near_" + getcharid(3));')>npc.indexOf('OnPCLogoutEvent:'));
+checks.push('In-view tracking keeps one bounded list per real player, replaced every pass and removed when that player logs out');
+const report=`Companion Living Style v1.7.2 refresh checks\n${checks.length} checks passed.\n\n`+checks.map(c=>'PASS '+c).join('\n')+'\n\nLive rendering and server execution after restart remain to be confirmed.\n';
 
 console.log(report);

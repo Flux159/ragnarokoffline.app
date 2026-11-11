@@ -479,7 +479,7 @@
     },
     {
       "name": "companion-living-style",
-      "version": "1.7.1",
+      "version": "1.7.2",
       "author": "DaggerHashimoto",
       "description": "Complete offline ROPD outfit combinations for companions, ambient AI and AI vendors, automatically reshuffled for each new play session. Preserves town themes, equipped companion costumes, town life and optional Cold Bolt rules. Cosmetic only; enable Population Engine.",
       "homepage": "",
@@ -501,31 +501,31 @@
       },
       "files": [
         {
-          "path": "CHANGELOG-v1.7.1.md",
-          "sha256": "53770b5c95082f3d2f5f01db00649e0a99117098b151aa814ded7af6070a2ab0"
+          "path": "CHANGELOG-v1.7.2.md",
+          "sha256": "e6b400b4fcae61daa9a5c0a17b68d4c156653af8010e2637060157d4fe6eefa6"
         },
         {
           "path": "CHANGELOG.md",
-          "sha256": "88fdb414a65d54a43201cb01e65f5f3455c95900f1896e97dd4c42e9522b9548"
+          "sha256": "d730a39c19301c168e22d7b397084b9c3e95e34fdc68a022f6083fc14e105d62"
         },
         {
-          "path": "COSTUME-POOL-v1.7.1.csv",
+          "path": "COSTUME-POOL-v1.7.2.csv",
           "sha256": "6ab74c5940a83070e51d77de8c71872cd3e369859b435efcf0d0fcd83f2a078f"
         },
         {
-          "path": "LICENSE-v1.7.1.txt",
+          "path": "LICENSE-v1.7.2.txt",
           "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
         },
         {
-          "path": "READ-ME-v1.7.1.md",
-          "sha256": "3d3c5ba1872ca3559010bf03b5135a834c374e51a766637c80dcc1984909db2a"
+          "path": "READ-ME-v1.7.2.md",
+          "sha256": "d4d3c23a6a9e4848addb59b034ca88aff06daa48e88acd66a71ea995ecd83c1c"
         },
         {
-          "path": "ROPD-OUTFITS-v1.7.1.json",
+          "path": "ROPD-OUTFITS-v1.7.2.json",
           "sha256": "9a943ed4b58d02c3651bbee5df0ad3e09cce8ad35477a5afa76fd8ba4fce6679"
         },
         {
-          "path": "TOWN-THEMES-v1.7.1.csv",
+          "path": "TOWN-THEMES-v1.7.2.csv",
           "sha256": "d8b47438a9f13ccf78aa817f49c84c0b01310afd22dad3260ae5b99f7caa067f"
         },
         {
@@ -542,19 +542,19 @@
         },
         {
           "path": "mod.json",
-          "sha256": "8d37cd63e83ccf3d2ea2ac8c317f213a7f58fb49df5ea0ee68509c8832530824"
+          "sha256": "65f72a28e13d2cf2defd3fd9ea0d9e7e0ffd568d7aaab4f9f08db2cff6e850ce"
         },
         {
-          "path": "npc/living-style-v1.7.1.txt",
-          "sha256": "daadef6321fd881ebc9c2935506db76152836ce6feaf6394836015f01938e2b4"
+          "path": "npc/living-style-v1.7.2.txt",
+          "sha256": "9a6c9c9f2c6925959edfeb23fe9baba728334f310f1ddc5b2f202f7774a7dd77"
         },
         {
-          "path": "npc/town-emotes-v1.7.1.txt",
-          "sha256": "38a12ec55752740ff657923ba8c479030119994eea4902493eeca959caae4c95"
+          "path": "npc/town-emotes-v1.7.2.txt",
+          "sha256": "3c5b7efcf796088fa84efa51e3f5448554f28f3c3712f13a88ace8f097ac393d"
         },
         {
-          "path": "settings/index-v1.7.1.html",
-          "sha256": "7a2c1789c5cc3e4b4e37575a037a8697777d1ce83b82b987e405011b4af327dd"
+          "path": "settings/index-v1.7.2.html",
+          "sha256": "885871d8ef05ec10b776fa2860a72bbcf83bc153e1fcf9bd1f78abc4a88fb99d"
         }
       ]
     },

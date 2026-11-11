@@ -1,4 +1,4 @@
-// Companion Living Style v1.7.1. Appearance packets only: no inventory or stats.
+// Companion Living Style v1.7.2. Appearance packets only: no inventory or stats.
 // Ambient AI are styled world-wide (style_whole_world) or on town maps only.
 // Ambient townsfolk on themed town maps mix town-flavoured costumes into the pool.
 // Pre-renewal's item database lacks most costume items; the client sprites are
@@ -224,25 +224,31 @@ OnTimer250:
     if (.ready && !.busy && (.companions || .townspeople || .vendors)) {
         .busy = 1;
         deletearray .player_maps$;
-        .pass++;
         for (.@i = getarraysize(.players) - 1; .@i >= 0; .@i--) {
             if (.@i % 4 == 0) sleep 1;
-            if (!isloggedin(.players[.@i])) {
+            .@aid = .players[.@i];
+            if (!isloggedin(.@aid)) {
+                deletearray getd(".near_" + .@aid);
                 deletearray .players[.@i], 1;
                 continue;
             }
-            .@aid = .players[.@i];
             if (getmapxy(.@pmap$, .@px, .@py, BL_PC, rid2name(.@aid)) != 0) continue;
             .player_maps$[getarraysize(.player_maps$)] = .@pmap$;
             // An AI coming into view is drawn in its own gear, because changelook
             // is not kept. Restyle it now, not at the next five-second refresh.
+            // .near_<aid> holds what this player saw last pass, so it stays bounded.
+            deletearray .@seen;
+            .@k = getarraysize(getd(".near_" + .@aid));
+            if (.@k > 0) copyarray .@seen, getd(".near_" + .@aid), .@k;
+            deletearray .@near;
             .@m = getareaunits(BL_PC, .@pmap$, .@px - 14, .@py - 14, .@px + 14, .@py + 14, .@near);
             for (.@j = 0; .@j < .@m; .@j++) {
                 if (.@j % 4 == 0) sleep 1;
-                if (getd(".near_" + .@aid + "_" + .@near[.@j]) != .pass - 1)
+                if (inarray(.@seen, .@near[.@j]) < 0)
                     callsub L_Style, .@near[.@j], 1;
-                setd ".near_" + .@aid + "_" + .@near[.@j], .pass;
             }
+            deletearray getd(".near_" + .@aid);
+            if (.@m > 0) copyarray getd(".near_" + .@aid), .@near, .@m;
         }
         .@n = getunits(BL_PC, .@gids);
         for (.@i = 0; .@i < .@n; .@i++) {
@@ -304,6 +310,7 @@ OnPCLogoutEvent:
     if (population_is_shell(getcharid(3)) != 0) end;
     .@p = inarray(.players, getcharid(3));
     if (.@p >= 0) deletearray .players[.@p], 1;
+    deletearray getd(".near_" + getcharid(3));
     @dls_session_seen = 0;
     end;
 

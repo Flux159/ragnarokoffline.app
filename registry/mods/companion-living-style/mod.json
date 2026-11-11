@@ -1,13 +1,13 @@
 {
   "name": "companion-living-style",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "author": "DaggerHashimoto",
   "description": "Complete offline ROPD outfit combinations for companions, ambient AI and AI vendors, automatically reshuffled for each new play session. Preserves town themes, equipped companion costumes, town life and optional Cold Bolt rules. Cosmetic only; enable Population Engine.",
   "requires": {
     "app": ">=1.8.3",
     "era": "any"
   },
-  "settingsPage": "settings/index-v1.7.1.html",
+  "settingsPage": "settings/index-v1.7.2.html",
   "settings": [
     {
       "key": "equipment_cold_bolt",

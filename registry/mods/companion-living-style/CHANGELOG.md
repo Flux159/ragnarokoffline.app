@@ -1,3 +1,8 @@
+## 1.7.2
+- Tidy-up: the in-view restyle now remembers only what each player saw on the last pass, and forgets it when they log out. Before, it kept one server variable per player and AI pair for the whole uptime.
+- No visible change: AI still get their costume the moment they come into view.
+- Automated checks pass; live testing of 1.7.2 is pending.
+
 ## 1.7.1
 - Fix: AI no longer flip between their own headgear and their costume. An AI coming into view is restyled straight away instead of at the next five-second refresh.
 - Everything from 1.7.0 is kept: complete observed outfits, the login shuffle, town themes, town life and Cold Bolt.

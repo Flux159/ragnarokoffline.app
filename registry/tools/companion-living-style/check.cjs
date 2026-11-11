@@ -4,8 +4,8 @@ const dir=__dirname,mod=path.resolve(dir,'../../mods/companion-living-style');
 const {validate,generate}=require('./build.cjs');
 const input=JSON.parse(fs.readFileSync(path.join(dir,'observed-outfits.json')));
 const ref=JSON.parse(fs.readFileSync(path.join(dir,'costume-reference.json')));
-const catalog=JSON.parse(fs.readFileSync(path.join(mod,'ROPD-OUTFITS-v1.7.1.json')));
-const npc=fs.readFileSync(path.join(mod,'npc/living-style-v1.7.1.txt'),'utf8');
+const catalog=JSON.parse(fs.readFileSync(path.join(mod,'ROPD-OUTFITS-v1.7.2.json')));
+const npc=fs.readFileSync(path.join(mod,'npc/living-style-v1.7.2.txt'),'utf8');
 const manifest=JSON.parse(fs.readFileSync(path.join(mod,'mod.json')));
 const checks=[];function check(name,fn){fn();checks.push(name);}
 check('Reproducible catalog: exact observed tuples, unique and complete',()=>{
@@ -68,7 +68,7 @@ check('All 14 bounded scans yield; balanced braces; no inventory or stat mutatio
 });
 check('Defaults enable observed outfits and automatic sessions; legacy settings remain',()=>{
  for(const k of ['style_ropd_outfits','style_login_shuffle','style_town_themes'])assert.equal(manifest.settings.find(s=>s.key===k).default,true);
- assert.equal(manifest.version,'1.7.1');assert.equal(manifest.requires.app,'>=1.8.3');assert.equal(manifest.requires.era,'any');
+ assert.equal(manifest.version,'1.7.2');assert.equal(manifest.requires.app,'>=1.8.3');assert.equal(manifest.requires.era,'any');
 });
 (async()=>{
  const elements=new Map();class Element{constructor(){this.children=[];this.value='';this.checked=false;}append(...n){this.children.push(...n);}}
