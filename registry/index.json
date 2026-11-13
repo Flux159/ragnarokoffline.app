@@ -479,10 +479,10 @@
     },
     {
       "name": "companion-living-style",
-      "version": "1.6.0",
+      "version": "",
       "author": "DaggerHashimoto",
-      "description": "Give recruited companions, AI vendors and the ambient AI across the whole world (towns, fields and dungeons) varied costume looks, colours and supported same-job outfits, with town-themed looks in 34 major towns (a Costume Guide in each switches the theme off or on), townsfolk who sit to rest and show idle emotes, an outfit shuffle setting and optional Cold Bolt use for companions that already know the skill. Renewal and pre-renewal; enable Population Engine. Cosmetic styling does not create items or change equipment stats.",
-      "homepage": "",
+      "description": "Varied costume looks for recruited companions, ambient AI and AI vendors across the whole world: complete outfits reshuffled each play session, town-themed looks in 34 towns with a Costume Guide to switch them, townsfolk who sit and emote, and optional Cold Bolt for companions that already know it. Cosmetic only; enable Population Engine.",
+      "homepage": "https://github.com/tonspri/companion-living-style",
       "tags": [
         "companions",
         "costumes",
@@ -496,63 +496,14 @@
       "screenshots": [],
       "requires": {
         "mods": [],
-        "era": "any",
-        "app": ">=1.7.7"
+        "era": "",
+        "app": ""
       },
-      "files": [
-        {
-          "path": "CHANGELOG-v1.6.0.md",
-          "sha256": "17035b28ddb4a18f99c905af91e65512cfc7c85e477dd88ca51bbaea328767ef"
-        },
-        {
-          "path": "CHANGELOG.md",
-          "sha256": "44e58e3263aec842eb4ee0a368a9ff617fda561dbe9c4e2e02adaa1ea56f22ab"
-        },
-        {
-          "path": "COSTUME-POOL-v1.6.0.csv",
-          "sha256": "6ab74c5940a83070e51d77de8c71872cd3e369859b435efcf0d0fcd83f2a078f"
-        },
-        {
-          "path": "LICENSE-v1.6.0.txt",
-          "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
-        },
-        {
-          "path": "READ-ME-v1.6.0.md",
-          "sha256": "ada0afa263c3b9c2f5cb0435b65d04b315791dca41a66d5d265eb03ace353daa"
-        },
-        {
-          "path": "TOWN-THEMES-v1.6.0.csv",
-          "sha256": "d8b47438a9f13ccf78aa817f49c84c0b01310afd22dad3260ae5b99f7caa067f"
-        },
-        {
-          "path": "client/index.js",
-          "sha256": "4ce28759b6e52a2e876bf2f8e1be5e58dc6f349322471a397e8712d574baccf2"
-        },
-        {
-          "path": "db/when/equipment_cold_bolt/population_strategy.yml",
-          "sha256": "c2e101ebcc2abf9b61ea08d380efaa80e6ef76c0f3cadf25e9ff730944547162"
-        },
-        {
-          "path": "db/when/town_idle_sit/population_strategy.yml",
-          "sha256": "05ddb51f47f4443ce524d04543f8329039200984358fdb19e2dd80376cc4eb72"
-        },
-        {
-          "path": "mod.json",
-          "sha256": "1e9a4d58f62bcea363e63c5dbf08ceae570c6ba6e65f20b3de0c7e4982249ba5"
-        },
-        {
-          "path": "npc/living-style-v1.6.0.txt",
-          "sha256": "1d92d532f8400b78cee40f991ec472cd6cc04fc777f5ec51ad5d62a951c86535"
-        },
-        {
-          "path": "npc/town-emotes-v1.6.0.txt",
-          "sha256": "56ffb30d3193831cbe3e0b28e4ffb48cb9b69816c6520172a403f6fbe5e48ee8"
-        },
-        {
-          "path": "settings/index-v1.6.0.html",
-          "sha256": "44c50c6dc580e4183abe1ed1266f1d3581e287b8e4024234be2b7d615e8700bb"
-        }
-      ]
+      "source": {
+        "github": "tonspri/companion-living-style",
+        "asset": "companion-living-style-*.zip"
+      },
+      "files": []
     },
     {
       "name": "companion-party-overhaul",
@@ -1006,6 +957,38 @@
         {
           "path": "images/icon.png",
           "sha256": "783ea154637c9f9096654e23fcd71338e13b66a77152b7e828a979fab6347967"
+        }
+      ]
+    },
+    {
+      "name": "huntcraft",
+      "version": "",
+      "author": "DaggerHashimoto",
+      "description": "An in-game Auto Combat window. Set up skills (priority or sequence, with conditions), which monsters to hunt on each map, roaming or holding position, healing, resting and teleporting inside the game, then press Save & Start. Skills are found on your character and cast from your Skill window, monsters you did not pick are left alone, roaming uses the server's pathfinding and keeps clear of warps, and it finds your Fly Wings or Teleport skill by itself. Settings per character, no GM rights. Renewal and pre-renewal.",
+      "homepage": "https://github.com/tonspri/huntcraft",
+      "tags": [
+        "auto-hunt",
+        "combat",
+        "pre-renewal",
+        "quality-of-life",
+        "renewal",
+        "ui"
+      ],
+      "icon": "images/icon.png",
+      "screenshots": [],
+      "requires": {
+        "mods": [],
+        "era": "any",
+        "app": ""
+      },
+      "source": {
+        "github": "tonspri/huntcraft",
+        "asset": "Huntcraft-v*.zip"
+      },
+      "files": [
+        {
+          "path": "images/icon.png",
+          "sha256": "a0bac5011fc353b5e0d9a15f0e441be1c50296cb6681f331f39e0003e6942ef9"
         }
       ]
     },
