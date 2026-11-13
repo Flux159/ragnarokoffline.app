@@ -402,10 +402,23 @@ static std::atomic<bool> g_population_engine_running(false);
 static std::atomic<size_t> g_population_engine_count(0); // Atomic counter for fast access without mutex
 static PopulationEngineStats g_population_engine_stats;
 
+// RAGNAROKMAC (chat settings): companions in a player's party and every other shell each
+// have their own switch, Settings -> Population: population_engine_companion_chat_enable
+// and population_engine_chat_enable. Off silences what a shell says of its own accord:
+// ambient lines, replies to its name or a whisper, kill taunts, strategy rule lines.
+// Answers to a command its owner gave it ("Understood. My role is now ...", "I'm down!",
+// a party invite's reply) are not chatter and are sent either way.
+static bool pop_is_companion(const map_session_data *sd);
+static bool population_engine_shell_may_chat(const map_session_data *sd)
+{
+	return pop_is_companion(sd) ? battle_config.population_engine_companion_chat_enable != 0
+		: battle_config.population_engine_chat_enable != 0;
+}
+
 TIMER_FUNC(population_engine_chat_timer) {
 	PE_PERF_SCOPE("timer.chat");
 	extern struct Battle_Config battle_config;
-	if (!battle_config.population_engine_chat_enable)
+	if (!battle_config.population_engine_chat_enable && !battle_config.population_engine_companion_chat_enable) // RAGNAROKMAC (chat settings)
 		return 0;
 
 	const t_tick now = gettick();
@@ -448,6 +461,8 @@ TIMER_FUNC(population_engine_chat_timer) {
 			continue;
 		// RAGNAROKMAC (shell control API): a held shell says what its script says.
 		if (population_engine_shell_is_held(raw_sd))
+			continue;
+		if (!population_engine_shell_may_chat(raw_sd)) // RAGNAROKMAC (chat settings)
 			continue;
 
 		std::shared_ptr<PopulationEngine> equipment = population_engine_db_for_shell(raw_sd).find(raw_sd->status.class_);
@@ -531,7 +546,7 @@ TIMER_FUNC(population_engine_chat_timer) {
 static bool population_engine_deliver_chat_reply_locked(map_session_data* bot_sd, map_session_data* whisper_to_sd)
 {
 	extern struct Battle_Config battle_config;
-	if (!bot_sd || !battle_config.population_engine_chat_enable || !battle_config.population_engine_chat_reply_enable)
+	if (!bot_sd || !population_engine_shell_may_chat(bot_sd) || !battle_config.population_engine_chat_reply_enable) // RAGNAROKMAC (chat settings)
 		return false;
 	if (bot_sd->prev == nullptr || map_id2bl(bot_sd->id) != bot_sd)
 		return false;
@@ -5356,7 +5371,7 @@ void population_engine_on_shell_kills_player(map_session_data *killer_sd, map_se
 {
 	if (!killer_sd || !victim_sd)
 		return;
-	if (!battle_config.population_engine_chat_enable)
+	if (!population_engine_shell_may_chat(killer_sd)) // RAGNAROKMAC (chat settings)
 		return;
 
 	// Pick from the pvp_kill category directly — bypasses profile lookup so any shell can trash-talk.
@@ -10368,7 +10383,9 @@ void population_engine_on_global_chat_mention(map_session_data* from_sd, const c
 		return;
 
 	extern struct Battle_Config battle_config;
-	if (!battle_config.population_engine_chat_enable || !battle_config.population_engine_chat_reply_enable)
+	// RAGNAROKMAC (chat settings): each shell's own switch is checked as it replies.
+	if ((!battle_config.population_engine_chat_enable && !battle_config.population_engine_companion_chat_enable)
+	    || !battle_config.population_engine_chat_reply_enable)
 		return;
 
 	for (map_session_data* bot : g_population_engine_pcs) {

@@ -1,6 +1,6 @@
 {
   "name": "graphics-plus",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Ragnarok Offline",
   "description": "A different look for the whole game: painted grass and ferns on grassy ground, water that reflects the world and glows teal along the shore, a warm sun on the maps you choose, shadows from buildings and trees, lamp glows from each map's own lights, colour grading, tone mapping and a vignette, with haze, tilt-shift, colour fringing and drops on the lens to taste. Every effect has its own switch. Also the worked example of api.graphics.",
   "default": "off",
@@ -10,6 +10,13 @@
   },
   "settingsPage": "settings/index.html",
   "settings": [
+    {
+      "key": "screen_effects",
+      "type": "boolean",
+      "default": true,
+      "label": "Screen effects",
+      "description": "Colour grading, tone mapping, glow, vignette, haze, tilt-shift, fringing and lens drops. Off draws straight to the screen, the sharpest picture; grass, water, shadows and trees still work. If the game looks blurry, try this off, or turn off Performance mode in the game's graphics options: with both on, the picture is drawn at three-quarter size and stretched."
+    },
     {
       "key": "grade",
       "type": "number",

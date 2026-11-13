@@ -1120,6 +1120,17 @@
     </label>
     <p class="note" id="companion-start-unequipped-note"></p>
     <label style="margin-top:6px">
+      <span>Companion chat</span>
+      <input type="checkbox" id="population_companion_chat" style="accent-color: var(--accent); flex: none" />
+      <span class="val" style="width:auto; color: var(--dim)">companions in your party say things of their own accord</span>
+    </label>
+    <label style="margin-top:6px">
+      <span>Population chat</span>
+      <input type="checkbox" id="population_chat" style="accent-color: var(--accent); flex: none" />
+      <span class="val" style="width:auto; color: var(--dim)">the other people in the world say things of their own accord</span>
+    </label>
+    <p class="note" id="population-chat-note"></p>
+    <label style="margin-top:6px">
       <span>Server memory</span>
       <input type="range" id="vm_ram_mib" min="2048" max="16384" step="1024">
       <span class="val" id="v-vm_ram_mib"></span>
@@ -2119,6 +2130,14 @@ function refreshPopulation() {
       + 'comes along when you change maps, and comes back to you with Recall.'
     : '';
   $('population_companion_start_unequipped').disabled = !on;
+  $('population_companion_chat').disabled = !on;
+  $('population_chat').disabled = !on;
+  const quiet = [!$('population_companion_chat').checked && 'companions', !$('population_chat').checked && 'everyone else'].filter(Boolean);
+  $('population-chat-note').textContent = quiet.length
+    ? `Off for ${quiet.join(' and ')}: no chatter, replies when you say their name or whisper them, `
+      + 'taunts or tactics lines. Companions still answer what you tell them to do, and a roaming '
+      + 'companion still tells you when it is down.'
+    : '';
   $('companion-start-unequipped-note').textContent = $('population_companion_start_unequipped').checked
     ? 'On: a companion you draft or hire from now on starts with no weapon, armour or headgear, '
       + 'and is never given any: trade it what it should wear and it puts it on. Until then it '
@@ -2219,6 +2238,8 @@ $('population_skill_weapon_check').addEventListener('change', refreshPopulation)
 $('population_companion_inventory').addEventListener('change', refreshPopulation);
 $('population_companion_roam').addEventListener('change', refreshPopulation);
 $('population_companion_start_unequipped').addEventListener('change', refreshPopulation);
+$('population_companion_chat').addEventListener('change', refreshPopulation);
+$('population_chat').addEventListener('change', refreshPopulation);
 // Every loot slider, besides the on/off box: disabled together, saved together.
 const LOOT_FIELDS = ['population_loot_common_pickup_pct', 'population_loot_rare_pct',
   'population_loot_rare_pickup_pct', 'population_loot_forget_pct', 'population_loot_hp_abort_pct',
@@ -2243,6 +2264,8 @@ $('save-population').onclick = async () => {
   settings.population_companion_inventory = $('population_companion_inventory').checked;
   settings.population_companion_roam = $('population_companion_roam').checked;
   settings.population_companion_start_unequipped = $('population_companion_start_unequipped').checked;
+  settings.population_companion_chat = $('population_companion_chat').checked;
+  settings.population_chat = $('population_chat').checked;
   settings.population_loot_enable = $('population_loot_enable').checked;
   for (const id of LOOT_FIELDS) settings[id] = Number($(id).value);
   // Machine-level, so it lives in client.json beside the client paths and the
@@ -4157,6 +4180,8 @@ invoke('get_settings').then(s => {
   $('population_companion_inventory').checked = s.population_companion_inventory === true;
   $('population_companion_roam').checked = s.population_companion_roam === true;
   $('population_companion_start_unequipped').checked = s.population_companion_start_unequipped === true;
+  $('population_companion_chat').checked = s.population_companion_chat !== false;
+  $('population_chat').checked = s.population_chat !== false;
   $('population_loot_enable').checked = s.population_loot_enable === true;
   // A save from before the loot settings has no keys: the defaults.
   $('population_loot_common_pickup_pct').value = s.population_loot_common_pickup_pct ?? 70;

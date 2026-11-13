@@ -576,6 +576,18 @@ one and a recalled companion gets its restored level's kind, and it is topped
 up when a rest ends at the upper mark. A shell back from a selling trip is
 spawned anew, so it has a fresh stock too.
 
+### Who may chat
+
+**Two chat switches.** `population_engine_companion_chat_enable` (registered by
+patch 0039, on by default) is for companions in a player's party, and the
+engine's own `population_engine_chat_enable` now covers every other shell. The app
+writes both (Settings → Population → Companion chat, Population chat).
+`population_engine_shell_may_chat` in `population_engine.cpp` picks the switch for
+a shell, and the ambient chat timer, replies to a name or a whisper, kill taunts
+and (in `population_strategy.cpp`'s `say`) strategy rule lines all ask it. Answers
+to an owner's command, a roaming companion's "I'm down!" and a party invite's
+reply are sent either way. The lines are marked `RAGNAROKMAC (chat settings)`.
+
 ### A companion lives on its bag
 
 **Companions start unequipped.** The engine dresses a drafted companion from its
