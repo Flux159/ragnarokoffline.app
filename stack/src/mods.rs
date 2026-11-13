@@ -942,6 +942,210 @@ pub fn combine_whole_conf(
     (merged.map(|(_, body)| body), notes)
 }
 
+/// The storage table rAthena's char server reads (`INTER_SERVER_DB`), which a
+/// mod may add storages to: a second storage a script opens with
+/// `openstorage2 <id>`, or a different name or size for the main one.
+///
+/// It is not one of the whole files, and a mod's copy is never written as it
+/// shipped, because three of the things it can say are unsafe:
+///
+/// - `Table` is pasted into the char server's SQL as written. A table name is
+///   a way to run SQL as the char server, and pointing storage 0 at a
+///   different table hides every player's storage.
+/// - `Max` above rAthena's MAX_STORAGE (600) lets the map server write past
+///   the fixed array every storage is held in.
+/// - `Header: Clear: true` removes storage 0, and with it everyone's storage.
+///
+/// So the supervisor reads `ID`, `Name` and `Max` from each entry, checks
+/// them, and writes the file itself. The table is the app's to name -- storage
+/// 0 keeps rAthena's `storage`, storage N is `storage_N` -- and the app
+/// creates it, because a mod has no way to make a table.
+pub const STORAGE_CONF: &str = "inter_server.yml";
+
+/// rAthena's MAX_STORAGE: the size of the array a storage is loaded into.
+const MAX_STORAGE: u16 = 600;
+
+/// rAthena's NAME_LENGTH, less its terminator; a longer name is cut short.
+const STORAGE_NAME_BYTES: usize = 23;
+
+/// One storage a mod declares, as the app will write it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModStorage {
+    pub id: u8,
+    pub name: Option<String>,
+    pub max: Option<u16>,
+}
+
+impl ModStorage {
+    /// The table this storage is kept in. Never taken from the mod.
+    pub fn table(&self) -> String {
+        if self.id == 0 { "storage".to_string() } else { format!("storage_{}", self.id) }
+    }
+}
+
+/// A YAML scalar as these files write it: quoted, or bare with an optional
+/// trailing comment.
+fn storage_scalar(raw: &str) -> String {
+    let raw = raw.trim();
+    for quote in ['"', '\''] {
+        if let Some(rest) = raw.strip_prefix(quote) {
+            return rest.split(quote).next().unwrap_or("").to_string();
+        }
+    }
+    raw.split(" #").next().unwrap_or("").trim().to_string()
+}
+
+/// Every enabled mod's `inter_server.yml`, as the storages the app will write,
+/// in id order, and one sentence for each thing that was left out.
+///
+/// Mods are read in load order. A later mod's `Name` or `Max` for a storage an
+/// earlier one also set wins, and is said.
+pub fn combine_storages(entries: &[(String, String)]) -> (Vec<ModStorage>, Vec<String>) {
+    let mut notes = Vec::new();
+    let mut out: BTreeMap<u8, (ModStorage, String)> = BTreeMap::new();
+    for (owner, body) in entries {
+        let what = format!("{owner}'s conf/{STORAGE_CONF}");
+        if header_type(body).as_deref() != Some("INTER_SERVER_DB") {
+            notes.push(format!("{what} is not an INTER_SERVER_DB table (compare its Header: Type), so it was left out"));
+            continue;
+        }
+        if header_clears(body) {
+            notes.push(format!("{what} asks to clear the table; that would remove everyone's storage, so Clear was ignored"));
+        }
+        let Some((_, after)) = section(body, "Body:") else { continue };
+        // Each `- ID:` starts an entry; the first unindented line (Footer:)
+        // ends the body.
+        let mut parsed: Vec<Vec<(String, String)>> = Vec::new();
+        for line in body[after..].lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            if !line.starts_with(' ') && !line.starts_with('\t') {
+                break;
+            }
+            let field = match trimmed.strip_prefix("- ") {
+                Some(rest) => {
+                    parsed.push(Vec::new());
+                    rest.trim()
+                }
+                None => trimmed,
+            };
+            let (Some(entry), Some((key, value))) = (parsed.last_mut(), field.split_once(':')) else { continue };
+            entry.push((key.trim().to_string(), storage_scalar(value)));
+        }
+        for fields in parsed {
+            let get = |key: &str| fields.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+            let Some(id) = get("ID").and_then(|v| v.parse::<u8>().ok()) else {
+                notes.push(format!(
+                    "{what} has a storage whose ID is not a number from 0 to 255 ({}), so it was left out",
+                    get("ID").unwrap_or("none")
+                ));
+                continue;
+            };
+            for (key, _) in &fields {
+                match key.as_str() {
+                    "ID" | "Name" | "Max" => {}
+                    "Table" => notes.push(format!(
+                        "{what} names a Table for storage {id}; the app keeps it in `{}`, so Table was ignored",
+                        ModStorage { id, name: None, max: None }.table()
+                    )),
+                    other => notes.push(format!("{what} sets \"{other}\" for storage {id}, which is not a storage setting -- ignoring")),
+                }
+            }
+            let name = get("Name").and_then(|name| {
+                // Written back inside double quotes, and shown on the
+                // client's title bar.
+                if name.is_empty() || !name.bytes().all(|b| (b' '..=b'~').contains(&b) && b != b'"' && b != b'\\') {
+                    notes.push(format!(
+                        "{what} names storage {id} \"{name}\"; a name is letters, digits, spaces and punctuation other than \" and \\, so it was ignored"
+                    ));
+                    None
+                } else if name.len() > STORAGE_NAME_BYTES {
+                    notes.push(format!("{what} names storage {id} \"{name}\", longer than {STORAGE_NAME_BYTES} characters, so it was ignored"));
+                    None
+                } else {
+                    Some(name.to_string())
+                }
+            });
+            let max = get("Max").and_then(|raw| match raw.parse::<u16>() {
+                Ok(max) if (1..=MAX_STORAGE).contains(&max) => Some(max),
+                _ => {
+                    notes.push(format!("{what} sets storage {id}'s Max to {raw}; it must be 1 to {MAX_STORAGE}, so it was ignored"));
+                    None
+                }
+            });
+            let (storage, last) = out
+                .entry(id)
+                .or_insert_with(|| (ModStorage { id, name: None, max: None }, owner.clone()));
+            if let (Some(new), Some(old)) = (&name, &storage.name) {
+                if new != old {
+                    notes.push(format!("{owner} names storage {id} \"{new}\", over {last}'s \"{old}\""));
+                }
+            }
+            if let (Some(new), Some(old)) = (max, storage.max) {
+                if new != old {
+                    notes.push(format!("{owner} sets storage {id}'s Max to {new}, over {last}'s {old}"));
+                }
+            }
+            if name.is_some() {
+                storage.name = name;
+            }
+            if max.is_some() {
+                storage.max = max;
+            }
+            *last = owner.clone();
+        }
+    }
+    let mut storages = Vec::new();
+    for (id, (storage, owner)) in out {
+        // rAthena refuses a new storage without a name, and storage 0 with
+        // nothing to change is no change.
+        if id != 0 && storage.name.is_none() {
+            notes.push(format!("{owner}'s storage {id} has no usable Name, which a new storage needs, so it was left out"));
+            continue;
+        }
+        if storage.name.is_none() && storage.max.is_none() {
+            continue;
+        }
+        storages.push(storage);
+    }
+    (storages, notes)
+}
+
+/// The `inter_server.yml` the server imports, written from checked storages.
+///
+/// Storage 0 is written without a Table, so it stays an edit of rAthena's own
+/// entry; every other storage names the table the app made for it.
+pub fn storage_yml(storages: &[ModStorage]) -> String {
+    let mut out = String::from("Header:\n  Type: INTER_SERVER_DB\n  Version: 1\n\nBody:\n");
+    for storage in storages {
+        out.push_str(&format!("  - ID: {}\n", storage.id));
+        if let Some(name) = &storage.name {
+            out.push_str(&format!("    Name: \"{name}\"\n"));
+        }
+        if storage.id != 0 {
+            out.push_str(&format!("    Table: {}\n", storage.table()));
+        }
+        if let Some(max) = storage.max {
+            out.push_str(&format!("    Max: {max}\n"));
+        }
+    }
+    out
+}
+
+/// The tables the storages beyond storage 0 are kept in, made like rAthena's
+/// own `storage`. Never dropped: a storage whose mod is removed keeps its
+/// items, and they are there again if it comes back.
+pub fn storage_tables_sql(storages: &[ModStorage]) -> Option<String> {
+    let sql: Vec<String> = storages
+        .iter()
+        .filter(|s| s.id != 0)
+        .map(|s| format!("CREATE TABLE IF NOT EXISTS `{}` LIKE `storage`;", s.table()))
+        .collect();
+    (!sql.is_empty()).then(|| sql.join(" "))
+}
+
 /// The fragments under `conf/when/<setting>/` that apply, as (label, file, body).
 ///
 /// A mod's own boolean setting decides whether a fragment is part of it. That
@@ -1171,7 +1375,9 @@ fn read_plain_conf(dir: &Path, name: &str, out: &mut BTreeMap<String, Vec<(Strin
         let Ok(body) = fs::read_to_string(&path) else { continue };
         // A whole document, copied as-is. Recorded under a key the caller
         // recognises so it is written rather than appended line by line.
-        if CONF_WHOLE_FILE.contains(&file.as_str()) {
+        // inter_server.yml is recorded the same way, but it is never copied:
+        // `combine_storages` reads three fields out of it.
+        if CONF_WHOLE_FILE.contains(&file.as_str()) || file == STORAGE_CONF {
             out.entry(format!("file:{file}")).or_default().push((name.to_string(), body));
             continue;
         }
@@ -4389,6 +4595,94 @@ mod tests {
         let (out, notes) = combine_whole_conf("groups.yml", &[("a".into(), body.clone())], &[]);
         assert_eq!(out.unwrap(), body);
         assert!(notes.is_empty());
+    }
+
+    const STORAGE_HEADER: &str = "Header:\n  Type: INTER_SERVER_DB\n  Version: 1\n\nBody:\n";
+
+    /// inter_server.yml is read by the conf layer, but is not one of the
+    /// files copied whole, and does not count as granting commands.
+    #[test]
+    fn inter_server_yml_is_collected_but_not_a_whole_file() {
+        let d = tmp("storage-read");
+        fs::create_dir_all(d.join("conf")).unwrap();
+        let body = format!("{STORAGE_HEADER}  - ID: 1\n    Name: \"Bank\"\n");
+        fs::write(d.join("conf/inter_server.yml"), &body).unwrap();
+        let mut out = BTreeMap::new();
+        read_conf(&d, "x", &[], &mut out);
+        assert_eq!(out.get("file:inter_server.yml"), Some(&vec![("x".to_string(), body)]));
+        assert!(out.get("inter_server.yml").is_none());
+        assert!(!CONF_WHOLE_FILE.contains(&STORAGE_CONF));
+    }
+
+    /// A new storage gets the app's table, whatever the mod named, and the
+    /// file is the app's own rather than the mod's.
+    #[test]
+    fn a_mod_storage_is_written_with_the_apps_table() {
+        let body = format!(
+            "# a comment\n{STORAGE_HEADER}  - ID: 1\n    Name: \"Premium Storage\" # shown on the title bar\n    Table: login\n    Max: 300\n\nFooter:\n  Imports:\n    - Path: somewhere/else.yml\n"
+        );
+        let (storages, notes) = combine_storages(&[("bank".into(), body)]);
+        assert_eq!(storages, vec![ModStorage { id: 1, name: Some("Premium Storage".into()), max: Some(300) }]);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].contains("Table") && notes[0].contains("storage_1"), "{notes:?}");
+        let yml = storage_yml(&storages);
+        assert_eq!(yml, format!("{STORAGE_HEADER}  - ID: 1\n    Name: \"Premium Storage\"\n    Table: storage_1\n    Max: 300\n"));
+        assert!(!yml.contains("login") && !yml.contains("Imports") && !yml.contains("Footer"), "{yml}");
+        assert_eq!(
+            storage_tables_sql(&storages).unwrap(),
+            "CREATE TABLE IF NOT EXISTS `storage_1` LIKE `storage`;"
+        );
+    }
+
+    /// Storage 0 is everyone's own storage: its name and size may change, its
+    /// table may not, and it is never cleared or given a table to create.
+    #[test]
+    fn the_main_storage_keeps_its_table() {
+        let body = "Header:\n  Type: INTER_SERVER_DB\n  Version: 1\n  Clear: true\n\nBody:\n  - ID: 0\n    Name: Kafra\n    Table: char\n    Max: 450\n".to_string();
+        let (storages, notes) = combine_storages(&[("m".into(), body)]);
+        assert_eq!(storages, vec![ModStorage { id: 0, name: Some("Kafra".into()), max: Some(450) }]);
+        assert!(notes.iter().any(|n| n.contains("Clear")), "{notes:?}");
+        assert!(notes.iter().any(|n| n.contains("Table") && n.contains("`storage`")), "{notes:?}");
+        let yml = storage_yml(&storages);
+        assert_eq!(yml, format!("{STORAGE_HEADER}  - ID: 0\n    Name: \"Kafra\"\n    Max: 450\n"));
+        assert!(!yml.contains("Clear") && !yml.contains("Table"), "{yml}");
+        assert_eq!(storage_tables_sql(&storages), None);
+    }
+
+    /// The values rAthena does not check are checked here: an id it would
+    /// truncate onto storage 0, a size past MAX_STORAGE, a name that could
+    /// break out of its quotes, and a new storage with no name.
+    #[test]
+    fn unsafe_storage_values_are_left_out_and_said() {
+        let body = format!(
+            "{STORAGE_HEADER}  - ID: 256\n    Name: Wrap\n  - ID: 2\n    Name: \"Big\"\n    Max: 601\n  - ID: 3\n    Name: 'a\"; DROP'\n  - ID: 4\n    Max: 10\n  - ID: 5\n    Name: TwentyFourCharactersLong\n"
+        );
+        let (storages, notes) = combine_storages(&[("m".into(), body)]);
+        assert_eq!(storages, vec![ModStorage { id: 2, name: Some("Big".into()), max: None }]);
+        for expected in ["256", "Max to 601", "storage 3", "storage 4 has no usable Name", "longer than 23"] {
+            assert!(notes.iter().any(|n| n.contains(expected)), "{expected}: {notes:?}");
+        }
+        assert_eq!(storage_yml(&storages), format!("{STORAGE_HEADER}  - ID: 2\n    Name: \"Big\"\n    Table: storage_2\n"));
+        // Not an INTER_SERVER_DB at all.
+        let (storages, notes) = combine_storages(&[("m".into(), "Header:\n  Type: PLAYER_GROUP_DB\n".into())]);
+        assert!(storages.is_empty() && notes.len() == 1, "{notes:?}");
+    }
+
+    /// Two mods that name the same storage share it: the later one's settings
+    /// win, and that is said.
+    #[test]
+    fn a_later_mod_sets_a_shared_storage_and_is_told() {
+        let a = format!("{STORAGE_HEADER}  - ID: 1\n    Name: Bank\n    Max: 100\n");
+        let b = format!("{STORAGE_HEADER}  - ID: 1\n    Max: 200\n  - ID: 0\n    Max: 300\n");
+        let (storages, notes) = combine_storages(&[("a".into(), a), ("b".into(), b)]);
+        assert_eq!(
+            storages,
+            vec![
+                ModStorage { id: 0, name: None, max: Some(300) },
+                ModStorage { id: 1, name: Some("Bank".into()), max: Some(200) },
+            ]
+        );
+        assert_eq!(notes, vec!["b sets storage 1's Max to 200, over a's 100".to_string()]);
     }
 
     /// The bundled player-commands grants must not repeat anything rAthena
