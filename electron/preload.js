@@ -20,6 +20,13 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const invoke = (name, args) => ipcRenderer.invoke('invoke', name, args);
 
+// Joining a friend with your own game files: where the client reads them from
+// and what to check the host's join.json against (join-assets.js), or null.
+// Synchronous, because the client asks for its first file as it boots.
+let joinAssets = null;
+try { joinAssets = ipcRenderer.sendSync('join-assets-plan'); } catch { /* not the game window */ }
+contextBridge.exposeInMainWorld('__RAGNAROK_JOIN_ASSETS__', joinAssets);
+
 contextBridge.exposeInMainWorld('__ELECTRON__', {
 	core: { invoke },
 	dialog: {

@@ -698,6 +698,11 @@
         <input type="checkbox" id="mp-lan" />
       </div>
       <div class="row">
+        <span class="name">Send game files to friends</span>
+        <input type="checkbox" id="mp-share-files" />
+      </div>
+      <p class="note" id="mp-share-files-note"></p>
+      <div class="row">
         <span class="name">Your link — on this network</span>
         <span class="state" id="mp-addr">—</span>
         <button id="mp-copy" class="ghost" style="margin-left:10px">Copy</button>
@@ -731,14 +736,26 @@
         <input type="text" id="mp-host-addr" placeholder="http://192.168.1.20:3338/"
                autocapitalize="off" autocorrect="off" spellcheck="false" />
       </div>
+      <div class="row">
+        <span class="name">Use my own game files</span>
+        <input type="checkbox" id="mp-own-files" />
+      </div>
+      <div class="row" id="mp-mod-files-row">
+        <span class="name">Mods’ files</span>
+        <select id="mp-mod-files">
+          <option value="host">From the host</option>
+          <option value="local">My own mods</option>
+        </select>
+      </div>
+      <p class="note" id="mp-own-files-note"></p>
       <div class="row actions" style="padding-top:10px">
         <button id="mp-connect" class="ghost">Connect…</button>
         <button id="mp-golocal" class="ghost">Play on my own server</button>
       </div>
       <p class="note">Paste whatever your friend sent — the whole link or just
-         the address. Joining runs nothing locally — no server, no virtual
-         machine, no game files. Everything comes from the host, so this starts
-         in seconds. Register on their login screen by adding <code>_M</code> or
+         the address. Joining runs no server and no virtual machine, and unless
+         you use your own game files, everything comes from the host, so this
+         starts in seconds. Register on their login screen by adding <code>_M</code> or
          <code>_F</code> to a new username.</p>
     </div>
   </div>
@@ -1445,6 +1462,12 @@ async function refreshMode() {
   $('mp-mode').value = m.mode;
   $('mp-lan').checked = m.lan;
   $('mp-host-addr').value = m.join_host || '';
+  $('mp-own-files').checked = m.join_local_assets;
+  $('mp-own-files').disabled = !m.own_files_ready;
+  $('mp-mod-files').value = m.join_mod_files;
+  paintOwnFiles(m.own_files_ready);
+  $('mp-share-files').checked = (await invoke('get_settings')).share_game_files !== false;
+  paintShareFiles();
   $('mp-host').style.display = m.mode === 'host' ? '' : 'none';
   $('mp-join').style.display = m.mode === 'join' ? '' : 'none';
   paintInternetSetup(m.mode);
@@ -1551,11 +1574,49 @@ $('mp-golocal').onclick = async () => {
   }
 };
 
+// Send game files to friends: off, LAN players and invited friends play with
+// their own client files, and a browser cannot join.
+function paintShareFiles() {
+  $('mp-share-files-note').textContent = $('mp-share-files').checked
+    ? 'Friends get your GRFs from you as they play, so nobody needs a client of their own.'
+    : 'Off: your GRFs and client folders stay on this computer. Friends join from this app with their own '
+      + 'copy of the same client and “Use my own game files” on, and a browser cannot join. Your mods, '
+      + 'the translation and the game itself are still sent.';
+}
+$('mp-share-files').onchange = async () => {
+  paintShareFiles();
+  try { log(await invoke('set_share_game_files', { on: $('mp-share-files').checked })); }
+  catch (e) { log('error: ' + e); }
+};
+
+// Use my own game files: the host's page reads the GRFs from this computer.
+function paintOwnFiles(ready = !$('mp-own-files').disabled) {
+  const own = $('mp-own-files').checked;
+  $('mp-mod-files-row').hidden = !own;
+  $('mp-own-files-note').textContent = !ready
+    ? 'Set up your own client (Host a server, then choose your data.grf) to play with your own game files.'
+    : !own
+      ? ''
+      : $('mp-mod-files').value === 'local'
+        ? 'Your own GRFs and your own mods. Your client must be the same as the host’s (iRO, kRO…), your era '
+          + 'the same as theirs, and your mods the ones their world uses.'
+        : 'Your own GRFs, and the host’s mods and translation from the host. Your client must be the same as '
+          + 'the host’s (iRO, kRO…). Needed when the host does not send game files.';
+}
+for (const id of ['mp-own-files', 'mp-mod-files']) {
+  $(id).onchange = async () => {
+    paintOwnFiles();
+    try { await invoke('set_mode', { join_local_assets: $('mp-own-files').checked, join_mod_files: $('mp-mod-files').value }); }
+    catch (e) { log('error: ' + e); }
+  };
+}
+
 $('mp-connect').onclick = async () => {
   const host = $('mp-host-addr').value.trim();
   log(`contacting ${host}…`);
   try {
-    await invoke('set_client_paths', { paths: { mode: 'join', join_host: host } });
+    await invoke('set_client_paths', { paths: { mode: 'join', join_host: host,
+      join_local_assets: $('mp-own-files').checked, join_mod_files: $('mp-mod-files').value } });
     await refreshMode();
     // Straight there, rather than telling someone to press a second button:
     // the game window is still showing the local server that was just stopped,

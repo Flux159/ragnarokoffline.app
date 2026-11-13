@@ -32,8 +32,9 @@ if (HEADLESS && process.platform === 'linux' && !process.env.DISPLAY && !process
 // only accepts if it is declared before the app is ready.
 // Every privileged scheme in one call (Electron keeps only the last): the mod
 // settings pages', Settings -> Tools' ro-tool:// and mods' host routes'
-// mod-host:// (mod-host/sandbox.js).
-require('./mod-settings-window').registerScheme(protocol, [require('./tools').schemePrivileges, require('./mod-host/sandbox').schemePrivileges]);
+// mod-host:// (mod-host/sandbox.js), and ro-local://, which a joined host's
+// page reads this player's own game files from (join-assets.js).
+require('./mod-settings-window').registerScheme(protocol, [require('./tools').schemePrivileges, require('./mod-host/sandbox').schemePrivileges, require('./join-assets').schemePrivileges]);
 // Quiet launches mute every window for this run, without persisting a setting.
 if (process.argv.includes('--quiet')) {
     app.on('web-contents-created', (_event, contents) => contents.setAudioMuted(true));
@@ -707,7 +708,9 @@ function cpuDescription() {
 	return `${model} (${cpus.length} logical, ${process.arch})`;
 }
 
-async function assetsStart() {
+// `join` is set when this player joins a friend with their own game files:
+// then the asset server is theirs alone, on loopback (join-assets.js).
+async function assetsStart({ join = null } = {}) {
 	await assetLinkQueue;
 	const root = projectRoot();
 	const server = findTool('robrowser-remoteclient');
@@ -727,39 +730,48 @@ async function assetsStart() {
 	const appProxy = client.mode === 'host' && client.lan ? await lanRememberTarget() : null;
 	// Pass every RemoteClient setting explicitly, so .env/default changes
 	// cannot create a different effective server behind the same fingerprint.
-	return assetServer.start({
-		executable: server, cwd: root, stateRoot: stateDir(),
-		environment: {
-			PATH: toolPath(), PORT: String(gamePorts().asset),
-			HOST: client.lan ? '0.0.0.0' : '127.0.0.1',
-			CLIENT_PUBLIC_URL: `http://${advertiseHost()}:${gamePorts().asset}`,
-			NODE_ENV: 'production',
-			SERVER_ROOT: path.resolve(stateDir(), 'assets'),
-			CLIENT_RESPATH: 'resources/', CLIENT_DATAINI: path.resolve(stateDir(), 'asset-config/DATA.INI'),
-			BGM_PATH: readIfExists(path.join(stateDir(), 'asset-config/bgm.path')).trim(),
-			AI_PATH: readIfExists(path.join(stateDir(), 'asset-config/ai.path')).trim(),
-			ENABLE_STATIC_SERVE: 'true', ENABLE_WSPROXY: 'true',
-			ROBROWSER_PATH: path.resolve(root, 'vendor/roBrowserLegacy/dist/Web'),
-			WS_ALLOWED_TARGETS: proxyTargets(client).sort().join(','),
-			// rAthena's web server keeps guild emblems; the client asks this origin for them.
-			WEB_SERVER_TARGET: `127.0.0.1:${gamePorts().web}`,
-			DATA_OVERRIDE_PATH: path.resolve(translationRoot(), 'data'),
-			ENABLE_COMPRESSION: process.env.ENABLE_COMPRESSION || 'true',
-			CACHE_MAX_FILES: process.env.CACHE_MAX_FILES || '5000',
-			CACHE_MAX_MEMORY_MB: process.env.CACHE_MAX_MEMORY_MB || '1024',
-			CACHE_WARM_UP: process.env.CACHE_WARM_UP || 'false',
-			CACHE_WARM_UP_LIMIT: process.env.CACHE_WARM_UP_LIMIT || '500',
-			CLIENT_ENABLESEARCH: process.env.CLIENT_ENABLESEARCH || 'true',
-			CLIENT_AUTOEXTRACT: process.env.CLIENT_AUTOEXTRACT || 'true',
-			GRF_FILENAME_ENCODING: process.env.GRF_FILENAME_ENCODING || 'auto',
-			RAGNAROK_PAYLOAD_VERSION: readIfExists(path.join(root, 'VERSION')).trim(),
-			RAGNAROK_OVERLAY_ID: readIfExists(path.join(stateDir(), 'assets/overlay.id')).trim(),
-			RAGNAROK_MANIFEST_ID: sha256(readIfExists(path.join(stateDir(), 'asset-config/DATA.INI'))),
-			RAGNAROK_CLIENT_CONFIG_ID: sha256(readIfExists(path.join(stateDir(), 'assets/Config.local.js'))),
-			RAGNAROK_ASSET_SOURCES_ID: sha256(JSON.stringify(sources)),
-			...(appProxy ? { APP_PROXY_PREFIX: appProxy.prefix, APP_PROXY_TARGET: appProxy.target } : {}),
-		},
-	});
+	const environment = {
+		PATH: toolPath(), PORT: String(gamePorts().asset),
+		HOST: client.lan ? '0.0.0.0' : '127.0.0.1',
+		CLIENT_PUBLIC_URL: `http://${advertiseHost()}:${gamePorts().asset}`,
+		NODE_ENV: 'production',
+		SERVER_ROOT: path.resolve(stateDir(), 'assets'),
+		CLIENT_RESPATH: 'resources/', CLIENT_DATAINI: path.resolve(stateDir(), 'asset-config/DATA.INI'),
+		BGM_PATH: readIfExists(path.join(stateDir(), 'asset-config/bgm.path')).trim(),
+		AI_PATH: readIfExists(path.join(stateDir(), 'asset-config/ai.path')).trim(),
+		ENABLE_STATIC_SERVE: 'true', ENABLE_WSPROXY: 'true',
+		ROBROWSER_PATH: path.resolve(root, 'vendor/roBrowserLegacy/dist/Web'),
+		WS_ALLOWED_TARGETS: proxyTargets(client).sort().join(','),
+		// rAthena's web server keeps guild emblems; the client asks this origin for them.
+		WEB_SERVER_TARGET: `127.0.0.1:${gamePorts().web}`,
+		DATA_OVERRIDE_PATH: path.resolve(translationRoot(), 'data'),
+		ENABLE_COMPRESSION: process.env.ENABLE_COMPRESSION || 'true',
+		CACHE_MAX_FILES: process.env.CACHE_MAX_FILES || '5000',
+		CACHE_MAX_MEMORY_MB: process.env.CACHE_MAX_MEMORY_MB || '1024',
+		CACHE_WARM_UP: process.env.CACHE_WARM_UP || 'false',
+		CACHE_WARM_UP_LIMIT: process.env.CACHE_WARM_UP_LIMIT || '500',
+		CLIENT_ENABLESEARCH: process.env.CLIENT_ENABLESEARCH || 'true',
+		CLIENT_AUTOEXTRACT: process.env.CLIENT_AUTOEXTRACT || 'true',
+		GRF_FILENAME_ENCODING: process.env.GRF_FILENAME_ENCODING || 'auto',
+		RAGNAROK_PAYLOAD_VERSION: readIfExists(path.join(root, 'VERSION')).trim(),
+		RAGNAROK_OVERLAY_ID: readIfExists(path.join(stateDir(), 'assets/overlay.id')).trim(),
+		RAGNAROK_MANIFEST_ID: sha256(readIfExists(path.join(stateDir(), 'asset-config/DATA.INI'))),
+		RAGNAROK_CLIENT_CONFIG_ID: sha256(readIfExists(path.join(stateDir(), 'assets/Config.local.js'))),
+		RAGNAROK_ASSET_SOURCES_ID: sha256(JSON.stringify(sources)),
+		...(appProxy ? { APP_PROXY_PREFIX: appProxy.prefix, APP_PROXY_TARGET: appProxy.target } : {}),
+		// Send game files to friends, off: the GRFs and this machine's client
+		// folders go to nobody but this machine, LAN players and invited
+		// friends included (the gateway marks what it forwards). Friends
+		// then play with their own client files.
+		REMOTE_GRF_DATA: getSettings().share_game_files === false ? 'false' : 'true',
+	};
+	let env = environment;
+	if (join) {
+		const emptyRoot = path.join(stateDir(), 'join-assets');
+		fs.mkdirSync(emptyRoot, { recursive: true });
+		env = require('./join-assets').environment(environment, { mods: join.mods, emptyRoot });
+	}
+	return assetServer.start({ executable: server, cwd: root, stateRoot: stateDir(), environment: env });
 }
 
 // Started once, on first need; null if it cannot listen (LAN players then see
@@ -1049,6 +1061,11 @@ const SETTINGS_DEFAULTS = {
 	// long the invite token is accepted. A link posted in Discord should still
 	// work next weekend, and "Replace invitation" revokes one at any time.
 	sharing_invite_days: 7,
+	// Whether this host sends its GRFs (and BGM/AI folders) to LAN players and
+	// invited friends. Off, friends play with their own client files, from the
+	// app; a browser cannot join. Mods' files, the translation and the client
+	// itself are sent either way.
+	share_game_files: true,
 	base_exp_rate: 100,
 	job_exp_rate: 100,
 	quest_exp_rate: 100,
@@ -3436,6 +3453,19 @@ const handlers = {
 		return require('./client-detect').describe(stateDir());
 	},
 
+	// Send game files to friends (SETTINGS_DEFAULTS.share_game_files). The
+	// served root is rebuilt before the asset server comes back, so nothing
+	// it extracted from the GRFs while sharing them is left to send.
+	set_share_game_files: async ({ on }) => {
+		require('./settings-store').write(path.join(stateDir(), 'settings.json'), { share_game_files: on !== false }, SETTINGS_DEFAULTS);
+		const c = getClientPaths();
+		if (c.mode === 'host' && assetServer.running && clientComplete(c)) {
+			await linkClient(c);
+			await assetsStart();
+		}
+		return on !== false ? 'Friends get your game files from you.' : 'Friends play with their own game files.';
+	},
+
 	// Host mode, LAN toggle, and the string a host gives out. Kept separate
 	// from set_client_paths because switching mode must not require re-picking
 	// a client that is already configured.
@@ -3443,15 +3473,21 @@ const handlers = {
 		const c = getClientPaths();
 		return {
 			mode: c.mode, lan: !!c.lan, hosting_scope: c.hosting_scope, join_host: c.join_host,
+			// Joining with this player's own game files (join-assets.js): only
+			// offered once a client is set up here.
+			join_local_assets: c.join_local_assets === true, join_mod_files: require('./join-assets').modSource(c),
+			own_files_ready: clientComplete(c),
 			// Only meaningful once the stack has run; before that there is no
 			// endpoint.json and no address to give out.
 			join_address: c.mode === 'host' && c.lan ? serveUrl(advertiseHost()) : '',
 		};
 	},
-	set_mode: async ({ mode, lan, join_host }) => {
+	set_mode: async ({ mode, lan, join_host, join_local_assets, join_mod_files }) => {
 		const prev = getClientPaths();
 		const next = { ...prev };
 		if (mode !== undefined) next.mode = mode;
+		if (join_local_assets !== undefined) next.join_local_assets = join_local_assets === true;
+		if (join_mod_files !== undefined) next.join_mod_files = join_mod_files === 'local' ? 'local' : 'host';
 		if (lan !== undefined) next.lan = !!lan;
 		// Provoke the macOS prompt here, next to the switch that needs it.
 		if (lan === true && !prev.lan) await nudgeLocalNetworkPermission();
@@ -3667,6 +3703,9 @@ const handlers = {
 	},
 	launch_game: async () => {
 		const c = getClientPaths();
+		// With their own game files, a joining player's asset server comes up
+		// on loopback before the host's page loads and asks it for files.
+		if (c.mode === 'join') await startJoinAssets(c);
 		// The host's asset server when joining, our own when hosting. Hardcoding
 		// loopback here sent a joining player to a server that does not exist on
 		// their machine.
@@ -3825,6 +3864,35 @@ function callerIsLocalGame(event) {
 	if (getClientPaths().mode !== 'host' || !localGameOrigin) return false;
 	try { return new URL(event.senderFrame.url).origin === localGameOrigin; } catch { return false; }
 }
+// Joining with your own game files (join-assets.js): what the host's page is
+// told when it boots, or null. Set by launch_game before the page loads.
+let joinAssetsPlan = null;
+async function startJoinAssets(c) {
+	joinAssetsPlan = null;
+	const joinAssets = require('./join-assets');
+	if (!c.join_local_assets) return;
+	if (!clientComplete(c)) {
+		appLog('join: "use my own game files" is on, but no client is set up here; using the host’s files');
+		return;
+	}
+	const mods = joinAssets.modSource(c);
+	try {
+		require('./client-detect').detectAndSave(stateDir(), c, appLog);
+		// The GRF list, and with this player's own mods their overlay too.
+		await linkClient(c);
+		await assetsStart({ join: { mods } });
+	} catch (e) {
+		appLog(`join: could not start your own asset server (${e.message}); using the host’s files`);
+		return;
+	}
+	joinAssetsPlan = joinAssets.plan(c, {
+		era: getSettings().prerenewal ? 'pre-renewal' : 'renewal',
+		client: require('./client-detect').describe(stateDir()).client,
+		clientComplete: true,
+	});
+	appLog(`join: own game files, mods from ${mods === 'local' ? 'this machine' : 'the host'}`);
+}
+
 // The origin launch_game loaded our own world's game page from -- whatever
 // port the asset server is on -- or null while joined to someone else's.
 let localGameOrigin = null;
@@ -3843,7 +3911,7 @@ function rememberStore() {
 }
 // Includes settings writes before their supervisor call: an era marker must
 // not change halfway through an account operation. Read-only status stays live.
-const SERVER_OPERATIONS = new Set(['sharing_connect', 'sharing_start', 'sharing_forget', 'accounts', 'hosting_check', 'save_settings', 'set_mode', 'set_client_paths', 'start_stack',
+const SERVER_OPERATIONS = new Set(['sharing_connect', 'sharing_start', 'sharing_forget', 'accounts', 'hosting_check', 'save_settings', 'set_mode', 'set_share_game_files', 'set_client_paths', 'start_stack',
 	'stack_up', 'stack_down', 'stack_repair', 'secure_services', 'db_backup', 'db_restore', 'db_backup_full', 'db_restore_full']);
 // The operations that must never be followed by an automatic resume. Sharing's
 // own verbs answer for themselves, and `stack_down` is a server the player has
@@ -3975,6 +4043,15 @@ function callerIsOwnPage(event) {
 			.some(name => filename === path.join(__dirname, '..', 'src', name));
 	} catch { return false; }
 }
+
+// Read once by the preload as the page starts, so the client has it before
+// it asks for its first file. Only the game window's main frame gets it.
+ipcMain.on('join-assets-plan', event => {
+	const game = windows.game;
+	const ours = game && !game.isDestroyed() && event.sender === game.webContents
+		&& event.senderFrame === event.sender.mainFrame && getClientPaths().mode === 'join';
+	event.returnValue = ours ? joinAssetsPlan : null;
+});
 
 ipcMain.handle('invoke', async (event, name, args) => {
 	if (!callerIsOwnPage(event) && !GAME_PAGE_HANDLERS.has(name)) {
@@ -4262,7 +4339,7 @@ const HEADLESS_PAGE_HANDLERS = new Set([
 	'open_data_folder', 'open_mods_folder', 'packetvers', 'registry_image', 'registry_release', 'remove_mod',
 	'report_issue', 'save_settings', 'secure_services', 'set_app_preference', 'mod_favorites_set', 'set_client_paths',
 	'set_fallback_grf',
-	'set_mod_enabled', 'set_mod_settings', 'set_mode', 'set_vm_ram_mib', 'sharing_status', 'sharing_token_help',
+	'set_mod_enabled', 'set_mod_settings', 'set_mode', 'set_share_game_files', 'set_vm_ram_mib', 'sharing_status', 'sharing_token_help',
 	'sign_in_status', 'stack_down', 'stack_repair', 'stack_status', 'stack_up', 'start_stack', 'tools_list',
 	'accounts', 'save_diagnostics', 'sharing_connect', 'sharing_start', 'sharing_forget', 'sharing_stop',
 	'sharing_replace', 'sharing_copy', 'sign_in_save', 'sign_in_forget',
@@ -4399,6 +4476,13 @@ async function startHeadless() {
 
 app.whenReady().then(() => {
 	crashMonitor.start();
+	// ro-local://assets/: a joined host's page reading this player's own game
+	// files, only while they are joined with them (join-assets.js).
+	session.defaultSession.protocol.handle(require('./join-assets').SCHEME, require('./join-assets').handler({
+		active: () => joinAssetsPlan !== null && getClientPaths().mode === 'join' && assetServer.running,
+		port: () => gamePorts().asset,
+		fetchImpl: (url, init) => net.fetch(url, init),
+	}));
     powerMonitor.on('suspend', () => { ++sharingStartRequest; if (sharing) sharing.stop().catch(() => {}); });
 	// Before anything reads a path: an existing install still has its data
 	// under the old folder name.

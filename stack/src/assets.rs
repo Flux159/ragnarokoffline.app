@@ -531,6 +531,7 @@ pub fn link(cfg: &Config, args: &[String]) -> Result<(), String> {
         &cfg.root.join("config/index.html"),
         &server_root.join("index.html"),
     )?;
+    write_join_manifest(cfg, &server_root, packetver)?;
     tx.commit()?;
     println!(
         "linked: {} GRFs read in place, BGM {}",
@@ -609,6 +610,79 @@ fn fnv(hash: &mut u64, bytes: &[u8]) {
 
 /// Hash a tree by name, size and mtime, in a fixed order.
 ///
+/// `join.json`: what a friend who plays with their own client files needs to
+/// know about this world (docs/FRIENDS_SHARING.md, "Friends who bring their
+/// own game files"). The era and client their files must suit, the mods with
+/// their versions, and `files`: every asset path this server adds on top of
+/// the GRFs -- mods, the translation, the merged System tables -- which their
+/// client fetches from here while everything else comes from their own disk.
+///
+/// Written here, at link time, because the served root is new: nothing has
+/// been extracted into it yet, so `files` is the overlay and only the overlay.
+fn write_join_manifest(cfg: &Config, server_root: &Path, packetver: &str) -> Result<(), String> {
+    let mut files = Vec::new();
+    let Ok(rd) = fs::read_dir(server_root) else {
+        return Err(format!("cannot read {}", server_root.display()));
+    };
+    let mut top: Vec<_> = rd.flatten().collect();
+    top.sort_by_key(|e| e.file_name());
+    for e in top {
+        let name = e.file_name().to_string_lossy().into_owned();
+        // Generated files at the top (the page, its config, these manifests)
+        // are not assets, and the server's private folders are not served.
+        if !e.path().is_dir() || matches!(name.as_str(), "resources" | "logs") {
+            continue;
+        }
+        // The translation is served as data/ from DATA_OVERRIDE_PATH.
+        if name == ".translation" {
+            list_tree(&e.path().join("data"), "data", &mut files);
+        } else if !name.starts_with('.') {
+            list_tree(&e.path(), &name, &mut files);
+        }
+    }
+    files.sort();
+    files.dedup();
+    let mods: Vec<String> = crate::mods::enabled(cfg)
+        .iter()
+        .map(|m| {
+            format!(
+                "{{\"name\":{},\"version\":{}}}",
+                crate::json::quote(&m.name),
+                crate::json::quote(&m.manifest.version)
+            )
+        })
+        .collect();
+    let era = if crate::cmds::is_prerenewal(cfg) { "pre-renewal" } else { "renewal" };
+    let client = crate::mods::detected_client(&cfg.state)
+        .map(|c| crate::json::quote(&c))
+        .unwrap_or_else(|| "null".into());
+    let body = format!(
+        "{{\"format\":1,\"era\":{},\"packetver\":{},\"client\":{client},\"mods\":[{}],\"files\":[{}]}}\n",
+        crate::json::quote(era),
+        crate::json::quote(packetver),
+        mods.join(","),
+        files.iter().map(|f| crate::json::quote(f)).collect::<Vec<_>>().join(",")
+    );
+    fs::write(server_root.join("join.json"), body).map_err(|e| e.to_string())
+}
+
+/// Every file under `dir`, as `prefix/relative/path` with forward slashes.
+/// Links are skipped, as in `hash_tree`.
+fn list_tree(dir: &Path, prefix: &str, out: &mut Vec<String>) {
+    let Ok(rd) = fs::read_dir(dir) else { return };
+    for e in rd.flatten() {
+        if e.file_type().map(|t| t.is_symlink()).unwrap_or(true) {
+            continue;
+        }
+        let rel = format!("{prefix}/{}", e.file_name().to_string_lossy());
+        if e.path().is_dir() {
+            list_tree(&e.path(), &rel, out);
+        } else {
+            out.push(rel);
+        }
+    }
+}
+
 /// `read_dir` order is whatever the filesystem hands back, so it is sorted
 /// here: an unsorted walk gives a different answer for the same tree on
 /// another machine, and the whole value of this number is that it only changes
@@ -1083,6 +1157,37 @@ mod tests {
             fs::read_to_string(client.join("BGM/theme.mp3")).unwrap(),
             "music"
         );
+        // What a friend with their own client files fetches from this host:
+        // the overlay, as the client asks for it, and nothing generated, private
+        // or read from the player's own client folders.
+        let join = crate::json::parse(
+            &fs::read_to_string(cfg.state.join("assets/join.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(join.str("era"), Some("renewal"));
+        let files: Vec<&str> = match join.get("files") {
+            Some(crate::json::Value::Array(items)) => items
+                .iter()
+                .filter_map(|v| match v {
+                    crate::json::Value::String(s) => Some(s.as_str()),
+                    _ => None,
+                })
+                .collect(),
+            other => panic!("files: {other:?}"),
+        };
+        for want in ["BGM/theme.mp3", "System/itemInfo.lua", "data/table.txt"] {
+            assert!(files.contains(&want), "{want} in {files:?}");
+        }
+        assert!(
+            files.iter().all(|f| !f.starts_with("resources/")
+                && !f.starts_with(".")
+                && f.contains('/')
+                && !f.ends_with(".grf")),
+            "{files:?}"
+        );
+        assert!(fs::read_to_string(cfg.state.join("assets/join.json"))
+            .unwrap()
+            .contains("{\"name\":\"music\","));
         let first_id = fs::read_to_string(cfg.state.join("assets/overlay.id")).unwrap();
         link(&cfg, &args).unwrap();
         assert_eq!(
