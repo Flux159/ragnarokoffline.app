@@ -1,0 +1,6 @@
+# Mods add to db/population_skill_db through this file. A job listed here
+# replaces that job's whole skill list in the main table.
+
+Header:
+  Type: POPULATION_SKILL_DB
+  Version: 1
