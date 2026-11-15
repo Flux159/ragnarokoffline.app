@@ -3965,3 +3965,9 @@ Body:
       - { SkillId: SL_SMA, Level: 10, Rate: 10000, Condition: self_status, CondValue: SC_SMA }
       - { SkillId: SL_STIN, Level: 7, Rate: 9000 }
       - { SkillId: SL_STUN, Level: 7, Rate: 9000 }
+
+# RAGNAROKMAC: the import a mod's table arrives through. A job listed there
+# replaces that job's whole list here.
+Footer:
+  Imports:
+    - Path: db/import/population_skill_db.yml

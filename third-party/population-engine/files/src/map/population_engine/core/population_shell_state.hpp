@@ -101,6 +101,7 @@ struct s_population {
 	int16_t  spawn_y             = 0;  ///< Spawn coordinates used by Guard behavior for return-to-post.
 	int16_t  spawn_map_id        = -1; ///< Internal map ID of the designated spawn map (drift detection / death respawn).
 	int      respawn_timer       = -1; ///< INVALID_TIMER when no respawn pending; else timer id from add_timer. Cancel before re-adding to prevent duplicates if a shell dies twice within the respawn window.
+	int32_t  respawn_ms          = 0;  ///< RAGNAROKMAC (respawn control): 0 = the battle_config delay, >0 = this many ms, -1 = never (a script brings it back with population_revive).
 	uint8_t  attack_skill_cursor = 0;  ///< Round-robin index into attack_skills.
 	uint8_t  map_category        = 0;  ///< Map category at spawn (0=none, 1=town, 2=field, 3=dungeon).
 	uint8_t  behavior            = 2;  ///< Resolved behavior (mirrors PopulationBehavior, stored as uint8). Default: Combat.

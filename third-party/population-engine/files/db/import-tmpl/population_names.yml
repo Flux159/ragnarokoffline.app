@@ -1,0 +1,5 @@
+# Mods add to db/population_names through this file.
+
+Header:
+  Type: POPULATION_NAMES_DB
+  Version: 1

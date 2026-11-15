@@ -7,7 +7,7 @@ drag a mob train to you — takes it away from the engine for a while and
 drives it from an NPC script.
 
 [Making mods](../MODDING.md) is the general guide. This page is the reference
-for the nine `population_*` commands that make the hand-over possible. The
+for the `population_*` commands that make the hand-over possible. The
 [shell-gz example](../../examples/mods/shell-gz) uses them, and its
 `npc:shelltest` NPC lets a GM try each one in game.
 
@@ -172,6 +172,11 @@ canned reply, with the whisperer attached and two variables set:
 `""` turns it off. A held shell with no whisper event does not answer
 whispers at all. Releasing the hold clears it.
 
+Unit id `0` sets one label for whispers to **every** shell no script holds
+(field hunters, vendors, passers-by), instead of the engine's canned reply; it
+runs the same way. A whisper that asks for a party still goes to the engine's
+own companion recruiting.
+
 ### `population_whisper(<gid>, "<message>")`
 
 The shell whispers `<message>` to the attached player. Any shell, held or not.
@@ -192,6 +197,105 @@ the script decides what comes next — a whisper ("where'd you go?"), a walk,
 waiting, or `population_despawn`. Nothing runs for a follow you stopped
 yourself, or when the player logs out. `""` turns it off; releasing the hold
 clears it.
+
+## Hooks: deaths, chat, chat rooms, guilds and war
+
+These work on ambient shells whether or not your NPC holds them.
+
+### `population_face(<gid>, <body 0-7>{, <head 0 forward, 1 right, 2 left>})`
+
+Turns the shell on the spot, sitting or standing, as the arrow keys turn a
+player; everyone around sees it. Body directions run counter-clockwise from 0
+(north). Returns `1`, or `0` for something that is not a shell.
+
+### `population_respawn(<gid>, <milliseconds>)`
+
+How long this shell's body lies the next times it dies: that many
+milliseconds, `0` for the server's own delay (`population_engine_respawn_min_ms`
+to `_max_ms`, 5 s by default), `-1` never — it stays down until
+`population_revive` or `population_despawn`. Use `-1` to bring a shell back
+yourself: at a Kafra, at a map's portal after a while, after a PvP timer.
+
+### `population_revive(<gid>{, "<map>", <x>, <y>})`
+
+Stands a dead shell up with full HP and SP, where it lies or on the cell given.
+`1` done, `0` not a dead shell.
+
+### `population_death_event("<npc>::<label>")`
+
+Runs that label every time an ambient shell dies, with `$@pop_dead_gid` set to
+it, before the engine decides when it stands up — so the label can call
+`population_respawn` for this death. One label for the whole server; `""` turns
+it off. A shell at war (`population_war`) that dies on a PvP or GvG map comes
+here too, rather than being sent to its save point as a player is.
+
+### `population_chat_event("<npc>::<label>")`
+
+Runs that label, attached to the player, whenever a real player says something
+in public chat; `@pop_chat$` is the text. Not while they are in an NPC dialog.
+For a shell that answers "anyone got an orc dungeon warp?".
+
+### `population_chatroom(<gid>, "<title>", <limit>{, <public>})` / `population_chatroom_close(<gid>)`
+
+Opens a chat room owned by the shell, as a player does with Alt+C: the sign over
+its head, and anyone can walk in. The limit is 2-20; public defaults to 1.
+`1` opened (or closed), `0` not a shell or already in (or not in) a room.
+
+### `population_guild("<name>", <n>, "<master>"{, "<emblem>"{, "<titles>"}})`
+
+Makes shell guild `n` (1-9999) and returns its guild id, `1900000000 + n`; `0`
+for an `n` out of range. Calling it again for the same `n` updates the name,
+titles and emblem in place.
+
+- The emblem is a 24×24 BMP as a hex string (magenta is see-through); `""`
+  keeps the one it has.
+- Titles are `"Guild Master|Officer|Member"`, position 0 first.
+- A shell guild exists only in the map server: it is never saved, so make it
+  again in `OnInit`. The char server never hears of it, and a real player
+  cannot join it.
+
+### `population_guild_join(<gid>, <guild id>{, <title>})` / `population_guild_leave(<gid>)`
+
+Puts a shell in a shell guild with that title (default 2). Its name, title and
+emblem show over its head, and GvG and WoE treat it as that guild. The shell
+named as master takes the master's slot. `0` for a shell already in a real guild,
+a guild that is not a shell guild, or a full one (76 members).
+
+### `population_guild_ally(<guild id>, <guild id>, <how>)`
+
+`0` makes two shell guilds allies (they do not fight on GvG maps), `1` enemies
+(the guild window's antagonist), `-1` neither.
+
+### `population_war(<gid>, <1 on, 0 off>)`
+
+Puts a shell at war: it becomes mortal, and its combat picks whoever the map's
+rules make its enemy — other guilds on a GvG or WoE map, anyone outside its
+guild on a PvP map, real players included — and on GvG maps the Emperium and the
+guardians, after the people around them. Heals and buffs go to its guild and
+allies only. A held shell at war still fights. `0` puts it back as it was.
+
+For the castle to go to the shell's guild when it breaks the Emperium, turn on
+`setbattleflag "population_engine_shell_kill_events", 1;` (off by default): the
+castle's `OnAgitBreak` then runs with the shell attached, as it does for a
+player. `2` does the same for every monster's death event, not only the
+Emperium's and the guardians'.
+
+A shell guild is never saved as a castle's owner: the char server is told the
+castle is unowned, while this map server keeps it as the shell guild's. After a
+restart the castle is unowned until your script gives it back (remember the
+owner in a permanent variable and `setcastledata` it again in `OnAgitInit`), so
+nothing in the database points at a guild that no longer exists.
+
+### `population_engine_who_extra`
+
+A battle flag, not a command: `setbattleflag "population_engine_who_extra", <n>;`
+adds `n` to the online count `/w` shows. For a mod that counts people it does
+not spawn, to spare the server. 0 (the default) shows the real count.
+
+The engine fights only where a real player can see it (that is what keeps
+dozens of maps cheap), so a war you are not watching is the script's to decide —
+a roll for which guild holds each castle — and the shells fight it out where you
+are.
 
 ## A scene, start to finish
 
