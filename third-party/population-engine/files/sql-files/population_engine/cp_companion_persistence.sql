@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS `cp_companion_persistence` (
   `inventory_detail` TEXT          NULL DEFAULT NULL,   -- the rest of the bag: every unworn stack and the worn ammo, in full (v13); NULL = saved before inventories, recalled with what the spawn gives
   `roam`             TINYINT       NOT NULL DEFAULT 0,  -- 1 = walks the owner's map on its own instead of following (v14)
   `start_unequipped` TINYINT       NOT NULL DEFAULT 0,  -- 1 = drafted with nothing on: the engine gives it no gear, ever; all it wears is its owner's (v15)
+  `temporary`        TINYINT       NOT NULL DEFAULT 0,  -- 1 = recruited from the world while recruits were temporary: deleted when it leaves the party (v16)
   `map_id`           SMALLINT      NOT NULL DEFAULT 0, -- mapindex id of owner at recruit (recall target)
   `active`           TINYINT       NOT NULL DEFAULT 1, -- 1 = recalled on login; 0 = released (Goal 3 sets this)
   `favorite`         TINYINT       NOT NULL DEFAULT 0, -- 1 = owner favorited (friend list sort)

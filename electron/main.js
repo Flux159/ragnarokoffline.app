@@ -1150,6 +1150,10 @@ const SETTINGS_DEFAULTS = {
 	// Companions window, instead of following. Off: every companion follows, and
 	// the window offers no Roam control.
 	population_companion_roam: false,
+	// Whether a character recruited from the world is temporary: it helps while
+	// it is in the party and goes back to the world when it leaves. Off: a
+	// recruit is saved like a hired companion. Hired and drafted ones always are.
+	population_companion_recruit_temporary: false,
 	// Whether a drafted companion starts with nothing on, and is given no gear by
 	// the engine afterwards: it wears what its owner gives it. Off keeps the
 	// engine dressing it from its job's gear set. Kept per companion from its

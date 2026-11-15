@@ -159,6 +159,8 @@ listed above.
 | `third-party/population-engine/files/src/map/population_engine/strategy/` | Companion strategies: `db/population_strategy.yml` (per-monster, per-job and per-build rules, strategies as a state machine, events, `<name> trace`). Self-contained; the engine calls it from thirteen marked places (see below). Reference: [docs/mods/companion-strategies/](mods/companion-strategies/README.md) |
 | `third-party/population-engine/files/src/map/population_engine/runtime/population_companion_roam.{hpp,cpp}` | Roaming (a companion walks its owner's map on its own) and the "I'm down" notice; see below |
 | `third-party/population-engine/patches/0034-companion-roam-command.patch` | `@companion roam [<name>] on\|off`, which the Companions window sends |
+| `third-party/population-engine/files/src/map/population_engine/runtime/population_companion_temporary.{hpp,cpp}` | Temporary recruits: a companion recruited from the world, while Recruits are temporary is on, is deleted from the saved list when it leaves the party (unless it holds its owner's gear) |
+| `third-party/population-engine/patches/0040-companion-recruit-temporary.patch` | Registers `population_engine_companion_recruit_temporary` |
 | `third-party/population-engine/files/db/population_strategy.yml` | Companion strategies table; ships empty, mods add to it through `db/import/` |
 
 The Population Engine is vendored as its own files plus patches against pinned

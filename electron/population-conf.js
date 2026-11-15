@@ -91,6 +91,16 @@ function companionRoam(s) {
 }
 
 /**
+ * Whether a character recruited from the world (whispered, then invited) is
+ * temporary (1): it helps while it is in the party and goes back to the world
+ * when it leaves, instead of joining the saved list. Hired and drafted
+ * companions are saved either way. Off (0, as before), a recruit is saved too.
+ */
+function companionRecruitTemporary(s) {
+	return s.population_companion_recruit_temporary === true ? 1 : 0;
+}
+
+/**
  * Whether a drafted companion starts with nothing on (1), and is given no gear
  * by the engine afterwards either: it wears what its owner gives it. Off (0, as
  * before), the engine dresses it from its job's gear set. A companion keeps how
@@ -171,6 +181,7 @@ function lines(settings) {
 		`population_engine_skill_weapon_check: ${skillWeaponCheck(settings)}\n` +
 		`population_engine_companion_inventory: ${companionInventory(settings)}\n` +
 		`population_engine_companion_roam: ${companionRoam(settings)}\n` +
+		`population_engine_companion_recruit_temporary: ${companionRecruitTemporary(settings)}\n` +
 		`population_engine_companion_start_unequipped: ${companionStartUnequipped(settings)}\n` +
 		`population_engine_companion_chat_enable: ${companionChat(settings)}\n` +
 		`population_engine_chat_enable: ${shellChat(settings)}\n` +
@@ -191,4 +202,4 @@ function lines(settings) {
 	);
 }
 
-module.exports = { lines, companionLimit, areaShare, companionHire, companionFee, skillWeaponCheck, companionInventory, companionRoam, companionStartUnequipped, companionChat, shellChat, shellLoot, LOOT_DEFAULTS, HIRE_MODES, AREAS, COMPANION_LIMIT_MIN, COMPANION_LIMIT_MAX };
+module.exports = { lines, companionLimit, areaShare, companionHire, companionFee, skillWeaponCheck, companionInventory, companionRoam, companionRecruitTemporary, companionStartUnequipped, companionChat, shellChat, shellLoot, LOOT_DEFAULTS, HIRE_MODES, AREAS, COMPANION_LIMIT_MIN, COMPANION_LIMIT_MAX };

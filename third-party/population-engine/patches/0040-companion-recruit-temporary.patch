@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000040
+Subject: [PATCH] Settings: recruits from the world can be temporary
+
+Settings -> Population -> Recruits are temporary turns on
+population_engine_companion_recruit_temporary (off by default). With it on, a character
+recruited from the world (whispered, then invited) helps while it is in the party and goes
+back to the world when it leaves it, when its owner logs out, or at the owner's next login
+after a shutdown: its row is marked temporary (v16) and deleted then. Hired and drafted
+companions are saved as before, and so is a recruit that holds gear its owner gave it, until
+the gear is taken back. The logic is in population_engine/runtime/population_companion_temporary.cpp.
+
+diff --git a/src/custom/battle_config_init.inc b/src/custom/battle_config_init.inc
+--- a/src/custom/battle_config_init.inc
++++ b/src/custom/battle_config_init.inc
+@@ -68,6 +68,7 @@
+ { "population_engine_skill_weapon_check",&battle_config.population_engine_skill_weapon_check,0,0,1,},
+ { "population_engine_companion_inventory",&battle_config.population_engine_companion_inventory,0,0,1,},
+ { "population_engine_companion_roam",&battle_config.population_engine_companion_roam,0,0,1,},
++{ "population_engine_companion_recruit_temporary",&battle_config.population_engine_companion_recruit_temporary,0,0,1,},
+ { "population_engine_companion_start_unequipped",&battle_config.population_engine_companion_start_unequipped,0,0,1,},
+ { "population_engine_companion_chat_enable",&battle_config.population_engine_companion_chat_enable,1,0,1,},
+ { "population_engine_loot_enable",&battle_config.population_engine_loot_enable,0,0,1,},
+diff --git a/src/custom/battle_config_struct.inc b/src/custom/battle_config_struct.inc
+--- a/src/custom/battle_config_struct.inc
++++ b/src/custom/battle_config_struct.inc
+@@ -139,6 +139,9 @@ int32 population_engine_companion_inventory;
+ /// Roaming: 1 = a player may set a companion to roam the map on its own instead of following
+ /// (Companions window, @companion roam); 0 = every companion follows (as before).
+ int32 population_engine_companion_roam;
++/// Temporary recruits: 1 = a character recruited from the world helps for a while and goes back
++/// to the world when it leaves the party; 0 = it is saved like a hired companion (as before).
++int32 population_engine_companion_recruit_temporary;
+ /// Gear: 1 = a drafted companion starts with nothing on, and the engine gives it no gear at a
+ /// job change or a recall either: it wears what its owner gives it; 0 = the engine dresses it
+ /// from its job's gear set (as before). Kept per companion from its draft on.

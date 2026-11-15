@@ -311,6 +311,22 @@ The fee is **Fee per level** zeny times the companion's level, and/or the
 companion exists, so a draft that fails costs nothing. Calling back a companion
 you already have, from the Party tab or `@companion summon`, is always free.
 
+### Recruits that go their own way
+
+A character recruited from the world (whispered, then invited) costs nothing,
+so by default it is a free hire: it joins your saved list like one you paid for.
+**Settings → Population → Recruits are temporary** makes it a passing ally
+instead. It fights beside you, levels and keeps what you give it while it is in
+your party, and goes back to the world when it leaves the party, when you log
+out, or after a server restart. Companions you hire or draft are saved as
+before, and so is a recruit that was already on your list before the setting
+was turned on.
+
+What you gave it is never lost with it: a recruit that still wears or carries
+gear you traded it stays on your saved list, and the game tells you so. Take the
+gear back in the Companions window's Gear tab, then dismiss it to let it go.
+Potions and arrows in its bag go with it.
+
 `@companion terms` prints the rules for your character as one line,
 `@CPTERMS|mode|tier|zeny|item|amount|item name|jobs`, which is what the
 Companions window reads.

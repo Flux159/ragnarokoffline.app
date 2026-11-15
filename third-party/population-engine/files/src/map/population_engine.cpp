@@ -12,6 +12,7 @@
 #include "population_engine/runtime/population_shell_ammo.hpp"
 #include "population_engine/runtime/population_shell_inventory.hpp" // RAGNAROKMAC
 #include "population_engine/runtime/population_companion_roam.hpp" // RAGNAROKMAC (roam)
+#include "population_engine/runtime/population_companion_temporary.hpp" // RAGNAROKMAC (temporary recruits)
 #include "population_engine/runtime/population_shell_gear.hpp" // RAGNAROKMAC
 #include "population_engine/runtime/population_shell_loot.hpp"
 #include "population_engine/runtime/population_shell_selling.hpp"
@@ -8001,9 +8002,14 @@ void population_engine_persist_recruited_companion(map_session_data *sd, map_ses
 		return;
 	}
 
+	// RAGNAROKMAC (temporary recruits): a row this character did not keep before is a new recruit.
+	const uint32_t recruit_index = char_id - POPULATION_ENGINE_CHAR_ID_BASE;
+	const bool fresh_recruit = !population_companion_row_kept(owner->status.account_id, owner->status.char_id, recruit_index);
+
 	// Same insert the draft path uses, so a recruit and a draft cannot produce
 	// different rows (nor drift apart again as this one did).
 	population_engine_persist_companion_row(sd, owner);
+	population_companion_temporary_mark(owner, recruit_index, fresh_recruit); // RAGNAROKMAC (temporary recruits)
 
 	// The roster changed (a shell was recruited into the party) - tell an open panel
 	// so a right-click recruit in the world shows up without reopening the window.
@@ -8029,6 +8035,9 @@ void population_engine_set_companion_active(uint32_t owner_account, uint32_t ind
 			index_, active ? 1 : 0, owner_account);
 		return;
 	}
+	// RAGNAROKMAC (temporary recruits): a dismissed recruit goes its own way.
+	if (!active)
+		population_companion_temporary_drop(index_);
 	// Activation is how summon and dismiss change the roster; push so an open
 	// panel reflects it. The owner may be offline (expel from a stale session), in
 	// which case there is nothing to send to.
@@ -8056,6 +8065,9 @@ void population_engine_deactivate_expelled_companion(int32_t party_id, uint32_t 
 		return;
 	}
 	ShowInfo("population_engine: expelled companion index %u marked inactive\n", index_);
+	// RAGNAROKMAC (temporary recruits): and goes its own way, out of the party for good.
+	if (population_companion_temporary_drop(index_))
+		population_companion_temporary_let_go(index_);
 }
 
 // RAGNAROKMAC (Goal 3 / friend list) ---------------------------------------------
@@ -8967,7 +8979,9 @@ void population_engine_on_owner_quit(map_session_data *owner)
 	for (map_session_data *shell : mine) {
 		if (shell->state.active)
 			population_engine_persist_companion_gear(shell);
+		const uint32_t index_ = shell->status.char_id - POPULATION_ENGINE_CHAR_ID_BASE;
 		population_engine_shell_release(shell);
+		population_companion_temporary_drop(index_); // RAGNAROKMAC (temporary recruits)
 	}
 	if (!mine.empty())
 		ShowInfo("Population engine: %s left; released %zu companion(s) until they log in again.\n",
@@ -9005,6 +9019,9 @@ int population_engine_recall_companions(map_session_data *owner, uint32_t only_i
 	if (!battle_config.population_engine_enable) return 0;
 	if (population_engine_is_population_pc(owner->id)) return 0;
 	pop_claim_unowned_companions(owner);
+	// RAGNAROKMAC (temporary recruits): a shutdown skips the logout, so recruits left behind go now.
+	if (only_index == 0)
+		population_companion_temporary_drop_all(owner);
 	const int16_t map_id = (int16_t)owner->m;
 	char q[1024]; // must fit the full v4 recall SELECT (~590 bytes with account id)
 	snprintf(q, sizeof(q),
@@ -10411,6 +10428,7 @@ void population_engine_on_global_chat_mention(map_session_data* from_sd, const c
 #include "population_engine/runtime/population_shell_control.cpp"
 #include "population_engine/runtime/population_shell_selling.cpp"
 #include "population_engine/runtime/population_companion_roam.cpp" // RAGNAROKMAC (roam)
+#include "population_engine/runtime/population_companion_temporary.cpp" // RAGNAROKMAC (temporary recruits)
 
 void do_final_population_engine() {
 	// Stop first so shells are released while all DB shared_ptrs are still valid.

@@ -1354,6 +1354,9 @@ const COMPANION_COLUMNS: &[(&str, &str)] = &[
     // v15: drafted with nothing on (Settings -> Population -> Companions start unequipped).
     // 0 on an existing row: the engine dressed it, and goes on doing so.
     ("start_unequipped", "TINYINT NOT NULL DEFAULT 0"),
+    // v16: recruited from the world while recruits were temporary (Settings -> Population ->
+    // Recruits are temporary): deleted when it leaves the party. 0 on an existing row: saved, as before.
+    ("temporary", "TINYINT NOT NULL DEFAULT 0"),
 ];
 
 /// Indexes added after the table first shipped, as (name, columns).
